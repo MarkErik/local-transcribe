@@ -5,6 +5,7 @@ import pathlib
 import torch
 from faster_whisper import WhisperModel as FWModel
 import whisperx
+from progress import get_progress_tracker, ProgressCallback
 
 # CT2 (faster-whisper) repos to search locally under ./models/asr/ct2/...
 _CT2_REPO_CHOICES: dict[str, list[str]] = {
@@ -64,6 +65,9 @@ def transcribe_with_alignment(
     if asr_model not in _CT2_REPO_CHOICES:
         raise ValueError(f"Unknown asr_model: {asr_model}")
 
+    # Initialize progress tracking
+    tracker = get_progress_tracker()
+    
     # Devices
     asr_device = _asr_device()          # 'cpu' (CTranslate2)
     align_device = _align_device()      # 'mps' if available, else 'cpu'
@@ -78,6 +82,9 @@ def transcribe_with_alignment(
 
     # ---- ASR via faster-whisper directly (bypass whisperx.load_model) ----
     # Load CT2 model from local path
+    role_label = f" ({role})" if role else ""
+    asr_task = tracker.add_task(f"ASR Transcription{role_label}", stage="asr_transcription")
+    
     fw = FWModel(
         str(local_model_dir),     # model_size_or_path (positional)
         device=asr_device,        # 'cpu' (CT2 has no MPS)
@@ -86,6 +93,17 @@ def transcribe_with_alignment(
 
     # Transcribe: force English, disable VAD filter
     # (We already standardize audio to 16k mono WAV upstream.)
+    tracker.update(asr_task, description=f"ASR Transcription{role_label} - Loading audio")
+    
+    # Get audio duration for progress estimation
+    import librosa
+    try:
+        audio_duration = librosa.get_duration(path=audio_path)
+        # Estimate segments based on typical 30-second chunks
+        estimated_segments = max(1, int(audio_duration / 30))
+    except Exception:
+        estimated_segments = 10  # Fallback estimate
+    
     segments, info = fw.transcribe(
         audio_path,
         language="en",
@@ -94,8 +112,11 @@ def transcribe_with_alignment(
         beam_size=5,
     )
 
+    tracker.update(asr_task, description=f"ASR Transcription{role_label} - Processing segments")
+    
     # Convert generator to list of dicts that WhisperX align() expects
     seg_list = []
+    segment_count = 0
     for s in segments:
         # s has .start, .end, .text
         seg_list.append({
@@ -103,14 +124,26 @@ def transcribe_with_alignment(
             "end": float(s.end) if s.end is not None else 0.0,
             "text": (s.text or "").strip(),
         })
+        segment_count += 1
+        # Update progress based on segment count
+        if estimated_segments > 0:
+            progress = (segment_count / estimated_segments) * 80  # 80% of ASR task
+            tracker.update(asr_task, description=f"ASR Transcription{role_label} - {segment_count}/{estimated_segments} segments")
+    
+    tracker.complete_task(asr_task, stage="asr_transcription")
 
     # ---- WhisperX alignment (English) ----
+    align_task = tracker.add_task(f"Alignment{role_label}", stage="alignment")
+    tracker.update(align_task, description=f"Alignment{role_label} - Loading model")
+    
     align_model, metadata = whisperx.load_align_model(
         language_code="en",
         device=align_device,             # 'mps' if available, else 'cpu'
         model_dir=str(models_root),
     )
 
+    tracker.update(align_task, description=f"Alignment{role_label} - Processing segments")
+    
     aligned = whisperx.align(
         seg_list,
         align_model,
@@ -120,7 +153,14 @@ def transcribe_with_alignment(
         return_char_alignments=False,
     )
 
+    tracker.complete_task(align_task, stage="alignment")
+
+    # Process word segments
+    words_task = tracker.add_task(f"Processing words{role_label}", stage="word_processing")
     words = []
+    word_count = 0
+    total_words = len(aligned.get("word_segments", []))
+    
     for seg in aligned.get("word_segments", []):
         w = seg.get("word")
         if not w:
@@ -133,6 +173,13 @@ def transcribe_with_alignment(
                 "speaker": role if role else None,
             }
         )
+        word_count += 1
+        # Update progress
+        if total_words > 0:
+            progress = (word_count / total_words) * 100
+            tracker.update(words_task, description=f"Processing words{role_label} - {word_count}/{total_words}")
+    
+    tracker.complete_task(words_task, stage="word_processing")
 
     # Optional MPS memory tidy (no-op on CPU)
     try:

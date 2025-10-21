@@ -59,6 +59,7 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         from txt_writer import write_timestamped_txt, write_plain_txt
         from render_black import render_black_video
         from diarize import diarize_mixed
+        from progress import get_progress_tracker
     except Exception as e:
         sys.exit(f"ERROR: Failed importing pipeline modules from src/: {e}")
     return {
@@ -73,6 +74,7 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         "write_plain_txt": write_plain_txt,
         "render_black_video": render_black_video,
         "diarize_mixed": diarize_mixed,
+        "get_progress_tracker": get_progress_tracker,
     }
 
 # ---------- CLI ----------
@@ -112,67 +114,102 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Import pipeline functions after sys.path setup
     api = import_pipeline_modules(root)
 
-    # Ensure outdir & subdirs
-    outdir = ensure_outdir(args.outdir)
-    paths = api["ensure_session_dirs"](outdir)
+    # Initialize progress tracking
+    tracker = api["get_progress_tracker"]()
+    tracker.start()
 
-    # Run pipeline
-    if combined_mode:
-        mixed_path = ensure_file(args.combined, "Combined")
-        print(f"[*] Mode: combined | ASR: {args.asr}")
-        # 1) Standardize
-        std_mix = api["standardize_and_get_path"](mixed_path)
-        # 2) ASR + alignment
-        words = api["transcribe_with_alignment"](str(std_mix), asr_model=args.asr, role=None)
-        # 3) Diarize → turns
-        turns = api["diarize_mixed"](str(std_mix), words)
-        # 4) Outputs
-        api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt")
-        api["write_plain_txt"](turns, paths["merged"] / "transcript.txt")
-        srt_path = paths["merged"] / "subtitles.srt"
-        api["write_srt"](turns, srt_path)
-        if args.write_vtt:
-            api["write_vtt"](turns, paths["merged"] / "subtitles.vtt")
-        if args.render_black:
-            api["render_black_video"](srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=std_mix)
-        print("[✓] Combined processing complete.")
+    try:
+        # Ensure outdir & subdirs
+        outdir = ensure_outdir(args.outdir)
+        paths = api["ensure_session_dirs"](outdir)
 
-    else:
-        # dual-track
-        interviewer_path = ensure_file(args.interviewer, "Interviewer")
-        participant_path = ensure_file(args.participant, "Participant")
-        print(f"[*] Mode: dual-track | ASR: {args.asr}")
-        # 1) Standardize
-        std_int = api["standardize_and_get_path"](interviewer_path)
-        std_part = api["standardize_and_get_path"](participant_path)
-        # 2) ASR + alignment per track
-        int_words = api["transcribe_with_alignment"](str(std_int), asr_model=args.asr, role="Interviewer")
-        part_words = api["transcribe_with_alignment"](str(std_part), asr_model=args.asr, role="Participant")
-        # 3) Turns per track
-        int_turns = api["build_turns"](int_words, speaker_label="Interviewer")
-        part_turns = api["build_turns"](part_words, speaker_label="Participant")
-        # 4) Merge turns
-        merged = api["merge_turn_streams"](int_turns, part_turns)
-        # 5) Per-speaker outputs
-        api["write_timestamped_txt"](int_turns, paths["speaker_interviewer"] / "interviewer.timestamped.txt")
-        api["write_plain_txt"](int_turns,        paths["speaker_interviewer"] / "interviewer.txt")
-        api["write_timestamped_txt"](part_turns, paths["speaker_participant"] / "participant.timestamped.txt")
-        api["write_plain_txt"](part_turns,       paths["speaker_participant"] / "participant.txt")
-        # 6) Merged outputs
-        api["write_timestamped_txt"](merged, paths["merged"] / "transcript.timestamped.txt")
-        api["write_plain_txt"](merged,       paths["merged"] / "transcript.txt")
-        srt_path = paths["merged"] / "subtitles.srt"
-        api["write_srt"](merged, srt_path)
-        if args.write_vtt:
-            api["write_vtt"](merged, paths["merged"] / "subtitles.vtt")
-        if args.render_black:
-            # choose which audio to mux; interviewer by default
-            api["render_black_video"](srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=std_int)
-        print("[✓] Dual-track processing complete.")
+        # Run pipeline
+        if combined_mode:
+            mixed_path = ensure_file(args.combined, "Combined")
+            print(f"[*] Mode: combined | ASR: {args.asr}")
+            
+            # 1) Standardize
+            std_task = tracker.add_task("Audio standardization", stage="standardization")
+            std_mix = api["standardize_and_get_path"](mixed_path)
+            tracker.complete_task(std_task, stage="standardization")
+            
+            # 2) ASR + alignment
+            words = api["transcribe_with_alignment"](str(std_mix), asr_model=args.asr, role=None)
+            
+            # 3) Diarize → turns
+            turns = api["diarize_mixed"](str(std_mix), words)
+            
+            # 4) Outputs
+            output_task = tracker.add_task("Writing output files", stage="output")
+            api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt")
+            api["write_plain_txt"](turns, paths["merged"] / "transcript.txt")
+            srt_path = paths["merged"] / "subtitles.srt"
+            api["write_srt"](turns, srt_path)
+            if args.write_vtt:
+                api["write_vtt"](turns, paths["merged"] / "subtitles.vtt")
+            if args.render_black:
+                api["render_black_video"](srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=std_mix)
+            tracker.complete_task(output_task, stage="output")
+            
+            print("[✓] Combined processing complete.")
 
-    # Summary
-    print(f"[i] Artifacts written to: {paths['root']}")
-    return 0
+        else:
+            # dual-track
+            interviewer_path = ensure_file(args.interviewer, "Interviewer")
+            participant_path = ensure_file(args.participant, "Participant")
+            print(f"[*] Mode: dual-track | ASR: {args.asr}")
+            
+            # 1) Standardize
+            std_task = tracker.add_task("Audio standardization", stage="standardization")
+            std_int = api["standardize_and_get_path"](interviewer_path)
+            std_part = api["standardize_and_get_path"](participant_path)
+            tracker.complete_task(std_task, stage="standardization")
+            
+            # 2) ASR + alignment per track
+            int_words = api["transcribe_with_alignment"](str(std_int), asr_model=args.asr, role="Interviewer")
+            part_words = api["transcribe_with_alignment"](str(std_part), asr_model=args.asr, role="Participant")
+            
+            # 3) Turns per track
+            turns_task = tracker.add_task("Building conversation turns", stage="turns")
+            int_turns = api["build_turns"](int_words, speaker_label="Interviewer")
+            part_turns = api["build_turns"](part_words, speaker_label="Participant")
+            
+            # 4) Merge turns
+            merged = api["merge_turn_streams"](int_turns, part_turns)
+            tracker.complete_task(turns_task, stage="turns")
+            
+            # 5) Per-speaker outputs
+            output_task = tracker.add_task("Writing output files", stage="output")
+            api["write_timestamped_txt"](int_turns, paths["speaker_interviewer"] / "interviewer.timestamped.txt")
+            api["write_plain_txt"](int_turns,        paths["speaker_interviewer"] / "interviewer.txt")
+            api["write_timestamped_txt"](part_turns, paths["speaker_participant"] / "participant.timestamped.txt")
+            api["write_plain_txt"](part_turns,       paths["speaker_participant"] / "participant.txt")
+            
+            # 6) Merged outputs
+            api["write_timestamped_txt"](merged, paths["merged"] / "transcript.timestamped.txt")
+            api["write_plain_txt"](merged,       paths["merged"] / "transcript.txt")
+            srt_path = paths["merged"] / "subtitles.srt"
+            api["write_srt"](merged, srt_path)
+            if args.write_vtt:
+                api["write_vtt"](merged, paths["merged"] / "subtitles.vtt")
+            if args.render_black:
+                # choose which audio to mux; interviewer by default
+                api["render_black_video"](srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=std_int)
+            tracker.complete_task(output_task, stage="output")
+            
+            print("[✓] Dual-track processing complete.")
+
+        # Summary
+        print(f"[i] Artifacts written to: {paths['root']}")
+        
+        # Print performance summary
+        tracker.print_summary()
+        
+        return 0
+        
+    finally:
+        # Always stop progress tracking
+        tracker.stop()
 
 if __name__ == "__main__":
     raise SystemExit(main())

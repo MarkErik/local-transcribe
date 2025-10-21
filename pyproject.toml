@@ -1,0 +1,28 @@
+[project]
+name = "local-transcribe"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "faster-whisper>=1.2.0",
+    "ffmpeg-python>=0.2.0",
+    "librosa>=0.11.0",
+    "numpy>=2.3.4",
+    "pandas>=2.3.3",
+    "pyannote-audio>=4.0.1",
+    "pydub>=0.25.1",
+    "rich>=14.2.0",
+    "soundfile>=0.13.1",
+    "torch>=2.9.0",
+    "torchaudio>=2.9.0",
+    "tqdm>=4.67.1",
+    "whisperx>=3.4.2",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.0.1",
+    "ipywidgets>=8.1.7",
+    "jupyterlab>=4.4.9",
+]

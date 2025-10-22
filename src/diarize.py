@@ -163,27 +163,54 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
 
         tracker.update(diarize_task, advance=20, description="Speaker Diarization - Processing segments")
         
+        # --- Debugging: Inspect the DiarizeOutput object ---
+        logger.debug(f"Type of diar object: {type(diar)}")
+        logger.debug(f"Attributes of diar object: {dir(diar)}")
+        
+        # Inspect the 'speaker_diarization' attribute
+        if hasattr(diar, 'speaker_diarization'):
+            annotation_obj = diar.speaker_diarization
+            logger.debug(f"Type of speaker_diarization: {type(annotation_obj)}")
+            logger.debug(f"Attributes of speaker_diarization: {dir(annotation_obj)}")
+            # Check for known methods on the annotation object
+            if hasattr(annotation_obj, 'itertracks'):
+                logger.debug("speaker_diarization has itertracks method")
+            if hasattr(annotation_obj, 'tracks'):
+                logger.debug("speaker_diarization has tracks attribute")
+            if hasattr(annotation_obj, 'get_timeline'):
+                logger.debug("speaker_diarization has get_timeline method")
+            if hasattr(annotation_obj, 'support'):
+                logger.debug(f"speaker_diarization support: {annotation_obj.support}")
+        # --- End Debugging ---
+
         # Convert annotation to a simple list of segments for overlap computation
         diar_segments = []
         segment_count = 0
         
         try:
-            # The diarization result is an Annotation object
-            # In newer versions of pyannote, we iterate through the tracks directly
-            for track, segment in diar.tracks.items():
-                label = track  # In newer versions, the track name is the speaker label
-                diar_segments.append({"start": float(segment.start), "end": float(segment.end), "label": label})
-                segment_count += 1
-                tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Found {segment_count} segments")
-        except Exception as e:
-            # If the above fails, try the older itertracks method
+            # The diarization result is a DiarizeOutput object, which contains an Annotation object
+            # We need to access the 'speaker_diarization' attribute to get the Annotation
+            annotation_obj = diar.speaker_diarization
+            
+            # Try iterating with itertracks (common for Annotation objects)
             try:
-                for segment, _, label in diar.itertracks(yield_label=True):
+                for segment, track, label in annotation_obj.itertracks(yield_label=True):
                     diar_segments.append({"start": float(segment.start), "end": float(segment.end), "label": label})
                     segment_count += 1
                     tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Found {segment_count} segments")
-            except Exception as e2:
-                raise DiarizationError(f"Failed to process diarization segments with both new and old API: {e}", cause=e)
+            except AttributeError:
+                # If itertracks is not available, try direct iteration if the object supports it
+                try:
+                    for segment in annotation_obj.support.itersegments():
+                        # Assuming labels can be retrieved, e.g., via annotation_obj[segment]
+                        label = annotation_obj[segment]
+                        diar_segments.append({"start": float(segment.start), "end": float(segment.end), "label": label})
+                        segment_count += 1
+                        tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Found {segment_count} segments")
+                except Exception as e_inner:
+                    raise DiarizationError(f"Failed to process diarization segments using annotation support: {e_inner}", cause=e_inner)
+        except Exception as e:
+            raise DiarizationError(f"Failed to process diarization segments: {e}", cause=e)
         
         logger.info(f"Found {segment_count} diarization segments")
         tracker.update(diarize_task, advance=50, description="Speaker Diarization - Complete")

@@ -127,6 +127,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Import pipeline functions after sys.path setup
     api = import_pipeline_modules(root)
+    
+    # Configure logging to DEBUG level for detailed output
+    from logging_config import configure_global_logging
+    configure_global_logging(log_level="DEBUG")
 
     # Initialize progress tracking
     tracker = api["get_progress_tracker"]()
@@ -145,7 +149,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             # 1) Standardize
             std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
             tracker.update(std_task, advance=50, description="Standardizing mixed audio")
-            std_mix = api["standardize_and_get_path"](mixed_path)
+            # Create a temp dir for standardized audio to avoid ffmpeg in-place editing
+            temp_audio_dir = outdir / "temp_audio"
+            temp_audio_dir.mkdir(exist_ok=True)
+            std_mix = api["standardize_and_get_path"](mixed_path, tmpdir=temp_audio_dir)
             tracker.update(std_task, advance=50, description="Audio standardization complete")
             tracker.complete_task(std_task, stage="standardization")
             
@@ -191,10 +198,13 @@ def main(argv: Optional[list[str]] = None) -> int:
             
             # 1) Standardize
             std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
+            # Create a temp dir for standardized audio to avoid ffmpeg in-place editing
+            temp_audio_dir = outdir / "temp_audio"
+            temp_audio_dir.mkdir(exist_ok=True)
             tracker.update(std_task, advance=33, description="Standardizing interviewer audio")
-            std_int = api["standardize_and_get_path"](interviewer_path)
+            std_int = api["standardize_and_get_path"](interviewer_path, tmpdir=temp_audio_dir)
             tracker.update(std_task, advance=33, description="Standardizing participant audio")
-            std_part = api["standardize_and_get_path"](participant_path)
+            std_part = api["standardize_and_get_path"](participant_path, tmpdir=temp_audio_dir)
             tracker.update(std_task, advance=34, description="Audio standardization complete")
             tracker.complete_task(std_task, stage="standardization")
             

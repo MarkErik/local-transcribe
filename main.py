@@ -6,7 +6,15 @@ import argparse
 import os
 import sys
 import pathlib
+import warnings
 from typing import Optional
+
+# Aggressively suppress warnings
+warnings.filterwarnings("ignore")
+os.environ.setdefault("PYTHONWARNINGS", "ignore")
+# Set environment variables to suppress warnings from specific libraries
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
 
 # ---------- repo paths & offline env ----------
 def repo_root_from_here() -> pathlib.Path:
@@ -15,6 +23,7 @@ def repo_root_from_here() -> pathlib.Path:
 
 def set_offline_env(models_dir: pathlib.Path) -> None:
     os.environ.setdefault("HF_HOME", str(models_dir))
+    # TRANSFORMERS_CACHE is deprecated, but we keep it for backward compatibility
     os.environ.setdefault("TRANSFORMERS_CACHE", str(models_dir))
     os.environ.setdefault("PYANNOTE_CACHE", str(models_dir / "diarization"))
     os.environ.setdefault("XDG_CACHE_HOME", str(models_dir / ".xdg"))
@@ -58,6 +67,7 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         from srt_vtt import write_srt, write_vtt
         from txt_writer import write_timestamped_txt, write_plain_txt
         from csv_writer import write_conversation_csv
+        from markdown_writer import write_conversation_markdown
         from render_black import render_black_video
         from diarize import diarize_mixed
         from progress import get_progress_tracker
@@ -74,6 +84,7 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         "write_timestamped_txt": write_timestamped_txt,
         "write_plain_txt": write_plain_txt,
         "write_conversation_csv": write_conversation_csv,
+        "write_conversation_markdown": write_conversation_markdown,
         "render_black_video": render_black_video,
         "diarize_mixed": diarize_mixed,
         "get_progress_tracker": get_progress_tracker,
@@ -149,6 +160,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt")
             api["write_plain_txt"](turns, paths["merged"] / "transcript.txt")
             api["write_conversation_csv"](turns, paths["merged"] / "transcript.csv")
+            api["write_conversation_markdown"](turns, paths["merged"] / "transcript.md")
             
             tracker.update(output_task, advance=20, description="Writing subtitle files")
             srt_path = paths["merged"] / "subtitles.srt"
@@ -215,6 +227,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             api["write_timestamped_txt"](merged, paths["merged"] / "transcript.timestamped.txt")
             api["write_plain_txt"](merged,       paths["merged"] / "transcript.txt")
             api["write_conversation_csv"](merged, paths["merged"] / "transcript.csv")
+            api["write_conversation_markdown"](merged, paths["merged"] / "transcript.md")
             
             tracker.update(output_task, advance=15, description="Writing subtitle files")
             srt_path = paths["merged"] / "subtitles.srt"

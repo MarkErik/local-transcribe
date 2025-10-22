@@ -2,6 +2,10 @@
 from __future__ import annotations
 from typing import List, Dict
 import os
+import warnings
+
+# Aggressively suppress all warnings before importing pyannote
+warnings.filterwarnings("ignore")
 
 import torch
 import soundfile as sf

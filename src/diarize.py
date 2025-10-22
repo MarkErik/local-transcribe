@@ -269,8 +269,6 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
             speakers.setdefault(w["speaker"], []).append(w)
         
         turns_task = tracker.add_task("Building conversation turns", total=len(speakers), stage="turn_building")
-        for w in tagged_words:
-            speakers.setdefault(w["speaker"], []).append(w)
 
         all_turns: List[Dict] = []
         speaker_count = 0

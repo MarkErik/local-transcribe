@@ -53,14 +53,16 @@ class ProgressTracker:
         self._stop_monitoring()
         
     def add_task(
-        self, 
-        description: str, 
+        self,
+        description: str,
         total: Optional[int] = None,
         stage: str = "processing"
     ) -> TaskID:
         """Add a new progress task."""
         task_id = self.progress.add_task(description, total=total)
         self.metrics[stage] = PerformanceMetrics(start_time=time.time())
+        # Start memory monitoring for all tasks
+        self._start_monitoring()
         return task_id
         
     def update(
@@ -78,22 +80,32 @@ class ProgressTracker:
         self.progress.update(task_id, completed=self.progress.tasks[task_id].total)
         if stage and stage in self.metrics:
             self.metrics[stage].end_time = time.time()
+            # Update memory one final time before stopping
+            try:
+                import psutil
+                process = psutil.Process()
+                current_memory = process.memory_info().rss / 1024 / 1024  # MB
+                self.metrics[stage].current_memory_mb = current_memory
+                if self.metrics[stage].peak_memory_mb is None or current_memory > self.metrics[stage].peak_memory_mb:
+                    self.metrics[stage].peak_memory_mb = current_memory
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
             
     @contextmanager
     def task_context(
-        self, 
-        description: str, 
+        self,
+        description: str,
         total: Optional[int] = None,
         stage: str = "processing"
     ):
         """Context manager for automatic task lifecycle management."""
         task_id = self.add_task(description, total=total, stage=stage)
-        self._start_monitoring()
+        # Memory monitoring already started in add_task
         try:
             yield task_id
         finally:
             self.complete_task(task_id, stage)
-            self._stop_monitoring()
+            # Don't stop monitoring here as other tasks might be running
             
     def _start_monitoring(self) -> None:
         """Start background memory monitoring."""
@@ -140,9 +152,21 @@ class ProgressTracker:
             duration = metrics.duration
             peak_mem = metrics.peak_memory_mb or 0
             
+            # Format duration to show meaningful precision
+            if duration < 0.01:
+                duration_str = "< 0.01s"
+            else:
+                duration_str = f"{duration:.2f}s"
+            
+            # Format memory to show meaningful values
+            if peak_mem < 0.1:
+                mem_str = "< 0.1MB"
+            else:
+                mem_str = f"{peak_mem:.1f}MB"
+            
             self.console.print(
-                f"  {stage}: {duration:.2f}s, "
-                f"Peak Memory: {peak_mem:.1f}MB"
+                f"  {stage}: {duration_str}, "
+                f"Peak Memory: {mem_str}"
             )
 
 

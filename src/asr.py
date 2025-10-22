@@ -100,7 +100,18 @@ def transcribe_with_alignment(
         # ---- ASR via faster-whisper directly (bypass whisperx.load_model) ----
         # Load CT2 model from local path
         role_label = f" ({role})" if role else ""
-        asr_task = tracker.add_task(f"ASR Transcription{role_label}", stage="asr_transcription")
+        # Get audio duration for progress estimation
+        import librosa
+        try:
+            audio_duration = librosa.get_duration(path=audio_path)
+            # Estimate segments based on typical 30-second chunks
+            estimated_segments = max(1, int(audio_duration / 30))
+            logger.info(f"Audio duration: {audio_duration:.2f}s, estimated segments: {estimated_segments}")
+        except Exception as e:
+            logger.warning(f"Could not get audio duration: {e}, using fallback estimate")
+            estimated_segments = 10  # Fallback estimate
+        
+        asr_task = tracker.add_task(f"ASR Transcription{role_label}", total=100, stage="asr_transcription")
         
         try:
             logger.debug(f"Loading CT2 model from {local_model_dir}")
@@ -114,18 +125,7 @@ def transcribe_with_alignment(
 
         # Transcribe: force English, disable VAD filter
         # (We already standardize audio to 16k mono WAV upstream.)
-        tracker.update(asr_task, description=f"ASR Transcription{role_label} - Loading audio")
-        
-        # Get audio duration for progress estimation
-        import librosa
-        try:
-            audio_duration = librosa.get_duration(path=audio_path)
-            # Estimate segments based on typical 30-second chunks
-            estimated_segments = max(1, int(audio_duration / 30))
-            logger.info(f"Audio duration: {audio_duration:.2f}s, estimated segments: {estimated_segments}")
-        except Exception as e:
-            logger.warning(f"Could not get audio duration: {e}, using fallback estimate")
-            estimated_segments = 10  # Fallback estimate
+        tracker.update(asr_task, advance=10, description=f"ASR Transcription{role_label} - Loading audio")
         
         try:
             logger.debug(f"Starting transcription with {asr_model}")
@@ -139,7 +139,7 @@ def transcribe_with_alignment(
         except Exception as e:
             raise ASRError(f"Transcription failed: {e}", model=asr_model, cause=e)
 
-        tracker.update(asr_task, description=f"ASR Transcription{role_label} - Processing segments")
+        tracker.update(asr_task, advance=5, description=f"ASR Transcription{role_label} - Processing segments")
         
         # Convert generator to list of dicts that WhisperX align() expects
         seg_list = []
@@ -156,17 +156,20 @@ def transcribe_with_alignment(
                 segment_count += 1
                 # Update progress based on segment count
                 if estimated_segments > 0:
-                    progress = (segment_count / estimated_segments) * 80  # 80% of ASR task
-                    tracker.update(asr_task, description=f"ASR Transcription{role_label} - {segment_count}/{estimated_segments} segments")
+                    progress_percent = (segment_count / estimated_segments) * 70  # 70% of ASR task
+                    tracker.update(asr_task, advance=0, description=f"ASR Transcription{role_label} - {segment_count}/{estimated_segments} segments")
+                    # Manually set the progress
+                    tracker.progress.update(asr_task, completed=10 + 5 + progress_percent)
         except Exception as e:
             raise ASRError(f"Failed to process transcription segments: {e}", model=asr_model, cause=e)
         
         logger.info(f"Processed {segment_count} transcription segments")
+        tracker.update(asr_task, advance=15, description=f"ASR Transcription{role_label} - Complete")
         tracker.complete_task(asr_task, stage="asr_transcription")
 
         # ---- WhisperX alignment (English) ----
-        align_task = tracker.add_task(f"Alignment{role_label}", stage="alignment")
-        tracker.update(align_task, description=f"Alignment{role_label} - Loading model")
+        align_task = tracker.add_task(f"Alignment{role_label}", total=100, stage="alignment")
+        tracker.update(align_task, advance=20, description=f"Alignment{role_label} - Loading model")
         
         try:
             logger.debug("Loading WhisperX alignment model")
@@ -178,7 +181,7 @@ def transcribe_with_alignment(
         except Exception as e:
             raise ASRError(f"Failed to load alignment model: {e}", model=asr_model, cause=e)
 
-        tracker.update(align_task, description=f"Alignment{role_label} - Processing segments")
+        tracker.update(align_task, advance=10, description=f"Alignment{role_label} - Processing segments")
         
         try:
             logger.debug("Running WhisperX alignment")
@@ -193,10 +196,11 @@ def transcribe_with_alignment(
         except Exception as e:
             raise ASRError(f"Alignment failed: {e}", model=asr_model, cause=e)
 
+        tracker.update(align_task, advance=70, description=f"Alignment{role_label} - Complete")
         tracker.complete_task(align_task, stage="alignment")
 
         # Process word segments
-        words_task = tracker.add_task(f"Processing words{role_label}", stage="word_processing")
+        words_task = tracker.add_task(f"Processing words{role_label}", total=len(aligned.get("word_segments", [])), stage="word_processing")
         words = []
         word_count = 0
         total_words = len(aligned.get("word_segments", []))
@@ -219,8 +223,7 @@ def transcribe_with_alignment(
                 word_count += 1
                 # Update progress
                 if total_words > 0:
-                    progress = (word_count / total_words) * 100
-                    tracker.update(words_task, description=f"Processing words{role_label} - {word_count}/{total_words}")
+                    tracker.update(words_task, advance=1, description=f"Processing words{role_label} - {word_count}/{total_words}")
         except Exception as e:
             raise ASRError(f"Failed to process word segments: {e}", model=asr_model, cause=e)
         

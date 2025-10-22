@@ -129,8 +129,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"[*] Mode: combined | ASR: {args.asr}")
             
             # 1) Standardize
-            std_task = tracker.add_task("Audio standardization", stage="standardization")
+            std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
+            tracker.update(std_task, advance=50, description="Standardizing mixed audio")
             std_mix = api["standardize_and_get_path"](mixed_path)
+            tracker.update(std_task, advance=50, description="Audio standardization complete")
             tracker.complete_task(std_task, stage="standardization")
             
             # 2) ASR + alignment
@@ -140,15 +142,24 @@ def main(argv: Optional[list[str]] = None) -> int:
             turns = api["diarize_mixed"](str(std_mix), words)
             
             # 4) Outputs
-            output_task = tracker.add_task("Writing output files", stage="output")
+            output_task = tracker.add_task("Writing output files", total=100, stage="output")
+            tracker.update(output_task, advance=20, description="Writing transcript files")
             api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt")
             api["write_plain_txt"](turns, paths["merged"] / "transcript.txt")
+            
+            tracker.update(output_task, advance=20, description="Writing subtitle files")
             srt_path = paths["merged"] / "subtitles.srt"
             api["write_srt"](turns, srt_path)
             if args.write_vtt:
                 api["write_vtt"](turns, paths["merged"] / "subtitles.vtt")
+            
             if args.render_black:
+                tracker.update(output_task, advance=30, description="Rendering video with subtitles")
                 api["render_black_video"](srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=std_mix)
+            else:
+                tracker.update(output_task, advance=30, description="Skipping video rendering")
+            
+            tracker.update(output_task, advance=30, description="Finalizing outputs")
             tracker.complete_task(output_task, stage="output")
             
             print("[✓] Combined processing complete.")
@@ -160,9 +171,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"[*] Mode: dual-track | ASR: {args.asr}")
             
             # 1) Standardize
-            std_task = tracker.add_task("Audio standardization", stage="standardization")
+            std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
+            tracker.update(std_task, advance=33, description="Standardizing interviewer audio")
             std_int = api["standardize_and_get_path"](interviewer_path)
+            tracker.update(std_task, advance=33, description="Standardizing participant audio")
             std_part = api["standardize_and_get_path"](participant_path)
+            tracker.update(std_task, advance=34, description="Audio standardization complete")
             tracker.complete_task(std_task, stage="standardization")
             
             # 2) ASR + alignment per track
@@ -170,31 +184,48 @@ def main(argv: Optional[list[str]] = None) -> int:
             part_words = api["transcribe_with_alignment"](str(std_part), asr_model=args.asr, role="Participant")
             
             # 3) Turns per track
-            turns_task = tracker.add_task("Building conversation turns", stage="turns")
+            turns_task = tracker.add_task("Building conversation turns", total=100, stage="turns")
+            tracker.update(turns_task, advance=30, description="Building interviewer turns")
             int_turns = api["build_turns"](int_words, speaker_label="Interviewer")
+            tracker.update(turns_task, advance=30, description="Building participant turns")
             part_turns = api["build_turns"](part_words, speaker_label="Participant")
             
             # 4) Merge turns
+            tracker.update(turns_task, advance=20, description="Merging conversation turns")
             merged = api["merge_turn_streams"](int_turns, part_turns)
+            tracker.update(turns_task, advance=20, description="Turn building complete")
             tracker.complete_task(turns_task, stage="turns")
             
             # 5) Per-speaker outputs
-            output_task = tracker.add_task("Writing output files", stage="output")
+            output_task = tracker.add_task("Writing output files", total=100, stage="output")
+            
+            tracker.update(output_task, advance=10, description="Writing interviewer transcripts")
             api["write_timestamped_txt"](int_turns, paths["speaker_interviewer"] / "interviewer.timestamped.txt")
             api["write_plain_txt"](int_turns,        paths["speaker_interviewer"] / "interviewer.txt")
+            
+            tracker.update(output_task, advance=10, description="Writing participant transcripts")
             api["write_timestamped_txt"](part_turns, paths["speaker_participant"] / "participant.timestamped.txt")
             api["write_plain_txt"](part_turns,       paths["speaker_participant"] / "participant.txt")
             
             # 6) Merged outputs
+            tracker.update(output_task, advance=15, description="Writing merged transcripts")
             api["write_timestamped_txt"](merged, paths["merged"] / "transcript.timestamped.txt")
             api["write_plain_txt"](merged,       paths["merged"] / "transcript.txt")
+            
+            tracker.update(output_task, advance=15, description="Writing subtitle files")
             srt_path = paths["merged"] / "subtitles.srt"
             api["write_srt"](merged, srt_path)
             if args.write_vtt:
                 api["write_vtt"](merged, paths["merged"] / "subtitles.vtt")
+            
             if args.render_black:
+                tracker.update(output_task, advance=30, description="Rendering video with subtitles")
                 # choose which audio to mux; interviewer by default
                 api["render_black_video"](srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=std_int)
+            else:
+                tracker.update(output_task, advance=30, description="Skipping video rendering")
+            
+            tracker.update(output_task, advance=20, description="Finalizing outputs")
             tracker.complete_task(output_task, stage="output")
             
             print("[✓] Dual-track processing complete.")

@@ -128,7 +128,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         cache_dir = os.getenv("PYANNOTE_CACHE", "./models/diarization")
 
         # Load pipeline (no built-in decoding; we'll pass waveform directly)
-        diarize_task = tracker.add_task("Speaker Diarization - Loading pipeline", stage="diarization")
+        diarize_task = tracker.add_task("Speaker Diarization - Loading pipeline", total=100, stage="diarization")
         
         try:
             logger.debug("Loading pyannote diarization pipeline")
@@ -139,7 +139,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         except Exception as e:
             raise DiarizationError(f"Failed to load diarization pipeline: {e}", cause=e)
 
-        tracker.update(diarize_task, description="Speaker Diarization - Loading audio")
+        tracker.update(diarize_task, advance=20, description="Speaker Diarization - Loading audio")
         
         # --- Load audio into memory to bypass torchcodec ---
         try:
@@ -148,7 +148,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         except Exception as e:
             raise DiarizationError(f"Failed to load and process audio: {e}", cause=e)
 
-        tracker.update(diarize_task, description="Speaker Diarization - Processing audio")
+        tracker.update(diarize_task, advance=10, description="Speaker Diarization - Processing audio")
         
         # Run diarization on in-memory audio dict (channel-first waveform)
         try:
@@ -157,7 +157,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         except Exception as e:
             raise DiarizationError(f"Diarization processing failed: {e}", cause=e)
 
-        tracker.update(diarize_task, description="Speaker Diarization - Processing segments")
+        tracker.update(diarize_task, advance=20, description="Speaker Diarization - Processing segments")
         
         # Convert annotation to a simple list of segments for overlap computation
         diar_segments = []
@@ -167,11 +167,12 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
             for seg, track, label in diar.itertracks(yield_label=True):
                 diar_segments.append({"start": float(seg.start), "end": float(seg.end), "label": label})
                 segment_count += 1
-                tracker.update(diarize_task, description=f"Speaker Diarization - Found {segment_count} segments")
+                tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Found {segment_count} segments")
         except Exception as e:
             raise DiarizationError(f"Failed to process diarization segments: {e}", cause=e)
         
         logger.info(f"Found {segment_count} diarization segments")
+        tracker.update(diarize_task, advance=50, description="Speaker Diarization - Complete")
         tracker.complete_task(diarize_task, stage="diarization")
 
         if not diar_segments:
@@ -188,7 +189,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
             return max(0.0, min(a2, b2) - max(a1, b1))
 
         # Assign each word to the diarization label with maximum temporal overlap
-        assign_task = tracker.add_task("Assigning speakers to words", stage="speaker_assignment")
+        assign_task = tracker.add_task("Assigning speakers to words", total=len(words), stage="speaker_assignment")
         tagged_words: List[Dict] = []
         word_count = 0
         total_words = len(words)
@@ -214,8 +215,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
                 
                 word_count += 1
                 if total_words > 0:
-                    progress = (word_count / total_words) * 100
-                    tracker.update(assign_task, description=f"Assigning speakers - {word_count}/{total_words} words")
+                    tracker.update(assign_task, advance=1, description=f"Assigning speakers - {word_count}/{total_words} words")
         except Exception as e:
             raise DiarizationError(f"Failed to assign speakers to words: {e}", cause=e)
         
@@ -223,7 +223,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         tracker.complete_task(assign_task, stage="speaker_assignment")
 
         # Group into turns per speaker, then merge all speakers by time
-        turns_task = tracker.add_task("Building conversation turns", stage="turn_building")
+        turns_task = tracker.add_task("Building conversation turns", total=len(speakers), stage="turn_building")
         
         speakers: dict[str, List[Dict]] = {}
         for w in tagged_words:
@@ -239,7 +239,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
             for spk, spk_words in speakers.items():
                 all_turns.extend(build_turns(spk_words, speaker_label=spk))
                 speaker_count += 1
-                tracker.update(turns_task, description=f"Building turns - {speaker_count}/{total_speakers} speakers")
+                tracker.update(turns_task, advance=1, description=f"Building turns - {speaker_count}/{total_speakers} speakers")
 
             merged_turns = merge_turn_streams(all_turns, [])
         except Exception as e:

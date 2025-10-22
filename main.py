@@ -57,6 +57,7 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         from merge import merge_turn_streams
         from srt_vtt import write_srt, write_vtt
         from txt_writer import write_timestamped_txt, write_plain_txt
+        from csv_writer import write_conversation_csv
         from render_black import render_black_video
         from diarize import diarize_mixed
         from progress import get_progress_tracker
@@ -72,6 +73,7 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         "write_vtt": write_vtt,
         "write_timestamped_txt": write_timestamped_txt,
         "write_plain_txt": write_plain_txt,
+        "write_conversation_csv": write_conversation_csv,
         "render_black_video": render_black_video,
         "diarize_mixed": diarize_mixed,
         "get_progress_tracker": get_progress_tracker,
@@ -146,6 +148,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(output_task, advance=20, description="Writing transcript files")
             api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt")
             api["write_plain_txt"](turns, paths["merged"] / "transcript.txt")
+            api["write_conversation_csv"](turns, paths["merged"] / "transcript.csv")
             
             tracker.update(output_task, advance=20, description="Writing subtitle files")
             srt_path = paths["merged"] / "subtitles.srt"
@@ -211,6 +214,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(output_task, advance=15, description="Writing merged transcripts")
             api["write_timestamped_txt"](merged, paths["merged"] / "transcript.timestamped.txt")
             api["write_plain_txt"](merged,       paths["merged"] / "transcript.txt")
+            api["write_conversation_csv"](merged, paths["merged"] / "transcript.csv")
             
             tracker.update(output_task, advance=15, description="Writing subtitle files")
             srt_path = paths["merged"] / "subtitles.srt"

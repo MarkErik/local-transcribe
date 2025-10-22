@@ -168,13 +168,22 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         segment_count = 0
         
         try:
-            # The diarization result is an Annotation object that can be iterated directly
-            for segment, _, label in diar.itertracks(yield_label=True):
+            # The diarization result is an Annotation object
+            # In newer versions of pyannote, we iterate through the tracks directly
+            for track, segment in diar.tracks.items():
+                label = track  # In newer versions, the track name is the speaker label
                 diar_segments.append({"start": float(segment.start), "end": float(segment.end), "label": label})
                 segment_count += 1
                 tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Found {segment_count} segments")
         except Exception as e:
-            raise DiarizationError(f"Failed to process diarization segments: {e}", cause=e)
+            # If the above fails, try the older itertracks method
+            try:
+                for segment, _, label in diar.itertracks(yield_label=True):
+                    diar_segments.append({"start": float(segment.start), "end": float(segment.end), "label": label})
+                    segment_count += 1
+                    tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Found {segment_count} segments")
+            except Exception as e2:
+                raise DiarizationError(f"Failed to process diarization segments with both new and old API: {e}", cause=e)
         
         logger.info(f"Found {segment_count} diarization segments")
         tracker.update(diarize_task, advance=50, description="Speaker Diarization - Complete")

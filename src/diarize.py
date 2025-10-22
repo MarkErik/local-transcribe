@@ -237,9 +237,11 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         tracker.complete_task(assign_task, stage="speaker_assignment")
 
         # Group into turns per speaker, then merge all speakers by time
-        turns_task = tracker.add_task("Building conversation turns", total=len(speakers), stage="turn_building")
-        
         speakers: dict[str, List[Dict]] = {}
+        for w in tagged_words:
+            speakers.setdefault(w["speaker"], []).append(w)
+        
+        turns_task = tracker.add_task("Building conversation turns", total=len(speakers), stage="turn_building")
         for w in tagged_words:
             speakers.setdefault(w["speaker"], []).append(w)
 

@@ -237,8 +237,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             
             if args.render_black:
                 tracker.update(output_task, advance=30, description="Rendering video with subtitles")
-                # choose which audio to mux; interviewer by default
-                api["render_black_video"](srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=std_int)
+                # Pass both interviewer and participant audio for dual-track mode
+                api["render_black_video"](srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=[std_int, std_part])
             else:
                 tracker.update(output_task, advance=30, description="Skipping video rendering")
             

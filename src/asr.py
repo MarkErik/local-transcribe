@@ -6,6 +6,7 @@ import torch
 from faster_whisper import WhisperModel as FWModel
 import whisperx
 from progress import get_progress_tracker, ProgressCallback
+from logging_config import get_logger, ASRError, ErrorContext, error_context
 
 # CT2 (faster-whisper) repos to search locally under ./models/asr/ct2/...
 _CT2_REPO_CHOICES: dict[str, list[str]] = {
@@ -50,6 +51,7 @@ def _latest_snapshot_dir_any(cache_root: pathlib.Path, repo_ids: list[str]) -> p
         f"Run scripts/download_models.py online once to cache CT2 models."
     )
 
+@error_context(reraise=True)
 def transcribe_with_alignment(
     audio_path: str,
     asr_model: str = "medium.en",
@@ -62,130 +64,184 @@ def transcribe_with_alignment(
     Returns a flat list of word dicts:
       [{ 'text': str, 'start': float, 'end': float, 'speaker': role|None }, ...]
     """
-    if asr_model not in _CT2_REPO_CHOICES:
-        raise ValueError(f"Unknown asr_model: {asr_model}")
-
-    # Initialize progress tracking
-    tracker = get_progress_tracker()
+    logger = get_logger()
     
-    # Devices
-    asr_device = _asr_device()          # 'cpu' (CTranslate2)
-    align_device = _align_device()      # 'mps' if available, else 'cpu'
-
-    # Compute type for CT2 on CPU
-    compute_type = "int8"               # fast + memory efficient on CPU
-
-    # Resolve local CT2 model snapshot directory (no network)
-    models_root = pathlib.Path(os.getenv("HF_HOME", "./models")).resolve()
-    ct2_cache = models_root / "asr" / "ct2"
-    local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[asr_model])
-
-    # ---- ASR via faster-whisper directly (bypass whisperx.load_model) ----
-    # Load CT2 model from local path
-    role_label = f" ({role})" if role else ""
-    asr_task = tracker.add_task(f"ASR Transcription{role_label}", stage="asr_transcription")
-    
-    fw = FWModel(
-        str(local_model_dir),     # model_size_or_path (positional)
-        device=asr_device,        # 'cpu' (CT2 has no MPS)
-        compute_type=compute_type # 'int8' CPU
-    )
-
-    # Transcribe: force English, disable VAD filter
-    # (We already standardize audio to 16k mono WAV upstream.)
-    tracker.update(asr_task, description=f"ASR Transcription{role_label} - Loading audio")
-    
-    # Get audio duration for progress estimation
-    import librosa
     try:
-        audio_duration = librosa.get_duration(path=audio_path)
-        # Estimate segments based on typical 30-second chunks
-        estimated_segments = max(1, int(audio_duration / 30))
-    except Exception:
-        estimated_segments = 10  # Fallback estimate
-    
-    segments, info = fw.transcribe(
-        audio_path,
-        language="en",
-        vad_filter=False,               # no VAD; avoid extra deps
-        word_timestamps=False,          # WhisperX does alignment—no need here
-        beam_size=5,
-    )
+        # Validate inputs
+        if asr_model not in _CT2_REPO_CHOICES:
+            raise ASRError(f"Unknown ASR model: {asr_model}", model=asr_model)
+        
+        if not os.path.exists(audio_path):
+            raise ASRError(f"Audio file not found: {audio_path}", model=asr_model)
+        
+        logger.info(f"Starting ASR transcription for {audio_path} using model {asr_model}")
+        
+        # Initialize progress tracking
+        tracker = get_progress_tracker()
+        
+        # Devices
+        asr_device = _asr_device()          # 'cpu' (CTranslate2)
+        align_device = _align_device()      # 'mps' if available, else 'cpu'
 
-    tracker.update(asr_task, description=f"ASR Transcription{role_label} - Processing segments")
-    
-    # Convert generator to list of dicts that WhisperX align() expects
-    seg_list = []
-    segment_count = 0
-    for s in segments:
-        # s has .start, .end, .text
-        seg_list.append({
-            "start": float(s.start) if s.start is not None else 0.0,
-            "end": float(s.end) if s.end is not None else 0.0,
-            "text": (s.text or "").strip(),
-        })
-        segment_count += 1
-        # Update progress based on segment count
-        if estimated_segments > 0:
-            progress = (segment_count / estimated_segments) * 80  # 80% of ASR task
-            tracker.update(asr_task, description=f"ASR Transcription{role_label} - {segment_count}/{estimated_segments} segments")
-    
-    tracker.complete_task(asr_task, stage="asr_transcription")
+        logger.info(f"Using devices: ASR={asr_device}, Alignment={align_device}")
 
-    # ---- WhisperX alignment (English) ----
-    align_task = tracker.add_task(f"Alignment{role_label}", stage="alignment")
-    tracker.update(align_task, description=f"Alignment{role_label} - Loading model")
-    
-    align_model, metadata = whisperx.load_align_model(
-        language_code="en",
-        device=align_device,             # 'mps' if available, else 'cpu'
-        model_dir=str(models_root),
-    )
+        # Compute type for CT2 on CPU
+        compute_type = "int8"               # fast + memory efficient on CPU
 
-    tracker.update(align_task, description=f"Alignment{role_label} - Processing segments")
-    
-    aligned = whisperx.align(
-        seg_list,
-        align_model,
-        metadata,
-        audio_path,
-        device=align_device,
-        return_char_alignments=False,
-    )
+        # Resolve local CT2 model snapshot directory (no network)
+        models_root = pathlib.Path(os.getenv("HF_HOME", "./models")).resolve()
+        ct2_cache = models_root / "asr" / "ct2"
+        
+        try:
+            local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[asr_model])
+        except FileNotFoundError as e:
+            raise ASRError(f"CT2 model not found: {e}", model=asr_model, cause=e)
 
-    tracker.complete_task(align_task, stage="alignment")
+        # ---- ASR via faster-whisper directly (bypass whisperx.load_model) ----
+        # Load CT2 model from local path
+        role_label = f" ({role})" if role else ""
+        asr_task = tracker.add_task(f"ASR Transcription{role_label}", stage="asr_transcription")
+        
+        try:
+            logger.debug(f"Loading CT2 model from {local_model_dir}")
+            fw = FWModel(
+                str(local_model_dir),     # model_size_or_path (positional)
+                device=asr_device,        # 'cpu' (CT2 has no MPS)
+                compute_type=compute_type # 'int8' CPU
+            )
+        except Exception as e:
+            raise ASRError(f"Failed to load CT2 model: {e}", model=asr_model, cause=e)
 
-    # Process word segments
-    words_task = tracker.add_task(f"Processing words{role_label}", stage="word_processing")
-    words = []
-    word_count = 0
-    total_words = len(aligned.get("word_segments", []))
-    
-    for seg in aligned.get("word_segments", []):
-        w = seg.get("word")
-        if not w:
-            continue
-        words.append(
-            {
-                "text": w,
-                "start": float(seg["start"]),
-                "end": float(seg["end"]),
-                "speaker": role if role else None,
-            }
-        )
-        word_count += 1
-        # Update progress
-        if total_words > 0:
-            progress = (word_count / total_words) * 100
-            tracker.update(words_task, description=f"Processing words{role_label} - {word_count}/{total_words}")
-    
-    tracker.complete_task(words_task, stage="word_processing")
+        # Transcribe: force English, disable VAD filter
+        # (We already standardize audio to 16k mono WAV upstream.)
+        tracker.update(asr_task, description=f"ASR Transcription{role_label} - Loading audio")
+        
+        # Get audio duration for progress estimation
+        import librosa
+        try:
+            audio_duration = librosa.get_duration(path=audio_path)
+            # Estimate segments based on typical 30-second chunks
+            estimated_segments = max(1, int(audio_duration / 30))
+            logger.info(f"Audio duration: {audio_duration:.2f}s, estimated segments: {estimated_segments}")
+        except Exception as e:
+            logger.warning(f"Could not get audio duration: {e}, using fallback estimate")
+            estimated_segments = 10  # Fallback estimate
+        
+        try:
+            logger.debug(f"Starting transcription with {asr_model}")
+            segments, info = fw.transcribe(
+                audio_path,
+                language="en",
+                vad_filter=False,               # no VAD; avoid extra deps
+                word_timestamps=False,          # WhisperX does alignment—no need here
+                beam_size=5,
+            )
+        except Exception as e:
+            raise ASRError(f"Transcription failed: {e}", model=asr_model, cause=e)
 
-    # Optional MPS memory tidy (no-op on CPU)
-    try:
-        if align_device == "mps":
-            torch.mps.empty_cache()
-    except Exception:
-        pass
+        tracker.update(asr_task, description=f"ASR Transcription{role_label} - Processing segments")
+        
+        # Convert generator to list of dicts that WhisperX align() expects
+        seg_list = []
+        segment_count = 0
+        
+        try:
+            for s in segments:
+                # s has .start, .end, .text
+                seg_list.append({
+                    "start": float(s.start) if s.start is not None else 0.0,
+                    "end": float(s.end) if s.end is not None else 0.0,
+                    "text": (s.text or "").strip(),
+                })
+                segment_count += 1
+                # Update progress based on segment count
+                if estimated_segments > 0:
+                    progress = (segment_count / estimated_segments) * 80  # 80% of ASR task
+                    tracker.update(asr_task, description=f"ASR Transcription{role_label} - {segment_count}/{estimated_segments} segments")
+        except Exception as e:
+            raise ASRError(f"Failed to process transcription segments: {e}", model=asr_model, cause=e)
+        
+        logger.info(f"Processed {segment_count} transcription segments")
+        tracker.complete_task(asr_task, stage="asr_transcription")
 
-    return words
+        # ---- WhisperX alignment (English) ----
+        align_task = tracker.add_task(f"Alignment{role_label}", stage="alignment")
+        tracker.update(align_task, description=f"Alignment{role_label} - Loading model")
+        
+        try:
+            logger.debug("Loading WhisperX alignment model")
+            align_model, metadata = whisperx.load_align_model(
+                language_code="en",
+                device=align_device,             # 'mps' if available, else 'cpu'
+                model_dir=str(models_root),
+            )
+        except Exception as e:
+            raise ASRError(f"Failed to load alignment model: {e}", model=asr_model, cause=e)
+
+        tracker.update(align_task, description=f"Alignment{role_label} - Processing segments")
+        
+        try:
+            logger.debug("Running WhisperX alignment")
+            aligned = whisperx.align(
+                seg_list,
+                align_model,
+                metadata,
+                audio_path,
+                device=align_device,
+                return_char_alignments=False,
+            )
+        except Exception as e:
+            raise ASRError(f"Alignment failed: {e}", model=asr_model, cause=e)
+
+        tracker.complete_task(align_task, stage="alignment")
+
+        # Process word segments
+        words_task = tracker.add_task(f"Processing words{role_label}", stage="word_processing")
+        words = []
+        word_count = 0
+        total_words = len(aligned.get("word_segments", []))
+        
+        logger.info(f"Processing {total_words} word segments")
+        
+        try:
+            for seg in aligned.get("word_segments", []):
+                w = seg.get("word")
+                if not w:
+                    continue
+                words.append(
+                    {
+                        "text": w,
+                        "start": float(seg["start"]),
+                        "end": float(seg["end"]),
+                        "speaker": role if role else None,
+                    }
+                )
+                word_count += 1
+                # Update progress
+                if total_words > 0:
+                    progress = (word_count / total_words) * 100
+                    tracker.update(words_task, description=f"Processing words{role_label} - {word_count}/{total_words}")
+        except Exception as e:
+            raise ASRError(f"Failed to process word segments: {e}", model=asr_model, cause=e)
+        
+        logger.info(f"Processed {word_count} words")
+        tracker.complete_task(words_task, stage="word_processing")
+
+        # Optional MPS memory tidy (no-op on CPU)
+        try:
+            if align_device == "mps":
+                torch.mps.empty_cache()
+                logger.debug("Cleared MPS memory cache")
+        except Exception as e:
+            logger.warning(f"Failed to clear MPS cache: {e}")
+
+        logger.info(f"ASR transcription completed successfully for {audio_path}")
+        return words
+        
+    except Exception as e:
+        if isinstance(e, ASRError):
+            logger.error(f"ASR error in {asr_model}: {e}")
+            raise
+        else:
+            logger.error(f"Unexpected error in ASR transcription: {e}")
+            raise ASRError(f"Unexpected error: {e}", model=asr_model, cause=e)

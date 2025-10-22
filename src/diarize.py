@@ -168,8 +168,9 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         segment_count = 0
         
         try:
-            for seg, track, label in diar.itertracks(yield_label=True):
-                diar_segments.append({"start": float(seg.start), "end": float(seg.end), "label": label})
+            # The diarization result is an Annotation object that can be iterated directly
+            for segment, _, label in diar.itertracks(yield_label=True):
+                diar_segments.append({"start": float(segment.start), "end": float(segment.end), "label": label})
                 segment_count += 1
                 tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Found {segment_count} segments")
         except Exception as e:

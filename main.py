@@ -65,7 +65,7 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         from turns import build_turns
         from merge import merge_turn_streams
         from srt_vtt import write_srt, write_vtt
-        from txt_writer import write_timestamped_txt, write_plain_txt
+        from txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
         from csv_writer import write_conversation_csv
         from markdown_writer import write_conversation_markdown
         from render_black import render_black_video
@@ -83,6 +83,7 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         "write_vtt": write_vtt,
         "write_timestamped_txt": write_timestamped_txt,
         "write_plain_txt": write_plain_txt,
+        "write_asr_words": write_asr_words,
         "write_conversation_csv": write_conversation_csv,
         "write_conversation_markdown": write_conversation_markdown,
         "render_black_video": render_black_video,
@@ -150,6 +151,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             
             # 2) ASR + alignment
             words = api["transcribe_with_alignment"](str(std_mix), asr_model=args.asr, role=None)
+            
+            # Save ASR results as plain text before diarization
+            api["write_asr_words"](words, paths["merged"] / "asr.txt")
             
             # 3) Diarize → turns
             turns = api["diarize_mixed"](str(std_mix), words)

@@ -36,3 +36,14 @@ def write_plain_txt(turns: List[Dict], path: str | Path) -> None:
         text = t.get("text", "").strip()
         lines.append(f"{speaker}: {text}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_asr_words(words: List[Dict], path: str | Path) -> None:
+    """Write ASR word-level results as plain text without timestamps or speaker labels."""
+    path = Path(path)
+    lines: list[str] = []
+    for w in words:
+        text = w.get("text", "").strip()
+        if text:  # Only add non-empty text
+            lines.append(text)
+    path.write_text(" ".join(lines) + "\n", encoding="utf-8")

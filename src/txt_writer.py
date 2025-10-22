@@ -28,13 +28,36 @@ def write_timestamped_txt(turns: List[Dict], path: str | Path) -> None:
 
 
 def write_plain_txt(turns: List[Dict], path: str | Path) -> None:
-    """Write a plain transcript without timestamps."""
+    """Write a plain transcript without timestamps, merging consecutive segments from the same speaker into paragraphs."""
     path = Path(path)
     lines: list[str] = []
+    
+    if not turns:
+        path.write_text("", encoding="utf-8")
+        return
+
+    current_speaker = turns[0].get("speaker", "Unknown")
+    current_paragraph_text = []
+
     for t in turns:
         speaker = t.get("speaker", "Unknown")
         text = t.get("text", "").strip()
-        lines.append(f"{speaker}: {text}")
+
+        if speaker == current_speaker:
+            current_paragraph_text.append(text)
+        else:
+            # Speaker changed, finalize the previous speaker's paragraph
+            if current_paragraph_text:  # Ensure there's text to write
+                lines.append(f"{current_speaker}: {' '.join(current_paragraph_text)}")
+            
+            # Start a new paragraph for the new speaker
+            current_speaker = speaker
+            current_paragraph_text = [text]
+    
+    # After the loop, add the last speaker's paragraph
+    if current_paragraph_text:
+        lines.append(f"{current_speaker}: {' '.join(current_paragraph_text)}")
+
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

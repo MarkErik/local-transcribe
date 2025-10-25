@@ -104,6 +104,17 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--outdir", required=True, metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--write-vtt", action="store_true", help="Also write WebVTT alongside SRT.")
     p.add_argument("--render-black", action="store_true", help="Render a black MP4 with burned-in subtitles (uses SRT).")
+    
+    # Diarization refinement parameters
+    p.add_argument("--min-segment-duration", type=float, default=0.8, 
+                   metavar="SECONDS",
+                   help="Minimum segment duration (seconds) for diarization reassignment (default: 0.8)")
+    p.add_argument("--merge-gap", type=float, default=0.3,
+                   metavar="SECONDS", 
+                   help="Maximum gap (seconds) to merge adjacent same-speaker segments (default: 0.3)")
+    p.add_argument("--save-diarization-stages", action="store_true",
+                   help="Save intermediate diarization stages to outdir/diarization_stages/ for debugging")
+    
     return p.parse_args(argv)
 
 # ---------- main ----------
@@ -162,8 +173,21 @@ def main(argv: Optional[list[str]] = None) -> int:
             # Save ASR results as plain text before diarization
             api["write_asr_words"](words, paths["merged"] / "asr.txt")
             
-            # 3) Diarize → turns
-            turns = api["diarize_mixed"](str(std_mix), words)
+            # Prepare diarization stages directory if requested
+            stages_dir = None
+            if args.save_diarization_stages:
+                stages_dir = outdir / "diarization_stages"
+                stages_dir.mkdir(exist_ok=True)
+                print(f"[*] Saving diarization stages to: {stages_dir}")
+            
+            # 3) Diarize → turns (with configurable refinement parameters)
+            turns = api["diarize_mixed"](
+                str(std_mix), 
+                words,
+                min_segment_duration=args.min_segment_duration,
+                merge_gap=args.merge_gap,
+                stages_output_dir=stages_dir
+            )
             
             # 4) Outputs
             output_task = tracker.add_task("Writing output files", total=100, stage="output")

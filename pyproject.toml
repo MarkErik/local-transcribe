@@ -10,14 +10,14 @@ dependencies = [
     "librosa",
     "numpy",
     "pandas",
-    "pyannote-audio",
+    "pyannote-audio==4.0.1",
     "pydub",
     "rich",
     "soundfile",
     "torch",
     "torchaudio",
     "tqdm",
-    "whisperx",
+    "whisperx==3.4.2",
 ]
 
 [dependency-groups]

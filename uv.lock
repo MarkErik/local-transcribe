@@ -230,14 +230,14 @@ wheels = [
 
 [[package]]
 name = "bleach"
-version = "6.2.0"
+version = "6.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "webencodings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/76/9a/0e33f5054c54d349ea62c277191c020c2d6ef1d65ab2cb1993f91ec846d1/bleach-6.2.0.tar.gz", hash = "sha256:123e894118b8a599fd80d3ec1a6d4cc7ce4e5882b1317a7e1ba69b56e95f991f", size = 203083, upload-time = "2024-10-29T18:30:40.477Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/18/3c8523962314be6bf4c8989c79ad9531c825210dd13a8669f6b84336e8bd/bleach-6.3.0.tar.gz", hash = "sha256:6f3b91b1c0a02bb9a78b5a454c92506aa0fdf197e1d5e114d2e00c6f64306d22", size = 203533, upload-time = "2025-10-27T17:57:39.211Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/55/96142937f66150805c25c4d0f31ee4132fd33497753400734f9dfdcbdc66/bleach-6.2.0-py3-none-any.whl", hash = "sha256:117d9c6097a7c3d22fd578fcd8d35ff1e125df6736f554da4e432fdd63f31e5e", size = 163406, upload-time = "2024-10-29T18:30:38.186Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/3a/577b549de0cc09d95f11087ee63c739bba856cd3952697eec4c4bb91350a/bleach-6.3.0-py3-none-any.whl", hash = "sha256:fe10ec77c93ddf3d13a73b035abaac7a9f5e436513864ccdad516693213c65d6", size = 164437, upload-time = "2025-10-27T17:57:37.538Z" },
 ]
 
 [package.optional-dependencies]
@@ -738,7 +738,7 @@ wheels = [
 
 [[package]]
 name = "ipykernel"
-version = "7.0.1"
+version = "7.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "appnope", marker = "sys_platform == 'darwin'" },
@@ -755,9 +755,9 @@ dependencies = [
     { name = "tornado" },
     { name = "traitlets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a8/4c/9f0024c8457286c6bfd5405a15d650ec5ea36f420ef9bbc58b301f66cfc5/ipykernel-7.0.1.tar.gz", hash = "sha256:2d3fd7cdef22071c2abbad78f142b743228c5d59cd470d034871ae0ac359533c", size = 171460, upload-time = "2025-10-14T16:17:07.325Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/a4/4948be6eb88628505b83a1f2f40d90254cab66abf2043b3c40fa07dfce0f/ipykernel-7.1.0.tar.gz", hash = "sha256:58a3fc88533d5930c3546dc7eac66c6d288acde4f801e2001e65edc5dc9cf0db", size = 174579, upload-time = "2025-10-27T09:46:39.471Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b8/f7/761037905ffdec673533bfa43af8d4c31c859c778dfc3bbb71899875ec18/ipykernel-7.0.1-py3-none-any.whl", hash = "sha256:87182a8305e28954b6721087dec45b171712610111d494c17bb607befa1c4000", size = 118157, upload-time = "2025-10-14T16:17:05.606Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/17/20c2552266728ceba271967b87919664ecc0e33efca29c3efc6baf88c5f9/ipykernel-7.1.0-py3-none-any.whl", hash = "sha256:763b5ec6c5b7776f6a8d7ce09b267693b4e5ce75cb50ae696aaefb3c85e1ea4c", size = 117968, upload-time = "2025-10-27T09:46:37.805Z" },
 ]
 
 [[package]]
@@ -1106,11 +1106,11 @@ wheels = [
 
 [[package]]
 name = "lark"
-version = "1.3.0"
+version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/1d/37/a13baf0135f348af608c667633cbe5d13aa2c5c15a56ae9ad3e6cba45ae3/lark-1.3.0.tar.gz", hash = "sha256:9a3839d0ca5e1faf7cfa3460e420e859b66bcbde05b634e73c369c8244c5fa48", size = 259551, upload-time = "2025-09-22T13:45:05.072Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/da/34/28fff3ab31ccff1fd4f6c7c7b0ceb2b6968d8ea4950663eadcb5720591a0/lark-1.3.1.tar.gz", hash = "sha256:b426a7a6d6d53189d318f2b6236ab5d6429eaf09259f1ca33eb716eed10d2905", size = 382732, upload-time = "2025-10-27T18:25:56.653Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/3e/1c6b43277de64fc3c0333b0e72ab7b52ddaaea205210d60d9b9f83c3d0c7/lark-1.3.0-py3-none-any.whl", hash = "sha256:80661f261fb2584a9828a097a2432efd575af27d20be0fd35d17f0fe37253831", size = 113002, upload-time = "2025-09-22T13:45:03.747Z" },
+    { url = "https://files.pythonhosted.org/packages/82/3d/14ce75ef66813643812f3093ab17e46d3a206942ce7376d31ec2d36229e7/lark-1.3.1-py3-none-any.whl", hash = "sha256:c629b661023a014c37da873b4ff58a817398d12635d3bbb2c5a03be7fe5d1e12", size = 113151, upload-time = "2025-10-27T18:25:54.882Z" },
 ]
 
 [[package]]
@@ -1225,26 +1225,26 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "faster-whisper", specifier = ">=1.2.0" },
-    { name = "ffmpeg-python", specifier = ">=0.2.0" },
-    { name = "librosa", specifier = ">=0.11.0" },
-    { name = "numpy", specifier = ">=2.3.4" },
-    { name = "pandas", specifier = ">=2.3.3" },
-    { name = "pyannote-audio", specifier = ">=4.0.1" },
-    { name = "pydub", specifier = ">=0.25.1" },
-    { name = "rich", specifier = ">=14.2.0" },
-    { name = "soundfile", specifier = ">=0.13.1" },
-    { name = "torch", specifier = ">=2.9.0" },
-    { name = "torchaudio", specifier = ">=2.9.0" },
-    { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "whisperx", specifier = ">=3.4.2" },
+    { name = "faster-whisper" },
+    { name = "ffmpeg-python" },
+    { name = "librosa" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "pyannote-audio", specifier = "==4.0.1" },
+    { name = "pydub" },
+    { name = "rich" },
+    { name = "soundfile" },
+    { name = "torch" },
+    { name = "torchaudio" },
+    { name = "tqdm" },
+    { name = "whisperx", specifier = "==3.4.2" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "ipykernel", specifier = ">=7.0.1" },
-    { name = "ipywidgets", specifier = ">=8.1.7" },
-    { name = "jupyterlab", specifier = ">=4.4.9" },
+    { name = "ipykernel" },
+    { name = "ipywidgets" },
+    { name = "jupyterlab" },
 ]
 
 [[package]]
@@ -2747,12 +2747,12 @@ wheels = [
 
 [[package]]
 name = "torchcodec"
-version = "0.8.0"
+version = "0.8.1"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/17/ae/8b1d69e653894243fa66e2fec511cf203107dd146d161c9f095893c13bbc/torchcodec-0.8.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:af82d1fac3667335e089dc958b5e8eef5458e37d65cb3a94ebf81f45f00f7805", size = 3903714, upload-time = "2025-10-16T14:42:53.127Z" },
-    { url = "https://files.pythonhosted.org/packages/f6/fd/eec92c82545038a90ffd24e3626bb3a85f7d51577b04819c1c753d380a9b/torchcodec-0.8.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:2ec2e874dfb6fbf9bbeb792bea56317529636e78db175f56aad1e4efd6e12502", size = 1898382, upload-time = "2025-10-16T14:43:37.699Z" },
-    { url = "https://files.pythonhosted.org/packages/fe/09/ce7436151a3825f27c00263d722b0cf093609921da6cf24b0fa8133cc415/torchcodec-0.8.0-cp312-cp312-win_amd64.whl", hash = "sha256:318da9af9179d156be0a84296e909d51e4cd758598eaaea08c828790c80bf977", size = 2070488, upload-time = "2025-10-16T14:43:21.803Z" },
+    { url = "https://files.pythonhosted.org/packages/57/ca/59dddea7f1010c96007098ca9b8609ffeea5147ec56a9bb492a888ee9aa1/torchcodec-0.8.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:fc6f352d97eab82527d2fbf49f18f679946803d3269d6adb822859cc0bf4dd9e", size = 3978762, upload-time = "2025-10-28T09:46:54.105Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/0f/dd3cf870e7ed0c62ce8ace92e862455d25f611ac8590730bd7918d3d0e6d/torchcodec-0.8.1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:8fc189dcb71739b89230bd56abbc721188f65d9a8c40afcc751b8d2809bbdd4d", size = 1953119, upload-time = "2025-10-28T09:46:40.743Z" },
+    { url = "https://files.pythonhosted.org/packages/db/8b/3d29464ebb6a85629af21f93b3f2e54223987d5d5bf1f5d0e57ee2e69b2a/torchcodec-0.8.1-cp312-cp312-win_amd64.whl", hash = "sha256:d9b93e08e59f842861de1e0ce7b5a4e2ad2a069ec65041dfed6978f0e6cda30c", size = 2107841, upload-time = "2025-10-28T09:47:04.768Z" },
 ]
 
 [[package]]

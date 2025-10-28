@@ -12,6 +12,7 @@ wheels/
 # Data-related
 data/
 *.wav
+*.m4a
 *.mp3
 *.txt
 *.srt

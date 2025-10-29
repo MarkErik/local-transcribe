@@ -22,6 +22,9 @@ from turns import build_turns
 from merge import merge_turn_streams
 from progress import get_progress_tracker
 from logging_config import get_logger, DiarizationError, ErrorContext, error_context
+from cross_talk import detect_basic_cross_talk, assign_words_with_basic_cross_talk, BASIC_CROSS_TALK_CONFIG
+
+DEFAULT_SPEAKER = "UNKNOWN"
 
 @error_context(reraise=True)
 def _load_waveform_mono_32f(audio_path: str) -> tuple[torch.Tensor, int]:
@@ -89,7 +92,15 @@ def _maybe_resample(waveform: torch.Tensor, sr: int, target_sr: int = 16000) -> 
 
 
 @error_context(reraise=True)
-def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
+def diarize_mixed(
+    audio_path: str,
+    words: List[Dict],
+    pipeline=None,
+    device: str = "cpu",
+    num_speakers: int = 2,
+    detect_cross_talk: bool = False,
+    cross_talk_config: dict = None
+) -> List[Dict]:
     """
     Diarize a mixed/combined track and assign speakers to words by majority overlap,
     then build readable turns per speaker.
@@ -101,6 +112,16 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
     words : List[Dict]
         Word-level list from ASR alignment:
           [{ 'text': str, 'start': float, 'end': float, 'speaker': None|str }, ...]
+    pipeline : Pipeline, optional
+        Pre-loaded diarization pipeline. If None, a new pipeline will be loaded.
+    device : str, optional
+        Device to use for processing, by default "cpu"
+    num_speakers : int, optional
+        Number of speakers to detect, by default 2
+    detect_cross_talk : bool, optional
+        Whether to enable basic cross-talk detection, by default False
+    cross_talk_config : dict, optional
+        Configuration for cross-talk detection. If None, uses BASIC_CROSS_TALK_CONFIG
 
     Returns
     -------
@@ -221,7 +242,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
             # Create a single segment covering the entire audio
             if words:
                 max_time = max(w.get("end", 0) for w in words)
-                diar_segments = [{"start": 0.0, "end": max_time, "label": "Speaker_A"}]
+                diar_segments = [{"start": 0.0, "end": max_time, "label": DEFAULT_SPEAKER}]
             else:
                 return []
 
@@ -250,8 +271,16 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
                         best_ov = ov
                         best_label = ds["label"]
                 
+                # Log detailed assignment for low confidence assignments
+                if best_ov < 0.1:  # Low overlap confidence threshold
+                    logger.debug(f"LOW CONFIDENCE ASSIGNMENT: '{w['text']}' at {w_start:.3f}-{w_end:.3f}")
+                    for ds in diar_segments:
+                        ov = _overlap(w_start, w_end, ds["start"], ds["end"])
+                        logger.debug(f"  Overlap with {ds['label']}: {ov:.3f}")
+                    logger.debug(f"  Assigned to: {best_label} (overlap: {best_ov:.3f})")
+                
                 new_w = dict(w)
-                new_w["speaker"] = best_label or "Speaker_A"  # default fallback if no overlap found
+                new_w["speaker"] = best_label or DEFAULT_SPEAKER  # default fallback if no overlap found
                 tagged_words.append(new_w)
                 
                 word_count += 1
@@ -262,6 +291,72 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         
         logger.info(f"Assigned speakers to {word_count} words")
         tracker.complete_task(assign_task, stage="speaker_assignment")
+        
+        # Apply cross-talk detection if enabled
+        if detect_cross_talk:
+            logger.info("Cross-talk detection enabled, processing cross-talk segments")
+            
+            # Use provided config or default to BASIC_CROSS_TALK_CONFIG
+            config = cross_talk_config if cross_talk_config is not None else BASIC_CROSS_TALK_CONFIG
+            
+            try:
+                # Detect cross-talk segments
+                cross_talk_task = tracker.add_task("Detecting cross-talk segments", total=100, stage="cross_talk_detection")
+                logger.debug("Detecting basic cross-talk segments")
+                
+                # Validate configuration
+                if not isinstance(config, dict):
+                    logger.warning(f"Invalid cross-talk config type: {type(config)}, using default")
+                    config = BASIC_CROSS_TALK_CONFIG
+                
+                overlap_threshold = config.get("overlap_threshold", BASIC_CROSS_TALK_CONFIG["overlap_threshold"])
+                if not isinstance(overlap_threshold, (int, float)) or overlap_threshold < 0:
+                    logger.warning(f"Invalid overlap_threshold: {overlap_threshold}, using default")
+                    overlap_threshold = BASIC_CROSS_TALK_CONFIG["overlap_threshold"]
+                
+                logger.debug(f"Using overlap threshold: {overlap_threshold}")
+                
+                # Detect cross-talk segments
+                cross_talk_segments = detect_basic_cross_talk(diar_segments, overlap_threshold=overlap_threshold)
+                
+                if not cross_talk_segments:
+                    logger.info("No cross-talk segments detected")
+                else:
+                    logger.info(f"Detected {len(cross_talk_segments)} cross-talk segments")
+                    for i, ct in enumerate(cross_talk_segments[:5]):  # Log first 5 segments for debugging
+                        logger.debug(f"Cross-talk segment {i+1}: {ct['start']:.2f}-{ct['end']:.2f}, speakers: {ct['speakers']}")
+                    if len(cross_talk_segments) > 5:
+                        logger.debug(f"... and {len(cross_talk_segments) - 5} more segments")
+                
+                tracker.update(cross_talk_task, advance=50, description="Cross-talk detection - Segments identified")
+                
+                # Enhance word assignments with cross-talk information
+                logger.debug("Enhancing word assignments with cross-talk information")
+                enhanced_words = assign_words_with_basic_cross_talk(tagged_words, diar_segments, cross_talk_segments)
+                
+                # Count cross-talk words for logging
+                cross_talk_words = sum(1 for w in enhanced_words if w.get("cross_talk", False))
+                logger.info(f"Marked {cross_talk_words} words as cross-talk")
+                
+                # Log confidence statistics if available
+                confidences = [w.get("confidence", 1.0) for w in enhanced_words if w.get("cross_talk", False)]
+                if confidences:
+                    avg_confidence = sum(confidences) / len(confidences)
+                    min_confidence = min(confidences)
+                    logger.debug(f"Cross-talk word confidence - avg: {avg_confidence:.3f}, min: {min_confidence:.3f}")
+                
+                # Replace tagged_words with enhanced version
+                tagged_words = enhanced_words
+                
+                tracker.update(cross_talk_task, advance=50, description="Cross-talk detection - Words enhanced")
+                tracker.complete_task(cross_talk_task, stage="cross_talk_detection")
+                
+            except Exception as e:
+                error_msg = f"Cross-talk detection failed: {e}"
+                logger.error(error_msg)
+                logger.debug(f"Error details: {type(e).__name__}: {str(e)}", exc_info=True)
+                # Continue with original tagged_words if cross-talk detection fails
+                logger.info("Continuing with standard speaker assignment without cross-talk detection")
 
         # Group into turns per speaker, then merge all speakers by time
         speakers: dict[str, List[Dict]] = {}

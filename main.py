@@ -104,6 +104,14 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--outdir", required=True, metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--write-vtt", action="store_true", help="Also write WebVTT alongside SRT.")
     p.add_argument("--render-black", action="store_true", help="Render a black MP4 with burned-in subtitles (uses SRT).")
+    
+    # Cross-talk detection options
+    p.add_argument("--detect-cross-talk", action="store_true", help="Enable basic cross-talk detection.")
+    p.add_argument("--overlap-threshold", type=float, default=0.1,
+                   help="Minimum overlap duration for cross-talk detection in seconds (default: 0.1).")
+    p.add_argument("--mark-cross-talk", action="store_true", help="Mark cross-talk words in output files.")
+    p.add_argument("--include-basic-confidence", action="store_true", help="Include confidence scores in output.")
+    
     return p.parse_args(argv)
 
 # ---------- main ----------
@@ -118,6 +126,22 @@ def main(argv: Optional[list[str]] = None) -> int:
             sys.exit("ERROR: Dual-track mode requires both -i/--interviewer and -p/--participant.")
         if combined_mode:
             sys.exit("ERROR: Provide either -c/--combined OR -i/-p, not both.")
+    
+    # Validate cross-talk options
+    if args.overlap_threshold < 0:
+        sys.exit("ERROR: --overlap-threshold must be a positive number.")
+    
+    # Cross-talk detection is only available in combined mode
+    if args.detect_cross_talk and not combined_mode:
+        sys.exit("ERROR: Cross-talk detection is only available in combined mode (-c/--combined).")
+    
+    # Cross-talk marking requires cross-talk detection
+    if args.mark_cross_talk and not args.detect_cross_talk:
+        sys.exit("ERROR: --mark-cross-talk requires --detect-cross-talk to be enabled.")
+    
+    # Confidence output requires cross-talk detection
+    if args.include_basic_confidence and not args.detect_cross_talk:
+        sys.exit("ERROR: --include-basic-confidence requires --detect-cross-talk to be enabled.")
 
     # Resolve repo & models, enforce offline
     root = repo_root_from_here()
@@ -163,15 +187,64 @@ def main(argv: Optional[list[str]] = None) -> int:
             api["write_asr_words"](words, paths["merged"] / "asr.txt")
             
             # 3) Diarize → turns
-            turns = api["diarize_mixed"](str(std_mix), words)
+            if args.detect_cross_talk:
+                # Create cross-talk configuration
+                cross_talk_config = {
+                    "overlap_threshold": args.overlap_threshold,
+                    "mark_cross_talk": args.mark_cross_talk,
+                    "basic_confidence": args.include_basic_confidence
+                }
+                
+                print(f"[*] Cross-talk detection enabled with overlap threshold: {args.overlap_threshold}")
+                
+                try:
+                    # Call diarize_mixed with cross-talk detection
+                    turns = api["diarize_mixed"](
+                        str(std_mix),
+                        words,
+                        detect_cross_talk=True,
+                        cross_talk_config=cross_talk_config
+                    )
+                    print("[✓] Cross-talk detection completed successfully")
+                except Exception as e:
+                    print(f"[!] Warning: Cross-talk detection failed: {e}")
+                    print("[*] Falling back to standard diarization without cross-talk detection")
+                    # Fall back to standard diarization
+                    turns = api["diarize_mixed"](str(std_mix), words)
+            else:
+                # Standard diarization without cross-talk detection
+                turns = api["diarize_mixed"](str(std_mix), words)
             
             # 4) Outputs
             output_task = tracker.add_task("Writing output files", total=100, stage="output")
             tracker.update(output_task, advance=20, description="Writing transcript files")
-            api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt")
-            api["write_plain_txt"](turns, paths["merged"] / "transcript.txt")
-            api["write_conversation_csv"](turns, paths["merged"] / "transcript.csv")
-            api["write_conversation_markdown"](turns, paths["merged"] / "transcript.md")
+            
+            # Determine cross-talk options for output writers
+            mark_cross_talk = args.mark_cross_talk if hasattr(args, 'mark_cross_talk') else False
+            include_cross_talk = args.include_basic_confidence if hasattr(args, 'include_basic_confidence') else False
+            
+            # Write transcript files with cross-talk marking if enabled
+            try:
+                api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt", mark_cross_talk=mark_cross_talk)
+                api["write_plain_txt"](turns, paths["merged"] / "transcript.txt", mark_cross_talk=mark_cross_talk)
+                api["write_conversation_csv"](turns, paths["merged"] / "transcript.csv", include_cross_talk=include_cross_talk)
+                api["write_conversation_markdown"](turns, paths["merged"] / "transcript.md")
+                
+                if mark_cross_talk or include_cross_talk:
+                    print(f"[*] Output files written with cross-talk features - marking: {mark_cross_talk}, confidence: {include_cross_talk}")
+            except Exception as e:
+                print(f"[!] Warning: Error writing output files with cross-talk features: {e}")
+                print("[*] Attempting to write output files without cross-talk features...")
+                try:
+                    # Fall back to standard output writing
+                    api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt")
+                    api["write_plain_txt"](turns, paths["merged"] / "transcript.txt")
+                    api["write_conversation_csv"](turns, paths["merged"] / "transcript.csv")
+                    api["write_conversation_markdown"](turns, paths["merged"] / "transcript.md")
+                    print("[✓] Output files written successfully without cross-talk features")
+                except Exception as e2:
+                    print(f"[!] Error: Failed to write output files: {e2}")
+                    raise
             
             tracker.update(output_task, advance=20, description="Writing subtitle files")
             srt_path = paths["merged"] / "subtitles.srt"

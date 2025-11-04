@@ -8,9 +8,9 @@ from typing import Optional, Any, Dict
 from datetime import datetime
 import json
 
-# Import global configuration
+# Import global configuration via package when available
 try:
-    from config import is_debug_enabled, is_info_enabled
+    from src.config import is_debug_enabled, is_info_enabled
 except ImportError:
     # Fallback if config module not available yet
     def is_debug_enabled() -> bool:

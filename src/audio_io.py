@@ -3,13 +3,9 @@ import pathlib
 import tempfile
 import subprocess
 from typing import Optional
-from config import is_debug_enabled, is_info_enabled
-from logging_config import get_logger, AudioProcessingError, ErrorContext, error_context
-try:
-    from src.progress import get_progress_tracker
-    _HAVE_PROGRESS = True
-except ImportError:
-    _HAVE_PROGRESS = False
+from src.config import is_debug_enabled, is_info_enabled
+from src.logging_config import get_logger, AudioProcessingError, ErrorContext, error_context
+from src.progress import get_progress_tracker
 
 # We use ffmpeg via command line to normalize: mono/16k WAV
 # This avoids subtle differences between python audio stacks and keeps it robust.
@@ -56,11 +52,10 @@ def _ffmpeg_to_wav16k_mono(src: str | pathlib.Path, dst: str | pathlib.Path) -> 
         if is_debug_enabled():
             logger.debug(f"Running ffmpeg command: {' '.join(cmd)}")
         
-        # Add progress tracking if available
-        if _HAVE_PROGRESS:
-            tracker = get_progress_tracker()
-            task = tracker.add_task(f"Converting {src_path.name} to WAV", total=100)
-            tracker.update(task, advance=50, description=f"Converting {src_path.name} - Running ffmpeg")
+        # Progress tracking
+        tracker = get_progress_tracker()
+        task = tracker.add_task(f"Converting {src_path.name} to WAV", total=100)
+        tracker.update(task, advance=50, description=f"Converting {src_path.name} - Running ffmpeg")
         
         result = subprocess.run(
             cmd,
@@ -76,9 +71,8 @@ def _ffmpeg_to_wav16k_mono(src: str | pathlib.Path, dst: str | pathlib.Path) -> 
                 audio_path=str(src_path)
             )
         
-        if _HAVE_PROGRESS:
-            tracker.update(task, advance=50, description=f"Converting {src_path.name} - Complete")
-            tracker.complete_task(task)
+        tracker.update(task, advance=50, description=f"Converting {src_path.name} - Complete")
+        tracker.complete_task(task)
         
         if is_debug_enabled():
             logger.debug(f"Successfully converted {src_path} to {dst_path}")

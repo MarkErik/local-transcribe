@@ -57,20 +57,22 @@ def ensure_outdir(path: str) -> pathlib.Path:
 
 # ---------- import pipeline modules ----------
 def import_pipeline_modules(repo_root: pathlib.Path):
-    sys.path.append(str(repo_root / "src"))
+    # Ensure repo root is on sys.path so the 'src' package can be imported
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
     try:
-        from config import configure_from_args
-        from session import ensure_session_dirs
-        from audio_io import standardize_and_get_path
-        from asr import transcribe_with_alignment
-        from turns import build_turns
-        from merge import merge_turn_streams
-        from srt_vtt import write_srt, write_vtt
-        from txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
-        from csv_writer import write_conversation_csv
-        from markdown_writer import write_conversation_markdown
-        from render_black import render_black_video
-        from diarize import diarize_mixed
+        from src.config import configure_from_args
+        from src.session import ensure_session_dirs
+        from src.audio_io import standardize_and_get_path
+        from src.asr import transcribe_with_alignment
+        from src.turns import build_turns
+        from src.merge import merge_turn_streams
+        from src.srt_vtt import write_srt, write_vtt
+        from src.txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
+        from src.csv_writer import write_conversation_csv
+        from src.markdown_writer import write_conversation_markdown
+        from src.render_black import render_black_video
+        from src.diarize import diarize_mixed
         from src.progress import get_progress_tracker
     except Exception as e:
         sys.exit(f"ERROR: Failed importing pipeline modules from src/: {e}")
@@ -162,7 +164,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     api["configure_from_args"](args)
     
     # Configure logging with appropriate level based on flags
-    from logging_config import configure_global_logging
+    from src.logging_config import configure_global_logging
     if args.debug:
         log_level = "DEBUG"
     elif args.info:

@@ -6,8 +6,8 @@ import torch
 from faster_whisper import WhisperModel as FWModel
 import whisperx
 from src.progress import get_progress_tracker
-from config import is_debug_enabled, is_info_enabled
-from logging_config import get_logger, ASRError, ErrorContext, error_context
+from src.config import is_debug_enabled, is_info_enabled
+from src.logging_config import get_logger, ASRError, ErrorContext, error_context
 
 # CT2 (faster-whisper) repos to search locally under ./models/asr/ct2/...
 _CT2_REPO_CHOICES: dict[str, list[str]] = {

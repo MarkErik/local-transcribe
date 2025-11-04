@@ -18,12 +18,12 @@ except Exception:
     _HAVE_TORCHAUDIO = False
 
 from pyannote.audio import Pipeline
-from turns import build_turns
-from merge import merge_turn_streams
+from src.turns import build_turns
+from src.merge import merge_turn_streams
 from src.progress import get_progress_tracker
-from config import is_debug_enabled, is_info_enabled
-from logging_config import get_logger, DiarizationError, ErrorContext, error_context
-from cross_talk import detect_basic_cross_talk, assign_words_with_basic_cross_talk, BASIC_CROSS_TALK_CONFIG
+from src.config import is_debug_enabled, is_info_enabled
+from src.logging_config import get_logger, DiarizationError, ErrorContext, error_context
+from src.cross_talk import detect_basic_cross_talk, assign_words_with_basic_cross_talk, BASIC_CROSS_TALK_CONFIG
 
 DEFAULT_SPEAKER = "UNKNOWN"
 
@@ -288,7 +288,9 @@ def diarize_mixed(
 
         # Helper: compute overlap between [a1,a2] and [b1,b2]
         def _overlap(a1: float, a2: float, b1: float, b2: float) -> float:
-            return max(0.0, min(a2, b2) - max(a1, b2))
+            # Correct overlap between intervals [a1,a2] and [b1,b2].
+            # Use max(a1, b1) as the later start time, not b2 (which is the later end time).
+            return max(0.0, min(a2, b2) - max(a1, b1))
 
         # Helper: compute distance to nearest speaker boundary
         def _distance_to_boundary(word_start: float, word_end: float, segments: List[Dict]) -> float:

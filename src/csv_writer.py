@@ -5,7 +5,7 @@ from pathlib import Path
 import csv
 import logging
 
-from config import is_debug_enabled, is_info_enabled
+from src.config import is_debug_enabled, is_info_enabled
 
 logger = logging.getLogger(__name__)
 

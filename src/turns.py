@@ -2,7 +2,7 @@ from __future__ import annotations
 import logging
 from typing import List, Dict
 
-from config import is_debug_enabled, is_info_enabled
+from src.config import is_debug_enabled, is_info_enabled
 
 logger = logging.getLogger(__name__)
 

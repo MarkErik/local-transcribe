@@ -4,7 +4,7 @@ from typing import List, Dict
 from pathlib import Path
 import logging
 
-from config import is_debug_enabled, is_info_enabled
+from src.config import is_debug_enabled, is_info_enabled
 
 logger = logging.getLogger(__name__)
 

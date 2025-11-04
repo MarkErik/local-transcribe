@@ -29,3 +29,7 @@ models/
 # Mac
 .DS_Store
 
+
+# Local AI/agent instruction files (do not sync personal Copilot instructions)
+.github/copilot-instructions.md
+

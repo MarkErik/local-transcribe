@@ -7,7 +7,7 @@ echo "=== 🛠  Setting up local-transcribe ==="
 # --- sanity checks -----------------------------------------------------------
 if ! command -v uv >/dev/null 2>&1; then
   echo "❌ 'uv' is not installed."
-  echo "   Install with:  pip install uv"
+  echo "   Install with:  brew install uv"
   echo "   Docs: https://docs.astral.sh/uv/"
   exit 1
 fi

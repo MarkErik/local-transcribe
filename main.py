@@ -59,6 +59,7 @@ def ensure_outdir(path: str) -> pathlib.Path:
 def import_pipeline_modules(repo_root: pathlib.Path):
     sys.path.append(str(repo_root / "src"))
     try:
+        from config import configure_from_args
         from session import ensure_session_dirs
         from audio_io import standardize_and_get_path
         from asr import transcribe_with_alignment
@@ -70,10 +71,11 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         from markdown_writer import write_conversation_markdown
         from render_black import render_black_video
         from diarize import diarize_mixed
-        from progress import get_progress_tracker
+        from src.progress import get_progress_tracker
     except Exception as e:
         sys.exit(f"ERROR: Failed importing pipeline modules from src/: {e}")
     return {
+        "configure_from_args": configure_from_args,
         "ensure_session_dirs": ensure_session_dirs,
         "standardize_and_get_path": standardize_and_get_path,
         "transcribe_with_alignment": transcribe_with_alignment,
@@ -104,6 +106,18 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--outdir", required=True, metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--write-vtt", action="store_true", help="Also write WebVTT alongside SRT.")
     p.add_argument("--render-black", action="store_true", help="Render a black MP4 with burned-in subtitles (uses SRT).")
+    
+    # Cross-talk detection options
+    p.add_argument("--detect-cross-talk", action="store_true", help="Enable basic cross-talk detection.")
+    p.add_argument("--overlap-threshold", type=float, default=0.1,
+                   help="Minimum overlap duration for cross-talk detection in seconds (default: 0.1).")
+    p.add_argument("--mark-cross-talk", action="store_true", help="Mark cross-talk words in output files.")
+    p.add_argument("--include-basic-confidence", action="store_true", help="Include confidence scores in output.")
+    
+    # Logging control options
+    p.add_argument("--debug", action="store_true", help="Enable DEBUG level logging output.")
+    p.add_argument("--info", action="store_true", help="Enable INFO level logging output.")
+    
     return p.parse_args(argv)
 
 # ---------- main ----------
@@ -118,6 +132,22 @@ def main(argv: Optional[list[str]] = None) -> int:
             sys.exit("ERROR: Dual-track mode requires both -i/--interviewer and -p/--participant.")
         if combined_mode:
             sys.exit("ERROR: Provide either -c/--combined OR -i/-p, not both.")
+    
+    # Validate cross-talk options
+    if args.overlap_threshold < 0:
+        sys.exit("ERROR: --overlap-threshold must be a positive number.")
+    
+    # Cross-talk detection is only available in combined mode
+    if args.detect_cross_talk and not combined_mode:
+        sys.exit("ERROR: Cross-talk detection is only available in combined mode (-c/--combined).")
+    
+    # Cross-talk marking requires cross-talk detection
+    if args.mark_cross_talk and not args.detect_cross_talk:
+        sys.exit("ERROR: --mark-cross-talk requires --detect-cross-talk to be enabled.")
+    
+    # Confidence output requires cross-talk detection
+    if args.include_basic_confidence and not args.detect_cross_talk:
+        sys.exit("ERROR: --include-basic-confidence requires --detect-cross-talk to be enabled.")
 
     # Resolve repo & models, enforce offline
     root = repo_root_from_here()
@@ -128,9 +158,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Import pipeline functions after sys.path setup
     api = import_pipeline_modules(root)
     
-    # Configure logging to DEBUG level for detailed output
+    # Configure global settings from command line arguments
+    api["configure_from_args"](args)
+    
+    # Configure logging with appropriate level based on flags
     from logging_config import configure_global_logging
-    configure_global_logging(log_level="DEBUG")
+    if args.debug:
+        log_level = "DEBUG"
+    elif args.info:
+        log_level = "INFO"
+    else:
+        log_level = "WARNING"  # Default to WARNING if neither debug nor info enabled
+    configure_global_logging(log_level=log_level)
 
     # Initialize progress tracking
     tracker = api["get_progress_tracker"]()
@@ -147,14 +186,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"[*] Mode: combined | ASR: {args.asr}")
             
             # 1) Standardize
-            std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
+            std_task = tracker.add_task("Audio standardization", total=100)
             tracker.update(std_task, advance=50, description="Standardizing mixed audio")
             # Create a temp dir for standardized audio to avoid ffmpeg in-place editing
             temp_audio_dir = outdir / "temp_audio"
             temp_audio_dir.mkdir(exist_ok=True)
             std_mix = api["standardize_and_get_path"](mixed_path, tmpdir=temp_audio_dir)
             tracker.update(std_task, advance=50, description="Audio standardization complete")
-            tracker.complete_task(std_task, stage="standardization")
+            tracker.complete_task(std_task)
             
             # 2) ASR + alignment
             words = api["transcribe_with_alignment"](str(std_mix), asr_model=args.asr, role=None)
@@ -163,15 +202,64 @@ def main(argv: Optional[list[str]] = None) -> int:
             api["write_asr_words"](words, paths["merged"] / "asr.txt")
             
             # 3) Diarize → turns
-            turns = api["diarize_mixed"](str(std_mix), words)
+            if args.detect_cross_talk:
+                # Create cross-talk configuration
+                cross_talk_config = {
+                    "overlap_threshold": args.overlap_threshold,
+                    "mark_cross_talk": args.mark_cross_talk,
+                    "basic_confidence": args.include_basic_confidence
+                }
+                
+                print(f"[*] Cross-talk detection enabled with overlap threshold: {args.overlap_threshold}")
+                
+                try:
+                    # Call diarize_mixed with cross-talk detection
+                    turns = api["diarize_mixed"](
+                        str(std_mix),
+                        words,
+                        detect_cross_talk=True,
+                        cross_talk_config=cross_talk_config
+                    )
+                    print("[✓] Cross-talk detection completed successfully")
+                except Exception as e:
+                    print(f"[!] Warning: Cross-talk detection failed: {e}")
+                    print("[*] Falling back to standard diarization without cross-talk detection")
+                    # Fall back to standard diarization
+                    turns = api["diarize_mixed"](str(std_mix), words)
+            else:
+                # Standard diarization without cross-talk detection
+                turns = api["diarize_mixed"](str(std_mix), words)
             
             # 4) Outputs
-            output_task = tracker.add_task("Writing output files", total=100, stage="output")
+            output_task = tracker.add_task("Writing output files", total=100)
             tracker.update(output_task, advance=20, description="Writing transcript files")
-            api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt")
-            api["write_plain_txt"](turns, paths["merged"] / "transcript.txt")
-            api["write_conversation_csv"](turns, paths["merged"] / "transcript.csv")
-            api["write_conversation_markdown"](turns, paths["merged"] / "transcript.md")
+            
+            # Determine cross-talk options for output writers
+            mark_cross_talk = args.mark_cross_talk if hasattr(args, 'mark_cross_talk') else False
+            include_cross_talk = args.include_basic_confidence if hasattr(args, 'include_basic_confidence') else False
+            
+            # Write transcript files with cross-talk marking if enabled
+            try:
+                api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt", mark_cross_talk=mark_cross_talk)
+                api["write_plain_txt"](turns, paths["merged"] / "transcript.txt", mark_cross_talk=mark_cross_talk)
+                api["write_conversation_csv"](turns, paths["merged"] / "transcript.csv", include_cross_talk=include_cross_talk)
+                api["write_conversation_markdown"](turns, paths["merged"] / "transcript.md")
+                
+                if mark_cross_talk or include_cross_talk:
+                    print(f"[*] Output files written with cross-talk features - marking: {mark_cross_talk}, confidence: {include_cross_talk}")
+            except Exception as e:
+                print(f"[!] Warning: Error writing output files with cross-talk features: {e}")
+                print("[*] Attempting to write output files without cross-talk features...")
+                try:
+                    # Fall back to standard output writing
+                    api["write_timestamped_txt"](turns, paths["merged"] / "transcript.timestamped.txt")
+                    api["write_plain_txt"](turns, paths["merged"] / "transcript.txt")
+                    api["write_conversation_csv"](turns, paths["merged"] / "transcript.csv")
+                    api["write_conversation_markdown"](turns, paths["merged"] / "transcript.md")
+                    print("[✓] Output files written successfully without cross-talk features")
+                except Exception as e2:
+                    print(f"[!] Error: Failed to write output files: {e2}")
+                    raise
             
             tracker.update(output_task, advance=20, description="Writing subtitle files")
             srt_path = paths["merged"] / "subtitles.srt"
@@ -186,7 +274,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 tracker.update(output_task, advance=30, description="Skipping video rendering")
             
             tracker.update(output_task, advance=30, description="Finalizing outputs")
-            tracker.complete_task(output_task, stage="output")
+            tracker.complete_task(output_task)
             
             print("[✓] Combined processing complete.")
 
@@ -197,7 +285,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"[*] Mode: dual-track | ASR: {args.asr}")
             
             # 1) Standardize
-            std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
+            std_task = tracker.add_task("Audio standardization", total=100)
             # Create a temp dir for standardized audio to avoid ffmpeg in-place editing
             temp_audio_dir = outdir / "temp_audio"
             temp_audio_dir.mkdir(exist_ok=True)
@@ -206,14 +294,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(std_task, advance=33, description="Standardizing participant audio")
             std_part = api["standardize_and_get_path"](participant_path, tmpdir=temp_audio_dir)
             tracker.update(std_task, advance=34, description="Audio standardization complete")
-            tracker.complete_task(std_task, stage="standardization")
+            tracker.complete_task(std_task)
             
-            # 2) ASR + alignment per track
+            # 2) ASR + alignment per track with unique stage names
             int_words = api["transcribe_with_alignment"](str(std_int), asr_model=args.asr, role="Interviewer")
             part_words = api["transcribe_with_alignment"](str(std_part), asr_model=args.asr, role="Participant")
             
-            # 3) Turns per track
-            turns_task = tracker.add_task("Building conversation turns", total=100, stage="turns")
+            # 3) Turns per track with unique stage names
+            turns_task = tracker.add_task("Building conversation turns", total=100)
             tracker.update(turns_task, advance=30, description="Building interviewer turns")
             int_turns = api["build_turns"](int_words, speaker_label="Interviewer")
             tracker.update(turns_task, advance=30, description="Building participant turns")
@@ -223,10 +311,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(turns_task, advance=20, description="Merging conversation turns")
             merged = api["merge_turn_streams"](int_turns, part_turns)
             tracker.update(turns_task, advance=20, description="Turn building complete")
-            tracker.complete_task(turns_task, stage="turns")
+            tracker.complete_task(turns_task)
             
             # 5) Per-speaker outputs
-            output_task = tracker.add_task("Writing output files", total=100, stage="output")
+            output_task = tracker.add_task("Writing output files", total=100)
             
             tracker.update(output_task, advance=10, description="Writing interviewer transcripts")
             api["write_timestamped_txt"](int_turns, paths["speaker_interviewer"] / "interviewer.timestamped.txt")
@@ -257,7 +345,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 tracker.update(output_task, advance=30, description="Skipping video rendering")
             
             tracker.update(output_task, advance=20, description="Finalizing outputs")
-            tracker.complete_task(output_task, stage="output")
+            tracker.complete_task(output_task)
             
             print("[✓] Dual-track processing complete.")
 

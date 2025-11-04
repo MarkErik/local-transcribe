@@ -8,6 +8,17 @@ from typing import Optional, Any, Dict
 from datetime import datetime
 import json
 
+# Import global configuration
+try:
+    from config import is_debug_enabled, is_info_enabled
+except ImportError:
+    # Fallback if config module not available yet
+    def is_debug_enabled() -> bool:
+        return False
+    
+    def is_info_enabled() -> bool:
+        return True  # Default to showing INFO if config not available
+
 
 class TranscriptionError(Exception):
     """Base exception for transcription-related errors."""
@@ -45,6 +56,20 @@ class OutputError(TranscriptionError):
         self.output_path = output_path
 
 
+class ConditionalLogger(logging.Logger):
+    """Custom logger that respects global debug/info configuration."""
+    
+    def debug(self, msg: Any, *args: Any, **kwargs: Any) -> None:
+        """Log debug message only if debug is enabled."""
+        if is_debug_enabled():
+            super().debug(msg, *args, **kwargs)
+    
+    def info(self, msg: Any, *args: Any, **kwargs: Any) -> None:
+        """Log info message only if info is enabled."""
+        if is_info_enabled():
+            super().info(msg, *args, **kwargs)
+
+
 class StructuredFormatter(logging.Formatter):
     """Custom formatter that outputs structured JSON logs."""
     
@@ -61,7 +86,7 @@ class StructuredFormatter(logging.Formatter):
         }
         
         # Add exception info if present
-        if record.exc_info:
+        if record.exc_info and record.exc_info[0] is not None:
             log_entry["exception"] = {
                 "type": record.exc_info[0].__name__,
                 "message": str(record.exc_info[1]),
@@ -131,6 +156,9 @@ def setup_logging(
     logging.Logger
         Configured logger instance
     """
+    # Set the custom logger class
+    logging.setLoggerClass(ConditionalLogger)
+    
     # Create logger
     logger = logging.getLogger("local_transcribe")
     logger.setLevel(getattr(logging, log_level.upper()))

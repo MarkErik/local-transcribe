@@ -3,9 +3,10 @@ import pathlib
 import tempfile
 import subprocess
 from typing import Optional
+from config import is_debug_enabled, is_info_enabled
 from logging_config import get_logger, AudioProcessingError, ErrorContext, error_context
 try:
-    from progress import get_progress_tracker
+    from src.progress import get_progress_tracker
     _HAVE_PROGRESS = True
 except ImportError:
     _HAVE_PROGRESS = False
@@ -37,7 +38,8 @@ def _ffmpeg_to_wav16k_mono(src: str | pathlib.Path, dst: str | pathlib.Path) -> 
         src_path = pathlib.Path(src)
         dst_path = pathlib.Path(dst)
         
-        logger.debug(f"Converting {src_path} to {dst_path}")
+        if is_debug_enabled():
+            logger.debug(f"Converting {src_path} to {dst_path}")
         
         # Ensure destination directory exists
         dst_path.parent.mkdir(parents=True, exist_ok=True)
@@ -51,12 +53,13 @@ def _ffmpeg_to_wav16k_mono(src: str | pathlib.Path, dst: str | pathlib.Path) -> 
             str(dst_path),
         ]
         
-        logger.debug(f"Running ffmpeg command: {' '.join(cmd)}")
+        if is_debug_enabled():
+            logger.debug(f"Running ffmpeg command: {' '.join(cmd)}")
         
         # Add progress tracking if available
         if _HAVE_PROGRESS:
             tracker = get_progress_tracker()
-            task = tracker.add_task(f"Converting {src_path.name} to WAV", total=100, stage="audio_conversion")
+            task = tracker.add_task(f"Converting {src_path.name} to WAV", total=100)
             tracker.update(task, advance=50, description=f"Converting {src_path.name} - Running ffmpeg")
         
         result = subprocess.run(
@@ -75,13 +78,15 @@ def _ffmpeg_to_wav16k_mono(src: str | pathlib.Path, dst: str | pathlib.Path) -> 
         
         if _HAVE_PROGRESS:
             tracker.update(task, advance=50, description=f"Converting {src_path.name} - Complete")
-            tracker.complete_task(task, stage="audio_conversion")
+            tracker.complete_task(task)
         
-        logger.debug(f"Successfully converted {src_path} to {dst_path}")
+        if is_debug_enabled():
+            logger.debug(f"Successfully converted {src_path} to {dst_path}")
         
     except subprocess.CalledProcessError as e:
         error_msg = f"ffmpeg conversion failed: {e.stderr}"
-        logger.error(f"{error_msg} for {src}")
+        if is_info_enabled():
+            logger.error(f"{error_msg} for {src}")
         raise AudioProcessingError(error_msg, audio_path=str(src), cause=e)
     except Exception as e:
         if isinstance(e, AudioProcessingError):
@@ -129,7 +134,8 @@ def standardize_and_get_path(src: str | pathlib.Path, tmpdir: Optional[str | pat
         if not src_path.is_file():
             raise AudioProcessingError(f"Source path is not a file: {src_path}", audio_path=str(src_path))
         
-        logger.info(f"Standardizing audio: {src_path}")
+        if is_info_enabled():
+            logger.info(f"Standardizing audio: {src_path}")
         
         # Determine output path
         out_dir = pathlib.Path(tmpdir) if tmpdir else src_path.parent
@@ -137,7 +143,8 @@ def standardize_and_get_path(src: str | pathlib.Path, tmpdir: Optional[str | pat
         
         # Check if output already exists and is newer than input
         if out_path.exists() and out_path.stat().st_mtime > src_path.stat().st_mtime:
-            logger.debug(f"Using existing standardized file: {out_path}")
+            if is_debug_enabled():
+                logger.debug(f"Using existing standardized file: {out_path}")
             return out_path
         
         # Convert audio
@@ -156,15 +163,18 @@ def standardize_and_get_path(src: str | pathlib.Path, tmpdir: Optional[str | pat
                 audio_path=str(src_path)
             )
         
-        logger.info(f"Audio standardization complete: {out_path}")
+        if is_info_enabled():
+            logger.info(f"Audio standardization complete: {out_path}")
         return out_path
         
     except Exception as e:
         if isinstance(e, AudioProcessingError):
-            logger.error(f"Audio processing error: {e}")
+            if is_info_enabled():
+                logger.error(f"Audio processing error: {e}")
             raise
         else:
-            logger.error(f"Unexpected error in audio standardization: {e}")
+            if is_info_enabled():
+                logger.error(f"Unexpected error in audio standardization: {e}")
             raise AudioProcessingError(
                 f"Unexpected error during audio standardization: {e}",
                 audio_path=str(src),

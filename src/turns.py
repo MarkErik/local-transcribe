@@ -2,6 +2,8 @@ from __future__ import annotations
 import logging
 from typing import List, Dict
 
+from config import is_debug_enabled, is_info_enabled
+
 logger = logging.getLogger(__name__)
 
 def build_turns(words: List[Dict], speaker_label: str, max_gap_s: float = 0.8, max_chars: int = 120):
@@ -70,7 +72,8 @@ def build_turns(words: List[Dict], speaker_label: str, max_gap_s: float = 0.8, m
         )
         turns.append(turn)
     
-    logger.debug(f"Built {len(turns)} turns for speaker {speaker_label}")
+    if is_debug_enabled():
+        logger.debug(f"Built {len(turns)} turns for speaker {speaker_label}")
     return turns
 
 

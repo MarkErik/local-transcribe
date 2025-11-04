@@ -8,7 +8,7 @@ Bootstrap downloader for local-transcribe.
     * openai/whisper-medium.en
     * openai/whisper-large-v3-turbo
     * WhisperX English aligner
-    * pyannote/speaker-diarization-3.1 (pipeline + deps)
+    * pyannote/speaker-diarization-community-1 (pipeline + deps)
 
 Re-run safely any time; it will reuse the cache.
 """
@@ -171,7 +171,7 @@ def download_align_en(models_root: str, token: str) -> str:
 def download_diarization(models_root: str, token: str) -> dict:
     """
     Download pyannote diarization pipeline (and its dependencies):
-      - pyannote/speaker-diarization-3.1
+      - pyannote/speaker-diarization-community-1
 
     Newer pyannote versions do not accept `use_auth_token=`; they read the token
     from environment (HUGGINGFACE_HUB_TOKEN/HF_TOKEN) or your HF login cache.
@@ -185,12 +185,12 @@ def download_diarization(models_root: str, token: str) -> dict:
         os.environ.setdefault("HF_TOKEN", token)  # some libs still check this
 
     results = {}
-    log("⬇️  Downloading pyannote diarization pipeline (speaker-diarization-3.1)…")
+    log("⬇️  Downloading pyannote diarization pipeline (speaker-diarization-community-1)…")
     from pyannote.audio import Pipeline
 
     # No use_auth_token kwarg; rely on env + HF cache dirs.
     pipe = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1",
+        "pyannote/speaker-diarization-community-1",
         cache_dir=diar_root,
     )
     # No inference here; we just want to ensure the artifacts are downloaded.
@@ -200,7 +200,7 @@ def download_diarization(models_root: str, token: str) -> dict:
         del pipe
 
     log("   ✅ Pyannote diarization pipeline cached.")
-    results["pyannote/speaker-diarization-3.1"] = diar_root
+    results["pyannote/speaker-diarization-community-1"] = diar_root
     return results
 
 def main() -> None:

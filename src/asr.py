@@ -5,7 +5,8 @@ import pathlib
 import torch
 from faster_whisper import WhisperModel as FWModel
 import whisperx
-from progress import get_progress_tracker, ProgressCallback
+from src.progress import get_progress_tracker
+from config import is_debug_enabled, is_info_enabled
 from logging_config import get_logger, ASRError, ErrorContext, error_context
 
 # CT2 (faster-whisper) repos to search locally under ./models/asr/ct2/...
@@ -74,7 +75,8 @@ def transcribe_with_alignment(
         if not os.path.exists(audio_path):
             raise ASRError(f"Audio file not found: {audio_path}", model=asr_model)
         
-        logger.info(f"Starting ASR transcription for {audio_path} using model {asr_model}")
+        if is_info_enabled():
+            logger.info(f"Starting ASR transcription for {audio_path} using model {asr_model}")
         
         # Initialize progress tracking
         tracker = get_progress_tracker()
@@ -83,7 +85,8 @@ def transcribe_with_alignment(
         asr_device = _asr_device()          # 'cpu' (CTranslate2)
         align_device = _align_device()      # 'mps' if available, else 'cpu'
 
-        logger.info(f"Using devices: ASR={asr_device}, Alignment={align_device}")
+        if is_info_enabled():
+            logger.info(f"Using devices: ASR={asr_device}, Alignment={align_device}")
 
         # Compute type for CT2 on CPU
         compute_type = "int8"               # fast + memory efficient on CPU
@@ -104,17 +107,19 @@ def transcribe_with_alignment(
         import librosa
         try:
             audio_duration = librosa.get_duration(path=audio_path)
-            # Estimate segments based on typical 30-second chunks
-            estimated_segments = max(1, int(audio_duration / 30))
-            logger.info(f"Audio duration: {audio_duration:.2f}s, estimated segments: {estimated_segments}")
+            if is_info_enabled():
+                logger.info(f"Audio duration: {audio_duration:.2f}s")
         except Exception as e:
-            logger.warning(f"Could not get audio duration: {e}, using fallback estimate")
-            estimated_segments = 10  # Fallback estimate
+            if is_info_enabled():
+                logger.warning(f"Could not get audio duration: {e}")
+            audio_duration = 300  # Fallback estimate (5 minutes)
         
-        asr_task = tracker.add_task(f"ASR Transcription{role_label}", total=100, stage="asr_transcription")
+        # Create ASR task with role-specific stage name to avoid conflicts in dual-track mode
+        asr_task = tracker.add_task(f"ASR Transcription{role_label}", total=1)
         
         try:
-            logger.debug(f"Loading CT2 model from {local_model_dir}")
+            if is_debug_enabled():
+                logger.debug(f"Loading CT2 model from {local_model_dir}")
             fw = FWModel(
                 str(local_model_dir),     # model_size_or_path (positional)
                 device=asr_device,        # 'cpu' (CT2 has no MPS)
@@ -125,10 +130,15 @@ def transcribe_with_alignment(
 
         # Transcribe: force English, disable VAD filter
         # (We already standardize audio to 16k mono WAV upstream.)
-        tracker.update(asr_task, advance=10, description=f"ASR Transcription{role_label} - Loading audio")
+        try:
+            tracker.update(asr_task, advance=0, description=f"ASR Transcription{role_label} - Loading audio")
+        except Exception as e:
+            if is_info_enabled():
+                logger.warning(f"Failed to update ASR progress: {e}")
         
         try:
-            logger.debug(f"Starting transcription with {asr_model}")
+            if is_debug_enabled():
+                logger.debug(f"Starting transcription with {asr_model}")
             segments, info = fw.transcribe(
                 audio_path,
                 language="en",
@@ -139,12 +149,8 @@ def transcribe_with_alignment(
         except Exception as e:
             raise ASRError(f"Transcription failed: {e}", model=asr_model, cause=e)
 
-        tracker.update(asr_task, advance=5, description=f"ASR Transcription{role_label} - Processing segments")
-        
-        # Convert generator to list of dicts that WhisperX align() expects
+        # Convert generator to list to get total segment count
         seg_list = []
-        segment_count = 0
-        
         try:
             for s in segments:
                 # s has .start, .end, .text
@@ -153,26 +159,45 @@ def transcribe_with_alignment(
                     "end": float(s.end) if s.end is not None else 0.0,
                     "text": (s.text or "").strip(),
                 })
-                segment_count += 1
-                # Update progress based on segment count
-                if estimated_segments > 0:
-                    progress_percent = (segment_count / estimated_segments) * 70  # 70% of ASR task
-                    tracker.update(asr_task, advance=0, description=f"ASR Transcription{role_label} - {segment_count}/{estimated_segments} segments")
-                    # Manually set the progress
-                    tracker.progress.update(asr_task, completed=10 + 5 + progress_percent)
         except Exception as e:
             raise ASRError(f"Failed to process transcription segments: {e}", model=asr_model, cause=e)
         
-        logger.info(f"Processed {segment_count} transcription segments")
-        tracker.update(asr_task, advance=15, description=f"ASR Transcription{role_label} - Complete")
-        tracker.complete_task(asr_task, stage="asr_transcription")
-
-        # ---- WhisperX alignment (English) ----
-        align_task = tracker.add_task(f"Alignment{role_label}", total=100, stage="alignment")
-        tracker.update(align_task, advance=20, description=f"Alignment{role_label} - Loading model")
+        segment_count = len(seg_list)
+        if is_info_enabled():
+            logger.info(f"Processed {segment_count} transcription segments")
+        
+        # Update the existing task with the correct total instead of recreating it
+        # This maintains progress continuity and proper timer tracking
+        if segment_count > 0:
+            tracker.progress.update(asr_task, total=segment_count, description=f"ASR Transcription{role_label} - Processing {segment_count} segments")
+        
+        # Now process segments with accurate progress tracking
+        for i, seg in enumerate(seg_list):
+            try:
+                tracker.update(asr_task, advance=1, description=f"ASR Transcription{role_label} - {i+1}/{segment_count} segments")
+            except Exception as e:
+                if is_info_enabled():
+                    logger.warning(f"Failed to update ASR segment progress: {e}")
         
         try:
-            logger.debug("Loading WhisperX alignment model")
+            tracker.update(asr_task, advance=0, description=f"ASR Transcription{role_label} - Complete")
+            tracker.complete_task(asr_task)
+        except Exception as e:
+            if is_info_enabled():
+                logger.warning(f"Failed to complete ASR task: {e}")
+
+        # ---- WhisperX alignment (English) ----
+        try:
+            align_task = tracker.add_task(f"Alignment{role_label}", total=100)
+            tracker.update(align_task, advance=20, description=f"Alignment{role_label} - Loading model")
+        except Exception as e:
+            if is_info_enabled():
+                logger.warning(f"Failed to create alignment task: {e}")
+            align_task = None
+        
+        try:
+            if is_debug_enabled():
+                logger.debug("Loading WhisperX alignment model")
             align_model, metadata = whisperx.load_align_model(
                 language_code="en",
                 device=align_device,             # 'mps' if available, else 'cpu'
@@ -181,10 +206,16 @@ def transcribe_with_alignment(
         except Exception as e:
             raise ASRError(f"Failed to load alignment model: {e}", model=asr_model, cause=e)
 
-        tracker.update(align_task, advance=10, description=f"Alignment{role_label} - Processing segments")
+        if align_task is not None:
+            try:
+                tracker.update(align_task, advance=10, description=f"Alignment{role_label} - Processing segments")
+            except Exception as e:
+                if is_info_enabled():
+                    logger.warning(f"Failed to update alignment progress: {e}")
         
         try:
-            logger.debug("Running WhisperX alignment")
+            if is_debug_enabled():
+                logger.debug("Running WhisperX alignment")
             aligned = whisperx.align(
                 seg_list,
                 align_model,
@@ -196,16 +227,28 @@ def transcribe_with_alignment(
         except Exception as e:
             raise ASRError(f"Alignment failed: {e}", model=asr_model, cause=e)
 
-        tracker.update(align_task, advance=70, description=f"Alignment{role_label} - Complete")
-        tracker.complete_task(align_task, stage="alignment")
+        if align_task is not None:
+            try:
+                tracker.update(align_task, advance=70, description=f"Alignment{role_label} - Complete")
+                tracker.complete_task(align_task)
+            except Exception as e:
+                if is_info_enabled():
+                    logger.warning(f"Failed to complete alignment task: {e}")
 
         # Process word segments
-        words_task = tracker.add_task(f"Processing words{role_label}", total=len(aligned.get("word_segments", [])), stage="word_processing")
+        try:
+            words_task = tracker.add_task(f"Processing words{role_label}", total=len(aligned.get("word_segments", [])))
+        except Exception as e:
+            if is_info_enabled():
+                logger.warning(f"Failed to create words processing task: {e}")
+            words_task = None
+            
         words = []
         word_count = 0
         total_words = len(aligned.get("word_segments", []))
         
-        logger.info(f"Processing {total_words} word segments")
+        if is_info_enabled():
+            logger.info(f"Processing {total_words} word segments")
         
         try:
             for seg in aligned.get("word_segments", []):
@@ -222,29 +265,44 @@ def transcribe_with_alignment(
                 )
                 word_count += 1
                 # Update progress
-                if total_words > 0:
-                    tracker.update(words_task, advance=1, description=f"Processing words{role_label} - {word_count}/{total_words}")
+                if total_words > 0 and words_task is not None:
+                    try:
+                        tracker.update(words_task, advance=1, description=f"Processing words{role_label} - {word_count}/{total_words}")
+                    except Exception as e:
+                        if is_info_enabled():
+                            logger.warning(f"Failed to update words processing progress: {e}")
         except Exception as e:
             raise ASRError(f"Failed to process word segments: {e}", model=asr_model, cause=e)
         
-        logger.info(f"Processed {word_count} words")
-        tracker.complete_task(words_task, stage="word_processing")
+        if is_info_enabled():
+            logger.info(f"Processed {word_count} words")
+        if words_task is not None:
+            try:
+                tracker.complete_task(words_task)
+            except Exception as e:
+                if is_info_enabled():
+                    logger.warning(f"Failed to complete words processing task: {e}")
 
         # Optional MPS memory tidy (no-op on CPU)
         try:
             if align_device == "mps":
                 torch.mps.empty_cache()
-                logger.debug("Cleared MPS memory cache")
+                if is_debug_enabled():
+                    logger.debug("Cleared MPS memory cache")
         except Exception as e:
-            logger.warning(f"Failed to clear MPS cache: {e}")
+            if is_info_enabled():
+                logger.warning(f"Failed to clear MPS cache: {e}")
 
-        logger.info(f"ASR transcription completed successfully for {audio_path}")
+        if is_info_enabled():
+            logger.info(f"ASR transcription completed successfully for {audio_path}")
         return words
         
     except Exception as e:
         if isinstance(e, ASRError):
-            logger.error(f"ASR error in {asr_model}: {e}")
+            if is_info_enabled():
+                logger.error(f"ASR error in {asr_model}: {e}")
             raise
         else:
-            logger.error(f"Unexpected error in ASR transcription: {e}")
+            if is_info_enabled():
+                logger.error(f"Unexpected error in ASR transcription: {e}")
             raise ASRError(f"Unexpected error: {e}", model=asr_model, cause=e)

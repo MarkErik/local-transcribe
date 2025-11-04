@@ -1,33 +1,51 @@
 # src/progress.py
 from __future__ import annotations
 import time
-import psutil
-import threading
-from typing import Optional, Callable, Any
+from typing import Optional, Dict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from rich.progress import Progress, TaskID, BarColumn, TextColumn, TimeRemainingColumn, SpinnerColumn
+from rich.progress import Progress, TaskID, BarColumn, TextColumn, SpinnerColumn
 from rich.console import Console
 
 
 @dataclass
-class PerformanceMetrics:
-    """Container for performance metrics."""
+class TaskTimer:
+    """Simple timer for tracking task elapsed time."""
     start_time: float
     end_time: Optional[float] = None
-    peak_memory_mb: Optional[float] = None
-    current_memory_mb: Optional[float] = None
     
     @property
-    def duration(self) -> float:
-        """Get duration in seconds."""
+    def elapsed(self) -> float:
+        """Get elapsed time in seconds."""
         if self.end_time is None:
             return time.time() - self.start_time
         return self.end_time - self.start_time
+    
+    @property
+    def elapsed_str(self) -> str:
+        """Get formatted elapsed time string."""
+        elapsed = self.elapsed
+        minutes = int(elapsed // 60)
+        seconds = int(elapsed % 60)
+        return f"{minutes}:{seconds:02d}"
+    
+    @property
+    def elapsed_str_detailed(self) -> str:
+        """Get detailed formatted elapsed time string with milliseconds for active tasks."""
+        if self.end_time is not None:
+            # For completed tasks, use simple format
+            return self.elapsed_str
+        else:
+            # For active tasks, include milliseconds for smoother updates
+            elapsed = self.elapsed
+            minutes = int(elapsed // 60)
+            seconds = int(elapsed % 60)
+            milliseconds = int((elapsed % 1) * 100)
+            return f"{minutes}:{seconds:02d}.{milliseconds:02d}"
 
 
 class ProgressTracker:
-    """Enhanced progress tracking with performance monitoring."""
+    """Simplified progress tracking with elapsed time display."""
     
     def __init__(self, console: Optional[Console] = None):
         self.console = console or Console()
@@ -36,159 +54,184 @@ class ProgressTracker:
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TimeRemainingColumn(),
-            console=self.console
+            TextColumn("[blue]Time:[/blue] {task.fields[elapsed]}"),
+            console=self.console,
+            refresh_per_second=10  # Ensure more frequent updates for smooth time display
         )
-        self.metrics: dict[str, PerformanceMetrics] = {}
-        self._monitoring_active = False
-        self._monitor_thread: Optional[threading.Thread] = None
+        self.task_timers: Dict[TaskID, TaskTimer] = {}
+        self._started = False
         
     def start(self) -> None:
         """Start the progress display."""
-        self.progress.start()
+        if not self._started:
+            self.progress.start()
+            self._started = True
         
     def stop(self) -> None:
-        """Stop the progress display and monitoring."""
-        self.progress.stop()
-        self._stop_monitoring()
+        """Stop the progress display."""
+        if self._started:
+            self.progress.stop()
+            self._started = False
+            # Complete all active tasks
+            self._complete_all_tasks()
         
     def add_task(
         self,
         description: str,
-        total: Optional[int] = None,
-        stage: str = "processing"
+        total: Optional[int] = None
     ) -> TaskID:
         """Add a new progress task."""
-        task_id = self.progress.add_task(description, total=total)
-        self.metrics[stage] = PerformanceMetrics(start_time=time.time())
-        # Start memory monitoring for all tasks
-        self._start_monitoring()
+        task_id = self.progress.add_task(
+            description, 
+            total=total,
+            elapsed="0:00"  # Initial elapsed time
+        )
+        self.task_timers[task_id] = TaskTimer(start_time=time.time())
         return task_id
         
     def update(
-        self, 
-        task_id: TaskID, 
+        self,
+        task_id: TaskID,
         advance: int = 1,
-        description: Optional[str] = None,
-        stage: Optional[str] = None
+        description: Optional[str] = None
     ) -> None:
         """Update progress for a task."""
-        self.progress.update(task_id, advance=advance, description=description)
-        
-    def complete_task(self, task_id: TaskID, stage: Optional[str] = None) -> None:
-        """Mark a task as complete."""
-        self.progress.update(task_id, completed=self.progress.tasks[task_id].total)
-        if stage and stage in self.metrics:
-            self.metrics[stage].end_time = time.time()
-            # Update memory one final time before stopping
+        # Validate task exists and is active
+        if task_id not in self.progress.tasks:
+            if hasattr(self, 'console') and self.console:
+                self.console.print(f"[yellow]Warning: Task {task_id} not found in progress tracker[/yellow]")
+            return
+            
+        task = self.progress.tasks[task_id]
+        if task.finished:
+            if hasattr(self, 'console') and self.console:
+                self.console.print(f"[yellow]Warning: Task {task.description} is already finished[/yellow]")
+            return
+            
+        # Update elapsed time
+        if task_id in self.task_timers:
             try:
-                import psutil
-                process = psutil.Process()
-                current_memory = process.memory_info().rss / 1024 / 1024  # MB
-                self.metrics[stage].current_memory_mb = current_memory
-                if self.metrics[stage].peak_memory_mb is None or current_memory > self.metrics[stage].peak_memory_mb:
-                    self.metrics[stage].peak_memory_mb = current_memory
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
+                timer = self.task_timers[task_id]
+                # Use detailed time for active tasks, simple format for completed
+                elapsed_str = timer.elapsed_str_detailed if timer.end_time is None else timer.elapsed_str
+                update_kwargs = {"advance": advance, "elapsed": elapsed_str}
+                
+                # Update description if provided
+                if description:
+                    update_kwargs["description"] = description
+                    
+                self.progress.update(task_id, **update_kwargs)
+            except Exception as e:
+                if hasattr(self, 'console') and self.console:
+                    self.console.print(f"[red]Error updating task {task.description}: {e}[/red]")
+        
+    def complete_task(self, task_id: TaskID) -> None:
+        """Mark a task as complete."""
+        # Validate task exists and is not already finished
+        if task_id not in self.progress.tasks:
+            if hasattr(self, 'console') and self.console:
+                self.console.print(f"[yellow]Warning: Task {task_id} not found in progress tracker[/yellow]")
+            return
+            
+        task = self.progress.tasks[task_id]
+        if task.finished:
+            if hasattr(self, 'console') and self.console:
+                self.console.print(f"[yellow]Warning: Task {task.description} is already finished[/yellow]")
+            return
+            
+        try:
+            # Mark task as complete
+            if task.total is not None:
+                self.progress.update(task_id, completed=task.total)
+                
+            # Record end time and update elapsed display
+            if task_id in self.task_timers:
+                self.task_timers[task_id].end_time = time.time()
+                elapsed_str = self.task_timers[task_id].elapsed_str
+                self.progress.update(task_id, elapsed=elapsed_str)
+        except Exception as e:
+            if hasattr(self, 'console') and self.console:
+                self.console.print(f"[red]Error completing task {task.description}: {e}[/red]")
             
     @contextmanager
     def task_context(
         self,
         description: str,
-        total: Optional[int] = None,
-        stage: str = "processing"
+        total: Optional[int] = None
     ):
         """Context manager for automatic task lifecycle management."""
-        task_id = self.add_task(description, total=total, stage=stage)
-        # Memory monitoring already started in add_task
+        task_id = self.add_task(description, total=total)
         try:
             yield task_id
         finally:
-            self.complete_task(task_id, stage)
-            # Don't stop monitoring here as other tasks might be running
+            self.complete_task(task_id)
             
-    def _start_monitoring(self) -> None:
-        """Start background memory monitoring."""
-        if not self._monitoring_active:
-            self._monitoring_active = True
-            self._monitor_thread = threading.Thread(target=self._monitor_memory, daemon=True)
-            self._monitor_thread.start()
-            
-    def _stop_monitoring(self) -> None:
-        """Stop background memory monitoring."""
-        self._monitoring_active = False
-        if self._monitor_thread:
-            self._monitor_thread.join(timeout=0.1)
-            
-    def _monitor_memory(self) -> None:
-        """Background thread to monitor memory usage."""
-        process = psutil.Process()
-        peak_memory = 0.0
+    def _complete_all_tasks(self) -> None:
+        """Complete all active tasks."""
+        current_time = time.time()
         
-        while self._monitoring_active:
-            try:
-                current_memory = process.memory_info().rss / 1024 / 1024  # MB
-                peak_memory = max(peak_memory, current_memory)
+        for task_id, timer in self.task_timers.items():
+            if timer.end_time is None and task_id in self.progress.tasks:
+                # Record end time first
+                timer.end_time = current_time
                 
-                # Update metrics for all active stages
-                for stage, metrics in self.metrics.items():
-                    if metrics.end_time is None:  # Still active
-                        metrics.current_memory_mb = current_memory
-                        metrics.peak_memory_mb = peak_memory
-                        
-                time.sleep(0.5)  # Monitor every 500ms
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                break
+                # Mark task as complete
+                task = self.progress.tasks[task_id]
+                if task.total is not None:
+                    self.progress.update(task_id, completed=task.total)
                 
-    def get_metrics(self, stage: str) -> Optional[PerformanceMetrics]:
-        """Get performance metrics for a specific stage."""
-        return self.metrics.get(stage)
-        
+                # Update elapsed display separately using fields parameter
+                self.progress.update(task_id, elapsed=timer.elapsed_str)
+                
+    def get_task_elapsed(self, task_id: TaskID) -> Optional[float]:
+        """Get elapsed time for a specific task."""
+        return self.task_timers.get(task_id, TaskTimer(0)).elapsed
+
     def print_summary(self) -> None:
-        """Print a summary of all performance metrics."""
-        self.console.print("\n[bold]Performance Summary:[/bold]")
+        """Print a summary of completed tasks, their durations, and overall performance metrics."""
+        if not self.task_timers:
+            self.console.print("[yellow]No tasks completed yet.[/yellow]")
+            return
+            
+        self.console.print("\n[bold blue]Progress Summary[/bold blue]")
+        self.console.print("=" * 50)
         
-        for stage, metrics in self.metrics.items():
-            duration = metrics.duration
-            peak_mem = metrics.peak_memory_mb or 0
-            
-            # Format duration to show meaningful precision
-            if duration < 0.01:
-                duration_str = "< 0.01s"
-            else:
-                duration_str = f"{duration:.2f}s"
-            
-            # Format memory to show meaningful values
-            if peak_mem < 0.1:
-                mem_str = "< 0.1MB"
-            else:
-                mem_str = f"{peak_mem:.1f}MB"
-            
-            self.console.print(
-                f"  {stage}: {duration_str}, "
-                f"Peak Memory: {mem_str}"
-            )
-
-
-class ProgressCallback:
-    """Callback wrapper for integrating with external libraries."""
-    
-    def __init__(self, tracker: ProgressTracker, task_id: TaskID):
-        self.tracker = tracker
-        self.task_id = task_id
+        total_elapsed = 0.0
+        completed_tasks = 0
         
-    def __call__(self, progress_data: Any) -> None:
-        """Handle progress callback from external libraries."""
-        # Handle different callback formats
-        if isinstance(progress_data, (int, float)):
-            # Simple numeric progress
-            self.tracker.update(self.task_id, advance=int(progress_data))
-        elif isinstance(progress_data, dict):
-            # Dictionary with progress info
-            if "progress" in progress_data:
-                self.tracker.update(self.task_id, advance=int(progress_data["progress"]))
-            if "description" in progress_data:
-                self.tracker.update(self.task_id, description=progress_data["description"])
+        for task_id, timer in self.task_timers.items():
+            if task_id in self.progress.tasks:
+                task = self.progress.tasks[task_id]
+                status = "Completed" if timer.end_time is not None else "In Progress"
+                
+                self.console.print(f"[cyan]Task:[/cyan] {task.description}")
+                self.console.print(f"  [white]Status:[/white] {status}")
+                self.console.print(f"  [white]Duration:[/white] {timer.elapsed_str}")
+                
+                if timer.end_time is not None:
+                    total_elapsed += timer.elapsed
+                    completed_tasks += 1
+                
+                if task.total is not None:
+                    progress_pct = (task.completed / task.total) * 100 if task.total > 0 else 0
+                    self.console.print(f"  [white]Progress:[/white] {task.completed}/{task.total} ({progress_pct:.1f}%)")
+                
+                self.console.print()
+        
+        if completed_tasks > 0:
+            avg_elapsed = total_elapsed / completed_tasks
+            minutes = int(total_elapsed // 60)
+            seconds = int(total_elapsed % 60)
+            
+            self.console.print(f"[bold green]Summary:[/bold green]")
+            self.console.print(f"  [white]Total Tasks:[/white] {len(self.task_timers)}")
+            self.console.print(f"  [white]Completed Tasks:[/white] {completed_tasks}")
+            self.console.print(f"  [white]Total Time:[/white] {minutes}:{seconds:02d}")
+            self.console.print(f"  [white]Average Time per Task:[/white] {avg_elapsed:.1f} seconds")
+        else:
+            self.console.print("[yellow]No completed tasks to summarize.[/yellow]")
+        
+        self.console.print("=" * 50)
 
 
 # Global progress tracker instance
@@ -205,14 +248,13 @@ def get_progress_tracker() -> ProgressTracker:
 
 def progress_task(
     description: str, 
-    total: Optional[int] = None,
-    stage: str = "processing"
+    total: Optional[int] = None
 ):
     """Decorator for adding progress tracking to functions."""
-    def decorator(func: Callable) -> Callable:
+    def decorator(func):
         def wrapper(*args, **kwargs):
             tracker = get_progress_tracker()
-            with tracker.task_context(description, total=total, stage=stage):
+            with tracker.task_context(description, total=total):
                 return func(*args, **kwargs)
         return wrapper
     return decorator
@@ -221,10 +263,9 @@ def progress_task(
 @contextmanager
 def progress_context(
     description: str, 
-    total: Optional[int] = None,
-    stage: str = "processing"
+    total: Optional[int] = None
 ):
     """Context manager for progress tracking."""
     tracker = get_progress_tracker()
-    with tracker.task_context(description, total=total, stage=stage):
+    with tracker.task_context(description, total=total):
         yield tracker

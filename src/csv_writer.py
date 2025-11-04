@@ -5,6 +5,8 @@ from pathlib import Path
 import csv
 import logging
 
+from config import is_debug_enabled, is_info_enabled
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,7 +28,8 @@ def write_conversation_csv(turns: List[Dict], path: str | Path, include_cross_ta
     path = Path(path)
     
     try:
-        logger.info(f"Writing CSV to {path} with cross-talk columns: {include_cross_talk}")
+        if is_info_enabled():
+            logger.info(f"Writing CSV to {path} with cross-talk columns: {include_cross_talk}")
         
         # Group consecutive turns by speaker
         grouped_turns = []
@@ -89,7 +92,8 @@ def write_conversation_csv(turns: List[Dict], path: str | Path, include_cross_ta
                         confidence_value = f"{confidence:.3f}"  # Format to 3 decimal places
                         
                     except Exception as e:
-                        logger.warning(f"Error processing cross-talk data for turn: {e}")
+                        if is_info_enabled():
+                            logger.warning(f"Error processing cross-talk data for turn: {e}")
                         # Use default values if there's an error
                         cross_talk_value = "False"
                         confidence_value = "1.000"
@@ -111,10 +115,12 @@ def write_conversation_csv(turns: List[Dict], path: str | Path, include_cross_ta
                     else:
                         writer.writerow([text, ""])  # Default to interviewer column
             
-            logger.info(f"Successfully wrote CSV with {len(grouped_turns)} turns to {path}")
+            if is_info_enabled():
+                logger.info(f"Successfully wrote CSV with {len(grouped_turns)} turns to {path}")
             
     except Exception as e:
-        logger.error(f"Error writing CSV to {path}: {e}")
+        if is_info_enabled():
+            logger.error(f"Error writing CSV to {path}: {e}")
         raise
 
 

@@ -4,6 +4,8 @@ from typing import List, Dict
 from pathlib import Path
 import logging
 
+from config import is_debug_enabled, is_info_enabled
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,7 +55,8 @@ def _process_text_for_cross_talk(text: str, turn: Dict) -> str:
         return " ".join(processed_words)
     
     except Exception as e:
-        logger.error(f"Error in _process_text_for_cross_talk: {e}")
+        if is_info_enabled():
+            logger.error(f"Error in _process_text_for_cross_talk: {e}")
         # Return original text if processing fails
         return text
 
@@ -84,7 +87,8 @@ def write_timestamped_txt(turns: List[Dict], path: str | Path, mark_cross_talk: 
                 processed_text = _process_text_for_cross_talk(text, t)
                 lines.append(f"[{ts}] {speaker}: {processed_text}")
             except Exception as e:
-                logger.error(f"Error processing cross-talk in timestamped text: {e}")
+                if is_info_enabled():
+                    logger.error(f"Error processing cross-talk in timestamped text: {e}")
                 # Fall back to original text if processing fails
                 lines.append(f"[{ts}] {speaker}: {text}")
         else:
@@ -127,7 +131,8 @@ def write_plain_txt(turns: List[Dict], path: str | Path, mark_cross_talk: bool =
                         processed_text = _process_text_for_cross_talk(paragraph_text, processed_turn)
                         lines.append(f"{current_speaker}: {processed_text}")
                     except Exception as e:
-                        logger.error(f"Error processing cross-talk in plain text paragraph: {e}")
+                        if is_info_enabled():
+                            logger.error(f"Error processing cross-talk in plain text paragraph: {e}")
                         # Fall back to original text if processing fails
                         lines.append(f"{current_speaker}: {' '.join(current_paragraph_text)}")
                 else:
@@ -153,7 +158,8 @@ def write_plain_txt(turns: List[Dict], path: str | Path, mark_cross_talk: bool =
                 processed_text = _process_text_for_cross_talk(paragraph_text, processed_turn)
                 lines.append(f"{current_speaker}: {processed_text}")
             except Exception as e:
-                logger.error(f"Error processing cross-talk in plain text paragraph: {e}")
+                if is_info_enabled():
+                    logger.error(f"Error processing cross-talk in plain text paragraph: {e}")
                 # Fall back to original text if processing fails
                 lines.append(f"{current_speaker}: {' '.join(current_paragraph_text)}")
         else:
@@ -206,8 +212,10 @@ def write_txt(
         else:
             write_plain_txt(turns, output_path, mark_cross_talk=mark_cross_talk)
         
-        logger.info(f"Successfully wrote transcript to {output_path} with cross-talk marking: {mark_cross_talk}")
+        if is_info_enabled():
+            logger.info(f"Successfully wrote transcript to {output_path} with cross-talk marking: {mark_cross_talk}")
     
     except Exception as e:
-        logger.error(f"Error writing transcript to {output_path}: {e}")
+        if is_info_enabled():
+            logger.error(f"Error writing transcript to {output_path}: {e}")
         raise

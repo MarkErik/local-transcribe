@@ -202,7 +202,11 @@ def diarize_mixed(
         except Exception as e:
             raise DiarizationError(f"Diarization processing failed: {e}", cause=e)
 
-        tracker.update(diarize_task, advance=20, description="Speaker Diarization - Processing segments")
+        try:
+            tracker.update(diarize_task, advance=1, description="Speaker Diarization - Extracting segments")
+        except Exception as e:
+            if is_info_enabled():
+                logger.warning(f"Failed to update diarization progress: {e}")
         
         # --- Debugging: Inspect the DiarizeOutput object ---
         if is_debug_enabled():
@@ -244,15 +248,6 @@ def diarize_mixed(
                 for segment, track, label in annotation_obj.itertracks(yield_label=True):
                     diar_segments.append({"start": float(segment.start), "end": float(segment.end), "label": label})
                     segment_count += 1
-                    try:
-                        try:
-                            tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Found {segment_count} segments")
-                        except Exception as e:
-                            if is_info_enabled():
-                                logger.warning(f"Failed to update diarization segment progress: {e}")
-                    except Exception as e:
-                        if is_info_enabled():
-                            logger.warning(f"Failed to update diarization segment progress: {e}")
             except AttributeError:
                 # If itertracks is not available, try direct iteration if the object supports it
                 try:
@@ -261,7 +256,6 @@ def diarize_mixed(
                         label = annotation_obj[segment]
                         diar_segments.append({"start": float(segment.start), "end": float(segment.end), "label": label})
                         segment_count += 1
-                        tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Found {segment_count} segments")
                 except Exception as e_inner:
                     raise DiarizationError(f"Failed to process diarization segments using annotation support: {e_inner}", cause=e_inner)
         except Exception as e:
@@ -270,7 +264,7 @@ def diarize_mixed(
         if is_info_enabled():
             logger.info(f"Found {segment_count} diarization segments")
         try:
-            tracker.update(diarize_task, advance=1, description="Speaker Diarization - Complete")
+            tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Complete ({segment_count} segments)")
             tracker.complete_task(diarize_task)
         except Exception as e:
             if is_info_enabled():

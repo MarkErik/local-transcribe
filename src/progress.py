@@ -70,10 +70,10 @@ class ProgressTracker:
     def stop(self) -> None:
         """Stop the progress display."""
         if self._started:
+            # Complete all active tasks before stopping so final state renders
+            self._complete_all_tasks()
             self.progress.stop()
             self._started = False
-            # Complete all active tasks
-            self._complete_all_tasks()
         
     def add_task(
         self,
@@ -96,8 +96,8 @@ class ProgressTracker:
         description: Optional[str] = None
     ) -> None:
         """Update progress for a task."""
-        # Validate task exists and is active
-        if task_id not in self.progress.tasks:
+        # Validate task exists and is active (tasks is a list indexed by TaskID)
+        if not (0 <= task_id < len(self.progress.tasks)):
             if hasattr(self, 'console') and self.console:
                 self.console.print(f"[yellow]Warning: Task {task_id} not found in progress tracker[/yellow]")
             return
@@ -125,10 +125,46 @@ class ProgressTracker:
                 if hasattr(self, 'console') and self.console:
                     self.console.print(f"[red]Error updating task {task.description}: {e}[/red]")
         
+    def set_total(
+        self,
+        task_id: TaskID,
+        total: int,
+        description: Optional[str] = None
+    ) -> None:
+        """
+        Set or update the total for a task (useful when total is not known at add_task time).
+        Also updates elapsed time and optionally the description.
+        """
+        # Validate task exists
+        if not (0 <= task_id < len(self.progress.tasks)):
+            if hasattr(self, 'console') and self.console:
+                self.console.print(f"[yellow]Warning: Task {task_id} not found in progress tracker[/yellow]")
+            return
+        
+        # Build update kwargs
+        update_kwargs = {"total": total}
+        
+        # Update elapsed time if we have a timer
+        if task_id in self.task_timers:
+            timer = self.task_timers[task_id]
+            elapsed_str = timer.elapsed_str_detailed if timer.end_time is None else timer.elapsed_str
+            update_kwargs["elapsed"] = elapsed_str
+        
+        # Update description if provided
+        if description:
+            update_kwargs["description"] = description
+        
+        try:
+            self.progress.update(task_id, **update_kwargs)
+        except Exception as e:
+            if hasattr(self, 'console') and self.console:
+                task = self.progress.tasks[task_id]
+                self.console.print(f"[red]Error setting total for task {task.description}: {e}[/red]")
+    
     def complete_task(self, task_id: TaskID) -> None:
         """Mark a task as complete."""
-        # Validate task exists and is not already finished
-        if task_id not in self.progress.tasks:
+        # Validate task exists and is not already finished (tasks is a list indexed by TaskID)
+        if not (0 <= task_id < len(self.progress.tasks)):
             if hasattr(self, 'console') and self.console:
                 self.console.print(f"[yellow]Warning: Task {task_id} not found in progress tracker[/yellow]")
             return
@@ -171,7 +207,11 @@ class ProgressTracker:
         current_time = time.time()
         
         for task_id, timer in self.task_timers.items():
-            if timer.end_time is None and task_id in self.progress.tasks:
+            # Validate task exists in the list
+            if not (0 <= task_id < len(self.progress.tasks)):
+                continue
+                
+            if timer.end_time is None:
                 # Record end time first
                 timer.end_time = current_time
                 
@@ -185,7 +225,9 @@ class ProgressTracker:
                 
     def get_task_elapsed(self, task_id: TaskID) -> Optional[float]:
         """Get elapsed time for a specific task."""
-        return self.task_timers.get(task_id, TaskTimer(0)).elapsed
+        if task_id not in self.task_timers:
+            return None
+        return self.task_timers[task_id].elapsed
 
     def print_summary(self) -> None:
         """Print a summary of completed tasks, their durations, and overall performance metrics."""
@@ -200,23 +242,26 @@ class ProgressTracker:
         completed_tasks = 0
         
         for task_id, timer in self.task_timers.items():
-            if task_id in self.progress.tasks:
-                task = self.progress.tasks[task_id]
-                status = "Completed" if timer.end_time is not None else "In Progress"
+            # Validate task exists in the list
+            if not (0 <= task_id < len(self.progress.tasks)):
+                continue
                 
-                self.console.print(f"[cyan]Task:[/cyan] {task.description}")
-                self.console.print(f"  [white]Status:[/white] {status}")
-                self.console.print(f"  [white]Duration:[/white] {timer.elapsed_str}")
-                
-                if timer.end_time is not None:
-                    total_elapsed += timer.elapsed
-                    completed_tasks += 1
-                
-                if task.total is not None:
-                    progress_pct = (task.completed / task.total) * 100 if task.total > 0 else 0
-                    self.console.print(f"  [white]Progress:[/white] {task.completed}/{task.total} ({progress_pct:.1f}%)")
-                
-                self.console.print()
+            task = self.progress.tasks[task_id]
+            status = "Completed" if timer.end_time is not None else "In Progress"
+            
+            self.console.print(f"[cyan]Task:[/cyan] {task.description}")
+            self.console.print(f"  [white]Status:[/white] {status}")
+            self.console.print(f"  [white]Duration:[/white] {timer.elapsed_str}")
+            
+            if timer.end_time is not None:
+                total_elapsed += timer.elapsed
+                completed_tasks += 1
+            
+            if task.total is not None:
+                progress_pct = (task.completed / task.total) * 100 if task.total > 0 else 0
+                self.console.print(f"  [white]Progress:[/white] {task.completed}/{task.total} ({progress_pct:.1f}%)")
+            
+            self.console.print()
         
         if completed_tasks > 0:
             avg_elapsed = total_elapsed / completed_tasks

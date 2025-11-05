@@ -166,10 +166,10 @@ def transcribe_with_alignment(
         if is_info_enabled():
             logger.info(f"Processed {segment_count} transcription segments")
         
-        # Update the existing task with the correct total instead of recreating it
+        # Update the existing task with the correct total using the helper
         # This maintains progress continuity and proper timer tracking
         if segment_count > 0:
-            tracker.progress.update(asr_task, total=segment_count, description=f"ASR Transcription{role_label} - Processing {segment_count} segments")
+            tracker.set_total(asr_task, segment_count, description=f"ASR Transcription{role_label} - Processing {segment_count} segments")
         
         # Now process segments with accurate progress tracking
         for i, seg in enumerate(seg_list):

@@ -180,7 +180,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         # Ensure outdir & subdirs
         outdir = ensure_outdir(args.outdir)
-        paths = api["ensure_session_dirs"](outdir)
+        # When processing combined audio we don't need per-speaker folders.
+        paths = api["ensure_session_dirs"](outdir, create_speaker_dirs=not combined_mode)
 
         # Run pipeline
         if combined_mode:

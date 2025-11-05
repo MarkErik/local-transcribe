@@ -36,7 +36,7 @@ def ensure_models_exist(models_dir: pathlib.Path, asr_model: str) -> None:
         sys.exit("ERROR: models/ directory not found. Run scripts/download_models.py first.")
     asr_map = {
         "medium.en": "openai/whisper-medium.en",
-        "large-v3-turbo": "openai/whisper-large-v3-turbo",
+        "large-v3": "openai/whisper-large-v3",
     }
     # Best-effort check: confirm something for ASR exists in cache
     expected = models_dir / "asr"
@@ -104,7 +104,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     mode.add_argument("-c", "--combined", metavar="MIXED_AUDIO", help="Process a single mixed/combined audio file.")
     mode.add_argument("-i", "--interviewer", metavar="INTERVIEWER_AUDIO", help="Interviewer track for dual-track mode.")
     p.add_argument("-p", "--participant", metavar="PARTICIPANT_AUDIO", help="Participant track for dual-track mode.")
-    p.add_argument("--asr", choices=("medium.en", "large-v3-turbo"), default="medium.en", help="ASR model to use.")
+    p.add_argument("--asr", choices=("medium.en", "large-v3"), default="medium.en", help="ASR model to use.")
     p.add_argument("--outdir", required=True, metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--write-vtt", action="store_true", help="Also write WebVTT alongside SRT.")
     p.add_argument("--render-black", action="store_true", help="Render a black MP4 with burned-in subtitles (uses SRT).")
@@ -115,6 +115,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
                    help="Minimum overlap duration for cross-talk detection in seconds (default: 0.1).")
     p.add_argument("--mark-cross-talk", action="store_true", help="Mark cross-talk words in output files.")
     p.add_argument("--include-basic-confidence", action="store_true", help="Include confidence scores in output.")
+    
+    # Diarization options
+    p.add_argument("--plain", action="store_true", 
+                   help="Use plain pyannote diarization without post-processing (baseline mode).")
     
     # Logging control options
     p.add_argument("--debug", action="store_true", help="Enable DEBUG level logging output.")
@@ -205,7 +209,16 @@ def main(argv: Optional[list[str]] = None) -> int:
             api["write_asr_words"](words, paths["merged"] / "asr.txt")
             
             # 3) Diarize → turns
-            if args.detect_cross_talk:
+            if args.plain:
+                # Plain mode: use basic pyannote diarization only
+                print("[*] Plain mode: using baseline pyannote diarization (num_speakers=2, no post-processing)")
+                turns = api["diarize_mixed"](
+                    str(std_mix),
+                    words,
+                    disable_smoothing=True,
+                    detect_cross_talk=False
+                )
+            elif args.detect_cross_talk:
                 # Create cross-talk configuration
                 cross_talk_config = {
                     "overlap_threshold": args.overlap_threshold,
@@ -230,7 +243,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     # Fall back to standard diarization
                     turns = api["diarize_mixed"](str(std_mix), words)
             else:
-                # Standard diarization without cross-talk detection
+                # Standard diarization with smoothing but without cross-talk detection
                 turns = api["diarize_mixed"](str(std_mix), words)
             
             # 4) Outputs

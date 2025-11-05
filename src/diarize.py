@@ -100,6 +100,137 @@ def _maybe_resample(waveform: torch.Tensor, sr: int, target_sr: int = 16000) -> 
 
 
 @error_context(reraise=True)
+def _smooth_boundary_words(
+    words: List[Dict],
+    window_size: int = 5,
+    min_confidence: float = 0.1,
+    min_turn_duration: float = 0.3
+) -> tuple[List[Dict], int]:
+    """
+    Apply post-assignment smoothing to fix isolated boundary words.
+    
+    Uses a sliding window to detect isolated words (words with a different speaker
+    than their neighbors) and reassigns them based on context if confidence is low.
+    Also enforces minimum turn duration to reduce rapid speaker switching.
+    
+    Parameters
+    ----------
+    words : List[Dict]
+        List of word dictionaries with 'speaker', 'confidence', 'start', 'end' keys
+    window_size : int, optional
+        Size of the context window for smoothing (default: 5)
+    min_confidence : float, optional
+        Minimum confidence threshold below which words can be reassigned (default: 0.1)
+    min_turn_duration : float, optional
+        Minimum duration for a speaker turn in seconds (default: 0.3)
+        
+    Returns
+    -------
+    tuple[List[Dict], int]
+        Smoothed word list and count of corrections made
+    """
+    logger = get_logger()
+    
+    if not words:
+        return words, 0
+    
+    smoothed_words = [dict(w) for w in words]  # Create copies
+    corrections = 0
+    
+    # First pass: Fix isolated words based on context
+    half_window = window_size // 2
+    
+    for i in range(len(smoothed_words)):
+        word = smoothed_words[i]
+        current_speaker = word.get("speaker")
+        confidence = word.get("confidence", 1.0)
+        
+        # Only smooth low-confidence words
+        if confidence > min_confidence:
+            continue
+        
+        # Get context window
+        start_idx = max(0, i - half_window)
+        end_idx = min(len(smoothed_words), i + half_window + 1)
+        context = smoothed_words[start_idx:i] + smoothed_words[i+1:end_idx]
+        
+        if not context:
+            continue
+        
+        # Count speaker occurrences in context (weighted by confidence)
+        speaker_scores = {}
+        for ctx_word in context:
+            ctx_speaker = ctx_word.get("speaker")
+            ctx_confidence = ctx_word.get("confidence", 1.0)
+            if ctx_speaker:
+                speaker_scores[ctx_speaker] = speaker_scores.get(ctx_speaker, 0.0) + ctx_confidence
+        
+        if not speaker_scores:
+            continue
+        
+        # Find dominant speaker in context
+        best_context_speaker = max(speaker_scores, key=speaker_scores.get)
+        best_score = speaker_scores[best_context_speaker]
+        total_score = sum(speaker_scores.values())
+        
+        # If the current speaker is different and confidence is high enough, reassign
+        if (best_context_speaker != current_speaker and 
+            best_score > total_score * 0.6):  # 60% of context supports different speaker
+            
+            if is_debug_enabled():
+                logger.debug(f"SMOOTHING: Reassigning '{word.get('text', '')}' from {current_speaker} "
+                           f"to {best_context_speaker} (confidence: {confidence:.3f}, "
+                           f"context support: {best_score/total_score:.1%})")
+            
+            smoothed_words[i]["speaker"] = best_context_speaker
+            smoothed_words[i]["smoothed"] = True
+            corrections += 1
+    
+    # Second pass: Enforce minimum turn duration
+    turn_corrections = 0
+    i = 0
+    while i < len(smoothed_words):
+        current_speaker = smoothed_words[i].get("speaker")
+        turn_start = smoothed_words[i].get("start", 0)
+        
+        # Find the end of this speaker's turn
+        j = i
+        while j < len(smoothed_words) and smoothed_words[j].get("speaker") == current_speaker:
+            j += 1
+        
+        turn_end = smoothed_words[j-1].get("end", turn_start) if j > i else turn_start
+        turn_duration = turn_end - turn_start
+        
+        # If turn is too short and surrounded by the same speaker, merge it
+        if turn_duration < min_turn_duration and turn_duration > 0:
+            # Check speakers before and after this turn
+            prev_speaker = smoothed_words[i-1].get("speaker") if i > 0 else None
+            next_speaker = smoothed_words[j].get("speaker") if j < len(smoothed_words) else None
+            
+            # If surrounded by the same speaker, merge into that speaker
+            if prev_speaker == next_speaker and prev_speaker is not None:
+                if is_debug_enabled():
+                    word_texts = [w.get('text', '') for w in smoothed_words[i:j]]
+                    logger.debug(f"TURN MERGE: Merging {turn_duration:.3f}s turn "
+                               f"'{' '.join(word_texts)}' from {current_speaker} to {prev_speaker}")
+                
+                for k in range(i, j):
+                    smoothed_words[k]["speaker"] = prev_speaker
+                    smoothed_words[k]["turn_merged"] = True
+                turn_corrections += j - i
+        
+        i = j if j > i else i + 1
+    
+    total_corrections = corrections + turn_corrections
+    
+    if is_debug_enabled() and total_corrections > 0:
+        logger.debug(f"Smoothing complete: {corrections} isolated words, "
+                   f"{turn_corrections} words in short turns")
+    
+    return smoothed_words, total_corrections
+
+
+@error_context(reraise=True)
 def diarize_mixed(
     audio_path: str,
     words: List[Dict],
@@ -107,7 +238,8 @@ def diarize_mixed(
     device: str = "cpu",
     num_speakers: int = 2,
     detect_cross_talk: bool = False,
-    cross_talk_config: dict = None
+    cross_talk_config: dict = None,
+    disable_smoothing: bool = False
 ) -> List[Dict]:
     """
     Diarize a mixed/combined track and assign speakers to words by majority overlap,
@@ -130,6 +262,8 @@ def diarize_mixed(
         Whether to enable basic cross-talk detection, by default False
     cross_talk_config : dict, optional
         Configuration for cross-talk detection. If None, uses BASIC_CROSS_TALK_CONFIG
+    disable_smoothing : bool, optional
+        If True, skip post-assignment smoothing for baseline pyannote results, by default False
 
     Returns
     -------
@@ -189,8 +323,8 @@ def diarize_mixed(
         # Run diarization on in-memory audio dict (channel-first waveform)
         try:
             if is_debug_enabled():
-                logger.debug("Running speaker diarization")
-            diar = pipeline({"waveform": waveform, "sample_rate": sr})
+                logger.debug(f"Running speaker diarization with num_speakers={num_speakers}")
+            diar = pipeline({"waveform": waveform, "sample_rate": sr}, num_speakers=num_speakers)
         except Exception as e:
             raise DiarizationError(f"Diarization processing failed: {e}", cause=e)
 
@@ -251,6 +385,12 @@ def diarize_mixed(
         
         if is_info_enabled():
             logger.info(f"Found {segment_count} diarization segments")
+            # Log unique speakers detected by pyannote
+            unique_speakers = set(seg["label"] for seg in diar_segments)
+            logger.info(f"Pyannote detected {len(unique_speakers)} unique speaker labels: {sorted(unique_speakers)}")
+            if len(unique_speakers) != num_speakers:
+                logger.warning(f"⚠ Expected {num_speakers} speakers but pyannote produced {len(unique_speakers)} speaker labels!")
+        
         tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Complete ({segment_count} segments)")
         tracker.complete_task(diarize_task)
 
@@ -290,8 +430,8 @@ def diarize_mixed(
             word_start: float,
             word_end: float,
             segments: List[Dict],
-            buffer_zone: float = 0.3,
-            min_overlap_threshold: float = 0.01
+            buffer_zone: float = 0.2,
+            min_overlap_threshold: float = 0.05
         ) -> tuple[str, float, bool]:
             """
             Assign speaker with boundary awareness and buffer zones.
@@ -353,9 +493,9 @@ def diarize_mixed(
             if is_info_enabled():
                 logger.info(f"Assigning speakers to {total_words} words with boundary-aware logic")
             
-            # Configuration for boundary handling
-            buffer_zone = 0.3  # 300ms buffer zone around boundaries
-            confidence_threshold = 0.05  # Minimum confidence for assignment
+            # Configuration for boundary handling (optimized for interview turn-taking)
+            buffer_zone = 0.2  # 200ms buffer zone around boundaries (reduced from 300ms)
+            confidence_threshold = 0.05  # Minimum confidence for assignment (50ms overlap)
             
             boundary_word_count = 0
             low_confidence_count = 0
@@ -372,12 +512,18 @@ def diarize_mixed(
                     
                     if is_boundary_word:
                         boundary_word_count += 1
+                        # Enhanced debug logging for boundary words
+                        if is_debug_enabled():
+                            logger.debug(f"BOUNDARY WORD: '{w['text']}' at {w_start:.3f}-{w_end:.3f} "
+                                       f"→ {best_speaker} (conf: {confidence:.3f}, "
+                                       f"dist_to_boundary: {_distance_to_boundary(w_start, w_end, diar_segments):.3f}s)")
                     
                     if confidence < confidence_threshold:
                         low_confidence_count += 1
                         if is_debug_enabled():
-                            logger.debug(f"LOW CONFIDENCE BOUNDARY WORD: '{w['text']}' at {w_start:.3f}-{w_end:.3f} "
-                                       f"assigned to {best_speaker} (confidence: {confidence:.3f}, boundary_distance: {_distance_to_boundary(w_start, w_end, diar_segments):.3f})")
+                            logger.debug(f"⚠ LOW CONFIDENCE: '{w['text']}' at {w_start:.3f}-{w_end:.3f} "
+                                       f"→ {best_speaker} (conf: {confidence:.3f}, "
+                                       f"boundary: {is_boundary_word}, will be smoothed)")
                     
                     new_w = dict(w)
                     new_w["speaker"] = best_speaker
@@ -395,6 +541,23 @@ def diarize_mixed(
                 logger.info(f"Speaker assignment complete: {boundary_word_count} boundary words, "
                            f"{low_confidence_count} low confidence assignments")
                 logger.info(f"Assigned speakers to {word_count} words")
+        
+        # Apply post-assignment smoothing to fix isolated boundary words (unless disabled)
+        if not disable_smoothing:
+            smoothing_task = tracker.add_task("Smoothing speaker boundaries", total=1)
+            try:
+                smoothed_words, corrections = _smooth_boundary_words(tagged_words, window_size=5, min_confidence=0.1)
+                tagged_words = smoothed_words
+                if is_info_enabled():
+                    logger.info(f"Boundary smoothing corrected {corrections} speaker assignments")
+            except Exception as e:
+                if is_info_enabled():
+                    logger.warning(f"Boundary smoothing failed: {e}, continuing with unsmoothed assignments")
+            finally:
+                tracker.complete_task(smoothing_task)
+        else:
+            if is_info_enabled():
+                logger.info("Smoothing disabled (plain mode) - using raw pyannote speaker assignments")
         
         # Apply cross-talk detection if enabled
         if detect_cross_talk:
@@ -481,6 +644,12 @@ def diarize_mixed(
         speakers: dict[str, List[Dict]] = {}
         for w in tagged_words:
             speakers.setdefault(w["speaker"], []).append(w)
+        
+        # Log speaker distribution
+        if is_info_enabled():
+            logger.info(f"Final speaker distribution after word assignment:")
+            for spk, words_list in sorted(speakers.items()):
+                logger.info(f"  {spk}: {len(words_list)} words")
         
         with tracker.task_context("Building conversation turns", total=len(speakers)) as turns_task:
             all_turns: List[Dict] = []

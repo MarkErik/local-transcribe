@@ -6,7 +6,7 @@ Bootstrap downloader for local-transcribe.
 - Caches everything inside ./models/ so runtime can be fully offline later.
 - Always downloads:
     * openai/whisper-medium.en
-    * openai/whisper-large-v3-turbo
+    * openai/whisper-large-v3
     * WhisperX English aligner
     * pyannote/speaker-diarization-community-1 (pipeline + deps)
 
@@ -83,7 +83,7 @@ def download_asr_models(models_root: str, token: str) -> dict:
     """
     Always fetch both ASR models:
       - openai/whisper-medium.en
-      - openai/whisper-large-v3-turbo
+      - openai/whisper-large-v3
     """
     asr_root = str(pathlib.Path(models_root, "asr"))
     ensure_dir(asr_root)
@@ -91,7 +91,7 @@ def download_asr_models(models_root: str, token: str) -> dict:
     results = {}
     targets = [
         "openai/whisper-medium.en",
-        "openai/whisper-large-v3-turbo",
+        "openai/whisper-large-v3",
     ]
     for rid in targets:
         log(f"⬇️  Downloading ASR model: {rid}")
@@ -112,11 +112,9 @@ def download_ct2_faster_whisper(models_root: str, token: str) -> dict:
     choices = {
         "medium.en": [
             "Systran/faster-whisper-medium.en",
-            "guillaumekln/faster-whisper-medium.en",
         ],
-        "large-v3-turbo": [
-            "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
-            "h2oai/faster-whisper-large-v3-turbo",
+        "large-v3": [
+            "Systran/faster-whisper-large-v3",
         ],
     }
 

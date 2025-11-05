@@ -128,7 +128,7 @@ echo "Next steps:"
 echo "  1) Start Jupyter:            uv run jupyter lab"
 echo "  2) Download models (one-time):"
 echo "       uv run python scripts/download_models.py"
-echo "     This fetches BOTH ASR models (medium.en, large-v3-turbo),"
+echo "     This fetches BOTH ASR models (medium.en, large-v3),"
 echo "     WhisperX English aligners, and pyannote diarization models into ./models/."
 echo
 echo "After that, notebooks/Transcribe.ipynb will run fully offline on Python 3.12."

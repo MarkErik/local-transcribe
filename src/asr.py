@@ -13,11 +13,9 @@ from src.logging_config import get_logger, ASRError, ErrorContext, error_context
 _CT2_REPO_CHOICES: dict[str, list[str]] = {
     "medium.en": [
         "Systran/faster-whisper-medium.en",
-        "guillaumekln/faster-whisper-medium.en",
     ],
-    "large-v3-turbo": [
-        "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
-        "h2oai/faster-whisper-large-v3-turbo",
+    "large-v3": [
+        "Systran/faster-whisper-large-v3",
     ],
 }
 

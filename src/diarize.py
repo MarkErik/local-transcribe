@@ -175,11 +175,7 @@ def diarize_mixed(
         except Exception as e:
             raise DiarizationError(f"Failed to load diarization pipeline: {e}", cause=e)
 
-        try:
-            tracker.update(diarize_task, advance=1, description="Speaker Diarization - Loading audio")
-        except Exception as e:
-            if is_info_enabled():
-                logger.warning(f"Failed to update diarization progress: {e}")
+        tracker.update(diarize_task, advance=1, description="Speaker Diarization - Loading audio")
         
         # --- Load audio into memory to bypass torchcodec ---
         try:
@@ -188,11 +184,7 @@ def diarize_mixed(
         except Exception as e:
             raise DiarizationError(f"Failed to load and process audio: {e}", cause=e)
 
-        try:
-            tracker.update(diarize_task, advance=1, description="Speaker Diarization - Processing audio")
-        except Exception as e:
-            if is_info_enabled():
-                logger.warning(f"Failed to update diarization audio processing progress: {e}")
+        tracker.update(diarize_task, advance=1, description="Speaker Diarization - Processing audio")
         
         # Run diarization on in-memory audio dict (channel-first waveform)
         try:
@@ -202,11 +194,7 @@ def diarize_mixed(
         except Exception as e:
             raise DiarizationError(f"Diarization processing failed: {e}", cause=e)
 
-        try:
-            tracker.update(diarize_task, advance=1, description="Speaker Diarization - Extracting segments")
-        except Exception as e:
-            if is_info_enabled():
-                logger.warning(f"Failed to update diarization progress: {e}")
+        tracker.update(diarize_task, advance=1, description="Speaker Diarization - Extracting segments")
         
         # --- Debugging: Inspect the DiarizeOutput object ---
         if is_debug_enabled():
@@ -263,12 +251,8 @@ def diarize_mixed(
         
         if is_info_enabled():
             logger.info(f"Found {segment_count} diarization segments")
-        try:
-            tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Complete ({segment_count} segments)")
-            tracker.complete_task(diarize_task)
-        except Exception as e:
-            if is_info_enabled():
-                logger.warning(f"Failed to complete diarization task: {e}")
+        tracker.update(diarize_task, advance=1, description=f"Speaker Diarization - Complete ({segment_count} segments)")
+        tracker.complete_task(diarize_task)
 
         if not diar_segments:
             if is_info_enabled():
@@ -361,65 +345,56 @@ def diarize_mixed(
             return best_speaker, confidence, is_boundary_word
 
         # Assign each word to the diarization label with boundary-aware logic
-        assign_task = tracker.add_task("Assigning speakers to words", total=len(words))
-        tagged_words: List[Dict] = []
-        word_count = 0
-        total_words = len(words)
-        
-        if is_info_enabled():
-            logger.info(f"Assigning speakers to {total_words} words with boundary-aware logic")
-        
-        # Configuration for boundary handling
-        buffer_zone = 0.3  # 300ms buffer zone around boundaries
-        confidence_threshold = 0.05  # Minimum confidence for assignment
-        
-        boundary_word_count = 0
-        low_confidence_count = 0
-        
-        try:
-            for w in words:
-                w_start = float(w["start"])
-                w_end = float(w["end"])
-                
-                # Use boundary-aware assignment
-                best_speaker, confidence, is_boundary_word = _assign_speaker_with_boundary_awareness(
-                    w_start, w_end, diar_segments, buffer_zone, confidence_threshold
-                )
-                
-                if is_boundary_word:
-                    boundary_word_count += 1
-                
-                if confidence < confidence_threshold:
-                    low_confidence_count += 1
-                    if is_debug_enabled():
-                        logger.debug(f"LOW CONFIDENCE BOUNDARY WORD: '{w['text']}' at {w_start:.3f}-{w_end:.3f} "
-                                   f"assigned to {best_speaker} (confidence: {confidence:.3f}, boundary_distance: {_distance_to_boundary(w_start, w_end, diar_segments):.3f})")
-                
-                new_w = dict(w)
-                new_w["speaker"] = best_speaker
-                new_w["confidence"] = confidence
-                new_w["is_boundary_word"] = is_boundary_word
-                tagged_words.append(new_w)
-                
-                word_count += 1
-                if total_words > 0:
-                    try:
-                        tracker.update(assign_task, advance=1, description=f"Assigning speakers - {word_count}/{total_words} words")
-                    except Exception as e:
-                        if is_info_enabled():
-                            logger.warning(f"Failed to update speaker assignment progress: {e}")
-        except Exception as e:
-            raise DiarizationError(f"Failed to assign speakers to words: {e}", cause=e)
-        
-        if is_info_enabled():
-            logger.info(f"Speaker assignment complete: {boundary_word_count} boundary words, "
-                       f"{low_confidence_count} low confidence assignments")
-            logger.info(f"Assigned speakers to {word_count} words")
-        try:
-            tracker.complete_task(assign_task)
-        except Exception as e:
+        with tracker.task_context("Assigning speakers to words", total=len(words)) as assign_task:
+            tagged_words: List[Dict] = []
+            word_count = 0
+            total_words = len(words)
+            
             if is_info_enabled():
-                logger.warning(f"Failed to complete speaker assignment task: {e}")
+                logger.info(f"Assigning speakers to {total_words} words with boundary-aware logic")
+            
+            # Configuration for boundary handling
+            buffer_zone = 0.3  # 300ms buffer zone around boundaries
+            confidence_threshold = 0.05  # Minimum confidence for assignment
+            
+            boundary_word_count = 0
+            low_confidence_count = 0
+            
+            try:
+                for w in words:
+                    w_start = float(w["start"])
+                    w_end = float(w["end"])
+                    
+                    # Use boundary-aware assignment
+                    best_speaker, confidence, is_boundary_word = _assign_speaker_with_boundary_awareness(
+                        w_start, w_end, diar_segments, buffer_zone, confidence_threshold
+                    )
+                    
+                    if is_boundary_word:
+                        boundary_word_count += 1
+                    
+                    if confidence < confidence_threshold:
+                        low_confidence_count += 1
+                        if is_debug_enabled():
+                            logger.debug(f"LOW CONFIDENCE BOUNDARY WORD: '{w['text']}' at {w_start:.3f}-{w_end:.3f} "
+                                       f"assigned to {best_speaker} (confidence: {confidence:.3f}, boundary_distance: {_distance_to_boundary(w_start, w_end, diar_segments):.3f})")
+                    
+                    new_w = dict(w)
+                    new_w["speaker"] = best_speaker
+                    new_w["confidence"] = confidence
+                    new_w["is_boundary_word"] = is_boundary_word
+                    tagged_words.append(new_w)
+                    
+                    word_count += 1
+                    if total_words > 0:
+                        tracker.update(assign_task, advance=1, description=f"Assigning speakers - {word_count}/{total_words} words")
+            except Exception as e:
+                raise DiarizationError(f"Failed to assign speakers to words: {e}", cause=e)
+            
+            if is_info_enabled():
+                logger.info(f"Speaker assignment complete: {boundary_word_count} boundary words, "
+                           f"{low_confidence_count} low confidence assignments")
+                logger.info(f"Assigned speakers to {word_count} words")
         
         # Apply cross-talk detection if enabled
         if detect_cross_talk:
@@ -489,12 +464,8 @@ def diarize_mixed(
                 # Replace tagged_words with enhanced version
                 tagged_words = enhanced_words
                 
-                try:
-                    tracker.update(cross_talk_task, advance=1, description="Cross-talk detection - Words enhanced")
-                    tracker.complete_task(cross_talk_task)
-                except Exception as e:
-                    if is_info_enabled():
-                        logger.warning(f"Failed to complete cross-talk detection task: {e}")
+                tracker.update(cross_talk_task, advance=1, description="Cross-talk detection - Words enhanced")
+                tracker.complete_task(cross_talk_task)
                 
             except Exception as e:
                 error_msg = f"Cross-talk detection failed: {e}"
@@ -511,36 +482,26 @@ def diarize_mixed(
         for w in tagged_words:
             speakers.setdefault(w["speaker"], []).append(w)
         
-        turns_task = tracker.add_task("Building conversation turns", total=len(speakers))
-
-        all_turns: List[Dict] = []
-        speaker_count = 0
-        total_speakers = len(speakers)
-        
-        if is_info_enabled():
-            logger.info(f"Building turns for {total_speakers} speakers")
-        
-        try:
-            for spk, spk_words in speakers.items():
-                all_turns.extend(build_turns(spk_words, speaker_label=spk))
-                speaker_count += 1
-                try:
-                    tracker.update(turns_task, advance=1, description=f"Building turns - {speaker_count}/{total_speakers} speakers")
-                except Exception as e:
-                    if is_info_enabled():
-                        logger.warning(f"Failed to update turns building progress: {e}")
-
-            merged_turns = merge_turn_streams(all_turns, [])
-        except Exception as e:
-            raise DiarizationError(f"Failed to build conversation turns: {e}", cause=e)
-        
-        if is_info_enabled():
-            logger.info(f"Built {len(merged_turns)} conversation turns")
-        try:
-            tracker.complete_task(turns_task)
-        except Exception as e:
+        with tracker.task_context("Building conversation turns", total=len(speakers)) as turns_task:
+            all_turns: List[Dict] = []
+            speaker_count = 0
+            total_speakers = len(speakers)
+            
             if is_info_enabled():
-                logger.warning(f"Failed to complete turns building task: {e}")
+                logger.info(f"Building turns for {total_speakers} speakers")
+            
+            try:
+                for spk, spk_words in speakers.items():
+                    all_turns.extend(build_turns(spk_words, speaker_label=spk))
+                    speaker_count += 1
+                    tracker.update(turns_task, advance=1, description=f"Building turns - {speaker_count}/{total_speakers} speakers")
+
+                merged_turns = merge_turn_streams(all_turns, [])
+            except Exception as e:
+                raise DiarizationError(f"Failed to build conversation turns: {e}", cause=e)
+            
+            if is_info_enabled():
+                logger.info(f"Built {len(merged_turns)} conversation turns")
         
         if is_info_enabled():
             logger.info(f"Speaker diarization completed successfully for {audio_path}")

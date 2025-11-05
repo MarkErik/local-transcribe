@@ -1,11 +1,14 @@
 # src/progress.py
 from __future__ import annotations
 import time
+import logging
 from typing import Optional, Dict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from rich.progress import Progress, TaskID, BarColumn, TextColumn, SpinnerColumn
 from rich.console import Console
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -98,14 +101,12 @@ class ProgressTracker:
         """Update progress for a task."""
         # Validate task exists and is active (tasks is a list indexed by TaskID)
         if not (0 <= task_id < len(self.progress.tasks)):
-            if hasattr(self, 'console') and self.console:
-                self.console.print(f"[yellow]Warning: Task {task_id} not found in progress tracker[/yellow]")
+            logger.debug(f"Task {task_id} not found in progress tracker")
             return
             
         task = self.progress.tasks[task_id]
         if task.finished:
-            if hasattr(self, 'console') and self.console:
-                self.console.print(f"[yellow]Warning: Task {task.description} is already finished[/yellow]")
+            logger.debug(f"Task {task.description} is already finished")
             return
             
         # Update elapsed time
@@ -137,8 +138,7 @@ class ProgressTracker:
         """
         # Validate task exists
         if not (0 <= task_id < len(self.progress.tasks)):
-            if hasattr(self, 'console') and self.console:
-                self.console.print(f"[yellow]Warning: Task {task_id} not found in progress tracker[/yellow]")
+            logger.debug(f"Task {task_id} not found in progress tracker")
             return
         
         # Build update kwargs
@@ -165,14 +165,12 @@ class ProgressTracker:
         """Mark a task as complete."""
         # Validate task exists and is not already finished (tasks is a list indexed by TaskID)
         if not (0 <= task_id < len(self.progress.tasks)):
-            if hasattr(self, 'console') and self.console:
-                self.console.print(f"[yellow]Warning: Task {task_id} not found in progress tracker[/yellow]")
+            logger.debug(f"Task {task_id} not found in progress tracker")
             return
             
         task = self.progress.tasks[task_id]
         if task.finished:
-            if hasattr(self, 'console') and self.console:
-                self.console.print(f"[yellow]Warning: Task {task.description} is already finished[/yellow]")
+            logger.debug(f"Task {task.description} is already finished")
             return
             
         try:

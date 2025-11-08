@@ -11,6 +11,8 @@ wheels/
 
 # Data-related
 data/
+test/
+out/
 *.wav
 *.mp3
 *.txt

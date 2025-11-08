@@ -18,6 +18,7 @@ except Exception:
     _HAVE_TORCHAUDIO = False
 
 from pyannote.audio import Pipeline
+from pyannote.audio.pipelines.utils.hook import ProgressHook
 from dual_track.turns import build_turns
 from dual_track.merge import merge_turn_streams
 from core.progress import get_progress_tracker
@@ -137,27 +138,31 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         try:
             logger.debug("Loading pyannote diarization pipeline")
             pipeline = Pipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.1",
+                "pyannote/speaker-diarization-community-1",
                 cache_dir=cache_dir,
             )
+            # Move to GPU if available
+            if torch.cuda.is_available():
+                pipeline.to(torch.device("cuda"))
         except Exception as e:
             raise DiarizationError(f"Failed to load diarization pipeline: {e}", cause=e)
 
-        tracker.update(diarize_task, advance=20, description="Speaker Diarization - Loading audio")
+        tracker.update(diarize_task, advance=20, description="Speaker Diarization - Processing audio")
         
-        # --- Load audio into memory to bypass torchcodec ---
+        # Load waveform to bypass torchcodec issues
         try:
+            logger.debug("Loading audio waveform for diarization")
             waveform, sr = _load_waveform_mono_32f(audio_path)
-            waveform, sr = _maybe_resample(waveform, sr, target_sr=16000)  # safety: standardize to 16k if we can
+            waveform, sr = _maybe_resample(waveform, sr, target_sr=16000)
+            audio_dict = {"waveform": waveform, "sample_rate": sr}
         except Exception as e:
-            raise DiarizationError(f"Failed to load and process audio: {e}", cause=e)
-
-        tracker.update(diarize_task, advance=10, description="Speaker Diarization - Processing audio")
+            raise DiarizationError(f"Failed to load audio for diarization: {e}", cause=e)
         
-        # Run diarization on in-memory audio dict (channel-first waveform)
+        # Run diarization on audio dict with progress hook
         try:
             logger.debug("Running speaker diarization")
-            diar = pipeline({"waveform": waveform, "sample_rate": sr})
+            with ProgressHook() as hook:
+                diar = pipeline(audio_dict, hook=hook)
         except Exception as e:
             raise DiarizationError(f"Diarization processing failed: {e}", cause=e)
 

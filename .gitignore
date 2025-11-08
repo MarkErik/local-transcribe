@@ -17,6 +17,7 @@ data/
 *.srt
 *.md
 *.csv
+*.vtt
 
 
 # Models

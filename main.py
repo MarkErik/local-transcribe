@@ -60,10 +60,10 @@ def import_pipeline_modules(repo_root: pathlib.Path):
     sys.path.append(str(repo_root / "src"))
     try:
         # Core helpers
-        from asr.create_directories import ensure_session_dirs
-        from asr.audio_io import standardize_and_get_path
+        from utils.create_directories import ensure_session_dirs
+        from utils.audio_io import standardize_and_get_path
         from asr.asr import transcribe_with_alignment
-        from asr.progress import get_progress_tracker
+        from utils.progress import get_progress_tracker
 
         # Dual-track helpers
         from dual_track.turns import build_turns
@@ -137,7 +137,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     api = import_pipeline_modules(root)
     
     # Configure logging to DEBUG level for detailed output
-    from asr.logging_config import configure_global_logging
+    from utils.logging_config import configure_global_logging
     configure_global_logging(log_level="DEBUG")
 
     # Initialize progress tracking

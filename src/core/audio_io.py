@@ -1,11 +1,12 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 import pathlib
 import tempfile
 import subprocess
 from typing import Optional
-from logging_config import get_logger, AudioProcessingError, ErrorContext, error_context
+from core.logging_config import get_logger, AudioProcessingError, ErrorContext, error_context
 try:
-    from progress import get_progress_tracker
+    from core.progress import get_progress_tracker
     _HAVE_PROGRESS = True
 except ImportError:
     _HAVE_PROGRESS = False
@@ -170,4 +171,3 @@ def standardize_and_get_path(src: str | pathlib.Path, tmpdir: Optional[str | pat
                 audio_path=str(src),
                 cause=e
             )
-

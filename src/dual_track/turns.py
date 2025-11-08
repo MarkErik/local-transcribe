@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 from typing import List, Dict
 
@@ -44,4 +45,3 @@ def build_turns(words: List[Dict], speaker_label: str, max_gap_s: float = 0.8, m
             "text": " ".join(buf).strip()
         })
     return turns
-

@@ -59,18 +59,25 @@ def ensure_outdir(path: str) -> pathlib.Path:
 def import_pipeline_modules(repo_root: pathlib.Path):
     sys.path.append(str(repo_root / "src"))
     try:
-        from session import ensure_session_dirs
-        from audio_io import standardize_and_get_path
-        from asr import transcribe_with_alignment
-        from turns import build_turns
-        from merge import merge_turn_streams
-        from srt_vtt import write_srt, write_vtt
-        from txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
-        from csv_writer import write_conversation_csv
-        from markdown_writer import write_conversation_markdown
-        from render_black import render_black_video
-        from diarize import diarize_mixed
-        from progress import get_progress_tracker
+        # Core helpers
+        from core.session import ensure_session_dirs
+        from core.audio_io import standardize_and_get_path
+        from core.asr import transcribe_with_alignment
+        from core.progress import get_progress_tracker
+
+        # Dual-track helpers
+        from dual_track.turns import build_turns
+        from dual_track.merge import merge_turn_streams
+
+        # Combined helpers
+        from combined.diarize import diarize_mixed
+
+        # Output writers
+        from output.srt_vtt import write_srt, write_vtt
+        from output.txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
+        from output.csv_writer import write_conversation_csv
+        from output.markdown_writer import write_conversation_markdown
+        from output.render_black import render_black_video
     except Exception as e:
         sys.exit(f"ERROR: Failed importing pipeline modules from src/: {e}")
     return {
@@ -129,7 +136,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     api = import_pipeline_modules(root)
     
     # Configure logging to DEBUG level for detailed output
-    from logging_config import configure_global_logging
+    from core.logging_config import configure_global_logging
     configure_global_logging(log_level="DEBUG")
 
     # Initialize progress tracking

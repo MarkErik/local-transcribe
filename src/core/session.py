@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 import pathlib
 from datetime import datetime
@@ -22,4 +23,3 @@ def ensure_session_dirs(output_dir: str | pathlib.Path) -> dict[str, pathlib.Pat
         "speaker_participant": speaker_participant,
         "merged": merged,
     }
-

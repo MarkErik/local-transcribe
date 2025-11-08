@@ -1,4 +1,4 @@
-# src/diarize.py
+#!/usr/bin/env python3
 from __future__ import annotations
 from typing import List, Dict
 import os
@@ -18,10 +18,10 @@ except Exception:
     _HAVE_TORCHAUDIO = False
 
 from pyannote.audio import Pipeline
-from turns import build_turns
-from merge import merge_turn_streams
-from progress import get_progress_tracker
-from logging_config import get_logger, DiarizationError, ErrorContext, error_context
+from dual_track.turns import build_turns
+from dual_track.merge import merge_turn_streams
+from core.progress import get_progress_tracker
+from core.logging_config import get_logger, DiarizationError, ErrorContext, error_context
 
 @error_context(reraise=True)
 def _load_waveform_mono_32f(audio_path: str) -> tuple[torch.Tensor, int]:
@@ -162,7 +162,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
             raise DiarizationError(f"Diarization processing failed: {e}", cause=e)
 
         tracker.update(diarize_task, advance=20, description="Speaker Diarization - Processing segments")
-        
+
         # --- Debugging: Inspect the DiarizeOutput object ---
         logger.debug(f"Type of diar object: {type(diar)}")
         logger.debug(f"Attributes of diar object: {dir(diar)}")

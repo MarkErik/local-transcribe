@@ -1,12 +1,12 @@
-# src/asr.py
+#!/usr/bin/env python3
 from __future__ import annotations
 import os
 import pathlib
 import torch
 from faster_whisper import WhisperModel as FWModel
 import whisperx
-from progress import get_progress_tracker, ProgressCallback
-from logging_config import get_logger, ASRError, ErrorContext, error_context
+from core.progress import get_progress_tracker, ProgressCallback
+from core.logging_config import get_logger, ASRError, ErrorContext, error_context
 
 # CT2 (faster-whisper) repos to search locally under ./models/asr/ct2/...
 _CT2_REPO_CHOICES: dict[str, list[str]] = {

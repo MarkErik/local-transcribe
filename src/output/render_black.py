@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 import subprocess
 from pathlib import Path
@@ -6,7 +7,7 @@ def render_black_video(subs_path: str | Path, output_mp4: str | Path, audio_path
     """
     Create a black video with burned-in subtitles + original audio.
     Requires ffmpeg on PATH. Uses SRT input.
-    
+
     Args:
         subs_path: Path to SRT subtitle file
         output_mp4: Output MP4 file path
@@ -16,7 +17,7 @@ def render_black_video(subs_path: str | Path, output_mp4: str | Path, audio_path
     """
     subs_path = Path(subs_path)
     output_mp4 = Path(output_mp4)
-    
+
     # Handle single audio path or dual audio paths
     if isinstance(audio_path, (str, Path)):
         # Single audio track (combined mode)
@@ -34,10 +35,10 @@ def render_black_video(subs_path: str | Path, output_mp4: str | Path, audio_path
         # Dual audio tracks (interviewer + participant)
         if len(audio_path) != 2:
             raise ValueError("When providing multiple audio paths, exactly 2 paths are required (interviewer and participant)")
-        
+
         int_audio = Path(audio_path[0])
         part_audio = Path(audio_path[1])
-        
+
         cmd = [
             "ffmpeg", "-y",
             "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r=30",
@@ -49,6 +50,5 @@ def render_black_video(subs_path: str | Path, output_mp4: str | Path, audio_path
             "-c:a", "aac", "-map", "0:v", "-map", "[a]", "-shortest",
             str(output_mp4),
         ]
-    
-    subprocess.run(cmd, check=True)
 
+    subprocess.run(cmd, check=True)

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 from typing import List, Dict
 
@@ -17,4 +18,3 @@ def merge_turn_streams(a: List[Dict], b: List[Dict]) -> List[Dict]:
             t["end"] = t["start"] + eps
         last_end = max(last_end, t["end"])
     return merged
-

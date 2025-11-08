@@ -1,4 +1,4 @@
-# src/logging_config.py
+#!/usr/bin/env python3
 from __future__ import annotations
 import logging
 import sys

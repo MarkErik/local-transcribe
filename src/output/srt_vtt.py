@@ -1,8 +1,8 @@
-# src/srt_vtt.py
+#!/usr/bin/env python3
 from __future__ import annotations
 from typing import List, Dict
 from pathlib import Path
-from logging_config import get_logger, OutputError, ErrorContext, error_context
+from core.logging_config import get_logger, OutputError, ErrorContext, error_context
 
 
 def _fmt_ts(t: float) -> str:

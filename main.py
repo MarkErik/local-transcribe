@@ -60,24 +60,24 @@ def import_pipeline_modules(repo_root: pathlib.Path):
     sys.path.append(str(repo_root / "src"))
     try:
         # Core helpers
-        from core.session import ensure_session_dirs
-        from core.audio_io import standardize_and_get_path
-        from core.asr import transcribe_with_alignment
-        from core.progress import get_progress_tracker
+        from asr.create_directories import ensure_session_dirs
+        from asr.audio_io import standardize_and_get_path
+        from asr.asr import transcribe_with_alignment
+        from asr.progress import get_progress_tracker
 
         # Dual-track helpers
         from dual_track.turns import build_turns
         from dual_track.merge import merge_turn_streams
 
         # Combined helpers
-        from combined.diarize import diarize_mixed
+        from diarize.diarize import diarize_mixed
 
         # Output writers
-        from output.srt_vtt import write_srt, write_vtt
-        from output.txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
-        from output.csv_writer import write_conversation_csv
-        from output.markdown_writer import write_conversation_markdown
-        from output.render_black import render_black_video
+        from output_writers.srt_vtt import write_srt, write_vtt
+        from output_writers.txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
+        from output_writers.csv_writer import write_conversation_csv
+        from output_writers.markdown_writer import write_conversation_markdown
+        from output_writers.render_black import render_black_video
     except Exception as e:
         sys.exit(f"ERROR: Failed importing pipeline modules from src/: {e}")
     return {
@@ -137,7 +137,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     api = import_pipeline_modules(root)
     
     # Configure logging to DEBUG level for detailed output
-    from core.logging_config import configure_global_logging
+    from asr.logging_config import configure_global_logging
     configure_global_logging(log_level="DEBUG")
 
     # Initialize progress tracking

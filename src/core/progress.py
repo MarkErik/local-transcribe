@@ -195,4 +195,12 @@ class ProgressCallback:
 _global_tracker: Optional[ProgressTracker] = None
 
 
+def get_progress_tracker() -> ProgressTracker:
+    """Get or create the global progress tracker instance."""
+    global _global_tracker
+    if _global_tracker is None:
+        _global_tracker = ProgressTracker()
+    return _global_tracker
+
+
 

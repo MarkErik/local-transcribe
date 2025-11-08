@@ -7,8 +7,7 @@ from pathlib import Path
 def write_conversation_markdown(turns: List[Dict], path: str | Path) -> None:
     """
     Write a two-column markdown table with Interviewer and Participant columns.
-    Each turn gets its own row, with the other column empty.
-    Consecutive turns from the same speaker are merged into one cell.
+    Consecutive turns from the same speaker are merged into one cell, with the other column empty.
     
     Args:
         turns: List of turn dictionaries with 'speaker' and 'text' keys

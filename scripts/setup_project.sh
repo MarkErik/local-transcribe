@@ -55,17 +55,13 @@ uv python pin 3.12
 # --- dependencies ------------------------------------------------------------
 echo "⬇️  Adding runtime dependencies (this may take a minute)…"
 uv add torch torchaudio
-uv add whisperx faster-whisper pyannote.audio ffmpeg-python pydub \
+uv add faster-whisper pyannote.audio ffmpeg-python pydub \
        numpy soundfile librosa rich tqdm pandas
-
-echo "⬇️  Adding dev/notebook tools…"
-uv add --dev jupyterlab ipykernel ipywidgets
 
 # --- directory skeleton ------------------------------------------------------
 echo "📁 Creating project folders…"
 mkdir -p models/asr models/align models/diarization
 mkdir -p data/input data/output
-mkdir -p notebooks
 mkdir -p src
 mkdir -p scripts
 

@@ -78,6 +78,10 @@ class ProgressTracker:
     def complete_task(self, task_id: TaskID, stage: Optional[str] = None) -> None:
         """Mark a task as complete."""
         self.progress.update(task_id, completed=self.progress.tasks[task_id].total)
+        # Stop the task to prevent it from being redrawn
+        self.progress.stop_task(task_id)
+        # Refresh the console to clear the completed task bar immediately
+        self.progress.refresh()
         if stage and stage in self.metrics:
             self.metrics[stage].end_time = time.time()
             # Update memory one final time before stopping

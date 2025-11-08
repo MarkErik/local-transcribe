@@ -195,36 +195,4 @@ class ProgressCallback:
 _global_tracker: Optional[ProgressTracker] = None
 
 
-def get_progress_tracker() -> ProgressTracker:
-    """Get or create the global progress tracker."""
-    global _global_tracker
-    if _global_tracker is None:
-        _global_tracker = ProgressTracker()
-    return _global_tracker
 
-
-def progress_task(
-    description: str, 
-    total: Optional[int] = None,
-    stage: str = "processing"
-):
-    """Decorator for adding progress tracking to functions."""
-    def decorator(func: Callable) -> Callable:
-        def wrapper(*args, **kwargs):
-            tracker = get_progress_tracker()
-            with tracker.task_context(description, total=total, stage=stage):
-                return func(*args, **kwargs)
-        return wrapper
-    return decorator
-
-
-@contextmanager
-def progress_context(
-    description: str, 
-    total: Optional[int] = None,
-    stage: str = "processing"
-):
-    """Context manager for progress tracking."""
-    tracker = get_progress_tracker()
-    with tracker.task_context(description, total=total, stage=stage):
-        yield tracker

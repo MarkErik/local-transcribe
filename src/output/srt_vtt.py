@@ -16,13 +16,6 @@ def _fmt_ts(t: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def _ts_to_seconds(ts: str) -> float:
-    """Inverse of _fmt_ts (accepts 'hh:mm:ss,ms')."""
-    h, m, rest = ts.split(":")
-    s, ms = rest.split(",")
-    return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
-
-
 @error_context(reraise=True)
 def write_srt(turns: List[Dict], path: str | Path) -> None:
     """

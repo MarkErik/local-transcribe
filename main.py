@@ -125,6 +125,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             sys.exit("ERROR: Dual-track mode requires both -i/--interviewer and -p/--participant.")
         if combined_mode:
             sys.exit("ERROR: Provide either -c/--combined OR -i/-p, not both.")
+    mode = "combined" if combined_mode else "dual_track"
 
     # Resolve repo & models, enforce offline
     root = repo_root_from_here()
@@ -146,7 +147,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         # Ensure outdir & subdirs
         outdir = ensure_outdir(args.outdir)
-        paths = api["ensure_session_dirs"](outdir)
+        paths = api["ensure_session_dirs"](outdir, mode)
 
         # Run pipeline
         if combined_mode:

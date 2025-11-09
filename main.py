@@ -230,25 +230,22 @@ def main(argv: Optional[list[str]] = None) -> int:
             
             # 2) ASR + alignment per track
             asr_task = tracker.add_task("ASR Transcription", total=100, stage="asr_transcription")
-            
             tracker.update(asr_task, advance=20, description="Transcribing interviewer audio")
             int_words = api["transcribe_with_alignment"](str(std_int), asr_model=args.asr, role="Interviewer", parent_task_id=asr_task)
+            api["write_asr_words"](int_words, paths["speaker_interviewer"] / "asr.txt")
             # Build turns for interviewer
             int_turns = api["build_turns"](int_words, speaker_label="Interviewer")
-            # Save interviewer ASR results and timestamped transcript immediately
-            api["write_asr_words"](int_words, paths["speaker_interviewer"] / "asr.txt")
+            # Save interviewer timestamped transcript
             api["write_timestamped_txt"](int_turns, paths["speaker_interviewer"] / "interviewer.timestamped.txt")
             tracker.update(asr_task, advance=30, description="Interviewer ASR and timestamped transcript complete")
-            
             tracker.update(asr_task, advance=20, description="Transcribing participant audio")
             part_words = api["transcribe_with_alignment"](str(std_part), asr_model=args.asr, role="Participant", parent_task_id=asr_task)
+            api["write_asr_words"](part_words, paths["speaker_participant"] / "asr.txt")
             # Build turns for participant
             part_turns = api["build_turns"](part_words, speaker_label="Participant")
-            # Save participant ASR results and timestamped transcript immediately
-            api["write_asr_words"](part_words, paths["speaker_participant"] / "asr.txt")
+            # Save participant timestamped transcript
             api["write_timestamped_txt"](part_turns, paths["speaker_participant"] / "participant.timestamped.txt")
             tracker.update(asr_task, advance=30, description="Participant ASR and timestamped transcript complete")
-            
             tracker.complete_task(asr_task, stage="asr_transcription")
             
             # 3) Merge turns (already built during ASR transcription)
@@ -258,14 +255,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(turns_task, advance=50, description="Turn merging complete")
             tracker.complete_task(turns_task, stage="turns")
             
-            # 5) Per-speaker outputs (timestamped files already written during ASR)
+            # 5) Write results (timestamped files for individual speakers already written during ASR)
             output_task = tracker.add_task("Writing output files", total=100, stage="output")
-            
-            tracker.update(output_task, advance=10, description="Writing interviewer plain transcript")
-            api["write_plain_txt"](int_turns,        paths["speaker_interviewer"] / "interviewer.txt")
-            
-            tracker.update(output_task, advance=10, description="Writing participant plain transcript")
-            api["write_plain_txt"](part_turns,       paths["speaker_participant"] / "participant.txt")
             
             # 6) Merged outputs
             tracker.update(output_task, advance=15, description="Writing merged transcripts")

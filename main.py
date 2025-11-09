@@ -230,7 +230,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             asr_task = tracker.add_task("ASR Transcription", total=100, stage="asr_transcription")
             
             tracker.update(asr_task, advance=20, description="Transcribing interviewer audio")
-            int_words = api["transcribe_with_alignment"](str(std_int), asr_model=args.asr, role="Interviewer")
+            int_words = api["transcribe_with_alignment"](str(std_int), asr_model=args.asr, role="Interviewer", parent_task_id=asr_task)
             # Build turns for interviewer
             int_turns = api["build_turns"](int_words, speaker_label="Interviewer")
             # Save interviewer ASR results and timestamped transcript immediately
@@ -239,7 +239,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(asr_task, advance=30, description="Interviewer ASR and timestamped transcript complete")
             
             tracker.update(asr_task, advance=20, description="Transcribing participant audio")
-            part_words = api["transcribe_with_alignment"](str(std_part), asr_model=args.asr, role="Participant")
+            part_words = api["transcribe_with_alignment"](str(std_part), asr_model=args.asr, role="Participant", parent_task_id=asr_task)
             # Build turns for participant
             part_turns = api["build_turns"](part_words, speaker_label="Participant")
             # Save participant ASR results and timestamped transcript immediately

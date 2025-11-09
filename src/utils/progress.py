@@ -76,12 +76,15 @@ class ProgressTracker:
         self.progress.update(task_id, advance=advance, description=description)
         
     def complete_task(self, task_id: TaskID, stage: Optional[str] = None) -> None:
-        """Mark a task as complete."""
+        """Mark a task as complete and hide it from the display."""
         # Mark the task as completed
         self.progress.update(task_id, completed=self.progress.tasks[task_id].total)
         # Stop the task to prevent it from being redrawn
         self.progress.stop_task(task_id)
-        # Don't refresh immediately - let the progress display handle it naturally
+        # Hide the task from the display by setting visible=False
+        self.progress.update(task_id, visible=False)
+        # Refresh the display to immediately reflect the changes
+        self.progress.refresh()
         if stage and stage in self.metrics:
             self.metrics[stage].end_time = time.time()
             # Update memory one final time before stopping

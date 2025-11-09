@@ -36,7 +36,7 @@ def ensure_models_exist(models_dir: pathlib.Path, asr_model: str) -> None:
         sys.exit("ERROR: models/ directory not found. Run scripts/download_models.py first.")
     asr_map = {
         "medium.en": "openai/whisper-medium.en",
-        "large-v3-turbo": "openai/whisper-large-v3-turbo",
+        "large-v3": "openai/whisper-large-v3",
     }
     # Best-effort check: confirm something for ASR exists in cache
     expected = models_dir / "asr"
@@ -107,7 +107,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     mode.add_argument("-c", "--combined", metavar="MIXED_AUDIO", help="Process a single mixed/combined audio file.")
     mode.add_argument("-i", "--interviewer", metavar="INTERVIEWER_AUDIO", help="Interviewer track for dual-track mode.")
     p.add_argument("-p", "--participant", metavar="PARTICIPANT_AUDIO", help="Participant track for dual-track mode.")
-    p.add_argument("--asr", choices=("medium.en", "large-v3-turbo"), default="medium.en", help="ASR model to use.")
+    p.add_argument("--asr", choices=("medium.en", "large-v3"), default="large-v3", help="ASR model to use.")
     p.add_argument("-o", "--outdir", required=True, metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--write-vtt", action="store_true", help="Also write WebVTT alongside SRT.")
     p.add_argument("--render-black", action="store_true", help="Render a black MP4 with burned-in subtitles (uses SRT).")

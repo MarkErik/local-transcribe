@@ -38,7 +38,7 @@ def _ffmpeg_to_wav16k_mono(src: str | pathlib.Path, dst: str | pathlib.Path) -> 
         src_path = pathlib.Path(src)
         dst_path = pathlib.Path(dst)
         
-        logger.debug(f"Converting {src_path} to {dst_path}")
+        logger.info(f"Converting {src_path} to {dst_path}")
         
         # Ensure destination directory exists
         dst_path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,7 +52,7 @@ def _ffmpeg_to_wav16k_mono(src: str | pathlib.Path, dst: str | pathlib.Path) -> 
             str(dst_path),
         ]
         
-        logger.debug(f"Running ffmpeg command: {' '.join(cmd)}")
+        logger.info(f"Running ffmpeg command: {' '.join(cmd)}")
         
         # Add progress tracking if available
         if _HAVE_PROGRESS:
@@ -83,7 +83,7 @@ def _ffmpeg_to_wav16k_mono(src: str | pathlib.Path, dst: str | pathlib.Path) -> 
                 tracker.update(task, advance=50, description=f"Converting {src_path.name} - Complete")
                 tracker.complete_task(task, stage="audio_conversion")
         
-        logger.debug(f"Successfully converted {src_path} to {dst_path}")
+        logger.info(f"Successfully converted {src_path} to {dst_path}")
         
     except subprocess.CalledProcessError as e:
         error_msg = f"ffmpeg conversion failed: {e.stderr}"
@@ -143,7 +143,7 @@ def standardize_and_get_path(src: str | pathlib.Path, tmpdir: Optional[str | pat
         
         # Check if output already exists and is newer than input
         if out_path.exists() and out_path.stat().st_mtime > src_path.stat().st_mtime:
-            logger.debug(f"Using existing standardized file: {out_path}")
+            logger.info(f"Using existing standardized file: {out_path}")
             return out_path
         
         # Convert audio

@@ -33,7 +33,7 @@ def _load_waveform_mono_32f(audio_path: str) -> tuple[torch.Tensor, int]:
     logger = get_logger()
     
     try:
-        logger.debug(f"Loading audio waveform from {audio_path}")
+        logger.info(f"Loading audio waveform from {audio_path}")
         
         # soundfile returns numpy array
         data, sr = sf.read(audio_path, dtype="float32", always_2d=False)
@@ -43,14 +43,14 @@ def _load_waveform_mono_32f(audio_path: str) -> tuple[torch.Tensor, int]:
         
         # Ensure mono
         if getattr(data, "ndim", 1) > 1:
-            logger.debug(f"Converting {data.shape[1]}-channel audio to mono")
+            logger.info(f"Converting {data.shape[1]}-channel audio to mono")
             # Collapse multi-channel to mono
             data = data.mean(axis=1).astype("float32", copy=False)
 
         # Convert to torch and add channel dim -> [1, T]
         waveform = torch.from_numpy(data).unsqueeze(0)  # (1, time)
         
-        logger.debug(f"Loaded waveform: shape={waveform.shape}, sample_rate={sr}")
+        logger.info(f"Loaded waveform: shape={waveform.shape}, sample_rate={sr}")
         return waveform, int(sr)
         
     except Exception as e:
@@ -70,15 +70,15 @@ def _maybe_resample(waveform: torch.Tensor, sr: int, target_sr: int = 16000) -> 
     
     try:
         if sr == target_sr:
-            logger.debug(f"Audio already at target sample rate {sr}")
+            logger.info(f"Audio already at target sample rate {sr}")
             return waveform, sr
             
         if _HAVE_TORCHAUDIO:
-            logger.debug(f"Resampling audio from {sr} to {target_sr}")
+            logger.info(f"Resampling audio from {sr} to {target_sr}")
             # waveform is [1, T] (channel-first), which torchaudio expects
             resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=target_sr)
             wf = resampler(waveform)
-            logger.debug(f"Resampled waveform: shape={wf.shape}")
+            logger.info(f"Resampled waveform: shape={wf.shape}")
             return wf.contiguous(), target_sr
         else:
             logger.warning(f"Torchaudio not available, leaving audio at {sr}")
@@ -136,7 +136,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         diarize_task = tracker.add_task("Speaker Diarization - Loading pipeline", total=100, stage="diarization")
         
         try:
-            logger.debug("Loading pyannote diarization pipeline")
+            logger.info("Loading pyannote diarization pipeline")
             pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-community-1",
                 cache_dir=cache_dir,
@@ -151,7 +151,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         
         # Load waveform to bypass torchcodec issues
         try:
-            logger.debug("Loading audio waveform for diarization")
+            logger.info("Loading audio waveform for diarization")
             waveform, sr = _load_waveform_mono_32f(audio_path)
             waveform, sr = _maybe_resample(waveform, sr, target_sr=16000)
             audio_dict = {"waveform": waveform, "sample_rate": sr}
@@ -160,7 +160,7 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         
         # Run diarization on audio dict with progress hook
         try:
-            logger.debug("Running speaker diarization")
+            logger.info("Running speaker diarization")
             with ProgressHook() as hook:
                 diar = pipeline(audio_dict, hook=hook)
         except Exception as e:
@@ -169,23 +169,23 @@ def diarize_mixed(audio_path: str, words: List[Dict]) -> List[Dict]:
         tracker.update(diarize_task, advance=20, description="Speaker Diarization - Processing segments")
 
         # --- Debugging: Inspect the DiarizeOutput object ---
-        logger.debug(f"Type of diar object: {type(diar)}")
-        logger.debug(f"Attributes of diar object: {dir(diar)}")
+        logger.info(f"Type of diar object: {type(diar)}")
+        logger.info(f"Attributes of diar object: {dir(diar)}")
         
         # Inspect the 'speaker_diarization' attribute
         if hasattr(diar, 'speaker_diarization'):
             annotation_obj = diar.speaker_diarization
-            logger.debug(f"Type of speaker_diarization: {type(annotation_obj)}")
-            logger.debug(f"Attributes of speaker_diarization: {dir(annotation_obj)}")
+            logger.info(f"Type of speaker_diarization: {type(annotation_obj)}")
+            logger.info(f"Attributes of speaker_diarization: {dir(annotation_obj)}")
             # Check for known methods on the annotation object
             if hasattr(annotation_obj, 'itertracks'):
-                logger.debug("speaker_diarization has itertracks method")
+                logger.info("speaker_diarization has itertracks method")
             if hasattr(annotation_obj, 'tracks'):
-                logger.debug("speaker_diarization has tracks attribute")
+                logger.info("speaker_diarization has tracks attribute")
             if hasattr(annotation_obj, 'get_timeline'):
-                logger.debug("speaker_diarization has get_timeline method")
+                logger.info("speaker_diarization has get_timeline method")
             if hasattr(annotation_obj, 'support'):
-                logger.debug(f"speaker_diarization support: {annotation_obj.support}")
+                logger.info(f"speaker_diarization support: {annotation_obj.support}")
         # --- End Debugging ---
 
         # Convert annotation to a simple list of segments for overlap computation

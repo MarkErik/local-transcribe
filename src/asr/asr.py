@@ -127,7 +127,7 @@ def transcribe_with_alignment(
             estimated_segments = 10  # Fallback estimate
         
         try:
-            logger.debug(f"Loading CT2 model from {local_model_dir}")
+            logger.info(f"Loading CT2 model from {local_model_dir}")
             fw = FWModel(
                 str(local_model_dir),     # model_size_or_path (positional)
                 device=asr_device,        # 'cpu' (CT2 has no MPS)
@@ -142,7 +142,7 @@ def transcribe_with_alignment(
             tracker.update(asr_task, advance=10, description=f"ASR Transcription{role_label} - Loading audio")
         
         try:
-            logger.debug(f"Starting transcription with {asr_model}")
+            logger.info(f"Starting transcription with {asr_model}")
             segments, info = fw.transcribe(
                 audio_path,
                 language="en",
@@ -196,7 +196,7 @@ def transcribe_with_alignment(
             tracker.update(align_task, description=f"Alignment{role_label} - Loading model")
 
         try:
-            logger.debug("Loading WhisperX alignment model")
+            logger.info("Loading WhisperX alignment model")
             align_model, metadata = whisperx.load_align_model(
                 language_code="en",
                 device=align_device,             # 'mps' if available, else 'cpu'
@@ -211,7 +211,7 @@ def transcribe_with_alignment(
             tracker.update(align_task, description=f"Alignment{role_label} - Processing segments")
         
         try:
-            logger.debug("Running WhisperX alignment")
+            logger.info("Running WhisperX alignment")
             aligned = whisperx.align(
                 seg_list,
                 align_model,
@@ -272,7 +272,7 @@ def transcribe_with_alignment(
         try:
             if align_device == "mps":
                 torch.mps.empty_cache()
-                logger.debug("Cleared MPS memory cache")
+                logger.info("Cleared MPS memory cache")
         except Exception as e:
             logger.warning(f"Failed to clear MPS cache: {e}")
 

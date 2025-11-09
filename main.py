@@ -111,6 +111,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("-o", "--outdir", required=True, metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--write-vtt", action="store_true", help="Also write WebVTT alongside SRT.")
     p.add_argument("--render-black", action="store_true", help="Render a black MP4 with burned-in subtitles (uses SRT).")
+    p.add_argument("--verbose", action="store_true", help="Enable verbose logging output.")
     return p.parse_args(argv)
 
 # ---------- main ----------
@@ -136,9 +137,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Import pipeline functions after sys.path setup
     api = import_pipeline_modules(root)
     
-    # Configure logging to DEBUG level for detailed output
+    # Configure logging based on verbose flag
     from utils.logging_config import configure_global_logging
-    configure_global_logging(log_level="DEBUG")
+    log_level = "INFO" if args.verbose else "WARNING"
+    configure_global_logging(log_level=log_level)
 
     # Initialize progress tracking
     tracker = api["get_progress_tracker"]()

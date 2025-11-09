@@ -156,11 +156,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             
             # 1) Standardize
             std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
-            tracker.update(std_task, advance=50, description="Standardizing mixed audio")
             # Create a temp dir for standardized audio to avoid ffmpeg in-place editing
             temp_audio_dir = outdir / "temp_audio"
             temp_audio_dir.mkdir(exist_ok=True)
+            
+            # Standardize mixed audio
+            tracker.update(std_task, advance=50, description="Standardizing mixed audio")
             std_mix = api["standardize_and_get_path"](mixed_path, tmpdir=temp_audio_dir)
+            
+            # Complete the standardization task
             tracker.update(std_task, advance=50, description="Audio standardization complete")
             tracker.complete_task(std_task, stage="standardization")
             
@@ -209,10 +213,16 @@ def main(argv: Optional[list[str]] = None) -> int:
             # Create a temp dir for standardized audio to avoid ffmpeg in-place editing
             temp_audio_dir = outdir / "temp_audio"
             temp_audio_dir.mkdir(exist_ok=True)
+            
+            # Standardize interviewer audio
             tracker.update(std_task, advance=33, description="Standardizing interviewer audio")
             std_int = api["standardize_and_get_path"](interviewer_path, tmpdir=temp_audio_dir)
+            
+            # Standardize participant audio
             tracker.update(std_task, advance=33, description="Standardizing participant audio")
             std_part = api["standardize_and_get_path"](participant_path, tmpdir=temp_audio_dir)
+            
+            # Complete the standardization task
             tracker.update(std_task, advance=34, description="Audio standardization complete")
             tracker.complete_task(std_task, stage="standardization")
             

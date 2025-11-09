@@ -57,8 +57,11 @@ def _ffmpeg_to_wav16k_mono(src: str | pathlib.Path, dst: str | pathlib.Path) -> 
         # Add progress tracking if available
         if _HAVE_PROGRESS:
             tracker = get_progress_tracker()
-            task = tracker.add_task(f"Converting {src_path.name} to WAV", total=100, stage="audio_conversion")
-            tracker.update(task, advance=50, description=f"Converting {src_path.name} - Running ffmpeg")
+            # Check if we're already in a standardization stage (from main.py)
+            # If so, don't create individual conversion tasks to avoid duplicate progress bars
+            if "standardization" not in tracker.metrics:
+                task = tracker.add_task(f"Converting {src_path.name} to WAV", total=100, stage="audio_conversion")
+                tracker.update(task, advance=50, description=f"Converting {src_path.name} - Running ffmpeg")
         
         result = subprocess.run(
             cmd,
@@ -75,8 +78,10 @@ def _ffmpeg_to_wav16k_mono(src: str | pathlib.Path, dst: str | pathlib.Path) -> 
             )
         
         if _HAVE_PROGRESS:
-            tracker.update(task, advance=50, description=f"Converting {src_path.name} - Complete")
-            tracker.complete_task(task, stage="audio_conversion")
+            # Only update if we created a task for this conversion
+            if "standardization" not in tracker.metrics and "audio_conversion" in tracker.metrics:
+                tracker.update(task, advance=50, description=f"Converting {src_path.name} - Complete")
+                tracker.complete_task(task, stage="audio_conversion")
         
         logger.debug(f"Successfully converted {src_path} to {dst_path}")
         

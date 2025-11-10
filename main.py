@@ -93,9 +93,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     mode.add_argument("-c", "--combined", metavar="MIXED_AUDIO", help="Process a single mixed/combined audio file.")
     mode.add_argument("-i", "--interviewer", metavar="INTERVIEWER_AUDIO", help="Interviewer track for dual-track mode.")
     p.add_argument("-p", "--participant", metavar="PARTICIPANT_AUDIO", help="Participant track for dual-track mode.")
-    p.add_argument("--asr", choices=("medium.en", "large-v3"), default="large-v3", help="ASR model to use.")
-    p.add_argument("--asr-provider", default="whisper", help="ASR provider to use (default: whisper)")
-    p.add_argument("--diarization-provider", default="pyannote", help="Diarization provider to use (default: pyannote)")
+    p.add_argument("--asr", default="large-v3", help="ASR model to use (provider-specific)")
+    p.add_argument("--asr-provider", help="ASR provider to use")
+    p.add_argument("--diarization-provider", help="Diarization provider to use")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--write-vtt", action="store_true", help="Also write WebVTT alongside SRT.")
     p.add_argument("--render-black", action="store_true", help="Render a black MP4 with burned-in subtitles (uses SRT).")
@@ -178,6 +178,21 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Import pipeline functions after sys.path setup
     api = import_pipeline_modules(root)
+
+    # Check required providers
+    if not args.asr_provider:
+        available_asr = list(api["registry"].list_asr_providers().keys())
+        if available_asr:
+            sys.exit(f"ERROR: --asr-provider is required. Available: {', '.join(available_asr)}")
+        else:
+            sys.exit("ERROR: No ASR providers available.")
+    
+    if not args.diarization_provider:
+        available_diar = list(api["registry"].list_diarization_providers().keys())
+        if available_diar:
+            sys.exit(f"ERROR: --diarization-provider is required. Available: {', '.join(available_diar)}")
+        else:
+            sys.exit("ERROR: No diarization providers available.")
 
     # Get plugin providers
     try:

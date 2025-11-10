@@ -5,19 +5,16 @@ Concrete plugin implementations for existing local-transcribe components.
 
 from typing import List, Optional
 from pathlib import Path
-import sys
 
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
-from .plugins import ASRProvider, DiarizationProvider, OutputWriter, WordSegment, Turn, registry
-from ..asr.asr import transcribe_with_alignment as _transcribe_with_alignment
-from ..diarize.diarize import diarize_mixed as _diarize_mixed
-from ..dual_track.turns import build_turns as _build_turns
-from ..output_writers.txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
-from ..output_writers.srt_vtt import write_srt, write_vtt
-from ..output_writers.csv_writer import write_conversation_csv
-from ..output_writers.markdown_writer import write_conversation_markdown
+from local_transcribe.core.plugins import ASRProvider, DiarizationProvider, OutputWriter, WordSegment, Turn, registry
+from local_transcribe.asr.asr import transcribe_with_alignment as _transcribe_with_alignment
+from local_transcribe.diarize.diarize import diarize_mixed as _diarize_mixed
+from local_transcribe.dual_track.merge import merge_turn_streams
+from local_transcribe.dual_track.turns import build_turns as _build_turns
+from local_transcribe.output_writers.txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
+from local_transcribe.output_writers.srt_vtt import write_srt, write_vtt
+from local_transcribe.output_writers.csv_writer import write_conversation_csv
+from local_transcribe.output_writers.markdown_writer import write_conversation_markdown
 
 
 class WhisperASRProvider(ASRProvider):

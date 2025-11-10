@@ -12,7 +12,6 @@ from .plugins import (
     Turn,
     registry
 )
-from .builtin_plugins import register_builtin_plugins
 
 __all__ = [
     'PluginRegistry',
@@ -21,6 +20,5 @@ __all__ = [
     'OutputWriter',
     'WordSegment',
     'Turn',
-    'registry',
-    'register_builtin_plugins'
+    'registry'
 ]

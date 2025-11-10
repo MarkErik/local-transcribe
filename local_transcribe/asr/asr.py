@@ -7,8 +7,8 @@ from typing import Optional
 from faster_whisper import WhisperModel as FWModel
 import whisperx
 from rich.progress import TaskID
-from utils.progress import get_progress_tracker, ProgressCallback
-from utils.logging_config import get_logger, ASRError, ErrorContext, error_context
+from ..utils.progress import get_progress_tracker, ProgressCallback
+from ..utils.logging_config import get_logger, ASRError, ErrorContext, error_context
 
 # CT2 (faster-whisper) repos to search locally under ./models/asr/ct2/...
 _CT2_REPO_CHOICES: dict[str, list[str]] = {

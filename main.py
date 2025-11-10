@@ -57,17 +57,17 @@ def ensure_outdir(path: str) -> pathlib.Path:
 
 # ---------- import pipeline modules ----------
 def import_pipeline_modules(repo_root: pathlib.Path):
-    sys.path.append(str(repo_root / "src"))
+    sys.path.append(str(repo_root / "local_transcribe"))
     try:
         # Core helpers (keep these as direct imports since they're utilities)
-        from utils.create_directories import ensure_session_dirs
-        from utils.audio_io import standardize_and_get_path
-        from utils.progress import get_progress_tracker
-        from utils.logging_config import configure_global_logging
+        from local_transcribe.utils.create_directories import ensure_session_dirs
+        from local_transcribe.utils.audio_io import standardize_and_get_path
+        from local_transcribe.utils.progress import get_progress_tracker
+        from local_transcribe.utils.logging_config import configure_global_logging
 
         # Import core plugin system
-        from core import registry
-        from core.plugin_discovery import PluginLoader
+        from local_transcribe.core import registry
+        from local_transcribe.core.plugin_discovery import PluginLoader
 
         # Load external plugins
         plugin_loader = PluginLoader()
@@ -82,7 +82,7 @@ def import_pipeline_modules(repo_root: pathlib.Path):
             "registry": registry,
         }
     except Exception as e:
-        sys.exit(f"ERROR: Failed importing pipeline modules from src/: {e}")
+        sys.exit(f"ERROR: Failed importing pipeline modules from local_transcribe/: {e}")
 
 # ---------- CLI ----------
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -123,7 +123,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         # Need to set up paths first
         root = repo_root_from_here()
         sys.path.append(str(root / "src"))
-        from core.plugin_discovery import create_plugin_template
+        from local_transcribe.core.plugin_discovery import create_plugin_template
         from pathlib import Path
 
         # Create template in current directory
@@ -229,7 +229,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
             # Save ASR results as plain text before diarization
             # TODO: Use plugin for this too
-            from output_writers.txt_writer import write_asr_words
+            from local_transcribe.output_writers.txt_writer import write_asr_words
             write_asr_words(words, paths["merged"] / "asr.txt")
 
             # 3) Diarize → turns
@@ -261,7 +261,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             if args.render_black:
                 tracker.update(output_task, advance=30, description="Rendering video with subtitles")
                 # TODO: Use plugin for video rendering
-                from output_writers.render_black import render_black_video
+                from local_transcribe.output_writers.render_black import render_black_video
                 render_black_video(srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=std_mix)
             else:
                 tracker.update(output_task, advance=30, description="Skipping video rendering")
@@ -304,7 +304,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             )
 
             # Save ASR results and build turns for interviewer
-            from output_writers.txt_writer import write_asr_words
+            from local_transcribe.output_writers.txt_writer import write_asr_words
             write_asr_words(int_words, paths["speaker_interviewer"] / "asr.txt")
 
             # Use dual-track diarization provider for building turns
@@ -345,7 +345,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             turns_task = tracker.add_task("Merging conversation turns", total=100, stage="turns")
             tracker.update(turns_task, advance=50, description="Merging conversation turns")
             # TODO: Use plugin for merging
-            from dual_track.merge import merge_turn_streams
+            from local_transcribe.dual_track.merge import merge_turn_streams
             merged = merge_turn_streams(int_turns, part_turns)
             tracker.update(turns_task, advance=50, description="Turn merging complete")
             tracker.complete_task(turns_task, stage="turns")
@@ -374,7 +374,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             if args.render_black:
                 tracker.update(output_task, advance=30, description="Rendering video with subtitles")
                 # TODO: Use plugin for video rendering
-                from output_writers.render_black import render_black_video
+                from local_transcribe.output_writers.render_black import render_black_video
                 # Pass both interviewer and participant audio for dual-track mode
                 render_black_video(srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=[std_int, std_part])
             else:

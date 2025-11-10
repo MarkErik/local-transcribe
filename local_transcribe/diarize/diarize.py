@@ -19,10 +19,10 @@ except Exception:
 
 from pyannote.audio import Pipeline
 from pyannote.audio.pipelines.utils.hook import ProgressHook
-from dual_track.turns import build_turns
-from dual_track.merge import merge_turn_streams
-from utils.progress import get_progress_tracker
-from utils.logging_config import get_logger, DiarizationError, ErrorContext, error_context
+from ..dual_track.turns import build_turns
+from ..dual_track.merge import merge_turn_streams
+from ..utils.progress import get_progress_tracker
+from ..utils.logging_config import get_logger, DiarizationError, ErrorContext, error_context
 
 @error_context(reraise=True)
 def _load_waveform_mono_32f(audio_path: str) -> tuple[torch.Tensor, int]:

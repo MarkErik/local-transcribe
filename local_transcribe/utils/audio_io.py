@@ -4,9 +4,9 @@ import pathlib
 import tempfile
 import subprocess
 from typing import Optional
-from utils.logging_config import get_logger, AudioProcessingError, ErrorContext, error_context
+from .logging_config import get_logger, AudioProcessingError, ErrorContext, error_context
 try:
-    from utils.progress import get_progress_tracker
+    from .progress import get_progress_tracker
     _HAVE_PROGRESS = True
 except ImportError:
     _HAVE_PROGRESS = False

@@ -26,3 +26,7 @@ dev = [
     "ipywidgets>=8.1.7",
     "jupyterlab>=4.4.9",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["local_transcribe*"]

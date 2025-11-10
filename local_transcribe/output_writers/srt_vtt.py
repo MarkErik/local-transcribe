@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import List, Dict
 from pathlib import Path
-from utils.logging_config import get_logger, OutputError, ErrorContext, error_context
+from ..utils.logging_config import get_logger, OutputError, ErrorContext, error_context
 
 
 def _fmt_ts(t: float) -> str:

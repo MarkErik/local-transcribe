@@ -10,14 +10,14 @@ import sys
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
-from core.plugins import ASRProvider, DiarizationProvider, OutputWriter, WordSegment, Turn, registry
-from asr.asr import transcribe_with_alignment as _transcribe_with_alignment
-from diarize.diarize import diarize_mixed as _diarize_mixed
-from dual_track.turns import build_turns as _build_turns
-from output_writers.txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
-from output_writers.srt_vtt import write_srt, write_vtt
-from output_writers.csv_writer import write_conversation_csv
-from output_writers.markdown_writer import write_conversation_markdown
+from .plugins import ASRProvider, DiarizationProvider, OutputWriter, WordSegment, Turn, registry
+from ..asr.asr import transcribe_with_alignment as _transcribe_with_alignment
+from ..diarize.diarize import diarize_mixed as _diarize_mixed
+from ..dual_track.turns import build_turns as _build_turns
+from ..output_writers.txt_writer import write_timestamped_txt, write_plain_txt, write_asr_words
+from ..output_writers.srt_vtt import write_srt, write_vtt
+from ..output_writers.csv_writer import write_conversation_csv
+from ..output_writers.markdown_writer import write_conversation_markdown
 
 
 class WhisperASRProvider(ASRProvider):

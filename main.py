@@ -73,6 +73,101 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         plugin_loader = PluginLoader()
         plugin_loader.load_all_plugins()
 
+        # Register standard output writers
+        from local_transcribe.core.plugins import OutputWriter, Turn
+        from typing import List
+
+        class TimestampedTextWriter(OutputWriter):
+            @property
+            def name(self) -> str:
+                return "timestamped-txt"
+            @property
+            def description(self) -> str:
+                return "Timestamped text format with speaker labels"
+            @property
+            def supported_formats(self) -> List[str]:
+                return [".txt"]
+            def write(self, turns: List[Turn], output_path: str) -> None:
+                from local_transcribe.output_writers.txt_writer import write_timestamped_txt
+                write_timestamped_txt(turns, output_path)
+
+        class PlainTextWriter(OutputWriter):
+            @property
+            def name(self) -> str:
+                return "plain-txt"
+            @property
+            def description(self) -> str:
+                return "Plain text format without timestamps"
+            @property
+            def supported_formats(self) -> List[str]:
+                return [".txt"]
+            def write(self, turns: List[Turn], output_path: str) -> None:
+                from local_transcribe.output_writers.txt_writer import write_plain_txt
+                write_plain_txt(turns, output_path)
+
+        class SRTWriter(OutputWriter):
+            @property
+            def name(self) -> str:
+                return "srt"
+            @property
+            def description(self) -> str:
+                return "SRT subtitle format"
+            @property
+            def supported_formats(self) -> List[str]:
+                return [".srt"]
+            def write(self, turns: List[Turn], output_path: str) -> None:
+                from local_transcribe.output_writers.srt_vtt import write_srt
+                write_srt(turns, output_path)
+
+        class VTTWriter(OutputWriter):
+            @property
+            def name(self) -> str:
+                return "vtt"
+            @property
+            def description(self) -> str:
+                return "WebVTT subtitle format"
+            @property
+            def supported_formats(self) -> List[str]:
+                return [".vtt"]
+            def write(self, turns: List[Turn], output_path: str) -> None:
+                from local_transcribe.output_writers.srt_vtt import write_vtt
+                write_vtt(turns, output_path)
+
+        class CSVWriter(OutputWriter):
+            @property
+            def name(self) -> str:
+                return "csv"
+            @property
+            def description(self) -> str:
+                return "CSV format with conversation data"
+            @property
+            def supported_formats(self) -> List[str]:
+                return [".csv"]
+            def write(self, turns: List[Turn], output_path: str) -> None:
+                from local_transcribe.output_writers.csv_writer import write_conversation_csv
+                write_conversation_csv(turns, output_path)
+
+        class MarkdownWriter(OutputWriter):
+            @property
+            def name(self) -> str:
+                return "markdown"
+            @property
+            def description(self) -> str:
+                return "Markdown format with speaker formatting"
+            @property
+            def supported_formats(self) -> List[str]:
+                return [".md"]
+            def write(self, turns: List[Turn], output_path: str) -> None:
+                from local_transcribe.output_writers.markdown_writer import write_conversation_markdown
+                write_conversation_markdown(turns, output_path)
+
+        registry.register_output_writer(TimestampedTextWriter())
+        registry.register_output_writer(PlainTextWriter())
+        registry.register_output_writer(SRTWriter())
+        registry.register_output_writer(VTTWriter())
+        registry.register_output_writer(CSVWriter())
+        registry.register_output_writer(MarkdownWriter())
+
         # Return both utilities and registry
         return {
             "ensure_session_dirs": ensure_session_dirs,
@@ -101,7 +196,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--render-black", action="store_true", help="Render a black MP4 with burned-in subtitles (uses SRT).")
     p.add_argument("--verbose", action="store_true", help="Enable verbose logging output.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
-    p.add_argument("--create-plugin-template", choices=["asr", "diarization", "output"], help="Create a plugin template file and exit.")
+    p.add_argument("--create-plugin-template", choices=["asr", "diarization"], help="Create a plugin template file and exit.")
 
     args = p.parse_args(argv)
 
@@ -151,11 +246,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         for name, desc in api["registry"].list_diarization_providers().items():
             print(f"  {name}: {desc}")
 
-        print("\nOutput Writers:")
-        for name, desc in api["registry"].list_output_writers().items():
-            print(f"  {name}: {desc}")
-
-        print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization|output]")
+        print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization]")
         return 0
 
     # Validate dual vs combined (only when not listing plugins)
@@ -165,7 +256,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not args.participant:
             sys.exit("ERROR: Dual-track mode requires both -i/--interviewer and -p/--participant.")
         if combined_mode:
-            sys.exit("ERROR: Provide either -c/--combined OR -i/-p, not both.")
+            sys.exit("ERROR: Provide either -c/--combined OR -i/--p, not both.")
     elif not combined_mode:
         sys.exit("ERROR: Must provide either -c/--combined or -i/--interviewer.")
     mode = "combined" if combined_mode else "dual_track"

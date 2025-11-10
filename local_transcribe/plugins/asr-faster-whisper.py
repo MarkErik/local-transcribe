@@ -56,7 +56,7 @@ class WhisperASRProvider(ASRProvider):
 
     @property
     def name(self) -> str:
-        return "whisper"
+        return "faster-whisper"
 
     @property
     def description(self) -> str:

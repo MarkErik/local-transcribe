@@ -43,18 +43,25 @@ class GraniteMFASRProvider(ASRProvider):
     def _load_model(self):
         """Load the Granite model if not already loaded."""
         if self.model is None:
-            self.processor = AutoProcessor.from_pretrained(self.model_name)
-            self.tokenizer = self.processor.tokenizer
-            
-            # Load base model
-            base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.model_name).to(self.device)
-            
-            # Check if this is a PEFT model
+            # Temporarily allow online access to download model if needed
+            offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+            os.environ["HF_HUB_OFFLINE"] = "0"
             try:
-                self.model = PeftModel.from_pretrained(base_model, self.model_name).to(self.device)
-            except:
-                # If not a PEFT model, use the base model
-                self.model = base_model
+                self.processor = AutoProcessor.from_pretrained(self.model_name)
+                self.tokenizer = self.processor.tokenizer
+                
+                # Load base model
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.model_name).to(self.device)
+                
+                # Check if this is a PEFT model
+                try:
+                    self.model = PeftModel.from_pretrained(base_model, self.model_name).to(self.device)
+                except:
+                    # If not a PEFT model, use the base model
+                    self.model = base_model
+            finally:
+                # Restore offline mode
+                os.environ["HF_HUB_OFFLINE"] = offline_mode
 
     def _transcribe_audio(self, audio_path: str) -> str:
         """Transcribe audio using Granite model."""

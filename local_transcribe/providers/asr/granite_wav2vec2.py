@@ -51,24 +51,38 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
     def _load_granite_model(self):
         """Load the Granite model if not already loaded."""
         if self.granite_model is None:
-            self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name)
-            self.tokenizer = self.granite_processor.tokenizer
-            
-            # Load base model
-            base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name).to(self.device)
-            
-            # Check if this is a PEFT model
+            # Temporarily allow online access to download model if needed
+            offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+            os.environ["HF_HUB_OFFLINE"] = "0"
             try:
-                self.granite_model = PeftModel.from_pretrained(base_model, self.granite_model_name).to(self.device)
-            except:
-                # If not a PEFT model, use the base model
-                self.granite_model = base_model
+                self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name)
+                self.tokenizer = self.granite_processor.tokenizer
+                
+                # Load base model
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name).to(self.device)
+                
+                # Check if this is a PEFT model
+                try:
+                    self.granite_model = PeftModel.from_pretrained(base_model, self.granite_model_name).to(self.device)
+                except:
+                    # If not a PEFT model, use the base model
+                    self.granite_model = base_model
+            finally:
+                # Restore offline mode
+                os.environ["HF_HUB_OFFLINE"] = offline_mode
 
     def _load_wav2vec2_model(self):
         """Load the Wav2Vec2 model for alignment if not already loaded."""
         if self.wav2vec2_model is None:
-            self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name)
-            self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name).to(self.device)
+            # Temporarily allow online access to download model if needed
+            offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+            os.environ["HF_HUB_OFFLINE"] = "0"
+            try:
+                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name)
+                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name).to(self.device)
+            finally:
+                # Restore offline mode
+                os.environ["HF_HUB_OFFLINE"] = offline_mode
 
     def _transcribe_audio(self, audio_path: str) -> str:
         """Transcribe audio using Granite model."""

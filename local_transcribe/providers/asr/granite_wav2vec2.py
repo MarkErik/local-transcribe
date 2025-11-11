@@ -88,14 +88,16 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             cache_dir_wav2vec2.mkdir(parents=True, exist_ok=True)
             for model in models:
                 if model == "ibm-granite/granite-speech-3.3-8b":
+                    os.environ["HF_HOME"] = str(cache_dir_granite)
                     # Use snapshot_download to download the entire repo
                     token = os.getenv("HF_TOKEN")
-                    snapshot_download(model, cache_dir=str(cache_dir_granite), token=token)
+                    snapshot_download(model, token=token)
                     print(f"[✓] {model} downloaded successfully.")
                 elif model == "facebook/wav2vec2-base-960h":
+                    os.environ["HF_HOME"] = str(cache_dir_wav2vec2)
                     # Use snapshot_download to download the entire repo
                     token = os.getenv("HF_TOKEN")
-                    snapshot_download(model, cache_dir=str(cache_dir_wav2vec2), token=token)
+                    snapshot_download(model, token=token)
                     print(f"[✓] {model} downloaded successfully.")
         except Exception as e:
             print(f"DEBUG: Download failed with error: {e}")
@@ -108,6 +110,10 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             raise Exception(f"Failed to download {model}: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
+            if original_hf_home is not None:
+                os.environ["HF_HOME"] = original_hf_home
+            else:
+                os.environ.pop("HF_HOME", None)
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Granite and Wav2Vec2 models are available offline without downloading."""
@@ -116,12 +122,14 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             if model == "ibm-granite/granite-speech-3.3-8b":
                 cache_dir = models_dir / "asr" / "granite"
                 # Check for model files (this is a simplified check)
-                if not any(cache_dir.rglob("*.bin")) and not any(cache_dir.rglob("*.safetensors")):
+                hub_dir = cache_dir / "hub"
+                if not any(hub_dir.rglob("*.bin")) and not any(hub_dir.rglob("*.safetensors")):
                     missing_models.append(model)
             elif model == "facebook/wav2vec2-base-960h":
                 cache_dir = models_dir / "asr" / "wav2vec2"
                 # Check for model files
-                if not any(cache_dir.rglob("*.bin")) and not any(cache_dir.rglob("*.safetensors")):
+                hub_dir = cache_dir / "hub"
+                if not any(hub_dir.rglob("*.bin")) and not any(hub_dir.rglob("*.safetensors")):
                     missing_models.append(model)
         return missing_models
 
@@ -130,6 +138,7 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
         if self.granite_model is None:
             # Temporarily allow online access to download model if needed
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+            original_hf_home = os.environ.get("HF_HOME")
             os.environ["HF_HUB_OFFLINE"] = "0"
             
             # Force reload of huggingface_hub and transformers modules
@@ -146,7 +155,6 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 
                 # Temporarily set HF_HOME to our cache directory so PEFT loading finds the files
-                original_hf_home = os.environ.get("HF_HOME")
                 os.environ["HF_HOME"] = str(cache_dir)
                 
                 token = os.getenv("HF_TOKEN")
@@ -163,29 +171,36 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
                     # If not a PEFT model, use the base model
                     self.granite_model = base_model
             finally:
-                # Restore original HF_HOME
+                os.environ["HF_HUB_OFFLINE"] = offline_mode
                 if original_hf_home is not None:
                     os.environ["HF_HOME"] = original_hf_home
                 else:
                     os.environ.pop("HF_HOME", None)
-                # Restore offline mode
-                os.environ["HF_HUB_OFFLINE"] = offline_mode
 
     def _load_wav2vec2_model(self):
         """Load the Wav2Vec2 model for alignment if not already loaded."""
         if self.wav2vec2_model is None:
             # Temporarily allow online access to download model if needed
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+            original_hf_home = os.environ.get("HF_HOME")
             os.environ["HF_HUB_OFFLINE"] = "0"
             try:
                 cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "wav2vec2"
                 cache_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Temporarily set HF_HOME to our cache directory
+                os.environ["HF_HOME"] = str(cache_dir)
+                
                 token = os.getenv("HF_TOKEN")
-                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, cache_dir=str(cache_dir), local_files_only=True, token=token)
-                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, cache_dir=str(cache_dir), local_files_only=True, token=token).to(self.device)
+                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token)
+                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token).to(self.device)
             finally:
                 # Restore offline mode
                 os.environ["HF_HUB_OFFLINE"] = offline_mode
+                if original_hf_home is not None:
+                    os.environ["HF_HOME"] = original_hf_home
+                else:
+                    os.environ.pop("HF_HOME", None)
 
     def _transcribe_audio(self, audio_path: str) -> str:
         """Transcribe audio using Granite model."""

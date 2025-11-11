@@ -351,18 +351,32 @@ def main(argv: Optional[list[str]] = None) -> int:
         try:
             for model in required_models:
                 print(f"[*] Ensuring {model} is available...")
-                # Check if already downloaded
-                safe_name = f"models--{model.replace('/', '--')}"
-                model_path = models_dir / "asr" / "ct2" / safe_name / "snapshots"
-                if model_path.exists() and any(model_path.iterdir()):
-                    print(f"[✓] {model} already available locally.")
-                    continue
-                try:
-                    snapshot_download(model, cache_dir=str(models_dir / "asr" / "ct2"))
-                except Exception as e:
-                    print(f"WARNING: Failed to download {model} as CT2 model: {e}")
-                    print(f"Assuming {model} will be downloaded by the provider when needed.")
-                    continue
+                if "faster" in args.asr_provider:
+                    # CT2 model
+                    safe_name = f"models--{model.replace('/', '--')}"
+                    model_path = models_dir / "asr" / "ct2" / safe_name / "snapshots"
+                    if model_path.exists() and any(model_path.iterdir()):
+                        print(f"[✓] {model} already available locally.")
+                        continue
+                    try:
+                        snapshot_download(model, cache_dir=str(models_dir / "asr" / "ct2"))
+                        print(f"[✓] {model} downloaded successfully.")
+                    except Exception as e:
+                        print(f"WARNING: Failed to download {model} as CT2 model: {e}")
+                        print(f"Assuming {model} will be downloaded by the provider when needed.")
+                        continue
+                else:
+                    # Transformers model, preload to cache
+                    try:
+                        from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+                        print(f"[*] Preloading {model} to cache...")
+                        AutoProcessor.from_pretrained(model, local_files_only=False)
+                        AutoModelForSpeechSeq2Seq.from_pretrained(model, local_files_only=False)
+                        print(f"[✓] {model} preloaded successfully.")
+                    except Exception as e:
+                        print(f"WARNING: Failed to preload {model}: {e}")
+                        print(f"Assuming {model} will be downloaded by the provider when needed.")
+                        continue
             print("[✓] All required models are ready.")
         except Exception as e:
             print(f"ERROR: Failed to download models: {e}")

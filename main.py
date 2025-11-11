@@ -339,7 +339,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Download required models for selected providers
     # Phase 2: Model Availability Check (Offline)
-    required_asr_models = asr_provider.get_required_models()
+    required_asr_models = asr_provider.get_required_models(args.asr_model)
     required_diarization_models = diarization_provider.get_required_models()
     
     print(f"[*] Checking model availability offline...")

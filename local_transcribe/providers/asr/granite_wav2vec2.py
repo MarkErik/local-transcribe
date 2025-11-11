@@ -40,7 +40,7 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
     def description(self) -> str:
         return "IBM Granite ASR with Wav2Vec2 forced alignment for accurate word timestamps"
 
-    def get_required_models(self) -> List[str]:
+    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         return [
             "ibm-granite/granite-speech-3.3-8b",
             "facebook/wav2vec2-base-960h"

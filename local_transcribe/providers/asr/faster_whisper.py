@@ -57,8 +57,14 @@ class WhisperASRProvider(ASRProvider):
     def description(self) -> str:
         return "Faster-Whisper ASR with word timestamps"
 
-    def get_required_models(self) -> List[str]:
-        return ["Systran/faster-whisper-medium.en", "Systran/faster-whisper-large-v3"]
+    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
+        if selected_model is None:
+            # Return default model
+            return ["Systran/faster-whisper-large-v3"]
+        elif selected_model in _CT2_REPO_CHOICES:
+            return _CT2_REPO_CHOICES[selected_model]
+        else:
+            raise ValueError(f"Unknown ASR model: {selected_model}")
 
     def get_available_models(self) -> List[str]:
         return list(_CT2_REPO_CHOICES.keys())

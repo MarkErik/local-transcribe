@@ -34,7 +34,7 @@ class GraniteMFASRProvider(ASRProvider):
     def description(self) -> str:
         return "IBM Granite ASR with MFA forced alignment for word timestamps"
 
-    def get_required_models(self) -> List[str]:
+    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         return ["ibm-granite/granite-speech-3.3-8b"]
 
     def get_available_models(self) -> List[str]:

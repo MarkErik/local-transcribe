@@ -46,8 +46,12 @@ class ASRProvider(ABC):
         pass
 
     @abstractmethod
-    def get_required_models(self) -> List[str]:
-        """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs)."""
+    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
+        """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs).
+
+        Args:
+            selected_model: The selected model name, if any. If None, return default models.
+        """
         pass
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
@@ -104,7 +108,7 @@ class DiarizationProvider(ABC):
         """Return a human-readable description of this provider."""
         pass
 
-    def get_required_models(self) -> List[str]:
+    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs). Default empty."""
         return []
 

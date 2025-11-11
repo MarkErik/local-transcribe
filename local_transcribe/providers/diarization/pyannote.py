@@ -3,7 +3,7 @@
 PyAnnote diarization plugin implementation.
 """
 
-from typing import List
+from typing import List, Optional
 import os
 import pathlib
 import warnings
@@ -24,7 +24,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
     def description(self) -> str:
         return "Speaker diarization using pyannote.audio models"
 
-    def get_required_models(self) -> List[str]:
+    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         return ["pyannote/speaker-diarization"]
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:

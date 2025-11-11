@@ -97,7 +97,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
     p.add_argument("--verbose", action="store_true", help="Enable verbose logging output.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
-    p.add_argument("--create-plugin-template", choices=["asr", "diarization"], help="Create a plugin template file and exit.")
+    p.add_argument("--create-plugin-template", choices=["asr", "diarization", "output"], help="Create a plugin template file and exit.")
 
     args = p.parse_args(argv)
 
@@ -252,7 +252,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         for name, desc in api["registry"].list_output_writers().items():
             print(f"  {name}: {desc}")
 
-        print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization]")
+        print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization|output]")
         return 0
 
     if args.interactive:

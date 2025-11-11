@@ -117,7 +117,8 @@ def create_plugin_template(output_path: Path, plugin_type: str) -> None:
 Example ASR Plugin Template
 """
 
-from local_transcribe.core import ASRProvider, WordSegment, registry
+from typing import List, Optional
+from local_transcribe.framework import ASRProvider, WordSegment, registry
 
 class ExampleASRProvider(ASRProvider):
     """Example ASR provider implementation."""
@@ -160,7 +161,8 @@ registry.register_asr_provider(ExampleASRProvider())
 Example Diarization Plugin Template
 """
 
-from local_transcribe.core import DiarizationProvider, WordSegment, Turn, registry
+from typing import List
+from local_transcribe.framework import DiarizationProvider, WordSegment, Turn, registry
 
 class ExampleDiarizationProvider(DiarizationProvider):
     """Example diarization provider implementation."""
@@ -203,7 +205,8 @@ registry.register_diarization_provider(ExampleDiarizationProvider())
 Example Output Writer Plugin Template
 """
 
-from local_transcribe.core import OutputWriter, Turn, registry
+from typing import List
+from local_transcribe.framework import OutputWriter, Turn, registry
 
 class ExampleOutputWriter(OutputWriter):
     """Example output writer implementation."""

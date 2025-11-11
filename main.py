@@ -8,6 +8,7 @@ import sys
 import pathlib
 import warnings
 from typing import Optional
+from dotenv import load_dotenv
 
 # Aggressively suppress warnings
 warnings.filterwarnings("ignore")
@@ -15,6 +16,9 @@ os.environ.setdefault("PYTHONWARNINGS", "ignore")
 # Set environment variables to suppress warnings from specific libraries
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ---------- repo paths & offline env ----------
 def repo_root_from_here() -> pathlib.Path:

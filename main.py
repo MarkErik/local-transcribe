@@ -315,11 +315,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         from huggingface_hub import snapshot_download
         import os
         # Temporarily allow online for downloads
-        os.environ.pop("HF_HUB_OFFLINE", None)
+        os.environ["HF_HUB_OFFLINE"] = "0"
         try:
             for model in required_models:
                 print(f"[*] Ensuring {model} is available...")
-                snapshot_download(model, cache_dir=str(models_dir))
+                # Check if already downloaded
+                safe_name = f"models--{model.replace('/', '--')}"
+                model_path = models_dir / "asr" / "ct2" / safe_name / "snapshots"
+                if model_path.exists() and any(model_path.iterdir()):
+                    print(f"[✓] {model} already available locally.")
+                    continue
+                snapshot_download(model, cache_dir=str(models_dir / "asr" / "ct2"))
             print("[✓] All required models are ready.")
         except Exception as e:
             print(f"ERROR: Failed to download models: {e}")

@@ -42,18 +42,12 @@ class GraniteMFASRProvider(ASRProvider):
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite models to cache."""
-        import os
-        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
-        os.environ["HF_HUB_OFFLINE"] = "0"
-        try:
-            for model in models:
-                if model == "ibm-granite/granite-speech-3.3-8b":
-                    cache_dir = models_dir / "asr" / "granite"
-                    cache_dir.mkdir(parents=True, exist_ok=True)
-                    AutoProcessor.from_pretrained(model, cache_dir=str(cache_dir), local_files_only=False)
-                    AutoModelForSpeechSeq2Seq.from_pretrained(model, cache_dir=str(cache_dir), local_files_only=False)
-        finally:
-            os.environ["HF_HUB_OFFLINE"] = offline_mode
+        for model in models:
+            if model == "ibm-granite/granite-speech-3.3-8b":
+                cache_dir = models_dir / "asr" / "granite"
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                AutoProcessor.from_pretrained(model, cache_dir=str(cache_dir), local_files_only=False)
+                AutoModelForSpeechSeq2Seq.from_pretrained(model, cache_dir=str(cache_dir), local_files_only=False)
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Granite models are available offline without downloading."""

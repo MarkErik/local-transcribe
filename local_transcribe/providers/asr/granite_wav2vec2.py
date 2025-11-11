@@ -151,27 +151,14 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             # Get the actual model name from selected model
             model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-wav2vec2-8b"])
             
-            # Temporarily allow online access to download model if needed
-            offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
-            original_hf_home = os.environ.get("HF_HOME")
-            os.environ["HF_HUB_OFFLINE"] = "0"
+            cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "granite"
+            cache_dir.mkdir(parents=True, exist_ok=True)
             
-            # Force reload of huggingface_hub and transformers modules
-            import sys
-            modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
-            for module_name in modules_to_reload:
-                del sys.modules[module_name]
-            modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
-            for module_name in modules_to_reload:
-                del sys.modules[module_name]
+            # Set HF_HOME to our cache directory so loading finds the files
+            original_hf_home = os.environ.get("HF_HOME")
+            os.environ["HF_HOME"] = str(cache_dir)
             
             try:
-                cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "granite"
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                
-                # Temporarily set HF_HOME to our cache directory so PEFT loading finds the files
-                os.environ["HF_HOME"] = str(cache_dir)
-                
                 token = os.getenv("HF_TOKEN")
                 self.granite_processor = AutoProcessor.from_pretrained(model_name, local_files_only=True, token=token)
                 self.tokenizer = self.granite_processor.tokenizer
@@ -186,7 +173,6 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
                     # If not a PEFT model, use the base model
                     self.granite_model = base_model
             finally:
-                os.environ["HF_HUB_OFFLINE"] = offline_mode
                 if original_hf_home is not None:
                     os.environ["HF_HOME"] = original_hf_home
                 else:
@@ -195,23 +181,18 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
     def _load_wav2vec2_model(self):
         """Load the Wav2Vec2 model for alignment if not already loaded."""
         if self.wav2vec2_model is None:
-            # Temporarily allow online access to download model if needed
-            offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+            cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "wav2vec2"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Set HF_HOME to our cache directory
             original_hf_home = os.environ.get("HF_HOME")
-            os.environ["HF_HUB_OFFLINE"] = "0"
+            os.environ["HF_HOME"] = str(cache_dir)
+            
             try:
-                cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "wav2vec2"
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                
-                # Temporarily set HF_HOME to our cache directory
-                os.environ["HF_HOME"] = str(cache_dir)
-                
                 token = os.getenv("HF_TOKEN")
                 self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token)
                 self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token).to(self.device)
             finally:
-                # Restore offline mode
-                os.environ["HF_HUB_OFFLINE"] = offline_mode
                 if original_hf_home is not None:
                     os.environ["HF_HOME"] = original_hf_home
                 else:

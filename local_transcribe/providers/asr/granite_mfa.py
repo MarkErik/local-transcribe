@@ -133,34 +133,21 @@ class GraniteMFASRProvider(ASRProvider):
             # Get the actual model name from selected model
             model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-8b"])
             
-            # Temporarily allow online access to download model if needed
-            offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
-            os.environ["HF_HUB_OFFLINE"] = "0"
+            cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "granite"
+            cache_dir.mkdir(parents=True, exist_ok=True)
             
-            # Force reload of huggingface_hub and transformers modules
-            import sys
-            modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
-            for module_name in modules_to_reload:
-                del sys.modules[module_name]
-            modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
-            for module_name in modules_to_reload:
-                del sys.modules[module_name]
+            # Set HF_HOME to our cache directory so loading finds the files
+            original_hf_home = os.environ.get("HF_HOME")
+            os.environ["HF_HOME"] = str(cache_dir)
             
             try:
-                cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "granite"
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                
-                # Temporarily set HF_HOME to our cache directory so PEFT loading finds the files
-                original_hf_home = os.environ.get("HF_HOME")
-                os.environ["HF_HOME"] = str(cache_dir)
-                
                 token = os.getenv("HF_TOKEN")
-                # During transcription, models should be cached, so use local_files_only=True
-                self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=False, token=token)
+                # Models should be cached by preload_models, so use local_files_only=True
+                self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=True, token=token)
                 self.tokenizer = self.processor.tokenizer
                 
                 # Load base model
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(model_name, local_files_only=False, token=token).to(self.device)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(model_name, local_files_only=True, token=token).to(self.device)
                 
                 # Check if this is a PEFT model
                 try:
@@ -174,8 +161,6 @@ class GraniteMFASRProvider(ASRProvider):
                     os.environ["HF_HOME"] = original_hf_home
                 else:
                     os.environ.pop("HF_HOME", None)
-                # Restore offline mode
-                os.environ["HF_HUB_OFFLINE"] = offline_mode
 
     def _transcribe_audio(self, audio_path: str) -> str:
         """Transcribe audio using Granite model."""

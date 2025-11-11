@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import List, Optional
 import logging
 
-from .plugins import registry
 
 logger = logging.getLogger(__name__)
 

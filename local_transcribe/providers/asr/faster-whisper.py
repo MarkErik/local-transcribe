@@ -6,7 +6,6 @@ ASR plugin implementations.
 from typing import List, Optional
 import os
 import pathlib
-import torch
 from faster_whisper import WhisperModel as FWModel
 from local_transcribe.framework.plugins import ASRProvider, WordSegment, registry
 

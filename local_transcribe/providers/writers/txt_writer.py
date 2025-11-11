@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-from typing import List, Dict
+from typing import List, Dict, Union
 from pathlib import Path
 
 
@@ -61,19 +61,23 @@ def write_plain_txt(turns: List[Dict], path: str | Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_asr_words(words: List[Dict], path: str | Path) -> None:
+def write_asr_words(words: List[Union[WordSegment, Dict]], path: str | Path) -> None:
     """Write ASR word-level results as plain text without timestamps or speaker labels."""
     path = Path(path)
     lines: list[str] = []
     for w in words:
-        text = w.get("text", "").strip()
+        # Handle both dict and WordSegment
+        if hasattr(w, 'text'):
+            text = w.text.strip()
+        else:
+            text = w.get("text", "").strip()
         if text:  # Only add non-empty text
             lines.append(text)
     path.write_text(" ".join(lines) + "\n", encoding="utf-8")
 
 
 # Plugin classes
-from local_transcribe.framework.plugins import OutputWriter, Turn, registry
+from local_transcribe.framework.plugins import OutputWriter, Turn, registry, WordSegment
 from typing import List
 
 

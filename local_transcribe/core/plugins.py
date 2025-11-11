@@ -45,6 +45,11 @@ class ASRProvider(ABC):
         pass
 
     @abstractmethod
+    def get_required_models(self) -> List[str]:
+        """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs)."""
+        pass
+
+    @abstractmethod
     def transcribe_with_alignment(
         self,
         audio_path: str,

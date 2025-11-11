@@ -31,17 +31,14 @@ def set_offline_env(models_dir: pathlib.Path) -> None:
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 # ---------- simple checks ----------
-def ensure_models_exist(models_dir: pathlib.Path, asr_model: str) -> None:
+def ensure_models_exist(models_dir: pathlib.Path) -> None:
     if not models_dir.exists():
-        sys.exit("ERROR: models/ directory not found. Run scripts/download_models.py first.")
-    asr_map = {
-        "medium.en": "openai/whisper-medium.en",
-        "large-v3": "openai/whisper-large-v3",
-    }
+        print("WARNING: models/ directory not found. Models will be downloaded automatically on first run.")
+        models_dir.mkdir(parents=True, exist_ok=True)
     # Best-effort check: confirm something for ASR exists in cache
     expected = models_dir / "asr"
     if not expected.exists():
-        sys.exit("ERROR: ASR models not found in ./models/asr. Run scripts/download_models.py first.")
+        print("WARNING: ASR models not found in ./models/asr. Models will be downloaded automatically on first run.")
     # We won't strictly validate HF cache layout; downloader guarantees presence.
 
 def ensure_file(path: str, label: str) -> pathlib.Path:
@@ -265,7 +262,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     root = repo_root_from_here()
     models_dir = root / "models"
     set_offline_env(models_dir)
-    ensure_models_exist(models_dir, args.asr)
+    ensure_models_exist(models_dir)
 
     # Import pipeline functions after sys.path setup
     api = import_pipeline_modules(root)
@@ -293,7 +290,27 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"ERROR: {e}")
         print("Use --list-plugins to see available options.")
         return 1
-    
+
+    # Download required models for selected ASR provider
+    required_models = asr_provider.get_required_models()
+    if required_models:
+        print(f"[*] Checking/downloading models for {args.asr_provider}: {', '.join(required_models)}")
+        from huggingface_hub import snapshot_download
+        import os
+        # Temporarily allow online for downloads
+        os.environ.pop("HF_HUB_OFFLINE", None)
+        try:
+            for model in required_models:
+                print(f"[*] Ensuring {model} is available...")
+                snapshot_download(model, cache_dir=str(models_dir))
+            print("[✓] All required models are ready.")
+        except Exception as e:
+            print(f"ERROR: Failed to download models: {e}")
+            return 1
+        finally:
+            # Restore offline mode
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
     # Configure logging based on verbose flag
     api["configure_global_logging"](log_level="INFO" if args.verbose else "WARNING")
 

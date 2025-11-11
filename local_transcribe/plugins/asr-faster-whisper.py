@@ -47,7 +47,7 @@ def _latest_snapshot_dir_any(cache_root: pathlib.Path, repo_ids: list[str]) -> p
             return snaps[0]
     raise FileNotFoundError(
         f"No CT2 snapshot found under {cache_root} for any of: {repo_ids}. "
-        "Run scripts/download_models.py first."
+        "Models will be downloaded automatically on first run."
     )
 
 
@@ -61,6 +61,10 @@ class WhisperASRProvider(ASRProvider):
     @property
     def description(self) -> str:
         return "Faster-Whisper ASR with word timestamps"
+
+    @property
+    def get_required_models(self) -> List[str]:
+        return ["Systran/faster-whisper-medium.en", "Systran/faster-whisper-large-v3"]
 
     def transcribe_with_alignment(
         self,

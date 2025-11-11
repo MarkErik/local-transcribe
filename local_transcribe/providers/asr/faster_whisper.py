@@ -32,20 +32,16 @@ def _asr_device() -> str:
 def _latest_snapshot_dir_any(cache_root: pathlib.Path, repo_ids: list[str]) -> pathlib.Path:
     """
     Given cache_root=./models/asr/ct2 and a list of repo_ids, return the newest
-    snapshot directory that exists locally:
-      ./models/asr/ct2/models--ORG--REPO/snapshots/<rev>/
+    model directory that exists locally:
+      ./models/asr/ct2/models--ORG--REPO/
     """
     for repo_id in repo_ids:
         safe = f"models--{repo_id.replace('/', '--')}"
-        base = cache_root / safe / "snapshots"
-        if not base.exists():
-            continue
-        snaps = [p for p in base.iterdir() if p.is_dir()]
-        if snaps:
-            snaps.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            return snaps[0]
+        base = cache_root / safe
+        if base.exists() and any(base.iterdir()):
+            return base
     raise FileNotFoundError(
-        f"No CT2 snapshot found under {cache_root} for any of: {repo_ids}. "
+        f"No model directory found under {cache_root} for any of: {repo_ids}. "
         "Models will be downloaded automatically on first run."
     )
 
@@ -76,16 +72,15 @@ class WhisperASRProvider(ASRProvider):
         try:
             for model in models:
                 safe_name = f"models--{model.replace('/', '--')}"
-                model_path = models_dir / "asr" / "ct2" / safe_name / "snapshots"
+                model_path = models_dir / "asr" / "ct2" / safe_name
                 if model_path.exists() and any(model_path.iterdir()):
                     print(f"[✓] {model} already available locally.")
                     continue
                 try:
-                    snapshot_download(model, cache_dir=str(models_dir / "asr" / "ct2"))
+                    snapshot_download(model, local_dir=str(model_path))
                     print(f"[✓] {model} downloaded successfully.")
                 except Exception as e:
-                    print(f"WARNING: Failed to download {model} as CT2 model: {e}")
-                    print(f"Assuming {model} will be downloaded by the provider when needed.")
+                    raise Exception(f"Failed to download {model}: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
 
@@ -94,7 +89,7 @@ class WhisperASRProvider(ASRProvider):
         missing_models = []
         for model in models:
             safe_name = f"models--{model.replace('/', '--')}"
-            model_path = models_dir / "asr" / "ct2" / safe_name / "snapshots"
+            model_path = models_dir / "asr" / "ct2" / safe_name
             if not (model_path.exists() and any(model_path.iterdir())):
                 missing_models.append(model)
         return missing_models

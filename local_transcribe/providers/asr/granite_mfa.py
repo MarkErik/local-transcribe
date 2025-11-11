@@ -7,6 +7,7 @@ from typing import List, Optional
 import os
 import pathlib
 import tempfile
+import subprocess
 import torch
 import torchaudio
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
@@ -25,6 +26,8 @@ class GraniteMFASRProvider(ASRProvider):
         self.processor = None
         self.model = None
         self.tokenizer = None
+        # MFA setup
+        self.mfa_models_dir = None
 
     @property
     def name(self) -> str:
@@ -215,8 +218,224 @@ class GraniteMFASRProvider(ASRProvider):
         return output_text[0].strip()
 
     def _align_with_mfa(self, audio_path: str, transcript: str) -> List[WordSegment]:
-        """Use basic alignment for word timestamps (placeholder for MFA)."""
-
+        """Use Montreal Forced Aligner for precise word timestamps."""
+        
+        # Create a temporary directory for MFA processing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            
+            # Prepare input files for MFA
+            # MFA expects: audio files in one directory and matching .lab (transcript) files
+            audio_dir = temp_path / "audio"
+            audio_dir.mkdir()
+            
+            # Copy audio to temp directory with a simple name
+            audio_name = "audio.wav"
+            audio_file = audio_dir / audio_name
+            
+            # MFA requires 16kHz mono WAV - audio_path should already be standardized
+            # but let's copy it to ensure proper format
+            import shutil
+            shutil.copy(audio_path, audio_file)
+            
+            # Create matching transcript file (.lab extension)
+            transcript_file = audio_dir / f"{audio_name.rsplit('.', 1)[0]}.lab"
+            transcript_file.write_text(transcript, encoding='utf-8')
+            
+            # Setup output directory for alignments
+            output_dir = temp_path / "output"
+            output_dir.mkdir()
+            
+            # Ensure MFA models directory exists
+            if self.mfa_models_dir is None:
+                self.mfa_models_dir = pathlib.Path(os.getenv("HF_HOME", "./models")) / "mfa"
+                self.mfa_models_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Download MFA models if needed
+            self._ensure_mfa_models()
+            
+            # Run MFA alignment
+            try:
+                # MFA command: mfa align <audio_dir> <dictionary> <acoustic_model> <output_dir>
+                # Using English dictionary and acoustic model
+                cmd = [
+                    "mfa", "align",
+                    str(audio_dir),
+                    "english_us_arpa",  # Dictionary
+                    "english_us_arpa",  # Acoustic model
+                    str(output_dir),
+                    "--clean",  # Clean previous runs
+                    "--quiet",  # Suppress verbose output
+                ]
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                
+                # Parse TextGrid output
+                textgrid_file = output_dir / f"{audio_name.rsplit('.', 1)[0]}.TextGrid"
+                
+                if not textgrid_file.exists():
+                    # Fallback to simple alignment if MFA fails
+                    print(f"Warning: MFA did not produce TextGrid output, falling back to simple alignment")
+                    return self._simple_alignment(audio_path, transcript)
+                
+                # Parse TextGrid to extract word timestamps
+                segments = self._parse_textgrid(textgrid_file)
+                
+                return segments
+                
+            except subprocess.CalledProcessError as e:
+                print(f"Warning: MFA alignment failed: {e.stderr}")
+                print(f"Falling back to simple alignment")
+                return self._simple_alignment(audio_path, transcript)
+            except FileNotFoundError:
+                print(f"Warning: MFA not installed or not in PATH")
+                print(f"Install with: conda install -c conda-forge montreal-forced-aligner")
+                print(f"Falling back to simple alignment")
+                return self._simple_alignment(audio_path, transcript)
+    
+    def _ensure_mfa_models(self):
+        """Ensure MFA acoustic model and dictionary are downloaded."""
+        try:
+            # Check if models are already downloaded
+            result = subprocess.run(
+                ["mfa", "model", "list", "acoustic"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            if "english_us_arpa" not in result.stdout:
+                print("[*] Downloading MFA English acoustic model...")
+                subprocess.run(
+                    ["mfa", "model", "download", "acoustic", "english_us_arpa"],
+                    check=True
+                )
+            
+            result = subprocess.run(
+                ["mfa", "model", "list", "dictionary"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            if "english_us_arpa" not in result.stdout:
+                print("[*] Downloading MFA English dictionary...")
+                subprocess.run(
+                    ["mfa", "model", "download", "dictionary", "english_us_arpa"],
+                    check=True
+                )
+                
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            print(f"Warning: Could not download MFA models: {e}")
+    
+    def _parse_textgrid(self, textgrid_path: pathlib.Path) -> List[WordSegment]:
+        """Parse MFA TextGrid output to extract word timestamps."""
+        segments = []
+        
+        try:
+            import textgrid
+            
+            # Parse TextGrid file
+            tg = textgrid.TextGrid.fromFile(str(textgrid_path))
+            
+            # Find the words tier (usually the last tier)
+            words_tier = None
+            for tier in tg.tiers:
+                if 'words' in tier.name.lower():
+                    words_tier = tier
+                    break
+            
+            if words_tier is None and len(tg.tiers) > 0:
+                # Use the last tier as words tier
+                words_tier = tg.tiers[-1]
+            
+            if words_tier is None:
+                return []
+            
+            # Extract word segments
+            for interval in words_tier:
+                # Skip empty intervals
+                if interval.mark.strip() and interval.mark.strip() not in ['', 'sp', 'sil']:
+                    segments.append(WordSegment(
+                        text=interval.mark.strip(),
+                        start=float(interval.minTime),
+                        end=float(interval.maxTime),
+                        speaker=None
+                    ))
+            
+            return segments
+            
+        except ImportError:
+            print("Warning: textgrid package not installed. Install with: pip install textgrid")
+            print("Falling back to manual TextGrid parsing")
+            return self._parse_textgrid_manual(textgrid_path)
+        except Exception as e:
+            print(f"Warning: Error parsing TextGrid: {e}")
+            return []
+    
+    def _parse_textgrid_manual(self, textgrid_path: pathlib.Path) -> List[WordSegment]:
+        """Manually parse TextGrid file without external library."""
+        segments = []
+        
+        try:
+            content = textgrid_path.read_text(encoding='utf-8')
+            lines = content.split('\n')
+            
+            # Simple parser for TextGrid format
+            in_words_tier = False
+            in_interval = False
+            current_start = None
+            current_end = None
+            current_text = None
+            
+            for line in lines:
+                line = line.strip()
+                
+                # Check if we're in the words tier
+                if 'name = "words"' in line.lower() or 'name = "word"' in line.lower():
+                    in_words_tier = True
+                    continue
+                
+                if in_words_tier:
+                    # Look for interval boundaries
+                    if 'xmin =' in line:
+                        current_start = float(line.split('=')[1].strip())
+                    elif 'xmax =' in line:
+                        current_end = float(line.split('=')[1].strip())
+                    elif 'text =' in line:
+                        # Extract text between quotes
+                        text_part = line.split('=', 1)[1].strip()
+                        current_text = text_part.strip('"').strip()
+                        
+                        # If we have all three, create a segment
+                        if current_start is not None and current_end is not None and current_text:
+                            # Skip silence markers
+                            if current_text not in ['', 'sp', 'sil', '<eps>']:
+                                segments.append(WordSegment(
+                                    text=current_text,
+                                    start=current_start,
+                                    end=current_end,
+                                    speaker=None
+                                ))
+                        
+                        # Reset for next interval
+                        current_start = None
+                        current_end = None
+                        current_text = None
+            
+            return segments
+            
+        except Exception as e:
+            print(f"Warning: Error manually parsing TextGrid: {e}")
+            return []
+    
+    def _simple_alignment(self, audio_path: str, transcript: str) -> List[WordSegment]:
+        """Fallback to simple even-distribution alignment."""
         # Get audio duration
         y, sr = librosa.load(audio_path, sr=None)
         duration = len(y) / sr

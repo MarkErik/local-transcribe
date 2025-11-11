@@ -1,4 +1,19 @@
 Selected: ASR=faster-whisper, Diarization=dual-track, Outputs=['timestamped-txt']
 [*] Checking/downloading models for faster-whisper: Systran/faster-whisper-medium.en, Systran/faster-whisper-large-v3
 [*] Ensuring Systran/faster-whisper-medium.en is available...
-ERROR: Failed to download models: Cannot find an appropriate cached snapshot folder for the specified revision on the local disk and outgoing traffic has been disabled. To enable repo look-ups and downloads online, set 'HF_HUB_OFFLINE=0' as environment variable.
+[✓] Systran/faster-whisper-medium.en already available locally.
+[*] Ensuring Systran/faster-whisper-large-v3 is available...
+[✓] Systran/faster-whisper-large-v3 already available locally.
+[✓] All required models are ready.
+[*] Mode: dual_track | ASR: faster-whisper | Diarization: dual-track | Outputs: timestamped-txt
+⠏ Transcribing interviewer audio ━━━━━━━━╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  20% -:--:--
+Traceback (most recent call last):
+  File "/Users/mark/Dev/local-transcribe/main.py", line 486, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/mark/Dev/local-transcribe/main.py", line 415, in main
+    int_words = asr_provider.transcribe_with_alignment(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mark/Dev/local-transcribe/local_transcribe/providers/asr/faster-whisper.py", line 84, in transcribe_with_alignment
+    raise ValueError(f"Unknown ASR model: {asr_model}")
+ValueError: Unknown ASR model: None

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 from typing import List
-from local_transcribe.core.plugins import Turn
+from local_transcribe.framework.plugins import Turn
 
 def merge_turn_streams(a: List[Turn], b: List[Turn]) -> List[Turn]:
     """

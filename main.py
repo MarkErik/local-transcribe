@@ -93,7 +93,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--asr-provider", help="ASR provider to use")
     p.add_argument("--diarization-provider", help="Diarization provider to use")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
-    p.add_argument("--render-black", action="store_true", help="Render a black MP4 with burned-in subtitles (uses SRT).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
     p.add_argument("--verbose", action="store_true", help="Enable verbose logging output.")
@@ -347,7 +346,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             write_asr_words(words, paths["merged"] / "asr.txt")
 
             # 3) Diarize → turns
-            turns = diarization_provider.diarize(str(std_mix), words)
+            turns = diarization_provider.diarize(str.std_mix, words)
 
             # 4) Outputs
             output_task = tracker.add_task("Writing output files", total=100, stage="output")
@@ -384,7 +383,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 vtt_writer = api["registry"].get_output_writer("vtt")
                 vtt_writer.write(turns, paths["merged"] / "subtitles.vtt")
 
-            if args.render_black:
+            if srt_path:
                 tracker.update(output_task, advance=30, description="Rendering video with subtitles")
                 # TODO: Use plugin for video rendering
                 from local_transcribe.providers.writers.render_black import render_black_video
@@ -512,7 +511,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 vtt_writer = api["registry"].get_output_writer("vtt")
                 vtt_writer.write(merged, paths["merged"] / "subtitles.vtt")
 
-            if args.render_black:
+            if srt_path:
                 tracker.update(output_task, advance=30, description="Rendering video with subtitles")
                 # TODO: Use plugin for video rendering
                 from local_transcribe.providers.writers.render_black import render_black_video

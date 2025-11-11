@@ -376,6 +376,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"DEBUG: Setting HF_HUB_OFFLINE to 0 (was: {os.environ.get('HF_HUB_OFFLINE')})")
         os.environ["HF_HUB_OFFLINE"] = "0"
         
+        # Force reload of huggingface_hub modules to pick up new environment
+        import sys
+        print(f"DEBUG: Reloading huggingface_hub modules...")
+        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
+        for module_name in modules_to_reload:
+            del sys.modules[module_name]
+            print(f"DEBUG: Reloaded {module_name}")
+        
         # Verify the change took effect immediately
         print(f"DEBUG: Immediate verification - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
         

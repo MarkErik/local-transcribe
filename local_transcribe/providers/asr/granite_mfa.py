@@ -11,7 +11,7 @@ import torch
 import torchaudio
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from peft import PeftModel
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, snapshot_download
 import librosa
 from local_transcribe.framework.plugins import ASRProvider, WordSegment, registry
 
@@ -42,17 +42,58 @@ class GraniteMFASRProvider(ASRProvider):
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite models to cache."""
-        # Determine if we should use local files only based on the environment
-        local_only = os.environ.get('HF_HUB_OFFLINE', '0') == '1'
+        import os
+        import sys
         
-        for model in models:
-            if model == "ibm-granite/granite-speech-3.3-8b":
-                cache_dir = models_dir / "asr" / "granite"
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                # Use force_download=True to bypass offline mode entirely
-                token = os.getenv("HF_TOKEN")
-                AutoProcessor.from_pretrained(model, cache_dir=str(cache_dir), local_files_only=local_only, force_download=True, token=token)
-                AutoModelForSpeechSeq2Seq.from_pretrained(model, cache_dir=str(cache_dir), local_files_only=local_only, force_download=True, token=token)
+        # DEBUG: Log environment state before download attempt
+        print(f"DEBUG: HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        print(f"DEBUG: HF_HOME: {os.environ.get('HF_HOME')}")
+        print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+        
+        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        os.environ["HF_HUB_OFFLINE"] = "0"
+        
+        # DEBUG: Confirm environment variable was set
+        print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        
+        # Force reload of huggingface_hub modules to pick up new environment
+        print(f"DEBUG: Reloading huggingface_hub modules...")
+        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
+        for module_name in modules_to_reload:
+            del sys.modules[module_name]
+            print(f"DEBUG: Reloaded {module_name}")
+        
+        # Also reload transformers modules
+        print(f"DEBUG: Reloading transformers modules...")
+        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
+        for module_name in modules_to_reload:
+            del sys.modules[module_name]
+            print(f"DEBUG: Reloaded {module_name}")
+        
+        # Now import transformers classes after environment change
+        # from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+        from huggingface_hub import snapshot_download
+        
+        try:
+            for model in models:
+                if model == "ibm-granite/granite-speech-3.3-8b":
+                    cache_dir = models_dir / "asr" / "granite"
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                    # Use snapshot_download to download the entire repo
+                    token = os.getenv("HF_TOKEN")
+                    snapshot_download(model, cache_dir=str(cache_dir), token=token)
+                    print(f"[✓] {model} downloaded successfully.")
+        except Exception as e:
+            print(f"DEBUG: Download failed with error: {e}")
+            print(f"DEBUG: Error type: {type(e)}")
+            
+            # Additional debug: Check environment at time of error
+            print(f"DEBUG: At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            print(f"DEBUG: At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+            
+            raise Exception(f"Failed to download {model}: {e}")
+        finally:
+            os.environ["HF_HUB_OFFLINE"] = offline_mode
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Granite models are available offline without downloading."""

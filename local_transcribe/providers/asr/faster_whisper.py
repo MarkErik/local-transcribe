@@ -75,8 +75,8 @@ class WhisperASRProvider(ASRProvider):
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure CT2 models are available locally."""
-        from huggingface_hub import snapshot_download
         import os
+        import sys
         
         # DEBUG: Log environment state before download attempt
         print(f"DEBUG: HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
@@ -89,16 +89,47 @@ class WhisperASRProvider(ASRProvider):
         # DEBUG: Confirm environment variable was set
         print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
         
+        # Force reload of huggingface_hub modules to pick up new environment
+        print(f"DEBUG: Reloading huggingface_hub modules...")
+        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
+        for module_name in modules_to_reload:
+            del sys.modules[module_name]
+            print(f"DEBUG: Reloaded {module_name}")
+        
+        # Now import snapshot_download after environment change
+        from huggingface_hub import snapshot_download
+        
         try:
             ct2_cache = models_dir / "asr" / "ct2"
+            
+            # DEBUG: Check cache directory structure
+            print(f"DEBUG: Cache directory: {ct2_cache}")
+            print(f"DEBUG: Cache directory exists: {ct2_cache.exists()}")
+            if ct2_cache.exists():
+                print(f"DEBUG: Cache directory contents: {list(ct2_cache.iterdir())}")
+            
             for model in models:
                 # Use cache_dir to create standard HF cache structure
                 print(f"DEBUG: Attempting to download {model} to cache_dir: {ct2_cache}")
+                
+                # Additional debug: Check if huggingface_hub sees the offline mode correctly
+                from huggingface_hub import HfFolder
+                print(f"DEBUG: HfFolder.get_token(): {'***' if HfFolder.get_token() else 'NOT SET'}")
+                
                 snapshot_download(model, cache_dir=str(ct2_cache))
                 print(f"[✓] {model} downloaded successfully.")
+                
+                # DEBUG: Check what was actually created
+                if ct2_cache.exists():
+                    print(f"DEBUG: After download, cache directory contents: {list(ct2_cache.iterdir())}")
         except Exception as e:
             print(f"DEBUG: Download failed with error: {e}")
             print(f"DEBUG: Error type: {type(e)}")
+            
+            # Additional debug: Check environment at time of error
+            print(f"DEBUG: At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            print(f"DEBUG: At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+            
             raise Exception(f"Failed to download {model}: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode

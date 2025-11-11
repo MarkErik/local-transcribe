@@ -376,6 +376,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"DEBUG: Setting HF_HUB_OFFLINE to 0 (was: {os.environ.get('HF_HUB_OFFLINE')})")
         os.environ["HF_HUB_OFFLINE"] = "0"
         
+        # Verify the change took effect immediately
+        print(f"DEBUG: Immediate verification - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+        
         # Show current environment for debugging
         print(f"[*] Environment check:")
         print(f"    HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
@@ -387,6 +390,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         for key, value in os.environ.items():
             if key.startswith('HF_'):
                 print(f"    {key}: {'***' if 'TOKEN' in key else value}")
+        
+        # Test huggingface_hub import and check its view of environment
+        try:
+            from huggingface_hub import HfApi
+            print(f"DEBUG: HfApi().whoami() (tests token): {HfApi().whoami()}")
+        except Exception as e:
+            print(f"DEBUG: HfApi test failed: {e}")
         
         try:
             # Download missing models

@@ -33,13 +33,17 @@ def _latest_snapshot_dir_any(cache_root: pathlib.Path, repo_ids: list[str]) -> p
     """
     Given cache_root=./models/asr/ct2 and a list of repo_ids, return the newest
     model directory that exists locally:
-      ./models/asr/ct2/models--ORG--REPO/
+      ./models/asr/ct2/models--ORG--REPO/snapshots/<rev>/
     """
     for repo_id in repo_ids:
         safe = f"models--{repo_id.replace('/', '--')}"
-        base = cache_root / safe
-        if base.exists() and any(base.iterdir()):
-            return base
+        base = cache_root / safe / "snapshots"
+        if not base.exists():
+            continue
+        snaps = [p for p in base.iterdir() if p.is_dir()]
+        if snaps:
+            snaps.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            return snaps[0]
     raise FileNotFoundError(
         f"No model directory found under {cache_root} for any of: {repo_ids}. "
         "Models will be downloaded automatically on first run."
@@ -76,27 +80,24 @@ class WhisperASRProvider(ASRProvider):
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         os.environ["HF_HUB_OFFLINE"] = "0"
         try:
+            ct2_cache = models_dir / "asr" / "ct2"
             for model in models:
-                safe_name = f"models--{model.replace('/', '--')}"
-                model_path = models_dir / "asr" / "ct2" / safe_name
-                if model_path.exists() and any(model_path.iterdir()):
-                    print(f"[✓] {model} already available locally.")
-                    continue
-                try:
-                    snapshot_download(model, local_dir=str(model_path))
-                    print(f"[✓] {model} downloaded successfully.")
-                except Exception as e:
-                    raise Exception(f"Failed to download {model}: {e}")
+                # Use cache_dir to create standard HF cache structure
+                snapshot_download(model, cache_dir=str(ct2_cache))
+                print(f"[✓] {model} downloaded successfully.")
+        except Exception as e:
+            raise Exception(f"Failed to download {model}: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which CT2 models are available offline without downloading."""
         missing_models = []
+        ct2_cache = models_dir / "asr" / "ct2"
         for model in models:
-            safe_name = f"models--{model.replace('/', '--')}"
-            model_path = models_dir / "asr" / "ct2" / safe_name
-            if not (model_path.exists() and any(model_path.iterdir())):
+            safe = f"models--{model.replace('/', '--')}"
+            base = ct2_cache / safe / "snapshots"
+            if not (base.exists() and any(p.is_dir() for p in base.iterdir() if p.is_dir())):
                 missing_models.append(model)
         return missing_models
 

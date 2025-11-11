@@ -406,7 +406,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"ERROR: Failed to download models: {e}")
             return 1
         finally:
-            os.environ["HF_HUB_OFFLINE"] = "0"
+            os.environ["HF_HUB_OFFLINE"] = "1"
     else:
         print("[✓] All required models are available locally.")
 

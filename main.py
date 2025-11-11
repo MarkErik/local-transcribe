@@ -90,12 +90,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     mode.add_argument("-c", "--combined", metavar="MIXED_AUDIO", help="Process a single mixed/combined audio file.")
     mode.add_argument("-i", "--interviewer", metavar="INTERVIEWER_AUDIO", help="Interviewer track for dual-track mode.")
     p.add_argument("-p", "--participant", metavar="PARTICIPANT_AUDIO", help="Participant track for dual-track mode.")
-    p.add_argument("--asr", default="large-v3", help="ASR model to use (provider-specific)")
     p.add_argument("--asr-provider", help="ASR provider to use")
     p.add_argument("--diarization-provider", help="Diarization provider to use")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
-    p.add_argument("--write-vtt", action="store_true", help="Also write WebVTT alongside SRT.")
     p.add_argument("--render-black", action="store_true", help="Render a black MP4 with burned-in subtitles (uses SRT).")
+    p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
+    p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
     p.add_argument("--verbose", action="store_true", help="Enable verbose logging output.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
     p.add_argument("--create-plugin-template", choices=["asr", "diarization"], help="Create a plugin template file and exit.")
@@ -111,15 +111,86 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
     return args
 
+def interactive_prompt(args, api):
+    registry = api["registry"]
+    print("\n=== Interactive Mode ===")
+    print("Select your processing options:\n")
+
+    # ASR provider
+    asr_providers = registry.list_asr_providers()
+    if not asr_providers:
+        print("No ASR providers available.")
+        return args
+
+    print("Available ASR Providers:")
+    for i, (name, desc) in enumerate(asr_providers.items(), 1):
+        print(f"  {i}. {name}: {desc}")
+
+    while True:
+        try:
+            choice = int(input("\nChoose ASR provider (number): ").strip())
+            if 1 <= choice <= len(asr_providers):
+                args.asr_provider = list(asr_providers.keys())[choice - 1]
+                break
+            else:
+                print("Invalid choice. Please enter a number from the list.")
+        except ValueError:
+            print("Please enter a valid number.")
+
+    # Diarization provider
+    diar_providers = registry.list_diarization_providers()
+    print("\nAvailable Diarization Providers:")
+    for i, (name, desc) in enumerate(diar_providers.items(), 1):
+        print(f"  {i}. {name}: {desc}")
+
+    while True:
+        try:
+            choice = int(input("\nChoose Diarization provider (number): ").strip())
+            if 1 <= choice <= len(diar_providers):
+                args.diarization_provider = list(diar_providers.keys())[choice - 1]
+                break
+            else:
+                print("Invalid choice. Please enter a number from the list.")
+        except ValueError:
+            print("Please enter a valid number.")
+
+    # Output formats
+    output_writers = registry.list_output_writers()
+    print("\nAvailable Output Formats:")
+    for i, (name, desc) in enumerate(output_writers.items(), 1):
+        print(f"  {i}. {name}: {desc}")
+
+    print("\nEnter numbers separated by commas (e.g., 1,3,5), or press Enter for all formats:")
+    choice = input("Choose output formats: ").strip()
+
+    if not choice:
+        args.selected_outputs = list(output_writers.keys())
+    else:
+        try:
+            indices = [int(x.strip()) - 1 for x in choice.split(',') if x.strip()]
+            valid_indices = [i for i in indices if 0 <= i < len(output_writers)]
+            args.selected_outputs = [list(output_writers.keys())[i] for i in valid_indices]
+            if not args.selected_outputs:
+                print("No valid choices, selecting all.")
+                args.selected_outputs = list(output_writers.keys())
+        except ValueError:
+            print("Invalid input, selecting all.")
+            args.selected_outputs = list(output_writers.keys())
+
+    print(f"\nSelected: ASR={args.asr_provider}, Diarization={args.diarization_provider}, Outputs={args.selected_outputs}")
+    return args
+
 # ---------- main ----------
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
 
+    root = repo_root_from_here()
+    models_dir = root / "models"
+    set_offline_env(models_dir)
+    api = import_pipeline_modules(root)
+
     # Handle plugin template creation
     if args.create_plugin_template:
-        # Need to set up paths first
-        root = repo_root_from_here()
-        sys.path.append(str(root / "src"))
         from local_transcribe.framework.plugin_discovery import create_plugin_template
         from pathlib import Path
 
@@ -133,12 +204,6 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Handle plugin listing (doesn't require other args)
     if args.list_plugins:
-        # Need to import and load plugins to list them
-        root = repo_root_from_here()
-        models_dir = root / "models"
-        set_offline_env(models_dir)
-        api = import_pipeline_modules(root)
-
         print("Available Plugins:")
         print("\nASR Providers:")
         for name, desc in api["registry"].list_asr_providers().items():
@@ -155,41 +220,58 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization]")
         return 0
 
-    # Validate dual vs combined (only when not listing plugins)
+    if args.interactive:
+        args = interactive_prompt(args, api)
+
+    # Validate required arguments when not listing plugins or creating templates
+    if not args.list_plugins and not args.create_plugin_template:
+        if not args.outdir:
+            print("ERROR: -o/--outdir is required")
+            return 1
+        if not args.combined and not args.interviewer:
+            print("ERROR: Must provide either -c/--combined or -i/--interviewer")
+            return 1
+
+    # Set default outputs for non-interactive
+    if not hasattr(args, 'selected_outputs') or not args.selected_outputs:
+        if args.only_final_transcript:
+            args.selected_outputs = ['timestamped-txt']
+        else:
+            args.selected_outputs = list(api["registry"].list_output_writers().keys())
+
+    # Validate dual vs combined
     dual_mode = args.interviewer is not None
     combined_mode = args.combined is not None
     if dual_mode:
         if not args.participant:
-            sys.exit("ERROR: Dual-track mode requires both -i/--interviewer and -p/--participant.")
+            print("ERROR: Dual-track mode requires both -i/--interviewer and -p/--participant.")
+            return 1
         if combined_mode:
-            sys.exit("ERROR: Provide either -c/--combined OR -i/--p, not both.")
+            print("ERROR: Provide either -c/--combined OR -i/--p, not both.")
+            return 1
     elif not combined_mode:
-        sys.exit("ERROR: Must provide either -c/--combined or -i/--interviewer.")
+        print("ERROR: Must provide either -c/--combined or -i/--interviewer")
+        return 1
     mode = "combined" if combined_mode else "dual_track"
-
-    # Resolve repo & models, enforce offline
-    root = repo_root_from_here()
-    models_dir = root / "models"
-    set_offline_env(models_dir)
-    ensure_models_exist(models_dir)
-
-    # Import pipeline functions after sys.path setup
-    api = import_pipeline_modules(root)
 
     # Check required providers
     if not args.asr_provider:
         available_asr = list(api["registry"].list_asr_providers().keys())
         if available_asr:
-            sys.exit(f"ERROR: --asr-provider is required. Available: {', '.join(available_asr)}")
+            print(f"ERROR: --asr-provider is required. Available: {', '.join(available_asr)}")
+            return 1
         else:
-            sys.exit("ERROR: No ASR providers available.")
+            print("ERROR: No ASR providers available.")
+            return 1
     
     if not args.diarization_provider:
         available_diar = list(api["registry"].list_diarization_providers().keys())
         if available_diar:
-            sys.exit(f"ERROR: --diarization-provider is required. Available: {', '.join(available_diar)}")
+            print(f"ERROR: --diarization-provider is required. Available: {', '.join(available_diar)}")
+            return 1
         else:
-            sys.exit("ERROR: No diarization providers available.")
+            print("ERROR: No diarization providers available.")
+            return 1
 
     # Get plugin providers
     try:
@@ -232,7 +314,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         outdir = ensure_outdir(args.outdir)
         paths = api["ensure_session_dirs"](outdir, mode)
 
-        print(f"[*] Mode: {mode} | ASR: {args.asr_provider} ({args.asr}) | Diarization: {args.diarization_provider}")
+        print(f"[*] Mode: {mode} | ASR: {args.asr_provider} | Diarization: {args.diarization_provider} | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
         if combined_mode:
@@ -256,7 +338,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             words = asr_provider.transcribe_with_alignment(
                 str(std_mix),
                 role=None,
-                asr_model=args.asr
+                asr_model=None
             )
 
             # Save ASR results as plain text before diarization
@@ -271,22 +353,34 @@ def main(argv: Optional[list[str]] = None) -> int:
             output_task = tracker.add_task("Writing output files", total=100, stage="output")
             tracker.update(output_task, advance=20, description="Writing transcript files")
 
-            # Get output writers
-            timestamped_writer = api["registry"].get_output_writer("timestamped-txt")
-            plain_writer = api["registry"].get_output_writer("plain-txt")
-            csv_writer = api["registry"].get_output_writer("csv")
-            markdown_writer = api["registry"].get_output_writer("markdown")
-            srt_writer = api["registry"].get_output_writer("srt")
+            # Write selected outputs
+            srt_path = None
+            selected = set(args.selected_outputs)
 
-            timestamped_writer.write(turns, paths["merged"] / "transcript.timestamped.txt")
-            plain_writer.write(turns, paths["merged"] / "transcript.txt")
-            csv_writer.write(turns, paths["merged"] / "transcript.csv")
-            markdown_writer.write(turns, paths["merged"] / "transcript.md")
+            if 'timestamped-txt' in selected:
+                timestamped_writer = api["registry"].get_output_writer("timestamped-txt")
+                timestamped_writer.write(turns, paths["merged"] / "transcript.timestamped.txt")
+
+            if 'plain-txt' in selected:
+                plain_writer = api["registry"].get_output_writer("plain-txt")
+                plain_writer.write(turns, paths["merged"] / "transcript.txt")
+
+            if 'csv' in selected:
+                csv_writer = api["registry"].get_output_writer("csv")
+                csv_writer.write(turns, paths["merged"] / "transcript.csv")
+
+            if 'markdown' in selected:
+                markdown_writer = api["registry"].get_output_writer("markdown")
+                markdown_writer.write(turns, paths["merged"] / "transcript.md")
 
             tracker.update(output_task, advance=20, description="Writing subtitle files")
-            srt_path = paths["merged"] / "subtitles.srt"
-            srt_writer.write(turns, srt_path)
-            if args.write_vtt:
+
+            if 'srt' in selected:
+                srt_writer = api["registry"].get_output_writer("srt")
+                srt_path = paths["merged"] / "subtitles.srt"
+                srt_writer.write(turns, srt_path)
+
+            if 'vtt' in selected:
                 vtt_writer = api["registry"].get_output_writer("vtt")
                 vtt_writer.write(turns, paths["merged"] / "subtitles.vtt")
 
@@ -332,7 +426,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             int_words = asr_provider.transcribe_with_alignment(
                 str(std_int),
                 role="Interviewer",
-                asr_model=args.asr
+                asr_model=None
             )
 
             # Save ASR results and build turns for interviewer
@@ -356,7 +450,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             part_words = asr_provider.transcribe_with_alignment(
                 str(std_part),
                 role="Participant",
-                asr_model=args.asr
+                asr_model=None
             )
 
             write_asr_words(part_words, paths["speaker_participant"] / "asr.txt")
@@ -387,19 +481,34 @@ def main(argv: Optional[list[str]] = None) -> int:
 
             # Merged outputs
             tracker.update(output_task, advance=15, description="Writing merged transcripts")
-            timestamped_writer.write(merged, paths["merged"] / "transcript.timestamped.txt")
-            plain_writer = api["registry"].get_output_writer("plain-txt")
-            plain_writer.write(merged, paths["merged"] / "transcript.txt")
-            csv_writer = api["registry"].get_output_writer("csv")
-            csv_writer.write(merged, paths["merged"] / "transcript.csv")
-            markdown_writer = api["registry"].get_output_writer("markdown")
-            markdown_writer.write(merged, paths["merged"] / "transcript.md")
+
+            selected = set(args.selected_outputs)
+            srt_path = None
+
+            if 'timestamped-txt' in selected:
+                timestamped_writer = api["registry"].get_output_writer("timestamped-txt")
+                timestamped_writer.write(merged, paths["merged"] / "transcript.timestamped.txt")
+
+            if 'plain-txt' in selected:
+                plain_writer = api["registry"].get_output_writer("plain-txt")
+                plain_writer.write(merged, paths["merged"] / "transcript.txt")
+
+            if 'csv' in selected:
+                csv_writer = api["registry"].get_output_writer("csv")
+                csv_writer.write(merged, paths["merged"] / "transcript.csv")
+
+            if 'markdown' in selected:
+                markdown_writer = api["registry"].get_output_writer("markdown")
+                markdown_writer.write(merged, paths["merged"] / "transcript.md")
 
             tracker.update(output_task, advance=15, description="Writing subtitle files")
-            srt_path = paths["merged"] / "subtitles.srt"
-            srt_writer = api["registry"].get_output_writer("srt")
-            srt_writer.write(merged, srt_path)
-            if args.write_vtt:
+
+            if 'srt' in selected:
+                srt_writer = api["registry"].get_output_writer("srt")
+                srt_path = paths["merged"] / "subtitles.srt"
+                srt_writer.write(merged, srt_path)
+
+            if 'vtt' in selected:
                 vtt_writer = api["registry"].get_output_writer("vtt")
                 vtt_writer.write(merged, paths["merged"] / "subtitles.vtt")
 

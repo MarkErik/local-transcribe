@@ -80,7 +80,7 @@ class WhisperASRProvider(ASRProvider):
             role: Speaker role for dual-track mode
             **kwargs: Should include 'asr_model' key
         """
-        asr_model = kwargs.get('asr_model', 'medium.en')
+        asr_model = kwargs.get('asr_model', 'large-v3')
 
         if asr_model not in _CT2_REPO_CHOICES:
             raise ValueError(f"Unknown ASR model: {asr_model}")

@@ -9,6 +9,7 @@ ASR, diarization, and output writer components.
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Protocol
 from dataclasses import dataclass
+import pathlib
 
 
 @dataclass
@@ -47,6 +48,14 @@ class ASRProvider(ABC):
     @abstractmethod
     def get_required_models(self) -> List[str]:
         """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs)."""
+        pass
+
+    def preload_models(self, models: List[str]) -> None:
+        """Preload the specified models to cache. Default implementation does nothing."""
+        pass
+
+    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Ensure the specified models are available, downloading if necessary. Default implementation does nothing."""
         pass
 
     @abstractmethod
@@ -88,6 +97,18 @@ class DiarizationProvider(ABC):
     @abstractmethod
     def description(self) -> str:
         """Return a human-readable description of this provider."""
+        pass
+
+    def get_required_models(self) -> List[str]:
+        """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs). Default empty."""
+        return []
+
+    def preload_models(self, models: List[str]) -> None:
+        """Preload the specified models to cache. Default implementation does nothing."""
+        pass
+
+    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Ensure the specified models are available, downloading if necessary. Default implementation does nothing."""
         pass
 
     @abstractmethod

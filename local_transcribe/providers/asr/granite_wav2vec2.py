@@ -5,6 +5,7 @@ ASR plugin using IBM Granite with Wav2Vec2 forced alignment.
 
 from typing import List, Optional
 import os
+import pathlib
 import torch
 import torchaudio
 import numpy as np
@@ -47,6 +48,22 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
 
     def get_available_models(self) -> List[str]:
         return ["granite-wav2vec2"]
+
+    def preload_models(self, models: List[str]) -> None:
+        """Preload Granite and Wav2Vec2 models to cache."""
+        import os
+        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        os.environ["HF_HUB_OFFLINE"] = "0"
+        try:
+            for model in models:
+                if model == "ibm-granite/granite-speech-3.3-8b":
+                    AutoProcessor.from_pretrained(model, local_files_only=False)
+                    AutoModelForSpeechSeq2Seq.from_pretrained(model, local_files_only=False)
+                elif model == "facebook/wav2vec2-base-960h":
+                    Wav2Vec2Processor.from_pretrained(model, local_files_only=False)
+                    Wav2Vec2ForCTC.from_pretrained(model, local_files_only=False)
+        finally:
+            os.environ["HF_HUB_OFFLINE"] = offline_mode
 
     def _load_granite_model(self):
         """Load the Granite model if not already loaded."""
@@ -273,6 +290,10 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
                 segment.speaker = role
 
         return segments
+
+    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Ensure models are available by preloading them."""
+        self.preload_models(models)
 
 
 def register_asr_plugins():

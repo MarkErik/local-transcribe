@@ -40,6 +40,19 @@ class GraniteMFASRProvider(ASRProvider):
     def get_available_models(self) -> List[str]:
         return ["granite-8b"]
 
+    def preload_models(self, models: List[str]) -> None:
+        """Preload Granite models to cache."""
+        import os
+        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        os.environ["HF_HUB_OFFLINE"] = "0"
+        try:
+            for model in models:
+                if model == "ibm-granite/granite-speech-3.3-8b":
+                    AutoProcessor.from_pretrained(model, local_files_only=False)
+                    AutoModelForSpeechSeq2Seq.from_pretrained(model, local_files_only=False)
+        finally:
+            os.environ["HF_HUB_OFFLINE"] = offline_mode
+
     def _load_model(self):
         """Load the Granite model if not already loaded."""
         if self.model is None:
@@ -180,6 +193,10 @@ class GraniteMFASRProvider(ASRProvider):
                 segment.speaker = role
 
         return segments
+
+    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Ensure models are available by preloading them."""
+        self.preload_models(models)
 
 
 def register_asr_plugins():

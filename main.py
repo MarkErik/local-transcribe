@@ -340,50 +340,46 @@ def main(argv: Optional[list[str]] = None) -> int:
         available_models = asr_provider.get_available_models()
         args.asr_model = available_models[0] if available_models else None
 
-    # Download required models for selected ASR provider
-    required_models = asr_provider.get_required_models()
-    if required_models:
-        print(f"[*] Checking/downloading models for {args.asr_provider}: {', '.join(required_models)}")
+    # Download required models for selected providers
+    required_asr_models = asr_provider.get_required_models()
+    required_diarization_models = diarization_provider.get_required_models()
+    all_required_models = []
+    if required_asr_models:
+        all_required_models.extend([(model, "asr", args.asr_provider) for model in required_asr_models])
+    if required_diarization_models:
+        all_required_models.extend([(model, "diarization", args.diarization_provider) for model in required_diarization_models])
+    
+    if all_required_models:
+        print(f"[*] Checking/downloading models...")
+        for model, provider_type, provider_name in all_required_models:
+            print(f"  - {model} (for {provider_type}: {provider_name})")
         from huggingface_hub import snapshot_download
         import os
         # Temporarily allow online for downloads
+        original_offline = os.environ.get("HF_HUB_OFFLINE")
         os.environ["HF_HUB_OFFLINE"] = "0"
         try:
-            for model in required_models:
+            for model, provider_type, provider_name in all_required_models:
                 print(f"[*] Ensuring {model} is available...")
-                if "faster" in args.asr_provider:
-                    # CT2 model
-                    safe_name = f"models--{model.replace('/', '--')}"
-                    model_path = models_dir / "asr" / "ct2" / safe_name / "snapshots"
-                    if model_path.exists() and any(model_path.iterdir()):
-                        print(f"[✓] {model} already available locally.")
-                        continue
-                    try:
-                        snapshot_download(model, cache_dir=str(models_dir / "asr" / "ct2"))
-                        print(f"[✓] {model} downloaded successfully.")
-                    except Exception as e:
-                        print(f"WARNING: Failed to download {model} as CT2 model: {e}")
-                        print(f"Assuming {model} will be downloaded by the provider when needed.")
-                        continue
-                else:
-                    # Transformers model, preload to cache
-                    try:
-                        from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
-                        print(f"[*] Preloading {model} to cache...")
-                        AutoProcessor.from_pretrained(model, local_files_only=False)
-                        AutoModelForSpeechSeq2Seq.from_pretrained(model, local_files_only=False)
-                        print(f"[✓] {model} preloaded successfully.")
-                    except Exception as e:
-                        print(f"WARNING: Failed to preload {model}: {e}")
-                        print(f"Assuming {model} will be downloaded by the provider when needed.")
-                        continue
+                try:
+                    if provider_type == "asr":
+                        asr_provider.ensure_models_available([model], models_dir)
+                    elif provider_type == "diarization":
+                        diarization_provider.ensure_models_available([model], models_dir)
+                except Exception as e:
+                    print(f"WARNING: Failed to ensure {model} is available: {e}")
+                    print(f"Assuming {model} will be downloaded by the provider when needed.")
+                    continue
             print("[✓] All required models are ready.")
         except Exception as e:
             print(f"ERROR: Failed to download models: {e}")
             return 1
         finally:
             # Restore offline mode
-            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+            if original_offline is not None:
+                os.environ["HF_HUB_OFFLINE"] = original_offline
+            else:
+                os.environ.pop("HF_HUB_OFFLINE", None)
 
     # Configure logging based on verbose flag
     api["configure_global_logging"](log_level="INFO" if args.verbose else "WARNING")

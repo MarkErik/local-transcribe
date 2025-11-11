@@ -5,6 +5,7 @@ PyAnnote diarization plugin implementation.
 
 from typing import List
 import os
+import pathlib
 import warnings
 import torch
 import soundfile as sf
@@ -22,6 +23,28 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
     @property
     def description(self) -> str:
         return "Speaker diarization using pyannote.audio models"
+
+    def get_required_models(self) -> List[str]:
+        return ["pyannote/speaker-diarization"]
+
+    def preload_models(self, models: List[str]) -> None:
+        """Preload pyannote models to cache."""
+        import os
+        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        os.environ["HF_HUB_OFFLINE"] = "0"
+        try:
+            for model in models:
+                if model == "pyannote/speaker-diarization":
+                    # Preload by creating the pipeline briefly
+                    from pyannote.audio import Pipeline
+                    # This will download and cache the model
+                    Pipeline(model)
+        finally:
+            os.environ["HF_HUB_OFFLINE"] = offline_mode
+
+    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Ensure models are available by preloading them."""
+        self.preload_models(models)
 
     def diarize(
         self,

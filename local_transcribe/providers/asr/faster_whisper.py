@@ -67,6 +67,28 @@ class WhisperASRProvider(ASRProvider):
     def get_available_models(self) -> List[str]:
         return list(_CT2_REPO_CHOICES.keys())
 
+    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Ensure CT2 models are available locally."""
+        from huggingface_hub import snapshot_download
+        import os
+        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        os.environ["HF_HUB_OFFLINE"] = "0"
+        try:
+            for model in models:
+                safe_name = f"models--{model.replace('/', '--')}"
+                model_path = models_dir / "asr" / "ct2" / safe_name / "snapshots"
+                if model_path.exists() and any(model_path.iterdir()):
+                    print(f"[✓] {model} already available locally.")
+                    continue
+                try:
+                    snapshot_download(model, cache_dir=str(models_dir / "asr" / "ct2"))
+                    print(f"[✓] {model} downloaded successfully.")
+                except Exception as e:
+                    print(f"WARNING: Failed to download {model} as CT2 model: {e}")
+                    print(f"Assuming {model} will be downloaded by the provider when needed.")
+        finally:
+            os.environ["HF_HUB_OFFLINE"] = offline_mode
+
     def transcribe_with_alignment(
         self,
         audio_path: str,

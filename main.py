@@ -101,14 +101,23 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
     args = p.parse_args(argv)
 
-    # Validate required arguments when not listing plugins or creating templates
-    if not args.list_plugins and not args.create_plugin_template:
-        if not args.outdir:
-            p.error("-o/--outdir is required")
-        if not args.combined and not args.interviewer:
-            p.error("Must provide either -c/--combined or -i/--interviewer")
-
     return args
+
+def select_provider(providers, prompt):
+    """Helper to select a provider from a dict."""
+    print(f"\nAvailable {prompt}:")
+    for i, (name, desc) in enumerate(providers.items(), 1):
+        print(f"  {i}. {name}: {desc}")
+
+    while True:
+        try:
+            choice = int(input(f"\nChoose {prompt.lower()} (number): ").strip())
+            if 1 <= choice <= len(providers):
+                return list(providers.keys())[choice - 1]
+            else:
+                print("Invalid choice. Please enter a number from the list.")
+        except ValueError:
+            print("Please enter a valid number.")
 
 def interactive_prompt(args, api):
     registry = api["registry"]
@@ -121,37 +130,11 @@ def interactive_prompt(args, api):
         print("No ASR providers available.")
         return args
 
-    print("Available ASR Providers:")
-    for i, (name, desc) in enumerate(asr_providers.items(), 1):
-        print(f"  {i}. {name}: {desc}")
-
-    while True:
-        try:
-            choice = int(input("\nChoose ASR provider (number): ").strip())
-            if 1 <= choice <= len(asr_providers):
-                args.asr_provider = list(asr_providers.keys())[choice - 1]
-                break
-            else:
-                print("Invalid choice. Please enter a number from the list.")
-        except ValueError:
-            print("Please enter a valid number.")
+    args.asr_provider = select_provider(asr_providers, "ASR Providers")
 
     # Diarization provider
     diar_providers = registry.list_diarization_providers()
-    print("\nAvailable Diarization Providers:")
-    for i, (name, desc) in enumerate(diar_providers.items(), 1):
-        print(f"  {i}. {name}: {desc}")
-
-    while True:
-        try:
-            choice = int(input("\nChoose Diarization provider (number): ").strip())
-            if 1 <= choice <= len(diar_providers):
-                args.diarization_provider = list(diar_providers.keys())[choice - 1]
-                break
-            else:
-                print("Invalid choice. Please enter a number from the list.")
-        except ValueError:
-            print("Please enter a valid number.")
+    args.diarization_provider = select_provider(diar_providers, "Diarization Providers")
 
     # Output formats
     output_writers = registry.list_output_writers()
@@ -179,9 +162,62 @@ def interactive_prompt(args, api):
     print(f"\nSelected: ASR={args.asr_provider}, Diarization={args.diarization_provider}, Outputs={args.selected_outputs}")
     return args
 
+def write_selected_outputs(turns, paths, selected, tracker, registry, audio_path=None):
+    """Write selected outputs for merged turns."""
+    output_task = tracker.add_task("Writing output files", total=100, stage="output")
+    tracker.update(output_task, advance=20, description="Writing transcript files")
+
+    srt_path = None
+
+    if 'timestamped-txt' in selected:
+        timestamped_writer = registry.get_output_writer("timestamped-txt")
+        timestamped_writer.write(turns, paths["merged"] / "transcript.timestamped.txt")
+
+    if 'plain-txt' in selected:
+        plain_writer = registry.get_output_writer("plain-txt")
+        plain_writer.write(turns, paths["merged"] / "transcript.txt")
+
+    if 'csv' in selected:
+        csv_writer = registry.get_output_writer("csv")
+        csv_writer.write(turns, paths["merged"] / "transcript.csv")
+
+    if 'markdown' in selected:
+        markdown_writer = registry.get_output_writer("markdown")
+        markdown_writer.write(turns, paths["merged"] / "transcript.md")
+
+    tracker.update(output_task, advance=20, description="Writing subtitle files")
+
+    if 'srt' in selected:
+        srt_writer = registry.get_output_writer("srt")
+        srt_path = paths["merged"] / "subtitles.srt"
+        srt_writer.write(turns, srt_path)
+
+    if 'vtt' in selected:
+        vtt_writer = registry.get_output_writer("vtt")
+        vtt_writer.write(turns, paths["merged"] / "subtitles.vtt")
+
+    if srt_path and audio_path is not None:
+        tracker.update(output_task, advance=30, description="Rendering video with subtitles")
+        from local_transcribe.providers.writers.render_black import render_black_video
+        render_black_video(srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=audio_path)
+    else:
+        tracker.update(output_task, advance=30, description="Skipping video rendering")
+
+    tracker.update(output_task, advance=30, description="Finalizing outputs")
+    tracker.complete_task(output_task, stage="output")
+
 # ---------- main ----------
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
+
+    # Early validation for required args
+    if not args.list_plugins and not args.create_plugin_template:
+        if not args.outdir:
+            print("ERROR: -o/--outdir is required")
+            return 1
+        if not args.combined and not args.interviewer:
+            print("ERROR: Must provide either -c/--combined or -i/--interviewer")
+            return 1
 
     root = repo_root_from_here()
     models_dir = root / "models"
@@ -221,15 +257,6 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.interactive:
         args = interactive_prompt(args, api)
-
-    # Validate required arguments when not listing plugins or creating templates
-    if not args.list_plugins and not args.create_plugin_template:
-        if not args.outdir:
-            print("ERROR: -o/--outdir is required")
-            return 1
-        if not args.combined and not args.interviewer:
-            print("ERROR: Must provide either -c/--combined or -i/--interviewer")
-            return 1
 
     # Set default outputs for non-interactive
     if not hasattr(args, 'selected_outputs') or not args.selected_outputs:
@@ -349,50 +376,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             turns = diarization_provider.diarize(str.std_mix, words)
 
             # 4) Outputs
-            output_task = tracker.add_task("Writing output files", total=100, stage="output")
-            tracker.update(output_task, advance=20, description="Writing transcript files")
-
-            # Write selected outputs
-            srt_path = None
-            selected = set(args.selected_outputs)
-
-            if 'timestamped-txt' in selected:
-                timestamped_writer = api["registry"].get_output_writer("timestamped-txt")
-                timestamped_writer.write(turns, paths["merged"] / "transcript.timestamped.txt")
-
-            if 'plain-txt' in selected:
-                plain_writer = api["registry"].get_output_writer("plain-txt")
-                plain_writer.write(turns, paths["merged"] / "transcript.txt")
-
-            if 'csv' in selected:
-                csv_writer = api["registry"].get_output_writer("csv")
-                csv_writer.write(turns, paths["merged"] / "transcript.csv")
-
-            if 'markdown' in selected:
-                markdown_writer = api["registry"].get_output_writer("markdown")
-                markdown_writer.write(turns, paths["merged"] / "transcript.md")
-
-            tracker.update(output_task, advance=20, description="Writing subtitle files")
-
-            if 'srt' in selected:
-                srt_writer = api["registry"].get_output_writer("srt")
-                srt_path = paths["merged"] / "subtitles.srt"
-                srt_writer.write(turns, srt_path)
-
-            if 'vtt' in selected:
-                vtt_writer = api["registry"].get_output_writer("vtt")
-                vtt_writer.write(turns, paths["merged"] / "subtitles.vtt")
-
-            if srt_path:
-                tracker.update(output_task, advance=30, description="Rendering video with subtitles")
-                # TODO: Use plugin for video rendering
-                from local_transcribe.providers.writers.render_black import render_black_video
-                render_black_video(srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=std_mix)
-            else:
-                tracker.update(output_task, advance=30, description="Skipping video rendering")
-
-            tracker.update(output_task, advance=30, description="Finalizing outputs")
-            tracker.complete_task(output_task, stage="output")
+            write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], std_mix)
 
             print("[✓] Combined processing complete.")
 
@@ -476,52 +460,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.complete_task(turns_task, stage="turns")
 
             # 4) Write results
-            output_task = tracker.add_task("Writing output files", total=100, stage="output")
-
-            # Merged outputs
-            tracker.update(output_task, advance=15, description="Writing merged transcripts")
-
-            selected = set(args.selected_outputs)
-            srt_path = None
-
-            if 'timestamped-txt' in selected:
-                timestamped_writer = api["registry"].get_output_writer("timestamped-txt")
-                timestamped_writer.write(merged, paths["merged"] / "transcript.timestamped.txt")
-
-            if 'plain-txt' in selected:
-                plain_writer = api["registry"].get_output_writer("plain-txt")
-                plain_writer.write(merged, paths["merged"] / "transcript.txt")
-
-            if 'csv' in selected:
-                csv_writer = api["registry"].get_output_writer("csv")
-                csv_writer.write(merged, paths["merged"] / "transcript.csv")
-
-            if 'markdown' in selected:
-                markdown_writer = api["registry"].get_output_writer("markdown")
-                markdown_writer.write(merged, paths["merged"] / "transcript.md")
-
-            tracker.update(output_task, advance=15, description="Writing subtitle files")
-
-            if 'srt' in selected:
-                srt_writer = api["registry"].get_output_writer("srt")
-                srt_path = paths["merged"] / "subtitles.srt"
-                srt_writer.write(merged, srt_path)
-
-            if 'vtt' in selected:
-                vtt_writer = api["registry"].get_output_writer("vtt")
-                vtt_writer.write(merged, paths["merged"] / "subtitles.vtt")
-
-            if srt_path:
-                tracker.update(output_task, advance=30, description="Rendering video with subtitles")
-                # TODO: Use plugin for video rendering
-                from local_transcribe.providers.writers.render_black import render_black_video
-                # Pass both interviewer and participant audio for dual-track mode
-                render_black_video(srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=[std_int, std_part])
-            else:
-                tracker.update(output_task, advance=30, description="Skipping video rendering")
-
-            tracker.update(output_task, advance=20, description="Finalizing outputs")
-            tracker.complete_task(output_task, stage="output")
+            write_selected_outputs(merged, paths, args.selected_outputs, tracker, api["registry"], [std_int, std_part])
 
             print("[✓] Dual-track processing complete.")
 

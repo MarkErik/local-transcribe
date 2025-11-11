@@ -64,6 +64,9 @@ class WhisperASRProvider(ASRProvider):
     def get_required_models(self) -> List[str]:
         return ["Systran/faster-whisper-medium.en", "Systran/faster-whisper-large-v3"]
 
+    def get_available_models(self) -> List[str]:
+        return list(_CT2_REPO_CHOICES.keys())
+
     def transcribe_with_alignment(
         self,
         audio_path: str,

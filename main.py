@@ -91,6 +91,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     mode.add_argument("-i", "--interviewer", metavar="INTERVIEWER_AUDIO", help="Interviewer track for dual-track mode.")
     p.add_argument("-p", "--participant", metavar="PARTICIPANT_AUDIO", help="Participant track for dual-track mode.")
     p.add_argument("--asr-provider", help="ASR provider to use")
+    p.add_argument("--asr-model", help="ASR model to use (if provider supports multiple models)")
     p.add_argument("--diarization-provider", help="Diarization provider to use")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
@@ -131,6 +132,27 @@ def interactive_prompt(args, api):
         return args
 
     args.asr_provider = select_provider(asr_providers, "ASR Providers")
+
+    # ASR model selection (if provider supports multiple models)
+    asr_provider = registry.get_asr_provider(args.asr_provider)
+    available_models = asr_provider.get_available_models()
+    if len(available_models) > 1:
+        print(f"\nAvailable models for {args.asr_provider}:")
+        for i, model in enumerate(available_models, 1):
+            print(f"  {i}. {model}")
+        
+        while True:
+            try:
+                choice = int(input(f"\nChoose model (1-{len(available_models)}): ").strip())
+                if 1 <= choice <= len(available_models):
+                    args.asr_model = available_models[choice - 1]
+                    break
+                else:
+                    print("Invalid choice. Please enter a number from the list.")
+            except ValueError:
+                print("Please enter a valid number.")
+    else:
+        args.asr_model = available_models[0] if available_models else None
 
     # Diarization provider
     diar_providers = registry.list_diarization_providers()
@@ -243,6 +265,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("\nASR Providers:")
         for name, desc in api["registry"].list_asr_providers().items():
             print(f"  {name}: {desc}")
+            # Show available models if provider supports multiple
+            provider = api["registry"].get_asr_provider(name)
+            available_models = provider.get_available_models()
+            if len(available_models) > 1:
+                print(f"    Available models: {', '.join(available_models)}")
 
         print("\nDiarization Providers:")
         for name, desc in api["registry"].list_diarization_providers().items():
@@ -308,6 +335,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("Use --list-plugins to see available options.")
         return 1
 
+    # Set default ASR model if not specified
+    if not hasattr(args, 'asr_model') or args.asr_model is None:
+        available_models = asr_provider.get_available_models()
+        args.asr_model = available_models[0] if available_models else None
+
     # Download required models for selected ASR provider
     required_models = asr_provider.get_required_models()
     if required_models:
@@ -369,7 +401,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             # 2) ASR + alignment
             words = asr_provider.transcribe_with_alignment(
                 str(std_mix),
-                role=None
+                role=None,
+                asr_model=args.asr_model
             )
 
             # Save ASR results as plain text before diarization
@@ -413,7 +446,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(asr_task, advance=20, description="Transcribing interviewer audio")
             int_words = asr_provider.transcribe_with_alignment(
                 str(std_int),
-                role="Interviewer"
+                role="Interviewer",
+                asr_model=args.asr_model
             )
 
             # Save ASR results and build turns for interviewer
@@ -436,7 +470,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(asr_task, advance=20, description="Transcribing participant audio")
             part_words = asr_provider.transcribe_with_alignment(
                 str(std_part),
-                role="Participant"
+                role="Participant",
+                asr_model=args.asr_model
             )
 
             write_asr_words(part_words, paths["speaker_participant"] / "asr.txt")

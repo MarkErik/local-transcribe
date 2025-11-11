@@ -50,6 +50,11 @@ class ASRProvider(ABC):
         pass
 
     @abstractmethod
+    def get_available_models(self) -> List[str]:
+        """Return a list of available model names for this provider."""
+        pass
+
+    @abstractmethod
     def transcribe_with_alignment(
         self,
         audio_path: str,

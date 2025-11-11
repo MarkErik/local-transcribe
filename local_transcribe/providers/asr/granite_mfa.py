@@ -22,7 +22,12 @@ class GraniteMFASRProvider(ASRProvider):
 
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model_name = "ibm-granite/granite-speech-3.3-8b"
+        # Model mapping: user-friendly name -> HuggingFace model name
+        self.model_mapping = {
+            "granite-2b": "ibm-granite/granite-speech-3.3-2b",
+            "granite-8b": "ibm-granite/granite-speech-3.3-8b"
+        }
+        self.selected_model = None  # Will be set during transcription
         self.processor = None
         self.model = None
         self.tokenizer = None
@@ -35,13 +40,16 @@ class GraniteMFASRProvider(ASRProvider):
 
     @property
     def description(self) -> str:
-        return "IBM Granite ASR with MFA forced alignment for word timestamps"
+        return "IBM Granite ASR (2B/8B) with MFA forced alignment for word timestamps"
 
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
-        return ["ibm-granite/granite-speech-3.3-8b"]
+        if selected_model and selected_model in self.model_mapping:
+            return [self.model_mapping[selected_model]]
+        # Default to 8b model if no selection
+        return [self.model_mapping["granite-8b"]]
 
     def get_available_models(self) -> List[str]:
-        return ["granite-8b"]
+        return list(self.model_mapping.keys())
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite models to cache."""
@@ -79,13 +87,15 @@ class GraniteMFASRProvider(ASRProvider):
         
         try:
             for model in models:
-                if model == "ibm-granite/granite-speech-3.3-8b":
+                if model in self.model_mapping.values():  # Check if it's a valid Granite model
                     cache_dir = models_dir / "asr" / "granite"
                     cache_dir.mkdir(parents=True, exist_ok=True)
                     # Use snapshot_download to download the entire repo
                     token = os.getenv("HF_TOKEN")
                     snapshot_download(model, cache_dir=str(cache_dir), token=token)
                     print(f"[✓] {model} downloaded successfully.")
+                else:
+                    print(f"Warning: Unknown model {model}, skipping download")
         except Exception as e:
             print(f"DEBUG: Download failed with error: {e}")
             print(f"DEBUG: Error type: {type(e)}")
@@ -102,7 +112,7 @@ class GraniteMFASRProvider(ASRProvider):
         """Check which Granite models are available offline without downloading."""
         missing_models = []
         for model in models:
-            if model == "ibm-granite/granite-speech-3.3-8b":
+            if model in self.model_mapping.values():  # Check if it's a valid Granite model
                 cache_dir = models_dir / "asr" / "granite"
                 # Check for model files (this is a simplified check)
                 if not any(cache_dir.rglob("*.bin")) and not any(cache_dir.rglob("*.safetensors")):
@@ -112,6 +122,9 @@ class GraniteMFASRProvider(ASRProvider):
     def _load_model(self):
         """Load the Granite model if not already loaded."""
         if self.model is None:
+            # Get the actual model name from selected model
+            model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-8b"])
+            
             # Temporarily allow online access to download model if needed
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
             os.environ["HF_HUB_OFFLINE"] = "0"
@@ -135,15 +148,15 @@ class GraniteMFASRProvider(ASRProvider):
                 
                 token = os.getenv("HF_TOKEN")
                 # During transcription, models should be cached, so use local_files_only=True
-                self.processor = AutoProcessor.from_pretrained(self.model_name, local_files_only=False, token=token)
+                self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=False, token=token)
                 self.tokenizer = self.processor.tokenizer
                 
                 # Load base model
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.model_name, local_files_only=False, token=token).to(self.device)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(model_name, local_files_only=False, token=token).to(self.device)
                 
                 # Check if this is a PEFT model
                 try:
-                    self.model = PeftModel.from_pretrained(base_model, self.model_name, token=token).to(self.device)
+                    self.model = PeftModel.from_pretrained(base_model, model_name, token=token).to(self.device)
                 except:
                     # If not a PEFT model, use the base model
                     self.model = base_model
@@ -485,10 +498,18 @@ class GraniteMFASRProvider(ASRProvider):
         Args:
             audio_path: Path to audio file
             role: Speaker role for dual-track mode
-            **kwargs: Additional configuration
+            **kwargs: Should include 'asr_model' key
         """
         if not os.path.exists(audio_path):
             raise ValueError(f"Audio file not found: {audio_path}")
+
+        # Extract selected model from kwargs
+        asr_model = kwargs.get('asr_model', 'granite-8b')  # Default to 8b
+        if asr_model not in self.model_mapping:
+            print(f"Warning: Unknown model {asr_model}, defaulting to granite-8b")
+            asr_model = 'granite-8b'
+        
+        self.selected_model = asr_model
 
         # Get transcription from Granite
         transcript = self._transcribe_audio(audio_path)

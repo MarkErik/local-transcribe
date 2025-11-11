@@ -132,11 +132,11 @@ class GraniteMFASRProvider(ASRProvider):
                 
                 token = os.getenv("HF_TOKEN")
                 # During transcription, models should be cached, so use local_files_only=True
-                self.processor = AutoProcessor.from_pretrained(self.model_name, local_files_only=True, token=token)
+                self.processor = AutoProcessor.from_pretrained(self.model_name, local_files_only=False, token=token)
                 self.tokenizer = self.processor.tokenizer
                 
                 # Load base model
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.model_name, local_files_only=True, token=token).to(self.device)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.model_name, local_files_only=False, token=token).to(self.device)
                 
                 # Check if this is a PEFT model
                 try:

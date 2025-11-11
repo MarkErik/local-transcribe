@@ -7,9 +7,11 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "faster-whisper>=1.2.0",
     "ffmpeg-python>=0.2.0",
+    "huggingface-hub>=0.28.0",
     "librosa>=0.11.0",
     "numpy>=2.3.4",
     "pandas>=2.3.3",
+    "peft>=0.14.0",
     "pyannote-audio>=4.0.1",
     "pydub>=0.25.1",
     "rich>=14.2.0",
@@ -17,6 +19,7 @@ dependencies = [
     "torch>=2.9.0",
     "torchaudio>=2.9.0",
     "tqdm>=4.67.1",
+    "transformers>=4.48.0",
     "whisperx>=3.4.2",
 ]
 

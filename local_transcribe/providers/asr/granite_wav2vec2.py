@@ -92,11 +92,11 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
                 cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "granite"
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 token = os.getenv("HF_TOKEN")
-                self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name, cache_dir=str(cache_dir), local_files_only=False, token=token, revision="main")
+                self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name, cache_dir=str(cache_dir), local_files_only=True, token=token, revision="main")
                 self.tokenizer = self.granite_processor.tokenizer
                 
                 # Load base model
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name, cache_dir=str(cache_dir), local_files_only=False, token=token, revision="main").to(self.device)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name, cache_dir=str(cache_dir), local_files_only=True, token=token, revision="main").to(self.device)
                 
                 # Check if this is a PEFT model
                 try:
@@ -118,8 +118,8 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
                 cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "wav2vec2"
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 token = os.getenv("HF_TOKEN")
-                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, cache_dir=str(cache_dir), local_files_only=False, token=token)
-                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, cache_dir=str(cache_dir), local_files_only=False, token=token).to(self.device)
+                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, cache_dir=str(cache_dir), local_files_only=True, token=token)
+                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, cache_dir=str(cache_dir), local_files_only=True, token=token).to(self.device)
             finally:
                 # Restore offline mode
                 os.environ["HF_HUB_OFFLINE"] = offline_mode

@@ -60,11 +60,15 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
         cache_dir_wav2vec2.mkdir(parents=True, exist_ok=True)
         for model in models:
             if model == "ibm-granite/granite-speech-3.3-8b":
-                AutoProcessor.from_pretrained(model, cache_dir=str(cache_dir_granite), local_files_only=local_only)
-                AutoModelForSpeechSeq2Seq.from_pretrained(model, cache_dir=str(cache_dir_granite), local_files_only=local_only)
+                # Use force_download=True to bypass offline mode entirely
+                token = os.getenv("HF_TOKEN")
+                AutoProcessor.from_pretrained(model, cache_dir=str(cache_dir_granite), local_files_only=local_only, force_download=True, token=token)
+                AutoModelForSpeechSeq2Seq.from_pretrained(model, cache_dir=str(cache_dir_granite), local_files_only=local_only, force_download=True, token=token)
             elif model == "facebook/wav2vec2-base-960h":
-                Wav2Vec2Processor.from_pretrained(model, cache_dir=str(cache_dir_wav2vec2), local_files_only=local_only)
-                Wav2Vec2ForCTC.from_pretrained(model, cache_dir=str(cache_dir_wav2vec2), local_files_only=local_only)
+                # Use force_download=True to bypass offline mode entirely
+                token = os.getenv("HF_TOKEN")
+                Wav2Vec2Processor.from_pretrained(model, cache_dir=str(cache_dir_wav2vec2), local_files_only=local_only, force_download=True, token=token)
+                Wav2Vec2ForCTC.from_pretrained(model, cache_dir=str(cache_dir_wav2vec2), local_files_only=local_only, force_download=True, token=token)
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Granite and Wav2Vec2 models are available offline without downloading."""

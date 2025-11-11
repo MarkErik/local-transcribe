@@ -369,8 +369,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             # 2) ASR + alignment
             words = asr_provider.transcribe_with_alignment(
                 str(std_mix),
-                role=None,
-                asr_model=None
+                role=None
             )
 
             # Save ASR results as plain text before diarization
@@ -414,8 +413,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(asr_task, advance=20, description="Transcribing interviewer audio")
             int_words = asr_provider.transcribe_with_alignment(
                 str(std_int),
-                role="Interviewer",
-                asr_model=None
+                role="Interviewer"
             )
 
             # Save ASR results and build turns for interviewer
@@ -438,8 +436,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(asr_task, advance=20, description="Transcribing participant audio")
             part_words = asr_provider.transcribe_with_alignment(
                 str(std_part),
-                role="Participant",
-                asr_model=None
+                role="Participant"
             )
 
             write_asr_words(part_words, paths["speaker_participant"] / "asr.txt")

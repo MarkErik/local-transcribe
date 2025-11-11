@@ -23,9 +23,6 @@ def repo_root_from_here() -> pathlib.Path:
 
 def set_offline_env(models_dir: pathlib.Path) -> None:
     os.environ.setdefault("HF_HOME", str(models_dir))
-    # TRANSFORMERS_CACHE is deprecated, but we keep it for backward compatibility
-    os.environ.setdefault("TRANSFORMERS_CACHE", str(models_dir))
-    os.environ.setdefault("PYANNOTE_CACHE", str(models_dir / "diarization"))
     os.environ.setdefault("XDG_CACHE_HOME", str(models_dir / ".xdg"))
     # Runtime must be fully offline (models must already be downloaded)
     os.environ.setdefault("HF_HUB_OFFLINE", "1")

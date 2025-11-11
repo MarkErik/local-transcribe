@@ -61,7 +61,6 @@ class WhisperASRProvider(ASRProvider):
     def description(self) -> str:
         return "Faster-Whisper ASR with word timestamps"
 
-    @property
     def get_required_models(self) -> List[str]:
         return ["Systran/faster-whisper-medium.en", "Systran/faster-whisper-large-v3"]
 

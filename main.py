@@ -148,6 +148,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         for name, desc in api["registry"].list_diarization_providers().items():
             print(f"  {name}: {desc}")
 
+        print("\nOutput Writers:")
+        for name, desc in api["registry"].list_output_writers().items():
+            print(f"  {name}: {desc}")
+
         print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization]")
         return 0
 

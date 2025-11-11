@@ -131,23 +131,43 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             # Temporarily allow online access to download model if needed
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
             os.environ["HF_HUB_OFFLINE"] = "0"
+            
+            # Force reload of huggingface_hub and transformers modules
+            import sys
+            modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
+            for module_name in modules_to_reload:
+                del sys.modules[module_name]
+            modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
+            for module_name in modules_to_reload:
+                del sys.modules[module_name]
+            
             try:
                 cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "granite"
                 cache_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Temporarily set HF_HOME to our cache directory so PEFT loading finds the files
+                original_hf_home = os.environ.get("HF_HOME")
+                os.environ["HF_HOME"] = str(cache_dir)
+                
                 token = os.getenv("HF_TOKEN")
-                self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name, cache_dir=str(cache_dir), local_files_only=True, token=token, revision="main")
+                self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name, local_files_only=True, token=token)
                 self.tokenizer = self.granite_processor.tokenizer
                 
                 # Load base model
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name, cache_dir=str(cache_dir), local_files_only=True, token=token, revision="main").to(self.device)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name, local_files_only=True, token=token).to(self.device)
                 
                 # Check if this is a PEFT model
                 try:
-                    self.granite_model = PeftModel.from_pretrained(base_model, self.granite_model_name, cache_dir=str(cache_dir), token=token, revision="main").to(self.device)
+                    self.granite_model = PeftModel.from_pretrained(base_model, self.granite_model_name, token=token).to(self.device)
                 except:
                     # If not a PEFT model, use the base model
                     self.granite_model = base_model
             finally:
+                # Restore original HF_HOME
+                if original_hf_home is not None:
+                    os.environ["HF_HOME"] = original_hf_home
+                else:
+                    os.environ.pop("HF_HOME", None)
                 # Restore offline mode
                 os.environ["HF_HUB_OFFLINE"] = offline_mode
 

@@ -359,9 +359,23 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"[!] Missing models detected: {', '.join(all_missing)}")
         print("[!] Switching to online mode for download...")
         
-        # Temporarily go online
-        original_offline = os.environ.get("HF_HUB_OFFLINE")
+        # Check if HF_TOKEN is available
+        hf_token = os.environ.get("HF_TOKEN")
+        if not hf_token:
+            print("[!] WARNING: HF_TOKEN not found in environment variables.")
+            print("[!] Please ensure your .env file contains a valid HuggingFace token.")
+            print("[!] You can get a token from: https://huggingface.co/settings/tokens")
+            print("[!] Alternatively, run: huggingface-cli login")
+            print("[!] Make sure the token has 'read' permissions for the required models")
+        
+        # Explicitly set online mode
         os.environ["HF_HUB_OFFLINE"] = "0"
+        
+        # Show current environment for debugging
+        print(f"[*] Environment check:")
+        print(f"    HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+        print(f"    HF_TOKEN: {'***' if hf_token else 'NOT SET'}")
+        print(f"    HF_HOME: {os.environ.get('HF_HOME')}")
         
         try:
             # Download missing models
@@ -373,16 +387,22 @@ def main(argv: Optional[list[str]] = None) -> int:
                 print(f"[*] Downloading diarization models: {', '.join(missing_diarization_models)}")
                 diarization_provider.ensure_models_available(missing_diarization_models, models_dir)
             
-            print("[✓] All models downloaded successfully.")
+            # Verify downloads actually succeeded
+            print("[*] Verifying downloaded models...")
+            verified_asr = asr_provider.check_models_available_offline(required_asr_models, models_dir)
+            verified_diar = diarization_provider.check_models_available_offline(required_diarization_models, models_dir)
+            
+            if verified_asr or verified_diar:
+                print(f"[!] ERROR: Some models failed to download properly: {', '.join(verified_asr + verified_diar)}")
+                print("[!] Please check your internet connection and HuggingFace token.")
+                return 1
+            
+            print("[✓] All models downloaded successfully and verified.")
         except Exception as e:
             print(f"ERROR: Failed to download models: {e}")
             return 1
         finally:
-            # Return to offline mode
-            if original_offline is not None:
-                os.environ["HF_HUB_OFFLINE"] = original_offline
-            else:
-                os.environ.pop("HF_HUB_OFFLINE", None)
+            os.environ["HF_HUB_OFFLINE"] = "0"
     else:
         print("[✓] All required models are available locally.")
 

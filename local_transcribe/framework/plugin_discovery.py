@@ -29,7 +29,7 @@ class PluginLoader:
             plugin_dirs = [
                 Path.home() / ".local-transcribe" / "plugins",
                 Path.cwd() / "plugins",
-                Path(__file__).parent.parent / "plugins"
+                Path(__file__).parent.parent / "providers"
             ]
         self.plugin_dirs = [Path(d).expanduser().resolve() for d in plugin_dirs]
 

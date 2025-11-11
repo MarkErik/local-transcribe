@@ -5,7 +5,7 @@ Dual-track diarization plugin implementation.
 
 from typing import List, Optional
 
-from local_transcribe.core.plugins import DiarizationProvider, WordSegment, Turn, registry
+from local_transcribe.framework.plugins import DiarizationProvider, WordSegment, Turn, registry
 
 
 class DualTrackDiarizationProvider(DiarizationProvider):

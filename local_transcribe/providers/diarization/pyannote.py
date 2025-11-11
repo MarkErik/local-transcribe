@@ -9,7 +9,7 @@ import warnings
 import torch
 import soundfile as sf
 from pyannote.audio import Pipeline
-from local_transcribe.core.plugins import DiarizationProvider, WordSegment, Turn, registry
+from local_transcribe.framework.plugins import DiarizationProvider, WordSegment, Turn, registry
 
 
 class PyAnnoteDiarizationProvider(DiarizationProvider):

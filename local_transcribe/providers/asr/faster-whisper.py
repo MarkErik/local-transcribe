@@ -8,7 +8,7 @@ import os
 import pathlib
 import torch
 from faster_whisper import WhisperModel as FWModel
-from local_transcribe.core.plugins import ASRProvider, WordSegment, registry
+from local_transcribe.framework.plugins import ASRProvider, WordSegment, registry
 
 
 # CT2 (faster-whisper) repos to search locally under ./models/asr/ct2/...

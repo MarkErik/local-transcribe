@@ -70,3 +70,51 @@ def write_asr_words(words: List[Dict], path: str | Path) -> None:
         if text:  # Only add non-empty text
             lines.append(text)
     path.write_text(" ".join(lines) + "\n", encoding="utf-8")
+
+
+# Plugin classes
+from local_transcribe.framework.plugins import OutputWriter, Turn, registry
+from typing import List
+
+
+class TimestampedTextWriter(OutputWriter):
+    @property
+    def name(self) -> str:
+        return "timestamped-txt"
+
+    @property
+    def description(self) -> str:
+        return "Timestamped text format with speaker labels"
+
+    @property
+    def supported_formats(self) -> List[str]:
+        return [".txt"]
+
+    def write(self, turns: List[Turn], output_path: str) -> None:
+        # Convert Turn to dict for compatibility
+        turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
+        write_timestamped_txt(turn_dicts, output_path)
+
+
+class PlainTextWriter(OutputWriter):
+    @property
+    def name(self) -> str:
+        return "plain-txt"
+
+    @property
+    def description(self) -> str:
+        return "Plain text format without timestamps"
+
+    @property
+    def supported_formats(self) -> List[str]:
+        return [".txt"]
+
+    def write(self, turns: List[Turn], output_path: str) -> None:
+        # Convert Turn to dict for compatibility
+        turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
+        write_plain_txt(turn_dicts, output_path)
+
+
+# Register the writers
+registry.register_output_writer(TimestampedTextWriter())
+registry.register_output_writer(PlainTextWriter())

@@ -76,3 +76,31 @@ def write_conversation_markdown(turns: List[Dict], path: str | Path) -> None:
     
     # Write to file
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+# Plugin class
+from local_transcribe.framework.plugins import OutputWriter, Turn, registry
+from typing import List
+
+
+class MarkdownWriter(OutputWriter):
+    @property
+    def name(self) -> str:
+        return "markdown"
+
+    @property
+    def description(self) -> str:
+        return "Markdown format for conversation"
+
+    @property
+    def supported_formats(self) -> List[str]:
+        return [".md"]
+
+    def write(self, turns: List[Turn], output_path: str) -> None:
+        # Convert Turn to dict for compatibility
+        turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
+        write_conversation_markdown(turn_dicts, output_path)
+
+
+# Register the writer
+registry.register_output_writer(MarkdownWriter())

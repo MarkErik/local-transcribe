@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import List, Dict
 from pathlib import Path
-from ..utils.logging_config import get_logger, OutputError, ErrorContext, error_context
+from ...lib.logging_config import get_logger, OutputError, ErrorContext, error_context
 
 
 def _fmt_ts(t: float) -> str:
@@ -193,3 +193,51 @@ def write_vtt(turns: List[Dict], path: str | Path) -> None:
                 output_path=str(path),
                 cause=e
             )
+
+
+# Plugin classes
+from local_transcribe.framework.plugins import OutputWriter, Turn, registry
+from typing import List
+
+
+class SRTWriter(OutputWriter):
+    @property
+    def name(self) -> str:
+        return "srt"
+
+    @property
+    def description(self) -> str:
+        return "SRT subtitle format"
+
+    @property
+    def supported_formats(self) -> List[str]:
+        return [".srt"]
+
+    def write(self, turns: List[Turn], output_path: str) -> None:
+        # Convert Turn to dict for compatibility
+        turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
+        write_srt(turn_dicts, output_path)
+
+
+class VTTWriter(OutputWriter):
+    @property
+    def name(self) -> str:
+        return "vtt"
+
+    @property
+    def description(self) -> str:
+        return "WebVTT subtitle format"
+
+    @property
+    def supported_formats(self) -> List[str]:
+        return [".vtt"]
+
+    def write(self, turns: List[Turn], output_path: str) -> None:
+        # Convert Turn to dict for compatibility
+        turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
+        write_vtt(turn_dicts, output_path)
+
+
+# Register the writers
+registry.register_output_writer(SRTWriter())
+registry.register_output_writer(VTTWriter())

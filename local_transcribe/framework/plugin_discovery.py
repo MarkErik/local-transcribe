@@ -48,7 +48,7 @@ class PluginLoader:
                 continue
 
             # Find all .py files in the directory
-            for py_file in plugin_dir.glob("*.py"):
+            for py_file in plugin_dir.rglob("*.py"):
                 if py_file.is_file():
                     plugin_files.append(py_file)
 

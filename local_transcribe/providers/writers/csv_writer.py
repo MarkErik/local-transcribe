@@ -67,3 +67,31 @@ def write_conversation_csv(turns: List[Dict], path: str | Path) -> None:
             else:
                 # Handle unexpected speaker names
                 writer.writerow([text, ""])  # Default to interviewer column
+
+
+# Plugin class
+from local_transcribe.framework.plugins import OutputWriter, Turn, registry
+from typing import List
+
+
+class CSVWriter(OutputWriter):
+    @property
+    def name(self) -> str:
+        return "csv"
+
+    @property
+    def description(self) -> str:
+        return "CSV format with conversation data"
+
+    @property
+    def supported_formats(self) -> List[str]:
+        return [".csv"]
+
+    def write(self, turns: List[Turn], output_path: str) -> None:
+        # Convert Turn to dict for compatibility
+        turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
+        write_conversation_csv(turn_dicts, output_path)
+
+
+# Register the writer
+registry.register_output_writer(CSVWriter())

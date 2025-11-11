@@ -51,17 +51,20 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite and Wav2Vec2 models to cache."""
+        # Determine if we should use local files only based on the environment
+        local_only = os.environ.get('HF_HUB_OFFLINE', '0') == '1'
+        
         cache_dir_granite = models_dir / "asr" / "granite"
         cache_dir_granite.mkdir(parents=True, exist_ok=True)
         cache_dir_wav2vec2 = models_dir / "asr" / "wav2vec2"
         cache_dir_wav2vec2.mkdir(parents=True, exist_ok=True)
         for model in models:
             if model == "ibm-granite/granite-speech-3.3-8b":
-                AutoProcessor.from_pretrained(model, cache_dir=str(cache_dir_granite), local_files_only=False)
-                AutoModelForSpeechSeq2Seq.from_pretrained(model, cache_dir=str(cache_dir_granite), local_files_only=False)
+                AutoProcessor.from_pretrained(model, cache_dir=str(cache_dir_granite), local_files_only=local_only)
+                AutoModelForSpeechSeq2Seq.from_pretrained(model, cache_dir=str(cache_dir_granite), local_files_only=local_only)
             elif model == "facebook/wav2vec2-base-960h":
-                Wav2Vec2Processor.from_pretrained(model, cache_dir=str(cache_dir_wav2vec2), local_files_only=False)
-                Wav2Vec2ForCTC.from_pretrained(model, cache_dir=str(cache_dir_wav2vec2), local_files_only=False)
+                Wav2Vec2Processor.from_pretrained(model, cache_dir=str(cache_dir_wav2vec2), local_files_only=local_only)
+                Wav2Vec2ForCTC.from_pretrained(model, cache_dir=str(cache_dir_wav2vec2), local_files_only=local_only)
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Granite and Wav2Vec2 models are available offline without downloading."""

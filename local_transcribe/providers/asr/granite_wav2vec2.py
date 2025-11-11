@@ -20,7 +20,12 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
 
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.granite_model_name = "ibm-granite/granite-speech-3.3-8b"
+        # Model mapping: user-friendly name -> HuggingFace model name
+        self.model_mapping = {
+            "granite-wav2vec2-2b": "ibm-granite/granite-speech-3.3-2b",
+            "granite-wav2vec2-8b": "ibm-granite/granite-speech-3.3-8b"
+        }
+        self.selected_model = None  # Will be set during transcription
         self.wav2vec2_model_name = "facebook/wav2vec2-base-960h"  # English model
         
         # Granite components
@@ -38,16 +43,22 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
 
     @property
     def description(self) -> str:
-        return "IBM Granite ASR with Wav2Vec2 forced alignment for accurate word timestamps"
+        return "IBM Granite ASR (2B/8B) with Wav2Vec2 forced alignment for accurate word timestamps"
 
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
+        if selected_model and selected_model in self.model_mapping:
+            return [
+                self.model_mapping[selected_model],
+                "facebook/wav2vec2-base-960h"
+            ]
+        # Default to 8b model if no selection
         return [
-            "ibm-granite/granite-speech-3.3-8b",
+            self.model_mapping["granite-wav2vec2-8b"],
             "facebook/wav2vec2-base-960h"
         ]
 
     def get_available_models(self) -> List[str]:
-        return ["granite-wav2vec2"]
+        return list(self.model_mapping.keys())
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite and Wav2Vec2 models to cache."""
@@ -60,6 +71,7 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
         print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
         
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        original_hf_home = os.environ.get("HF_HOME")
         os.environ["HF_HUB_OFFLINE"] = "0"
         
         # DEBUG: Confirm environment variable was set
@@ -87,7 +99,7 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             cache_dir_wav2vec2 = models_dir / "asr" / "wav2vec2"
             cache_dir_wav2vec2.mkdir(parents=True, exist_ok=True)
             for model in models:
-                if model == "ibm-granite/granite-speech-3.3-8b":
+                if model in self.model_mapping.values():  # Check if it's a valid Granite model
                     os.environ["HF_HOME"] = str(cache_dir_granite)
                     # Use snapshot_download to download the entire repo
                     token = os.getenv("HF_TOKEN")
@@ -119,7 +131,7 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
         """Check which Granite and Wav2Vec2 models are available offline without downloading."""
         missing_models = []
         for model in models:
-            if model == "ibm-granite/granite-speech-3.3-8b":
+            if model in self.model_mapping.values():  # Check if it's a valid Granite model
                 cache_dir = models_dir / "asr" / "granite"
                 # Check for model files (this is a simplified check)
                 hub_dir = cache_dir / "hub"
@@ -136,6 +148,9 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
     def _load_granite_model(self):
         """Load the Granite model if not already loaded."""
         if self.granite_model is None:
+            # Get the actual model name from selected model
+            model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-wav2vec2-8b"])
+            
             # Temporarily allow online access to download model if needed
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
             original_hf_home = os.environ.get("HF_HOME")
@@ -158,15 +173,15 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
                 os.environ["HF_HOME"] = str(cache_dir)
                 
                 token = os.getenv("HF_TOKEN")
-                self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name, local_files_only=True, token=token)
+                self.granite_processor = AutoProcessor.from_pretrained(model_name, local_files_only=True, token=token)
                 self.tokenizer = self.granite_processor.tokenizer
                 
                 # Load base model
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name, local_files_only=True, token=token).to(self.device)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(model_name, local_files_only=True, token=token).to(self.device)
                 
                 # Check if this is a PEFT model
                 try:
-                    self.granite_model = PeftModel.from_pretrained(base_model, self.granite_model_name, token=token).to(self.device)
+                    self.granite_model = PeftModel.from_pretrained(base_model, model_name, token=token).to(self.device)
                 except:
                     # If not a PEFT model, use the base model
                     self.granite_model = base_model

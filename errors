@@ -1,9 +1,4 @@
 Selected: ASR=faster-whisper, Diarization=dual-track, Outputs=['timestamped-txt']
-Traceback (most recent call last):
-  File "/Users/mark/Dev/local-transcribe/main.py", line 480, in <module>
-    raise SystemExit(main())
-                     ^^^^^^
-  File "/Users/mark/Dev/local-transcribe/main.py", line 312, in main
-    required_models = asr_provider.get_required_models()
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TypeError: 'list' object is not callable
+[*] Checking/downloading models for faster-whisper: Systran/faster-whisper-medium.en, Systran/faster-whisper-large-v3
+[*] Ensuring Systran/faster-whisper-medium.en is available...
+ERROR: Failed to download models: Cannot find an appropriate cached snapshot folder for the specified revision on the local disk and outgoing traffic has been disabled. To enable repo look-ups and downloads online, set 'HF_HUB_OFFLINE=0' as environment variable.

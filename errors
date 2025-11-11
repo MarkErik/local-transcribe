@@ -1,0 +1,9 @@
+Selected: ASR=faster-whisper, Diarization=dual-track, Outputs=['timestamped-txt']
+Traceback (most recent call last):
+  File "/Users/mark/Dev/local-transcribe/main.py", line 480, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/mark/Dev/local-transcribe/main.py", line 312, in main
+    required_models = asr_provider.get_required_models()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'list' object is not callable

@@ -373,6 +373,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print("[!] Make sure the token has 'read' permissions for the required models")
         
         # Explicitly set online mode
+        print(f"DEBUG: Setting HF_HUB_OFFLINE to 0 (was: {os.environ.get('HF_HUB_OFFLINE')})")
         os.environ["HF_HUB_OFFLINE"] = "0"
         
         # Show current environment for debugging
@@ -380,6 +381,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"    HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
         print(f"    HF_TOKEN: {'***' if hf_token else 'NOT SET'}")
         print(f"    HF_HOME: {os.environ.get('HF_HOME')}")
+        
+        # Additional debug info
+        print(f"DEBUG: All Hugging Face environment variables:")
+        for key, value in os.environ.items():
+            if key.startswith('HF_'):
+                print(f"    {key}: {'***' if 'TOKEN' in key else value}")
         
         try:
             # Download missing models

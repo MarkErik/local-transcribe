@@ -77,15 +77,28 @@ class WhisperASRProvider(ASRProvider):
         """Ensure CT2 models are available locally."""
         from huggingface_hub import snapshot_download
         import os
+        
+        # DEBUG: Log environment state before download attempt
+        print(f"DEBUG: HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        print(f"DEBUG: HF_HOME: {os.environ.get('HF_HOME')}")
+        print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+        
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         os.environ["HF_HUB_OFFLINE"] = "0"
+        
+        # DEBUG: Confirm environment variable was set
+        print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        
         try:
             ct2_cache = models_dir / "asr" / "ct2"
             for model in models:
                 # Use cache_dir to create standard HF cache structure
+                print(f"DEBUG: Attempting to download {model} to cache_dir: {ct2_cache}")
                 snapshot_download(model, cache_dir=str(ct2_cache))
                 print(f"[✓] {model} downloaded successfully.")
         except Exception as e:
+            print(f"DEBUG: Download failed with error: {e}")
+            print(f"DEBUG: Error type: {type(e)}")
             raise Exception(f"Failed to download {model}: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode

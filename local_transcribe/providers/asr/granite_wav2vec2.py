@@ -22,8 +22,8 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         # Model mapping: user-friendly name -> HuggingFace model name
         self.model_mapping = {
-            "granite-wav2vec2-2b": "ibm-granite/granite-speech-3.3-2b",
-            "granite-wav2vec2-8b": "ibm-granite/granite-speech-3.3-8b"
+            "granite-speech-3.3-2b": "ibm-granite/granite-speech-3.3-2b",
+            "granite-speech-3.3-8b": "ibm-granite/granite-speech-3.3-8b"
         }
         self.selected_model = None  # Will be set during transcription
         self.wav2vec2_model_name = "facebook/wav2vec2-base-960h"  # English model
@@ -53,7 +53,7 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             ]
         # Default to 8b model if no selection
         return [
-            self.model_mapping["granite-wav2vec2-8b"],
+            self.model_mapping["granite-speech-3.3-8b"],
             "facebook/wav2vec2-base-960h"
         ]
 
@@ -130,19 +130,32 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Granite and Wav2Vec2 models are available offline without downloading."""
         missing_models = []
+        hub_dir = models_dir / "hub"
+        
         for model in models:
-            if model in self.model_mapping.values():  # Check if it's a valid Granite model
-                cache_dir = models_dir / "asr" / "granite"
-                # Check for model files (this is a simplified check)
-                hub_dir = cache_dir / "hub"
-                if not any(hub_dir.rglob("*.bin")) and not any(hub_dir.rglob("*.safetensors")):
-                    missing_models.append(model)
-            elif model == "facebook/wav2vec2-base-960h":
-                cache_dir = models_dir / "asr" / "wav2vec2"
-                # Check for model files
-                hub_dir = cache_dir / "hub"
-                if not any(hub_dir.rglob("*.bin")) and not any(hub_dir.rglob("*.safetensors")):
-                    missing_models.append(model)
+            # Convert model name to HuggingFace cache directory name
+            if "/" in model:
+                org, repo = model.split("/")
+                model_dir_name = f"models--{org}--{repo.replace('/', '--')}"
+            else:
+                # Fallback for models without org
+                model_dir_name = f"models--{model.replace('/', '--')}"
+            
+            model_cache_dir = hub_dir / model_dir_name
+            
+            # Check if the model directory exists and contains model files
+            has_model_files = (
+                model_cache_dir.exists() and (
+                    any(model_cache_dir.rglob("*.bin")) or 
+                    any(model_cache_dir.rglob("*.safetensors")) or
+                    any(model_cache_dir.rglob("*.pt")) or
+                    any(model_cache_dir.rglob("*.pth"))
+                )
+            )
+            
+            if not has_model_files:
+                missing_models.append(model)
+        
         return missing_models
 
     def _load_granite_model(self):

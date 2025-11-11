@@ -338,45 +338,53 @@ def main(argv: Optional[list[str]] = None) -> int:
         args.asr_model = available_models[0] if available_models else None
 
     # Download required models for selected providers
+    # Phase 2: Model Availability Check (Offline)
     required_asr_models = asr_provider.get_required_models()
     required_diarization_models = diarization_provider.get_required_models()
-    all_required_models = []
-    if required_asr_models:
-        all_required_models.extend([(model, "asr", args.asr_provider) for model in required_asr_models])
-    if required_diarization_models:
-        all_required_models.extend([(model, "diarization", args.diarization_provider) for model in required_diarization_models])
     
-    if all_required_models:
-        print(f"[*] Checking/downloading models...")
-        for model, provider_type, provider_name in all_required_models:
-            print(f"  - {model} (for {provider_type}: {provider_name})")
-        from huggingface_hub import snapshot_download
-        import os
-        # Temporarily allow online for downloads
+    print(f"[*] Checking model availability offline...")
+    missing_asr_models = []
+    missing_diarization_models = []
+    
+    if required_asr_models:
+        missing_asr_models = asr_provider.check_models_available_offline(required_asr_models, models_dir)
+    
+    if required_diarization_models:
+        missing_diarization_models = diarization_provider.check_models_available_offline(required_diarization_models, models_dir)
+    
+    all_missing = missing_asr_models + missing_diarization_models
+    
+    # Phase 3: Conditional Download (Online Only If Needed)
+    if all_missing:
+        print(f"[!] Missing models detected: {', '.join(all_missing)}")
+        print("[!] Switching to online mode for download...")
+        
+        # Temporarily go online
         original_offline = os.environ.get("HF_HUB_OFFLINE")
         os.environ["HF_HUB_OFFLINE"] = "0"
+        
         try:
-            for model, provider_type, provider_name in all_required_models:
-                print(f"[*] Ensuring {model} is available...")
-                try:
-                    if provider_type == "asr":
-                        asr_provider.ensure_models_available([model], models_dir)
-                    elif provider_type == "diarization":
-                        diarization_provider.ensure_models_available([model], models_dir)
-                except Exception as e:
-                    print(f"WARNING: Failed to ensure {model} is available: {e}")
-                    print(f"Assuming {model} will be downloaded by the provider when needed.")
-                    continue
-            print("[✓] All required models are ready.")
+            # Download missing models
+            if missing_asr_models:
+                print(f"[*] Downloading ASR models: {', '.join(missing_asr_models)}")
+                asr_provider.ensure_models_available(missing_asr_models, models_dir)
+            
+            if missing_diarization_models:
+                print(f"[*] Downloading diarization models: {', '.join(missing_diarization_models)}")
+                diarization_provider.ensure_models_available(missing_diarization_models, models_dir)
+            
+            print("[✓] All models downloaded successfully.")
         except Exception as e:
             print(f"ERROR: Failed to download models: {e}")
             return 1
         finally:
-            # Restore offline mode
+            # Return to offline mode
             if original_offline is not None:
                 os.environ["HF_HUB_OFFLINE"] = original_offline
             else:
                 os.environ.pop("HF_HUB_OFFLINE", None)
+    else:
+        print("[✓] All required models are available locally.")
 
     # Configure logging based on verbose flag
     api["configure_global_logging"](log_level="INFO" if args.verbose else "WARNING")

@@ -48,6 +48,18 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         """Ensure models are available by preloading them."""
         self.preload_models(models, models_dir)
 
+    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which pyannote models are available offline without downloading."""
+        missing_models = []
+        for model in models:
+            if model == "pyannote/speaker-diarization":
+                # Check if the pyannote model directory exists
+                cache_dir = models_dir / "diarization"
+                model_dir = cache_dir / "models--pyannote--speaker-diarization-community-1"
+                if not (model_dir.exists() and any(model_dir.iterdir())):
+                    missing_models.append(model)
+        return missing_models
+
     def diarize(
         self,
         audio_path: str,
@@ -112,12 +124,14 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         if token:
             os.environ.setdefault("HF_TOKEN", token)
 
-        cache_dir = os.getenv("PYANNOTE_CACHE", "./models/diarization")
+        # Use HF_HOME as the base cache directory for consistency
+        hf_home = os.getenv("HF_HOME", "./models")
+        cache_dir = pathlib.Path(hf_home) / "diarization"
 
         # Load pipeline
         pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-community-1",
-            cache_dir=cache_dir,
+            cache_dir=str(cache_dir),
         )
         # Move to GPU if available
         if torch.cuda.is_available():

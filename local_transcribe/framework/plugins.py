@@ -58,6 +58,11 @@ class ASRProvider(ABC):
         """Ensure the specified models are available, downloading if necessary. Default implementation does nothing."""
         pass
 
+    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which models are available offline without downloading. Returns list of missing model identifiers."""
+        # Default implementation assumes all models are missing if not overridden
+        return models
+
     @abstractmethod
     def get_available_models(self) -> List[str]:
         """Return a list of available model names for this provider."""
@@ -110,6 +115,11 @@ class DiarizationProvider(ABC):
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure the specified models are available, downloading if necessary. Default implementation does nothing."""
         pass
+
+    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which models are available offline without downloading. Returns list of missing model identifiers."""
+        # Default implementation assumes all models are missing if not overridden
+        return models
 
     @abstractmethod
     def diarize(

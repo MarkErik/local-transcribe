@@ -89,6 +89,16 @@ class WhisperASRProvider(ASRProvider):
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
 
+    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which CT2 models are available offline without downloading."""
+        missing_models = []
+        for model in models:
+            safe_name = f"models--{model.replace('/', '--')}"
+            model_path = models_dir / "asr" / "ct2" / safe_name / "snapshots"
+            if not (model_path.exists() and any(model_path.iterdir())):
+                missing_models.append(model)
+        return missing_models
+
     def transcribe_with_alignment(
         self,
         audio_path: str,

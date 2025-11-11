@@ -55,6 +55,17 @@ class GraniteMFASRProvider(ASRProvider):
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
 
+    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which Granite models are available offline without downloading."""
+        missing_models = []
+        for model in models:
+            if model == "ibm-granite/granite-speech-3.3-8b":
+                cache_dir = models_dir / "asr" / "granite"
+                # Check for model files (this is a simplified check)
+                if not any(cache_dir.rglob("*.bin")) and not any(cache_dir.rglob("*.safetensors")):
+                    missing_models.append(model)
+        return missing_models
+
     def _load_model(self):
         """Load the Granite model if not already loaded."""
         if self.model is None:
@@ -62,7 +73,7 @@ class GraniteMFASRProvider(ASRProvider):
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
             os.environ["HF_HUB_OFFLINE"] = "0"
             try:
-                cache_dir = pathlib.Path(os.environ.get("HF_HOME", "~/.cache/huggingface")) / "asr" / "granite"
+                cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "granite"
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 token = os.getenv("HF_TOKEN")
                 self.processor = AutoProcessor.from_pretrained(self.model_name, cache_dir=str(cache_dir), local_files_only=False, token=token, revision="main")

@@ -258,6 +258,10 @@ class GraniteMFASRProvider(ASRProvider):
             try:
                 # MFA command: mfa align <audio_dir> <dictionary> <acoustic_model> <output_dir>
                 # Using English dictionary and acoustic model
+                # Set MFA_ROOT_DIR to use project models directory
+                env = os.environ.copy()
+                env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
+                
                 cmd = [
                     "mfa", "align",
                     str(audio_dir),
@@ -272,7 +276,8 @@ class GraniteMFASRProvider(ASRProvider):
                     cmd,
                     capture_output=True,
                     text=True,
-                    check=True
+                    check=True,
+                    env=env
                 )
                 
                 # Parse TextGrid output
@@ -299,35 +304,43 @@ class GraniteMFASRProvider(ASRProvider):
                 return self._simple_alignment(audio_path, transcript)
     
     def _ensure_mfa_models(self):
-        """Ensure MFA acoustic model and dictionary are downloaded."""
+        """Ensure MFA acoustic model and dictionary are downloaded to project directory."""
+        # Set MFA_ROOT_DIR environment variable to use project models directory
+        env = os.environ.copy()
+        env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
+        
         try:
             # Check if models are already downloaded
             result = subprocess.run(
                 ["mfa", "model", "list", "acoustic"],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
+                env=env
             )
             
             if "english_us_arpa" not in result.stdout:
-                print("[*] Downloading MFA English acoustic model...")
+                print(f"[*] Downloading MFA English acoustic model to {self.mfa_models_dir}...")
                 subprocess.run(
                     ["mfa", "model", "download", "acoustic", "english_us_arpa"],
-                    check=True
+                    check=True,
+                    env=env
                 )
             
             result = subprocess.run(
                 ["mfa", "model", "list", "dictionary"],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
+                env=env
             )
             
             if "english_us_arpa" not in result.stdout:
-                print("[*] Downloading MFA English dictionary...")
+                print(f"[*] Downloading MFA English dictionary to {self.mfa_models_dir}...")
                 subprocess.run(
                     ["mfa", "model", "download", "dictionary", "english_us_arpa"],
-                    check=True
+                    check=True,
+                    env=env
                 )
                 
         except (subprocess.CalledProcessError, FileNotFoundError) as e:

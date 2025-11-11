@@ -47,15 +47,15 @@ class GraniteMFASRProvider(ASRProvider):
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
             os.environ["HF_HUB_OFFLINE"] = "0"
             try:
-                self.processor = AutoProcessor.from_pretrained(self.model_name)
+                self.processor = AutoProcessor.from_pretrained(self.model_name, local_files_only=False)
                 self.tokenizer = self.processor.tokenizer
                 
                 # Load base model
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.model_name).to(self.device)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.model_name, local_files_only=False).to(self.device)
                 
                 # Check if this is a PEFT model
                 try:
-                    self.model = PeftModel.from_pretrained(base_model, self.model_name).to(self.device)
+                    self.model = PeftModel.from_pretrained(base_model, self.model_name, local_files_only=False).to(self.device)
                 except:
                     # If not a PEFT model, use the base model
                     self.model = base_model

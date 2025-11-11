@@ -55,15 +55,15 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
             os.environ["HF_HUB_OFFLINE"] = "0"
             try:
-                self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name)
+                self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name, local_files_only=False)
                 self.tokenizer = self.granite_processor.tokenizer
                 
                 # Load base model
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name).to(self.device)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name, local_files_only=False).to(self.device)
                 
                 # Check if this is a PEFT model
                 try:
-                    self.granite_model = PeftModel.from_pretrained(base_model, self.granite_model_name).to(self.device)
+                    self.granite_model = PeftModel.from_pretrained(base_model, self.granite_model_name, local_files_only=False).to(self.device)
                 except:
                     # If not a PEFT model, use the base model
                     self.granite_model = base_model
@@ -78,8 +78,8 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
             os.environ["HF_HUB_OFFLINE"] = "0"
             try:
-                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name)
-                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name).to(self.device)
+                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, local_files_only=False)
+                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, local_files_only=False).to(self.device)
             finally:
                 # Restore offline mode
                 os.environ["HF_HUB_OFFLINE"] = offline_mode

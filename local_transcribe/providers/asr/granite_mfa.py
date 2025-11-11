@@ -40,7 +40,7 @@ class GraniteMFASRProvider(ASRProvider):
     def get_available_models(self) -> List[str]:
         return ["granite-8b"]
 
-    def preload_models(self, models: List[str]) -> None:
+    def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite models to cache."""
         import os
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
@@ -48,8 +48,10 @@ class GraniteMFASRProvider(ASRProvider):
         try:
             for model in models:
                 if model == "ibm-granite/granite-speech-3.3-8b":
-                    AutoProcessor.from_pretrained(model, local_files_only=False)
-                    AutoModelForSpeechSeq2Seq.from_pretrained(model, local_files_only=False)
+                    cache_dir = models_dir / "asr" / "granite"
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                    AutoProcessor.from_pretrained(model, cache_dir=str(cache_dir), local_files_only=False)
+                    AutoModelForSpeechSeq2Seq.from_pretrained(model, cache_dir=str(cache_dir), local_files_only=False)
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
 
@@ -60,15 +62,18 @@ class GraniteMFASRProvider(ASRProvider):
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
             os.environ["HF_HUB_OFFLINE"] = "0"
             try:
-                self.processor = AutoProcessor.from_pretrained(self.model_name, local_files_only=False)
+                cache_dir = pathlib.Path(os.environ.get("HF_HOME", "~/.cache/huggingface")) / "asr" / "granite"
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                token = os.getenv("HF_TOKEN")
+                self.processor = AutoProcessor.from_pretrained(self.model_name, cache_dir=str(cache_dir), local_files_only=False, token=token, revision="main")
                 self.tokenizer = self.processor.tokenizer
                 
                 # Load base model
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.model_name, local_files_only=False).to(self.device)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.model_name, cache_dir=str(cache_dir), local_files_only=False, token=token, revision="main").to(self.device)
                 
                 # Check if this is a PEFT model
                 try:
-                    self.model = PeftModel.from_pretrained(base_model, self.model_name, local_files_only=False).to(self.device)
+                    self.model = PeftModel.from_pretrained(base_model, self.model_name, cache_dir=str(cache_dir), token=token, revision="main").to(self.device)
                 except:
                     # If not a PEFT model, use the base model
                     self.model = base_model
@@ -196,7 +201,7 @@ class GraniteMFASRProvider(ASRProvider):
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
-        self.preload_models(models)
+        self.preload_models(models, models_dir)
 
 
 def register_asr_plugins():

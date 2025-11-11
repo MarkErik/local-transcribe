@@ -27,7 +27,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
     def get_required_models(self) -> List[str]:
         return ["pyannote/speaker-diarization"]
 
-    def preload_models(self, models: List[str]) -> None:
+    def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload pyannote models to cache."""
         import os
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
@@ -37,14 +37,16 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
                 if model == "pyannote/speaker-diarization":
                     # Preload by creating the pipeline briefly
                     from pyannote.audio import Pipeline
+                    cache_dir = models_dir / "diarization"
+                    cache_dir.mkdir(parents=True, exist_ok=True)
                     # This will download and cache the model
-                    Pipeline(model)
+                    Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", cache_dir=str(cache_dir))
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
-        self.preload_models(models)
+        self.preload_models(models, models_dir)
 
     def diarize(
         self,
@@ -106,9 +108,8 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             raise ValueError("No words provided for diarization")
 
         # Ensure pyannote/huggingface hub will read token from env
-        token = os.getenv("HUGGINGFACE_TOKEN", "")
+        token = os.getenv("HF_TOKEN", "")
         if token:
-            os.environ.setdefault("HUGGINGFACE_HUB_TOKEN", token)
             os.environ.setdefault("HF_TOKEN", token)
 
         cache_dir = os.getenv("PYANNOTE_CACHE", "./models/diarization")

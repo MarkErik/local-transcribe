@@ -49,19 +49,23 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
     def get_available_models(self) -> List[str]:
         return ["granite-wav2vec2"]
 
-    def preload_models(self, models: List[str]) -> None:
+    def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite and Wav2Vec2 models to cache."""
         import os
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         os.environ["HF_HUB_OFFLINE"] = "0"
         try:
+            cache_dir_granite = models_dir / "asr" / "granite"
+            cache_dir_granite.mkdir(parents=True, exist_ok=True)
+            cache_dir_wav2vec2 = models_dir / "asr" / "wav2vec2"
+            cache_dir_wav2vec2.mkdir(parents=True, exist_ok=True)
             for model in models:
                 if model == "ibm-granite/granite-speech-3.3-8b":
-                    AutoProcessor.from_pretrained(model, local_files_only=False)
-                    AutoModelForSpeechSeq2Seq.from_pretrained(model, local_files_only=False)
+                    AutoProcessor.from_pretrained(model, cache_dir=str(cache_dir_granite), local_files_only=False)
+                    AutoModelForSpeechSeq2Seq.from_pretrained(model, cache_dir=str(cache_dir_granite), local_files_only=False)
                 elif model == "facebook/wav2vec2-base-960h":
-                    Wav2Vec2Processor.from_pretrained(model, local_files_only=False)
-                    Wav2Vec2ForCTC.from_pretrained(model, local_files_only=False)
+                    Wav2Vec2Processor.from_pretrained(model, cache_dir=str(cache_dir_wav2vec2), local_files_only=False)
+                    Wav2Vec2ForCTC.from_pretrained(model, cache_dir=str(cache_dir_wav2vec2), local_files_only=False)
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
 
@@ -72,15 +76,18 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
             os.environ["HF_HUB_OFFLINE"] = "0"
             try:
-                self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name, local_files_only=False)
+                cache_dir = pathlib.Path(os.environ.get("HF_HOME", "~/.cache/huggingface")) / "asr" / "granite"
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                token = os.getenv("HF_TOKEN")
+                self.granite_processor = AutoProcessor.from_pretrained(self.granite_model_name, cache_dir=str(cache_dir), local_files_only=False, token=token, revision="main")
                 self.tokenizer = self.granite_processor.tokenizer
                 
                 # Load base model
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name, local_files_only=False).to(self.device)
+                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(self.granite_model_name, cache_dir=str(cache_dir), local_files_only=False, token=token, revision="main").to(self.device)
                 
                 # Check if this is a PEFT model
                 try:
-                    self.granite_model = PeftModel.from_pretrained(base_model, self.granite_model_name, local_files_only=False).to(self.device)
+                    self.granite_model = PeftModel.from_pretrained(base_model, self.granite_model_name, cache_dir=str(cache_dir), token=token, revision="main").to(self.device)
                 except:
                     # If not a PEFT model, use the base model
                     self.granite_model = base_model
@@ -95,8 +102,11 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
             offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
             os.environ["HF_HUB_OFFLINE"] = "0"
             try:
-                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, local_files_only=False)
-                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, local_files_only=False).to(self.device)
+                cache_dir = pathlib.Path(os.environ.get("HF_HOME", "~/.cache/huggingface")) / "asr" / "wav2vec2"
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                token = os.getenv("HF_TOKEN")
+                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, cache_dir=str(cache_dir), local_files_only=False, token=token)
+                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, cache_dir=str(cache_dir), local_files_only=False, token=token).to(self.device)
             finally:
                 # Restore offline mode
                 os.environ["HF_HUB_OFFLINE"] = offline_mode
@@ -293,7 +303,7 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
-        self.preload_models(models)
+        self.preload_models(models, models_dir)
 
 
 def register_asr_plugins():

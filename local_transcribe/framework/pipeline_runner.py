@@ -122,9 +122,9 @@ def run_pipeline(args, api, root):
             temp_audio_dir = outdir / "temp_audio"
             temp_audio_dir.mkdir(exist_ok=True)
 
-            # Standardize mixed audio
-            tracker.update(std_task, advance=50, description="Standardizing mixed audio")
-            std_mix = api["standardize_and_get_path"](mixed_path, tmpdir=temp_audio_dir)
+            # Standardize combined audio
+            tracker.update(std_task, advance=50, description="Standardizing combined audio")
+            std_audio = api["standardize_and_get_path"](mixed_path, tmpdir=temp_audio_dir)
 
             # Complete the standardization task
             tracker.update(std_task, advance=50, description="Audio standardization complete")
@@ -133,14 +133,14 @@ def run_pipeline(args, api, root):
             if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
                 # Use unified provider
                 turns = unified_provider.transcribe_and_diarize(
-                    str(std_mix),
+                    str(std_audio),
                     args.num_speakers,
                     model=args.unified_model
                 )
             else:
                 # 2) ASR + alignment
                 words = asr_provider.transcribe_with_alignment(
-                    str(std_mix),
+                    str(std_audio),
                     role=None,
                     asr_model=args.asr_model
                 )
@@ -150,13 +150,13 @@ def run_pipeline(args, api, root):
                 asr_writer.write(words, paths["merged"] / "asr.txt")
 
                 # 3) Diarize (assign speakers to words)
-                words_with_speakers = diarization_provider.diarize(str(std_mix), words, args.num_speakers)
+                words_with_speakers = diarization_provider.diarize(str(std_audio), words, args.num_speakers)
 
                 # 4) Build turns
                 turns = turn_builder_provider.build_turns(words_with_speakers)
 
             # 4) Outputs
-            write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], std_mix)
+            write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], std_audio)
 
             print("[✓] Single file processing complete.")
 

@@ -245,6 +245,45 @@ class TurnBuilderProvider(ABC):
         pass
 
 
+class ASRWriter(ABC):
+    """Abstract base class for ASR word output writers."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Return the unique name of this ASR writer."""
+        pass
+
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        """Return a human-readable description of this writer."""
+        pass
+
+    @property
+    @abstractmethod
+    def supported_formats(self) -> List[str]:
+        """Return list of file extensions this writer supports (e.g., ['.txt'])."""
+        pass
+
+    @abstractmethod
+    def write(
+        self,
+        words: List[WordSegment],
+        output_path: str,
+        **kwargs
+    ) -> None:
+        """
+        Write ASR word segments to output file.
+
+        Args:
+            words: List of word segments from ASR (without speaker assignments)
+            output_path: Path where to write the output file
+            **kwargs: Writer-specific configuration options
+        """
+        pass
+
+
 class OutputWriter(ABC):
     """Abstract base class for output format writers."""
 
@@ -292,6 +331,7 @@ class PluginRegistry:
         self._diarization_providers: Dict[str, DiarizationProvider] = {}
         self._combined_providers: Dict[str, CombinedProvider] = {}
         self._turn_builder_providers: Dict[str, TurnBuilderProvider] = {}
+        self._asr_writers: Dict[str, ASRWriter] = {}
         self._output_writers: Dict[str, OutputWriter] = {}
 
     def register_asr_provider(self, provider: ASRProvider) -> None:
@@ -309,6 +349,10 @@ class PluginRegistry:
     def register_turn_builder_provider(self, provider: TurnBuilderProvider) -> None:
         """Register a turn builder provider."""
         self._turn_builder_providers[provider.name] = provider
+
+    def register_asr_writer(self, writer: ASRWriter) -> None:
+        """Register an ASR writer."""
+        self._asr_writers[writer.name] = writer
 
     def register_output_writer(self, writer: OutputWriter) -> None:
         """Register an output writer."""
@@ -342,6 +386,13 @@ class PluginRegistry:
             raise ValueError(f"Turn builder provider '{name}' not found. Available: {available}")
         return self._turn_builder_providers[name]
 
+    def get_asr_writer(self, name: str) -> ASRWriter:
+        """Get an ASR writer by name."""
+        if name not in self._asr_writers:
+            available = list(self._asr_writers.keys())
+            raise ValueError(f"ASR writer '{name}' not found. Available: {available}")
+        return self._asr_writers[name]
+
     def get_output_writer(self, name: str) -> OutputWriter:
         """Get an output writer by name."""
         if name not in self._output_writers:
@@ -364,6 +415,10 @@ class PluginRegistry:
     def list_turn_builder_providers(self) -> Dict[str, str]:
         """List all registered turn builder providers with their descriptions."""
         return {name: provider.description for name, provider in self._turn_builder_providers.items()}
+
+    def list_asr_writers(self) -> Dict[str, str]:
+        """List all registered ASR writers with their descriptions."""
+        return {name: writer.description for name, writer in self._asr_writers.items()}
 
     def list_output_writers(self) -> Dict[str, str]:
         """List all registered output writers with their descriptions."""

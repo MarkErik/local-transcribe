@@ -77,8 +77,25 @@ def write_asr_words(words: List[Union[WordSegment, Dict]], path: str | Path) -> 
 
 
 # Plugin classes
-from local_transcribe.framework.plugins import OutputWriter, Turn, registry, WordSegment
+from local_transcribe.framework.plugins import OutputWriter, ASRWriter, Turn, registry, WordSegment
 from typing import List
+
+
+class ASRWordsWriter(ASRWriter):
+    @property
+    def name(self) -> str:
+        return "asr-words"
+
+    @property
+    def description(self) -> str:
+        return "Raw ASR word output without timestamps or speakers"
+
+    @property
+    def supported_formats(self) -> List[str]:
+        return [".txt"]
+
+    def write(self, words: List[WordSegment], output_path: str) -> None:
+        write_asr_words(words, output_path)
 
 
 class TimestampedTextWriter(OutputWriter):
@@ -122,3 +139,4 @@ class PlainTextWriter(OutputWriter):
 # Register the writers
 registry.register_output_writer(TimestampedTextWriter())
 registry.register_output_writer(PlainTextWriter())
+registry.register_asr_writer(ASRWordsWriter())

@@ -128,9 +128,8 @@ def run_pipeline(args, api, root):
                 )
 
                 # Save ASR results as plain text before diarization
-                # TODO: Use plugin for this too
-                from local_transcribe.providers.writers.txt_writer import write_asr_words
-                write_asr_words(words, paths["merged"] / "asr.txt")
+                asr_writer = api["registry"].get_asr_writer("asr-words")
+                asr_writer.write(words, paths["merged"] / "asr.txt")
 
                 # 3) Diarize (assign speakers to words)
                 words_with_speakers = diarization_provider.diarize(str(std_mix), words, args.num_speakers)
@@ -176,8 +175,8 @@ def run_pipeline(args, api, root):
             )
 
             # Save ASR results and build turns for interviewer
-            from local_transcribe.providers.writers.txt_writer import write_asr_words
-            write_asr_words(int_words, paths["speaker_interviewer"] / "asr.txt")
+            asr_writer = api["registry"].get_asr_writer("asr-words")
+            asr_writer.write(int_words, paths["speaker_interviewer"] / "asr.txt")
 
             # Use dual-track diarization provider for building turns
             dual_track_provider = api["registry"].get_diarization_provider("dual-track")
@@ -195,7 +194,9 @@ def run_pipeline(args, api, root):
                 asr_model=args.asr_model
             )
 
-            write_asr_words(part_words, paths["speaker_participant"] / "asr.txt")
+            # Replace direct call with plugin-based ASR writer for participant ASR results
+            asr_writer = api["registry"].get_asr_writer("asr-words")
+            asr_writer.write(part_words, paths["speaker_participant"] / "asr.txt")
 
             # Build turns for participant
             part_turns = turn_builder_provider.build_turns(part_words)

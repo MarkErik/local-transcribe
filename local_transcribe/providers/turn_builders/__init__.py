@@ -2,3 +2,6 @@
 """
 Turn builder providers.
 """
+
+# Import all turn builder modules to register them
+from . import general

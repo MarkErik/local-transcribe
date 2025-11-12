@@ -97,6 +97,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--asr-provider", help="ASR provider to use")
     p.add_argument("--asr-model", help="ASR model to use (if provider supports multiple models)")
     p.add_argument("--diarization-provider", help="Diarization provider to use")
+    p.add_argument("-n","--num-speakers", type=int, default=2, help="Number of speakers expected in the audio (for diarization, default: 2)")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
@@ -547,6 +548,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 # Use combined provider
                 turns = combined_provider.transcribe_and_diarize(
                     str(std_mix),
+                    args.num_speakers,
                     model=args.combined_model
                 )
             else:
@@ -563,7 +565,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 write_asr_words(words, paths["merged"] / "asr.txt")
 
                 # 3) Diarize → turns
-                turns = diarization_provider.diarize(str.std_mix, words)
+                turns = diarization_provider.diarize(str.std_mix, words, args.num_speakers)
 
             # 4) Outputs
             write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], std_mix)
@@ -611,6 +613,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             int_turns = dual_track_provider.diarize(
                 str(std_int),
                 int_words,
+                2,  # Always 2 speakers in dual-track mode
                 speaker_label="Interviewer"
             )
 
@@ -632,6 +635,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             part_turns = dual_track_provider.diarize(
                 str(std_part),
                 part_words,
+                2,  # Always 2 speakers in dual-track mode
                 speaker_label="Participant"
             )
 

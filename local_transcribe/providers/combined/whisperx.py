@@ -77,6 +77,7 @@ class WhisperXCombinedProvider(CombinedProvider):
     def transcribe_and_diarize(
         self,
         audio_path: str,
+        num_speakers: int,
         **kwargs
     ) -> List[Turn]:
         """
@@ -84,6 +85,7 @@ class WhisperXCombinedProvider(CombinedProvider):
 
         Args:
             audio_path: Path to the audio file
+            num_speakers: Number of speakers expected in the audio
             **kwargs: Should include 'model' key for Whisper model
 
         Returns:
@@ -113,7 +115,7 @@ class WhisperXCombinedProvider(CombinedProvider):
 
         # 3. Assign speaker labels
         diarize_model = whisperx.DiarizationPipeline(use_auth_token=os.getenv("HF_TOKEN"), device=self.device)
-        diarize_segments = diarize_model(audio)
+        diarize_segments = diarize_model(audio, num_speakers=num_speakers)
         result = whisperx.assign_word_speakers(diarize_segments, result)
         print(f"Diarization: {result['segments'][:2]}...")  # Debug
 

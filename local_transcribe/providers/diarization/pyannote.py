@@ -64,6 +64,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         self,
         audio_path: str,
         words: List[WordSegment],
+        num_speakers: int,
         **kwargs
     ) -> List[Turn]:
         """
@@ -72,9 +73,10 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         Args:
             audio_path: Path to audio file
             words: Word segments from ASR
+            num_speakers: Number of speakers expected in the audio
             **kwargs: Provider-specific options
         """
-        turns_dicts = self._diarize_mixed(audio_path, words)
+        turns_dicts = self._diarize_mixed(audio_path, words, num_speakers)
 
         # Convert to Turn
         turns = [
@@ -105,7 +107,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         waveform = torch.from_numpy(data).unsqueeze(0)
         return waveform, sr
 
-    def _diarize_mixed(self, audio_path: str, words: List[WordSegment]) -> List[dict]:
+    def _diarize_mixed(self, audio_path: str, words: List[WordSegment], num_speakers: int) -> List[dict]:
         """
         Diarize a mixed/combined track and assign speakers to words by majority overlap,
         then build readable turns per speaker.
@@ -141,7 +143,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         waveform, sample_rate = self._load_waveform_mono_32f(audio_path)
 
         # Run diarization
-        diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate})
+        diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate, "num_speakers": num_speakers})
 
         # Assign speakers to words by majority overlap
         word_speakers = []

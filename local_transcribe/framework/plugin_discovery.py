@@ -221,6 +221,7 @@ class ExampleCombinedProvider(CombinedProvider):
     def transcribe_and_diarize(
         self,
         audio_path: str,
+        num_speakers: int,
         **kwargs
     ) -> List[Turn]:
         """

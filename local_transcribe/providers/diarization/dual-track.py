@@ -23,6 +23,7 @@ class DualTrackDiarizationProvider(DiarizationProvider):
         self,
         audio_path: str,
         words: List[WordSegment],
+        num_speakers: int,
         **kwargs
     ) -> List[Turn]:
         """
@@ -31,6 +32,7 @@ class DualTrackDiarizationProvider(DiarizationProvider):
         Args:
             audio_path: Path to audio file (ignored)
             words: Word segments with speaker labels
+            num_speakers: Number of speakers expected in the audio (ignored for dual-track)
             **kwargs: Should include 'speaker_label'
         """
         speaker_label = kwargs.get('speaker_label', 'Unknown')

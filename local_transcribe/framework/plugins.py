@@ -130,6 +130,7 @@ class DiarizationProvider(ABC):
         self,
         audio_path: str,
         words: List[WordSegment],
+        num_speakers: int,
         **kwargs
     ) -> List[Turn]:
         """
@@ -138,6 +139,7 @@ class DiarizationProvider(ABC):
         Args:
             audio_path: Path to the audio file
             words: Word segments from ASR (may have speaker=None)
+            num_speakers: Number of speakers expected in the audio
             **kwargs: Provider-specific configuration options
 
         Returns:
@@ -192,6 +194,7 @@ class CombinedProvider(ABC):
     def transcribe_and_diarize(
         self,
         audio_path: str,
+        num_speakers: int,
         **kwargs
     ) -> List[Turn]:
         """
@@ -199,6 +202,7 @@ class CombinedProvider(ABC):
 
         Args:
             audio_path: Path to the audio file
+            num_speakers: Number of speakers expected in the audio            
             **kwargs: Provider-specific configuration options
 
         Returns:

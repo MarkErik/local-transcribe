@@ -7,6 +7,25 @@ from typing import Optional
 
 from local_transcribe.framework.model_downloader import ensure_models_available
 
+def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, **kwargs):
+    """Transcribe audio and return word segments with timestamps."""
+    if transcriber_provider.has_builtin_alignment:
+        # Transcriber has built-in alignment
+        return transcriber_provider.transcribe_with_alignment(
+            audio_path,
+            role=role,
+            **kwargs
+        )
+    else:
+        # Use transcriber + aligner composition
+        transcript = transcriber_provider.transcribe(audio_path, **kwargs)
+        segments = aligner_provider.align_transcript(audio_path, transcript, **kwargs)
+        # Add speaker role if provided
+        if role:
+            for segment in segments:
+                segment.speaker = role
+        return segments
+
 def run_pipeline(args, api, root):
     from local_transcribe.lib.environment import ensure_file, ensure_outdir
 
@@ -64,7 +83,13 @@ def run_pipeline(args, api, root):
         if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
             unified_provider = api["registry"].get_unified_provider(args.unified_provider)
         else:
-            asr_provider = api["registry"].get_asr_provider(args.asr_provider)
+            transcriber_provider = api["registry"].get_transcriber_provider(args.transcriber_provider)
+            # Check if transcriber has built-in alignment
+            if transcriber_provider.has_builtin_alignment:
+                aligner_provider = None
+            else:
+                # Pure transcribers require an aligner
+                aligner_provider = api["registry"].get_aligner_provider(args.aligner_provider)
             diarization_provider = api["registry"].get_diarization_provider(args.diarization_provider)
             # For separate processing, always need a turn builder
             turn_builder_provider = api["registry"].get_turn_builder_provider("general")  # Default to general
@@ -79,16 +104,18 @@ def run_pipeline(args, api, root):
             available_models = unified_provider.get_available_models()
             args.unified_model = available_models[0] if available_models else None
     else:
-        if not hasattr(args, 'asr_model') or args.asr_model is None:
-            available_models = asr_provider.get_available_models()
-            args.asr_model = available_models[0] if available_models else None
+        if not hasattr(args, 'transcriber_model') or args.transcriber_model is None:
+            available_models = transcriber_provider.get_available_models()
+            args.transcriber_model = available_models[0] if available_models else None
 
     # Download required models for selected providers
     providers = {}
     if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
         providers['unified'] = unified_provider
     else:
-        providers['asr'] = asr_provider
+        providers['transcriber'] = transcriber_provider
+        if aligner_provider:
+            providers['aligner'] = aligner_provider
         providers['diarization'] = diarization_provider
 
     download_result = ensure_models_available(providers, models_dir, args)
@@ -139,10 +166,12 @@ def run_pipeline(args, api, root):
                 )
             else:
                 # 2) ASR + alignment
-                words = asr_provider.transcribe_with_alignment(
+                words = transcribe_with_alignment(
+                    transcriber_provider,
+                    aligner_provider,
                     str(std_audio),
                     role=None,
-                    asr_model=args.asr_model
+                    transcriber_model=args.transcriber_model
                 )
 
                 # Save ASR results as plain text before diarization
@@ -181,10 +210,12 @@ def run_pipeline(args, api, root):
                 tracker.complete_task(std_task, stage="standardization")
                 
                 # 2) ASR + alignment
-                words = asr_provider.transcribe_with_alignment(
+                words = transcribe_with_alignment(
+                    transcriber_provider,
+                    aligner_provider,
                     str(std_audio),
                     role=speaker_name,
-                    asr_model=args.asr_model
+                    transcriber_model=args.transcriber_model
                 )
                 
                 # Save individual ASR results

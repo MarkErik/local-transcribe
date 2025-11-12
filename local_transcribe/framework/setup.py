@@ -38,11 +38,25 @@ def import_pipeline_modules(repo_root: pathlib.Path):
 
 def handle_plugin_listing(api):
     print("Available Plugins:")
-    print("\nASR Providers:")
-    for name, desc in api["registry"].list_asr_providers().items():
+    print("\nTranscriber Providers:")
+    for name, desc in api["registry"].list_transcriber_providers().items():
         print(f"  {name}: {desc}")
         # Show available models if provider supports multiple
-        provider = api["registry"].get_asr_provider(name)
+        provider = api["registry"].get_transcriber_provider(name)
+        available_models = provider.get_available_models()
+        if len(available_models) > 1:
+            print(f"    Available models: {', '.join(available_models)}")
+        # Show if it has built-in alignment
+        if provider.has_builtin_alignment:
+            print("    Has built-in alignment: Yes")
+        else:
+            print("    Has built-in alignment: No (requires aligner)")
+
+    print("\nAligner Providers:")
+    for name, desc in api["registry"].list_aligner_providers().items():
+        print(f"  {name}: {desc}")
+        # Show available models if provider supports multiple
+        provider = api["registry"].get_aligner_provider(name)
         available_models = provider.get_available_models()
         if len(available_models) > 1:
             print(f"    Available models: {', '.join(available_models)}")

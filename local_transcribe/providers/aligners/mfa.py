@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""
+Aligner plugin using Montreal Forced Aligner (MFA).
+"""
+
+from typing import List, Optional
+import os
+import pathlib
+import tempfile
+import subprocess
+from local_transcribe.framework.plugins import AlignerProvider, WordSegment, registry
+
+
+class MFAAAlignerProvider(AlignerProvider):
+    """Aligner provider using Montreal Forced Aligner for word-level timestamps."""
+
+    def __init__(self):
+        # MFA setup
+        self.mfa_models_dir = None
+
+    @property
+    def name(self) -> str:
+        return "mfa"
+
+    @property
+    def description(self) -> str:
+        return "Montreal Forced Aligner for precise word-level timestamps"
+
+    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
+        # MFA doesn't use Hugging Face models, but we return empty list for compatibility
+        return []
+
+    def get_available_models(self) -> List[str]:
+        # MFA uses pre-trained acoustic models and dictionaries
+        return ["english_us_arpa"]
+
+    def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Preload MFA models to cache."""
+        # MFA models are downloaded on-demand, so this is a no-op
+        pass
+
+    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which MFA models are available offline."""
+        # For simplicity, assume MFA models need to be downloaded
+        return models
+
+    def _ensure_mfa_models(self):
+        """Ensure MFA acoustic model and dictionary are downloaded to project directory."""
+        # Set MFA_ROOT_DIR environment variable to use project models directory
+        env = os.environ.copy()
+        env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
+
+        try:
+            # Check if models are already downloaded
+            result = subprocess.run(
+                ["mfa", "model", "list", "acoustic"],
+                capture_output=True,
+                text=True,
+                check=True,
+                env=env
+            )
+
+            if "english_us_arpa" not in result.stdout:
+                print(f"[*] Downloading MFA English acoustic model to {self.mfa_models_dir}...")
+                subprocess.run(
+                    ["mfa", "model", "download", "acoustic", "english_us_arpa"],
+                    check=True,
+                    env=env
+                )
+
+            result = subprocess.run(
+                ["mfa", "model", "list", "dictionary"],
+                capture_output=True,
+                text=True,
+                check=True,
+                env=env
+            )
+
+            if "english_us_arpa" not in result.stdout:
+                print(f"[*] Downloading MFA English dictionary to {self.mfa_models_dir}...")
+                subprocess.run(
+                    ["mfa", "model", "download", "dictionary", "english_us_arpa"],
+                    check=True,
+                    env=env
+                )
+        except subprocess.CalledProcessError as e:
+            print(f"Warning: Failed to check/download MFA models: {e}")
+            raise
+
+    def _parse_textgrid(self, textgrid_path: pathlib.Path) -> List[WordSegment]:
+        """Parse MFA TextGrid output to extract word timestamps."""
+        # This is a simplified TextGrid parser
+        # In production, you'd want a more robust parser
+        segments = []
+
+        try:
+            with open(textgrid_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+
+            # Find the word tier (usually tier 2)
+            word_tier_start = None
+            for i, line in enumerate(lines):
+                if 'name = "words"' in line:
+                    word_tier_start = i
+                    break
+
+            if word_tier_start is None:
+                raise ValueError("Could not find word tier in TextGrid")
+
+            # Parse intervals
+            i = word_tier_start
+            while i < len(lines):
+                line = lines[i].strip()
+                if line.startswith('intervals ['):
+                    # Parse interval
+                    # Skip to xmin, xmax, text lines
+                    i += 2  # Skip intervals [n]: and xmin =
+                    if i >= len(lines):
+                        break
+                    xmin_line = lines[i].strip()
+                    i += 1
+                    if i >= len(lines):
+                        break
+                    xmax_line = lines[i].strip()
+                    i += 1
+                    if i >= len(lines):
+                        break
+                    text_line = lines[i].strip()
+
+                    # Extract values
+                    try:
+                        start = float(xmin_line.split('=')[1].strip())
+                        end = float(xmax_line.split('=')[1].strip())
+                        text = text_line.split('=')[1].strip().strip('"')
+
+                        if text:  # Skip empty intervals
+                            segments.append(WordSegment(
+                                text=text,
+                                start=start,
+                                end=end
+                            ))
+                    except (ValueError, IndexError):
+                        pass
+
+                i += 1
+
+        except Exception as e:
+            print(f"Warning: Failed to parse TextGrid: {e}")
+            raise
+
+        return segments
+
+    def _simple_alignment(self, audio_path: str, transcript: str) -> List[WordSegment]:
+        """Fallback to simple even-distribution alignment."""
+        import librosa
+
+        # Get audio duration
+        duration = librosa.get_duration(filename=audio_path)
+
+        # Split transcript into words
+        words = transcript.split()
+
+        if not words:
+            return []
+
+        # Simple even distribution
+        word_duration = duration / len(words)
+
+        segments = []
+        current_time = 0.0
+
+        for word in words:
+            segments.append(WordSegment(
+                text=word,
+                start=current_time,
+                end=current_time + word_duration
+            ))
+            current_time += word_duration
+
+        return segments
+
+    def align_transcript(
+        self,
+        audio_path: str,
+        transcript: str,
+        **kwargs
+    ) -> List[WordSegment]:
+        """Align transcript text to audio using MFA."""
+        # Ensure MFA models directory exists
+        if self.mfa_models_dir is None:
+            self.mfa_models_dir = pathlib.Path(os.getenv("HF_HOME", "./models")) / "aligners" / "mfa"
+            self.mfa_models_dir.mkdir(parents=True, exist_ok=True)
+
+        # Download MFA models if needed
+        self._ensure_mfa_models()
+
+        # Create a temporary directory for MFA processing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+
+            # Prepare input files for MFA
+            # MFA expects: audio files in one directory and matching .lab (transcript) files
+            audio_dir = temp_path / "audio"
+            audio_dir.mkdir()
+
+            # Copy audio to temp directory with a simple name
+            audio_name = "audio.wav"
+            audio_file = audio_dir / audio_name
+
+            # MFA requires 16kHz mono WAV - audio_path should already be standardized
+            # but let's copy it to ensure proper format
+            import shutil
+            shutil.copy(audio_path, audio_file)
+
+            # Create matching transcript file (.lab extension)
+            transcript_file = audio_dir / f"{audio_name.rsplit('.', 1)[0]}.lab"
+            transcript_file.write_text(transcript, encoding='utf-8')
+
+            # Setup output directory for alignments
+            output_dir = temp_path / "output"
+            output_dir.mkdir()
+
+            # Run MFA alignment
+            try:
+                # MFA command: mfa align <audio_dir> <dictionary> <acoustic_model> <output_dir>
+                # Using English dictionary and acoustic model
+                # Set MFA_ROOT_DIR to use project models directory
+                env = os.environ.copy()
+                env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
+
+                cmd = [
+                    "mfa", "align",
+                    str(audio_dir),
+                    "english_us_arpa",  # Dictionary
+                    "english_us_arpa",  # Acoustic model
+                    str(output_dir),
+                    "--clean",  # Clean previous runs
+                    "--quiet",  # Suppress verbose output
+                ]
+
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env=env
+                )
+
+                # Parse TextGrid output
+                textgrid_file = output_dir / f"{audio_name.rsplit('.', 1)[0]}.TextGrid"
+
+                if not textgrid_file.exists():
+                    # Fallback to simple alignment if MFA fails
+                    print(f"Warning: MFA did not produce TextGrid output, falling back to simple alignment")
+                    return self._simple_alignment(audio_path, transcript)
+
+                # Parse TextGrid to extract word timestamps
+                segments = self._parse_textgrid(textgrid_file)
+
+                return segments
+
+            except subprocess.CalledProcessError as e:
+                print(f"Warning: MFA alignment failed: {e.stderr}")
+                print(f"Falling back to simple alignment")
+                return self._simple_alignment(audio_path, transcript)
+            except FileNotFoundError:
+                print(f"Warning: MFA not installed or not in PATH")
+                print(f"Install with: conda install -c conda-forge montreal-forced-aligner")
+                print(f"Falling back to simple alignment")
+                return self._simple_alignment(audio_path, transcript)
+
+    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Ensure MFA models are available."""
+        # MFA models are handled in _ensure_mfa_models()
+        pass
+
+
+def register_aligner_plugins():
+    """Register aligner plugins."""
+    registry.register_aligner_provider(MFAAAlignerProvider())
+
+
+# Auto-register on import
+register_aligner_plugins()

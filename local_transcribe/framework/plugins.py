@@ -3,7 +3,7 @@
 Plugin system for local-transcribe components.
 
 This module defines the abstract base classes and plugin registry for extensible
-ASR, diarization, and output writer components.
+transcription, alignment, diarization, and output writer components.
 """
 
 from abc import ABC, abstractmethod
@@ -30,13 +30,100 @@ class Turn:
     text: str
 
 
-class ASRProvider(ABC):
-    """Abstract base class for ASR (Automatic Speech Recognition) providers."""
+class TranscriberProvider(ABC):
+    """Abstract base class for transcription providers."""
 
     @property
     @abstractmethod
     def name(self) -> str:
-        """Return the unique name of this ASR provider."""
+        """Return the unique name of this transcriber provider."""
+        pass
+
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        """Return a human-readable description of this provider."""
+        pass
+
+    @property
+    @abstractmethod
+    def has_builtin_alignment(self) -> bool:
+        """Return True if this transcriber provides built-in word-level alignment."""
+        pass
+
+    @abstractmethod
+    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
+        """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs).
+
+        Args:
+            selected_model: The selected model name, if any. If None, return default models.
+        """
+        pass
+
+    def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Preload the specified models to cache. Default implementation does nothing."""
+        pass
+
+    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Ensure the specified models are available, downloading if necessary. Default implementation does nothing."""
+        pass
+
+    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which models are available offline without downloading. Returns list of missing model identifiers."""
+        # Default implementation assumes all models are missing if not overridden
+        return models
+
+    @abstractmethod
+    def get_available_models(self) -> List[str]:
+        """Return a list of available model names for this provider."""
+        pass
+
+    @abstractmethod
+    def transcribe(
+        self,
+        audio_path: str,
+        **kwargs
+    ) -> str:
+        """
+        Transcribe audio file and return transcript text.
+
+        Args:
+            audio_path: Path to the audio file
+            **kwargs: Provider-specific configuration options
+
+        Returns:
+            Transcript text as a string
+        """
+        pass
+
+    @abstractmethod
+    def transcribe_with_alignment(
+        self,
+        audio_path: str,
+        role: Optional[str] = None,
+        **kwargs
+    ) -> List[WordSegment]:
+        """
+        Transcribe audio file and return word-level segments with timestamps.
+
+        Args:
+            audio_path: Path to the audio file
+            role: Optional speaker role (e.g., "Interviewer", "Participant")
+            **kwargs: Provider-specific configuration options
+
+        Returns:
+            List of WordSegment objects with text, timing, and speaker info
+        """
+        pass
+
+
+class AlignerProvider(ABC):
+    """Abstract base class for alignment providers."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Return the unique name of this aligner provider."""
         pass
 
     @property
@@ -73,18 +160,18 @@ class ASRProvider(ABC):
         pass
 
     @abstractmethod
-    def transcribe_with_alignment(
+    def align_transcript(
         self,
         audio_path: str,
-        role: Optional[str] = None,
+        transcript: str,
         **kwargs
     ) -> List[WordSegment]:
         """
-        Transcribe audio file and return word-level segments with timestamps.
+        Align transcript text to audio and return word-level segments with timestamps.
 
         Args:
             audio_path: Path to the audio file
-            role: Optional speaker role (e.g., "Interviewer", "Participant")
+            transcript: Transcript text to align
             **kwargs: Provider-specific configuration options
 
         Returns:
@@ -327,16 +414,21 @@ class PluginRegistry:
     """Registry for managing and discovering plugins."""
 
     def __init__(self):
-        self._asr_providers: Dict[str, ASRProvider] = {}
+        self._transcriber_providers: Dict[str, TranscriberProvider] = {}
+        self._aligner_providers: Dict[str, AlignerProvider] = {}
         self._diarization_providers: Dict[str, DiarizationProvider] = {}
         self._unified_providers: Dict[str, UnifiedProvider] = {}
         self._turn_builder_providers: Dict[str, TurnBuilderProvider] = {}
         self._asr_writers: Dict[str, ASRWriter] = {}
         self._output_writers: Dict[str, OutputWriter] = {}
 
-    def register_asr_provider(self, provider: ASRProvider) -> None:
-        """Register an ASR provider."""
-        self._asr_providers[provider.name] = provider
+    def register_transcriber_provider(self, provider: TranscriberProvider) -> None:
+        """Register a transcriber provider."""
+        self._transcriber_providers[provider.name] = provider
+
+    def register_aligner_provider(self, provider: AlignerProvider) -> None:
+        """Register an aligner provider."""
+        self._aligner_providers[provider.name] = provider
 
     def register_diarization_provider(self, provider: DiarizationProvider) -> None:
         """Register a diarization provider."""
@@ -358,12 +450,19 @@ class PluginRegistry:
         """Register an output writer."""
         self._output_writers[writer.name] = writer
 
-    def get_asr_provider(self, name: str) -> ASRProvider:
-        """Get an ASR provider by name."""
-        if name not in self._asr_providers:
-            available = list(self._asr_providers.keys())
-            raise ValueError(f"ASR provider '{name}' not found. Available: {available}")
-        return self._asr_providers[name]
+    def get_transcriber_provider(self, name: str) -> TranscriberProvider:
+        """Get a transcriber provider by name."""
+        if name not in self._transcriber_providers:
+            available = list(self._transcriber_providers.keys())
+            raise ValueError(f"Transcriber provider '{name}' not found. Available: {available}")
+        return self._transcriber_providers[name]
+
+    def get_aligner_provider(self, name: str) -> AlignerProvider:
+        """Get an aligner provider by name."""
+        if name not in self._aligner_providers:
+            available = list(self._aligner_providers.keys())
+            raise ValueError(f"Aligner provider '{name}' not found. Available: {available}")
+        return self._aligner_providers[name]
 
     def get_diarization_provider(self, name: str) -> DiarizationProvider:
         """Get a diarization provider by name."""
@@ -400,9 +499,13 @@ class PluginRegistry:
             raise ValueError(f"Output writer '{name}' not found. Available: {available}")
         return self._output_writers[name]
 
-    def list_asr_providers(self) -> Dict[str, str]:
-        """List all registered ASR providers with their descriptions."""
-        return {name: provider.description for name, provider in self._asr_providers.items()}
+    def list_transcriber_providers(self) -> Dict[str, str]:
+        """List all registered transcriber providers with their descriptions."""
+        return {name: provider.description for name, provider in self._transcriber_providers.items()}
+
+    def list_aligner_providers(self) -> Dict[str, str]:
+        """List all registered aligner providers with their descriptions."""
+        return {name: provider.description for name, provider in self._aligner_providers.items()}
 
     def list_diarization_providers(self) -> Dict[str, str]:
         """List all registered diarization providers with their descriptions."""

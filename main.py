@@ -261,8 +261,8 @@ def write_selected_outputs(turns, paths, selected, tracker, registry, audio_path
 
     if srt_path and audio_path is not None:
         tracker.update(output_task, advance=30, description="Rendering video with subtitles")
-        from local_transcribe.providers.writers.render_black import render_black_video
-        render_black_video(srt_path, paths["merged"] / "black_subtitled.mp4", audio_path=audio_path)
+        from local_transcribe.providers.writers.render_video import render_video
+        render_video(srt_path, paths["merged"] / "video_with_subtitles.mp4", audio_path=audio_path)
     else:
         tracker.update(output_task, advance=30, description="Skipping video rendering")
 

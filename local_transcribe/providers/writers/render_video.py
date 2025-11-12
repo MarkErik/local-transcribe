@@ -3,9 +3,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-def render_black_video(subs_path: str | Path, output_mp4: str | Path, audio_path: str | Path | list[str | Path], width: int = 1920, height: int = 1080):
+def render_video(subs_path: str | Path, output_mp4: str | Path, audio_path: str | Path | list[str | Path], width: int = 1920, height: int = 1080):
     """
-    Create a black video with burned-in subtitles + original audio.
+    Create a video with a black background and burned-in subtitles + original audio.
     Requires ffmpeg on PATH. Uses SRT input.
 
     Args:

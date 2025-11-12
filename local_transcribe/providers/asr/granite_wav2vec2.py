@@ -162,7 +162,7 @@ class GraniteWav2Vec2ASRProvider(ASRProvider):
         """Load the Granite model if not already loaded."""
         if self.granite_model is None:
             # Get the actual model name from selected model
-            model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-wav2vec2-8b"])
+            model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-speech-3.3-8b"])
             
             cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "asr" / "granite"
             cache_dir.mkdir(parents=True, exist_ok=True)

@@ -6,7 +6,7 @@ from datetime import datetime
 def ensure_session_dirs(output_dir: str | pathlib.Path, mode: str) -> dict[str, pathlib.Path]:
     """
     Creates a consistent directory structure for outputs and returns paths.
-    Mode can be 'combined' or 'dual_track'.
+    Mode can be 'single_file' or 'separate_audio'.
     """
     root = pathlib.Path(output_dir).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -19,7 +19,7 @@ def ensure_session_dirs(output_dir: str | pathlib.Path, mode: str) -> dict[str, 
         "merged": merged,
     }
 
-    if mode == "dual_track":
+    if mode == "separate_audio":
         speaker_interviewer = root / "speaker_interviewer"
         speaker_participant = root / "speaker_participant"
         for d in (speaker_interviewer, speaker_participant):

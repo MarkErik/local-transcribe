@@ -56,10 +56,10 @@ def run_pipeline(args, api, root):
 
     # Set default num_speakers if not provided
     if not hasattr(args, 'num_speakers') or args.num_speakers is None:
-        if combined_mode:
-            args.num_speakers = 2  # Default for combined mode
+        if single_file_mode:
+            args.num_speakers = 2  # Default for single file mode
         else:
-            args.num_speakers = 1  # Not used in dual-track
+            args.num_speakers = 1  # Not used in separate audio
 
     # Set default outputs for non-interactive
     if not hasattr(args, 'selected_outputs') or not args.selected_outputs:
@@ -68,20 +68,20 @@ def run_pipeline(args, api, root):
         else:
             args.selected_outputs = list(api["registry"].list_output_writers().keys())
 
-    # Validate dual vs combined
-    dual_mode = args.interviewer is not None
-    combined_mode = args.combined is not None
-    if dual_mode:
+    # Validate separate vs single file
+    separate_audio_mode = args.interviewer is not None
+    single_file_mode = args.combined is not None
+    if separate_audio_mode:
         if not args.participant:
-            print("ERROR: Dual-track mode requires both -i/--interviewer and -p/--participant.")
+            print("ERROR: Separate audio mode requires both -i/--interviewer and -p/--participant.")
             return 1
-        if combined_mode:
+        if single_file_mode:
             print("ERROR: Provide either -c/--combined OR -i/--p, not both.")
             return 1
-    elif not combined_mode:
+    elif not single_file_mode:
         print("ERROR: Must provide either -c/--combined or -i/--interviewer")
         return 1
-    mode = "combined" if combined_mode else "dual_track"
+    mode = "single_file" if single_file_mode else "separate_audio"
 
     # Check required providers
     try:
@@ -232,12 +232,12 @@ def run_pipeline(args, api, root):
         paths = api["ensure_session_dirs"](outdir, mode)
 
         if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
-            print(f"[*] Mode: {mode} (combined) | Provider: {args.combined_provider} | Outputs: {', '.join(args.selected_outputs)}")
+            print(f"[*] Mode: {mode} (single_file) | Provider: {args.combined_provider} | Outputs: {', '.join(args.selected_outputs)}")
         else:
             print(f"[*] Mode: {mode} | ASR: {args.asr_provider} | Diarization: {args.diarization_provider} | Turn Builder: general | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
-        if combined_mode:
+        if single_file_mode:
             mixed_path = ensure_file(args.combined, "Combined")
 
             # 1) Standardize
@@ -283,10 +283,10 @@ def run_pipeline(args, api, root):
             # 4) Outputs
             write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], std_mix)
 
-            print("[✓] Combined processing complete.")
+            print("[✓] Single file processing complete.")
 
         else:
-            # dual-track
+            # separate audio
             interviewer_path = ensure_file(args.interviewer, "Interviewer")
             participant_path = ensure_file(args.participant, "Participant")
 
@@ -359,7 +359,7 @@ def run_pipeline(args, api, root):
             # 4) Write results
             write_selected_outputs(merged, paths, args.selected_outputs, tracker, api["registry"], [std_int, std_part])
 
-            print("[✓] Dual-track processing complete.")
+            print("[✓] Separate audio processing complete.")
 
         # Summary
         print(f"[i] Artifacts written to: {paths['root']}")

@@ -44,15 +44,21 @@ class OpenAIWhisperASRProvider(ASRProvider):
 
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         if selected_model and selected_model in self.model_mapping:
-            return [self.wav2vec2_model_name]  # Wav2Vec2 model for forced alignment
+            return [
+                self.model_mapping[selected_model],  # Whisper model name
+                self.wav2vec2_model_name  # Wav2Vec2 model for forced alignment
+            ]
         # Default to base.en model
-        return [self.wav2vec2_model_name]
+        return [
+            self.model_mapping["base.en"],
+            self.wav2vec2_model_name
+        ]
 
     def get_available_models(self) -> List[str]:
         return list(self.model_mapping.keys())
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
-        """Preload Wav2Vec2 model to cache."""
+        """Preload Whisper and Wav2Vec2 models to cache."""
         import os
         import sys
 
@@ -85,11 +91,22 @@ class OpenAIWhisperASRProvider(ASRProvider):
         from huggingface_hub import snapshot_download
 
         try:
+            cache_dir_whisper = models_dir / "asr" / "whisper"
+            cache_dir_whisper.mkdir(parents=True, exist_ok=True)
             cache_dir_wav2vec2 = models_dir / "asr" / "wav2vec2"
             cache_dir_wav2vec2.mkdir(parents=True, exist_ok=True)
 
             for model in models:
-                if model == "facebook/wav2vec2-base-960h":
+                if model in self.model_mapping.values():  # It's a Whisper model
+                    try:
+                        import whisper
+                        # Load and immediately discard to download/cache the model
+                        temp_model = whisper.load_model(model, download_root=str(cache_dir_whisper))
+                        del temp_model  # Free memory immediately
+                        print(f"[✓] Whisper {model} downloaded successfully.")
+                    except ImportError:
+                        print(f"Warning: openai-whisper not available, skipping {model}")
+                elif model == "facebook/wav2vec2-base-960h":
                     os.environ["HF_HOME"] = str(cache_dir_wav2vec2)
                     # Use snapshot_download to download the entire repo
                     token = os.getenv("HF_TOKEN")
@@ -112,33 +129,35 @@ class OpenAIWhisperASRProvider(ASRProvider):
                 os.environ.pop("HF_HOME", None)
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
-        """Check which Wav2Vec2 models are available offline without downloading."""
+        """Check which Whisper and Wav2Vec2 models are available offline without downloading."""
         missing_models = []
         hub_dir = models_dir / "hub"
+        whisper_cache_dir = models_dir / "asr" / "whisper"
 
         for model in models:
-            # Convert model name to HuggingFace cache directory name
-            if "/" in model:
+            if model in self.model_mapping.values():  # It's a Whisper model
+                # Check if Whisper model exists in cache
+                # Whisper stores models as .pt files with the model name
+                model_file = whisper_cache_dir / f"{model}.pt"
+                if not model_file.exists():
+                    missing_models.append(model)
+            elif "/" in model:  # It's a HuggingFace model like Wav2Vec2
                 org, repo = model.split("/")
                 model_dir_name = f"models--{org}--{repo.replace('/', '--')}"
-            else:
-                # Fallback for models without org
-                model_dir_name = f"models--{model.replace('/', '--')}"
+                model_cache_dir = hub_dir / model_dir_name
 
-            model_cache_dir = hub_dir / model_dir_name
-
-            # Check if the model directory exists and contains model files
-            has_model_files = (
-                model_cache_dir.exists() and (
-                    any(model_cache_dir.rglob("*.bin")) or
-                    any(model_cache_dir.rglob("*.safetensors")) or
-                    any(model_cache_dir.rglob("*.pt")) or
-                    any(model_cache_dir.rglob("*.pth"))
+                # Check if the model directory exists and contains model files
+                has_model_files = (
+                    model_cache_dir.exists() and (
+                        any(model_cache_dir.rglob("*.bin")) or
+                        any(model_cache_dir.rglob("*.safetensors")) or
+                        any(model_cache_dir.rglob("*.pt")) or
+                        any(model_cache_dir.rglob("*.pth"))
+                    )
                 )
-            )
 
-            if not has_model_files:
-                missing_models.append(model)
+                if not has_model_files:
+                    missing_models.append(model)
 
         return missing_models
 
@@ -149,7 +168,13 @@ class OpenAIWhisperASRProvider(ASRProvider):
                 import whisper
                 # Get the actual model name from selected model
                 model_name = self.model_mapping.get(self.selected_model, "base.en")
-                self.whisper_model = whisper.load_model(model_name)
+                
+                # Set up cache directory consistent with other providers
+                models_root = pathlib.Path(os.getenv("HF_HOME", "./models")).resolve()
+                whisper_cache_dir = models_root / "asr" / "whisper"
+                whisper_cache_dir.mkdir(parents=True, exist_ok=True)
+                
+                self.whisper_model = whisper.load_model(model_name, download_root=str(whisper_cache_dir))
             except ImportError:
                 raise ImportError("openai-whisper package is required. Install with: pip install openai-whisper")
 

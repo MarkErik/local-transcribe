@@ -12,12 +12,37 @@ def run_pipeline(args, api, root):
 
     models_dir = root / "models"
 
+    # Determine mode and speaker mapping
+    num_files = len(args.audio_files)
+    if num_files == 1:
+        mode = "single_file"
+        speaker_files = {"mixed": args.audio_files[0]}  # Single file with multiple speakers
+    else:
+        mode = "separate_audio"
+        speaker_files = {}
+        
+        if num_files == 2:
+            # Auto-assign: first file = interviewer, second = participant
+            speaker_files["Interviewer"] = args.audio_files[0]
+            speaker_files["Participant"] = args.audio_files[1]
+        else:
+            # 3+ files: prompt for speaker names
+            print(f"You provided {num_files} audio files. Please assign a speaker name to each:")
+            for i, audio_file in enumerate(args.audio_files):
+                while True:
+                    speaker_name = input(f"Speaker name for '{audio_file}': ").strip()
+                    if speaker_name:
+                        speaker_files[speaker_name] = audio_file
+                        break
+                    else:
+                        print("Speaker name cannot be empty.")
+
     # Set default num_speakers if not provided
     if not hasattr(args, 'num_speakers') or args.num_speakers is None:
-        if single_file_mode:
+        if mode == "single_file":
             args.num_speakers = 2  # Default for single file mode
         else:
-            args.num_speakers = 1  # Not used in separate audio
+            args.num_speakers = len(speaker_files)  # One speaker per file
 
     # Set default outputs for non-interactive
     if not hasattr(args, 'selected_outputs') or not args.selected_outputs:
@@ -26,20 +51,13 @@ def run_pipeline(args, api, root):
         else:
             args.selected_outputs = list(api["registry"].list_output_writers().keys())
 
-    # Validate separate vs single file
-    separate_audio_mode = args.interviewer is not None
-    single_file_mode = args.combined is not None
-    if separate_audio_mode:
-        if not args.participant:
-            print("ERROR: Separate audio mode requires both -i/--interviewer and -p/--participant.")
+    # Validate audio files exist
+    for speaker, audio_file in speaker_files.items():
+        try:
+            ensure_file(audio_file, speaker)
+        except Exception as e:
+            print(f"ERROR: {e}")
             return 1
-        if single_file_mode:
-            print("ERROR: Provide either -c/--combined OR -i/--p, not both.")
-            return 1
-    elif not single_file_mode:
-        print("ERROR: Must provide either -c/--combined or -i/--interviewer")
-        return 1
-    mode = "single_file" if single_file_mode else "separate_audio"
 
     # Check required providers
     try:
@@ -87,7 +105,7 @@ def run_pipeline(args, api, root):
     try:
         # Ensure outdir & subdirs
         outdir = ensure_outdir(args.outdir)
-        paths = api["ensure_session_dirs"](outdir, mode)
+        paths = api["ensure_session_dirs"](outdir, mode, speaker_files)
 
         if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
             print(f"[*] Mode: {mode} (single_file) | Provider: {args.combined_provider} | Outputs: {', '.join(args.selected_outputs)}")
@@ -95,8 +113,8 @@ def run_pipeline(args, api, root):
             print(f"[*] Mode: {mode} | ASR: {args.asr_provider} | Diarization: {args.diarization_provider} | Turn Builder: general | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
-        if single_file_mode:
-            mixed_path = ensure_file(args.combined, "Combined")
+        if mode == "single_file":
+            mixed_path = ensure_file(speaker_files["mixed"], "Mixed Audio")
 
             # 1) Standardize
             std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
@@ -143,81 +161,58 @@ def run_pipeline(args, api, root):
             print("[✓] Single file processing complete.")
 
         else:
-            # separate audio
-            interviewer_path = ensure_file(args.interviewer, "Interviewer")
-            participant_path = ensure_file(args.participant, "Participant")
-
-            # 1) Standardize
-            std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
-            # Create a temp dir for standardized audio to avoid ffmpeg in-place editing
-            temp_audio_dir = outdir / "temp_audio"
-            temp_audio_dir.mkdir(exist_ok=True)
-
-            # Standardize interviewer audio
-            tracker.update(std_task, advance=33, description="Standardizing interviewer audio")
-            std_int = api["standardize_and_get_path"](interviewer_path, tmpdir=temp_audio_dir)
-
-            # Standardize participant audio
-            tracker.update(std_task, advance=33, description="Standardizing participant audio")
-            std_part = api["standardize_and_get_path"](participant_path, tmpdir=temp_audio_dir)
-
-            # Complete the standardization task
-            tracker.update(std_task, advance=34, description="Audio standardization complete")
-            tracker.complete_task(std_task, stage="standardization")
-
-            # 2) ASR + alignment per track
-            asr_task = tracker.add_task("ASR Transcription", total=100, stage="asr_transcription")
-            tracker.update(asr_task, advance=20, description="Transcribing interviewer audio")
-            int_words = asr_provider.transcribe_with_alignment(
-                str(std_int),
-                role="Interviewer",
-                asr_model=args.asr_model
-            )
-
-            # Save ASR results and build turns for interviewer
-            asr_writer = api["registry"].get_asr_writer("asr-words")
-            asr_writer.write(int_words, paths["speaker_interviewer"] / "asr.txt")
-
-            # Use dual-track diarization provider for building turns
-            dual_track_provider = api["registry"].get_diarization_provider("dual-track")
-            int_turns = turn_builder_provider.build_turns(int_words)
-
-            # Save interviewer timestamped transcript
-            timestamped_writer = api["registry"].get_output_writer("timestamped-txt")
-            timestamped_writer.write(int_turns, paths["speaker_interviewer"] / "interviewer.timestamped.txt")
-            tracker.update(asr_task, advance=30, description="Interviewer ASR and timestamped transcript complete")
-
-            tracker.update(asr_task, advance=20, description="Transcribing participant audio")
-            part_words = asr_provider.transcribe_with_alignment(
-                str(std_part),
-                role="Participant",
-                asr_model=args.asr_model
-            )
-
-            # Replace direct call with plugin-based ASR writer for participant ASR results
-            asr_writer = api["registry"].get_asr_writer("asr-words")
-            asr_writer.write(part_words, paths["speaker_participant"] / "asr.txt")
-
-            # Build turns for participant
-            part_turns = turn_builder_provider.build_turns(part_words)
-
-            # Save participant timestamped transcript
-            timestamped_writer.write(part_turns, paths["speaker_participant"] / "participant.timestamped.txt")
-            tracker.update(asr_task, advance=30, description="Participant ASR and timestamped transcript complete")
-            tracker.complete_task(asr_task, stage="asr_transcription")
-
+            # Process separate audio files
+            speaker_turns = {}
+            
+            for speaker_name, audio_file in speaker_files.items():
+                print(f"[*] Processing {speaker_name}...")
+                
+                audio_path = ensure_file(audio_file, speaker_name)
+                
+                # 1) Standardize
+                std_task = tracker.add_task(f"Audio standardization for {speaker_name}", total=100, stage="standardization")
+                temp_audio_dir = outdir / "temp_audio"
+                temp_audio_dir.mkdir(exist_ok=True)
+                
+                tracker.update(std_task, advance=50, description=f"Standardizing {speaker_name} audio")
+                std_audio = api["standardize_and_get_path"](audio_path, tmpdir=temp_audio_dir)
+                
+                tracker.update(std_task, advance=50, description=f"{speaker_name} audio standardization complete")
+                tracker.complete_task(std_task, stage="standardization")
+                
+                # 2) ASR + alignment
+                words = asr_provider.transcribe_with_alignment(
+                    str(std_audio),
+                    role=speaker_name,
+                    asr_model=args.asr_model
+                )
+                
+                # Save individual ASR results
+                asr_writer = api["registry"].get_asr_writer("asr-words")
+                asr_writer.write(words, paths[f"speaker_{speaker_name.lower()}"] / f"{speaker_name.lower()}.txt")
+                
+                # 3) Build turns (no diarization needed for separate files)
+                turns = turn_builder_provider.build_turns(words)
+                speaker_turns[speaker_name] = turns
+                
+                # Write individual speaker outputs
+                timestamped_writer = api["registry"].get_output_writer("timestamped-txt")
+                timestamped_writer.write(turns, paths[f"speaker_{speaker_name.lower()}"] / f"{speaker_name.lower()}.timestamped.txt")
+            
             # 3) Merge turns
             turns_task = tracker.add_task("Merging conversation turns", total=100, stage="turns")
             tracker.update(turns_task, advance=50, description="Merging conversation turns")
-            # TODO: Use plugin for merging
+            
             from local_transcribe.processing.merge import merge_turns
-            merged = merge_turns(int_turns, part_turns)
-            tracker.update(turns_task, advance=50, description="Turn merging complete")
+            all_turns = list(speaker_turns.values())
+            turns = merge_turns(*all_turns)
+            
+            tracker.update(turns_task, advance=50, description="Conversation turns merged")
             tracker.complete_task(turns_task, stage="turns")
-
-            # 4) Write results
-            write_selected_outputs(merged, paths, args.selected_outputs, tracker, api["registry"], [std_int, std_part])
-
+            
+            # 4) Outputs
+            write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], None)
+            
             print("[✓] Separate audio processing complete.")
 
         # Summary

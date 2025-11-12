@@ -19,8 +19,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not args.outdir:
             print("ERROR: -o/--outdir is required")
             return 1
-        if not args.combined and not args.interviewer:
-            print("ERROR: Must provide either -c/--combined or -i/--interviewer")
+        if not hasattr(args, 'audio_files') or not args.audio_files:
+            print("ERROR: Must provide --audio-files (-a)")
             return 1
 
     root = repo_root_from_here()

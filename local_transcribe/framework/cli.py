@@ -7,12 +7,9 @@ from typing import Optional
 # ---------- CLI ----------
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="local-transcribe: batch transcription (dual-track or combined) – offline, Apple Silicon friendly."
+        description="local-transcribe: batch transcription – offline, Apple Silicon friendly."
     )
-    mode = p.add_mutually_exclusive_group()
-    mode.add_argument("-c", "--combined", metavar="MIXED_AUDIO", help="Process a single mixed/combined audio file.")
-    mode.add_argument("-i", "--interviewer", metavar="INTERVIEWER_AUDIO", help="Interviewer track for dual-track mode.")
-    p.add_argument("-p", "--participant", metavar="PARTICIPANT_AUDIO", help="Participant track for dual-track mode.")
+    p.add_argument("-a", "--audio-files", nargs='+', metavar="AUDIO_FILE", help="Audio files to process. One file = mixed audio with multiple speakers. Multiple files = separate tracks (2 files: interviewer + participant, 3+ files: prompt for speaker names).")
     p.add_argument("--asr-provider", help="ASR provider to use")
     p.add_argument("--asr-model", help="ASR model to use (if provider supports multiple models)")
     p.add_argument("--diarization-provider", help="Diarization provider to use")
@@ -48,32 +45,41 @@ def interactive_prompt(args, api):
     print("\n=== Interactive Mode ===")
     print("Select your processing options:\n")
 
-    # Check if combined mode and offer processing type choice
-    if hasattr(args, 'combined') and args.combined:
-        combined_providers = registry.list_combined_providers()
-        if combined_providers:
-            print("Processing Modes:")
-            print("  1. Combined Provider (ASR + Diarization in one step)")
-            print("  2. Separate Providers (ASR then Diarization)")
-            
-            while True:
-                try:
-                    choice = int(input("\nChoose processing mode (1 or 2): ").strip())
-                    if choice == 1:
-                        args.processing_mode = "combined"
-                        break
-                    elif choice == 2:
-                        args.processing_mode = "separate"
-                        break
-                    else:
-                        print("Invalid choice. Please enter 1 or 2.")
-                except ValueError:
-                    print("Please enter a valid number.")
+    # Determine mode based on number of audio files
+    if hasattr(args, 'audio_files') and args.audio_files:
+        num_files = len(args.audio_files)
+        if num_files == 1:
+            print("Mode: Single file (mixed audio with multiple speakers)")
+            args.processing_mode = "separate"  # Will use ASR + diarization
         else:
-            print("No combined providers available, using separate providers.")
-            args.processing_mode = "separate"
+            print(f"Mode: Separate audio tracks ({num_files} files)")
+            args.processing_mode = "separate"  # Always separate for multiple files
     else:
-        args.processing_mode = "separate"  # For dual-track, always separate
+        # Fallback for when audio files aren't set yet
+        args.processing_mode = "separate"
+
+    # Check if combined mode and offer processing type choice
+    combined_providers = registry.list_combined_providers()
+    if combined_providers and hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
+        print("Processing Modes:")
+        print("  1. Combined Provider (ASR + Diarization in one step)")
+        print("  2. Separate Providers (ASR then Diarization)")
+        
+        while True:
+            try:
+                choice = int(input("\nChoose processing mode (1 or 2): ").strip())
+                if choice == 1:
+                    args.processing_mode = "combined"
+                    break
+                elif choice == 2:
+                    args.processing_mode = "separate"
+                    break
+                else:
+                    print("Invalid choice. Please enter 1 or 2.")
+            except ValueError:
+                print("Please enter a valid number.")
+    else:
+        args.processing_mode = "separate"  # For multi-file, always separate
 
     if args.processing_mode == "combined":
         # Select combined provider
@@ -102,7 +108,7 @@ def interactive_prompt(args, api):
             args.combined_model = available_models[0] if available_models else None
 
         # Number of speakers (for combined providers)
-        if hasattr(args, 'combined') and args.combined:
+        if hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
             while True:
                 try:
                     num_speakers = int(input("\nNumber of speakers expected in the audio: ").strip())
@@ -140,5 +146,11 @@ def interactive_prompt(args, api):
     if args.processing_mode == "combined":
         print(f"\nSelected: Combined={args.combined_provider} ({args.combined_model}), Outputs={args.selected_outputs}")
     else:
-        print(f"\nSelected: ASR={args.asr_provider}, Diarization={args.diarization_provider}, Outputs={args.selected_outputs}")
+        provider_info = []
+        if hasattr(args, 'asr_provider') and args.asr_provider:
+            provider_info.append(f"ASR={args.asr_provider}")
+        if hasattr(args, 'diarization_provider') and args.diarization_provider:
+            provider_info.append(f"Diarization={args.diarization_provider}")
+        provider_str = ", ".join(provider_info) if provider_info else "Default providers"
+        print(f"\nSelected: {provider_str}, Outputs={args.selected_outputs}")
     return args

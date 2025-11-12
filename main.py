@@ -102,7 +102,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
     p.add_argument("--verbose", action="store_true", help="Enable verbose logging output.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
-    p.add_argument("--create-plugin-template", choices=["asr", "diarization", "output"], help="Create a plugin template file and exit.")
+    p.add_argument("--create-plugin-template", choices=["asr", "diarization", "combined", "output"], help="Create a plugin template file and exit.")
 
     args = p.parse_args(argv)
 
@@ -129,38 +129,92 @@ def interactive_prompt(args, api):
     print("\n=== Interactive Mode ===")
     print("Select your processing options:\n")
 
-    # ASR provider
-    asr_providers = registry.list_asr_providers()
-    if not asr_providers:
-        print("No ASR providers available.")
-        return args
-
-    args.asr_provider = select_provider(asr_providers, "ASR Providers")
-
-    # ASR model selection (if provider supports multiple models)
-    asr_provider = registry.get_asr_provider(args.asr_provider)
-    available_models = asr_provider.get_available_models()
-    if len(available_models) > 1:
-        print(f"\nAvailable models for {args.asr_provider}:")
-        for i, model in enumerate(available_models, 1):
-            print(f"  {i}. {model}")
-        
-        while True:
-            try:
-                choice = int(input(f"\nChoose model (1-{len(available_models)}): ").strip())
-                if 1 <= choice <= len(available_models):
-                    args.asr_model = available_models[choice - 1]
-                    break
-                else:
-                    print("Invalid choice. Please enter a number from the list.")
-            except ValueError:
-                print("Please enter a valid number.")
+    # Check if combined mode and offer processing type choice
+    if hasattr(args, 'combined') and args.combined:
+        combined_providers = registry.list_combined_providers()
+        if combined_providers:
+            print("Processing Modes:")
+            print("  1. Combined Provider (ASR + Diarization in one step)")
+            print("  2. Separate Providers (ASR then Diarization)")
+            
+            while True:
+                try:
+                    choice = int(input("\nChoose processing mode (1 or 2): ").strip())
+                    if choice == 1:
+                        args.processing_mode = "combined"
+                        break
+                    elif choice == 2:
+                        args.processing_mode = "separate"
+                        break
+                    else:
+                        print("Invalid choice. Please enter 1 or 2.")
+                except ValueError:
+                    print("Please enter a valid number.")
+        else:
+            print("No combined providers available, using separate providers.")
+            args.processing_mode = "separate"
     else:
-        args.asr_model = available_models[0] if available_models else None
+        args.processing_mode = "separate"  # For dual-track, always separate
 
-    # Diarization provider
-    diar_providers = registry.list_diarization_providers()
-    args.diarization_provider = select_provider(diar_providers, "Diarization Providers")
+    if args.processing_mode == "combined":
+        # Select combined provider
+        combined_providers = registry.list_combined_providers()
+        args.combined_provider = select_provider(combined_providers, "Combined Providers")
+
+        # Model selection for combined provider
+        combined_provider = registry.get_combined_provider(args.combined_provider)
+        available_models = combined_provider.get_available_models()
+        if len(available_models) > 1:
+            print(f"\nAvailable models for {args.combined_provider}:")
+            for i, model in enumerate(available_models, 1):
+                print(f"  {i}. {model}")
+            
+            while True:
+                try:
+                    choice = int(input(f"\nChoose model (1-{len(available_models)}): ").strip())
+                    if 1 <= choice <= len(available_models):
+                        args.combined_model = available_models[choice - 1]
+                        break
+                    else:
+                        print("Invalid choice. Please enter a number from the list.")
+                except ValueError:
+                    print("Please enter a valid number.")
+        else:
+            args.combined_model = available_models[0] if available_models else None
+    else:
+        # Separate providers
+        # ASR provider
+        asr_providers = registry.list_asr_providers()
+        if not asr_providers:
+            print("No ASR providers available.")
+            return args
+
+        args.asr_provider = select_provider(asr_providers, "ASR Providers")
+
+        # ASR model selection (if provider supports multiple models)
+        asr_provider = registry.get_asr_provider(args.asr_provider)
+        available_models = asr_provider.get_available_models()
+        if len(available_models) > 1:
+            print(f"\nAvailable models for {args.asr_provider}:")
+            for i, model in enumerate(available_models, 1):
+                print(f"  {i}. {model}")
+            
+            while True:
+                try:
+                    choice = int(input(f"\nChoose model (1-{len(available_models)}): ").strip())
+                    if 1 <= choice <= len(available_models):
+                        args.asr_model = available_models[choice - 1]
+                        break
+                    else:
+                        print("Invalid choice. Please enter a number from the list.")
+                except ValueError:
+                    print("Please enter a valid number.")
+        else:
+            args.asr_model = available_models[0] if available_models else None
+
+        # Diarization provider
+        diar_providers = registry.list_diarization_providers()
+        args.diarization_provider = select_provider(diar_providers, "Diarization Providers")
 
     # Output formats
     output_writers = registry.list_output_writers()
@@ -185,7 +239,10 @@ def interactive_prompt(args, api):
             print("Invalid input, selecting all.")
             args.selected_outputs = list(output_writers.keys())
 
-    print(f"\nSelected: ASR={args.asr_provider}, Diarization={args.diarization_provider}, Outputs={args.selected_outputs}")
+    if args.processing_mode == "combined":
+        print(f"\nSelected: Combined={args.combined_provider} ({args.combined_model}), Outputs={args.selected_outputs}")
+    else:
+        print(f"\nSelected: ASR={args.asr_provider}, Diarization={args.diarization_provider}, Outputs={args.selected_outputs}")
     return args
 
 def write_selected_outputs(turns, paths, selected, tracker, registry, audio_path=None):
@@ -279,11 +336,20 @@ def main(argv: Optional[list[str]] = None) -> int:
         for name, desc in api["registry"].list_diarization_providers().items():
             print(f"  {name}: {desc}")
 
+        print("\nCombined Providers:")
+        for name, desc in api["registry"].list_combined_providers().items():
+            print(f"  {name}: {desc}")
+            # Show available models if provider supports multiple
+            provider = api["registry"].get_combined_provider(name)
+            available_models = provider.get_available_models()
+            if len(available_models) > 1:
+                print(f"    Available models: {', '.join(available_models)}")
+
         print("\nOutput Writers:")
         for name, desc in api["registry"].list_output_writers().items():
             print(f"  {name}: {desc}")
 
-        print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization|output]")
+        print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization|combined|output]")
         return 0
 
     if args.interactive:
@@ -312,55 +378,50 @@ def main(argv: Optional[list[str]] = None) -> int:
     mode = "combined" if combined_mode else "dual_track"
 
     # Check required providers
-    if not args.asr_provider:
-        available_asr = list(api["registry"].list_asr_providers().keys())
-        if available_asr:
-            print(f"ERROR: --asr-provider is required. Available: {', '.join(available_asr)}")
-            return 1
-        else:
-            print("ERROR: No ASR providers available.")
-            return 1
-    
-    if not args.diarization_provider:
-        available_diar = list(api["registry"].list_diarization_providers().keys())
-        if available_diar:
-            print(f"ERROR: --diarization-provider is required. Available: {', '.join(available_diar)}")
-            return 1
-        else:
-            print("ERROR: No diarization providers available.")
-            return 1
-
-    # Get plugin providers
     try:
-        asr_provider = api["registry"].get_asr_provider(args.asr_provider)
-        diarization_provider = api["registry"].get_diarization_provider(args.diarization_provider)
+        if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
+            combined_provider = api["registry"].get_combined_provider(args.combined_provider)
+        else:
+            asr_provider = api["registry"].get_asr_provider(args.asr_provider)
+            diarization_provider = api["registry"].get_diarization_provider(args.diarization_provider)
     except ValueError as e:
         print(f"ERROR: {e}")
         print("Use --list-plugins to see available options.")
         return 1
 
-    # Set default ASR model if not specified
-    if not hasattr(args, 'asr_model') or args.asr_model is None:
-        available_models = asr_provider.get_available_models()
-        args.asr_model = available_models[0] if available_models else None
+    # Set default model if not specified
+    if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
+        if not hasattr(args, 'combined_model') or args.combined_model is None:
+            available_models = combined_provider.get_available_models()
+            args.combined_model = available_models[0] if available_models else None
+    else:
+        if not hasattr(args, 'asr_model') or args.asr_model is None:
+            available_models = asr_provider.get_available_models()
+            args.asr_model = available_models[0] if available_models else None
 
     # Download required models for selected providers
     # Phase 2: Model Availability Check (Offline)
-    required_asr_models = asr_provider.get_required_models(args.asr_model)
-    required_diarization_models = diarization_provider.get_required_models()
-    
-    print(f"[*] Checking model availability offline...")
-    missing_asr_models = []
-    missing_diarization_models = []
-    
-    if required_asr_models:
-        missing_asr_models = asr_provider.check_models_available_offline(required_asr_models, models_dir)
-    
-    if required_diarization_models:
-        missing_diarization_models = diarization_provider.check_models_available_offline(required_diarization_models, models_dir)
-    
-    all_missing = missing_asr_models + missing_diarization_models
-    
+    if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
+        required_combined_models = combined_provider.get_required_models(args.combined_model)
+        print(f"[*] Checking model availability offline...")
+        missing_combined_models = combined_provider.check_models_available_offline(required_combined_models, models_dir)
+        all_missing = missing_combined_models
+    else:
+        required_asr_models = asr_provider.get_required_models(args.asr_model)
+        required_diarization_models = diarization_provider.get_required_models()
+        
+        print(f"[*] Checking model availability offline...")
+        missing_asr_models = []
+        missing_diarization_models = []
+        
+        if required_asr_models:
+            missing_asr_models = asr_provider.check_models_available_offline(required_asr_models, models_dir)
+        
+        if required_diarization_models:
+            missing_diarization_models = diarization_provider.check_models_available_offline(required_diarization_models, models_dir)
+        
+        all_missing = missing_asr_models + missing_diarization_models
+
     # Phase 3: Conditional Download (Online Only If Needed)
     if all_missing:
         print(f"[!] Missing models detected: {', '.join(all_missing)}")
@@ -411,23 +472,35 @@ def main(argv: Optional[list[str]] = None) -> int:
         
         try:
             # Download missing models
-            if missing_asr_models:
-                print(f"[*] Downloading ASR models: {', '.join(missing_asr_models)}")
-                asr_provider.ensure_models_available(missing_asr_models, models_dir)
-            
-            if missing_diarization_models:
-                print(f"[*] Downloading diarization models: {', '.join(missing_diarization_models)}")
-                diarization_provider.ensure_models_available(missing_diarization_models, models_dir)
+            if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
+                if missing_combined_models:
+                    print(f"[*] Downloading combined models: {', '.join(missing_combined_models)}")
+                    combined_provider.ensure_models_available(missing_combined_models, models_dir)
+            else:
+                if missing_asr_models:
+                    print(f"[*] Downloading ASR models: {', '.join(missing_asr_models)}")
+                    asr_provider.ensure_models_available(missing_asr_models, models_dir)
+                
+                if missing_diarization_models:
+                    print(f"[*] Downloading diarization models: {', '.join(missing_diarization_models)}")
+                    diarization_provider.ensure_models_available(missing_diarization_models, models_dir)
             
             # Verify downloads actually succeeded
             print("[*] Verifying downloaded models...")
-            verified_asr = asr_provider.check_models_available_offline(required_asr_models, models_dir)
-            verified_diar = diarization_provider.check_models_available_offline(required_diarization_models, models_dir)
-            
-            if verified_asr or verified_diar:
-                print(f"[!] ERROR: Some models failed to download properly: {', '.join(verified_asr + verified_diar)}")
-                print("[!] Please check your internet connection and HuggingFace token.")
-                return 1
+            if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
+                verified_combined = combined_provider.check_models_available_offline(required_combined_models, models_dir)
+                if verified_combined:
+                    print(f"[!] ERROR: Some models failed to download properly: {', '.join(verified_combined)}")
+                    print("[!] Please check your internet connection and HuggingFace token.")
+                    return 1
+            else:
+                verified_asr = asr_provider.check_models_available_offline(required_asr_models, models_dir)
+                verified_diar = diarization_provider.check_models_available_offline(required_diarization_models, models_dir)
+                
+                if verified_asr or verified_diar:
+                    print(f"[!] ERROR: Some models failed to download properly: {', '.join(verified_asr + verified_diar)}")
+                    print("[!] Please check your internet connection and HuggingFace token.")
+                    return 1
             
             print("[✓] All models downloaded successfully and verified.")
         except Exception as e:
@@ -450,7 +523,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         outdir = ensure_outdir(args.outdir)
         paths = api["ensure_session_dirs"](outdir, mode)
 
-        print(f"[*] Mode: {mode} | ASR: {args.asr_provider} | Diarization: {args.diarization_provider} | Outputs: {', '.join(args.selected_outputs)}")
+        print(f"[*] Mode: {mode} (combined) | Provider: {args.combined_provider} | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
         if combined_mode:
@@ -470,20 +543,27 @@ def main(argv: Optional[list[str]] = None) -> int:
             tracker.update(std_task, advance=50, description="Audio standardization complete")
             tracker.complete_task(std_task, stage="standardization")
 
-            # 2) ASR + alignment
-            words = asr_provider.transcribe_with_alignment(
-                str(std_mix),
-                role=None,
-                asr_model=args.asr_model
-            )
+            if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
+                # Use combined provider
+                turns = combined_provider.transcribe_and_diarize(
+                    str(std_mix),
+                    model=args.combined_model
+                )
+            else:
+                # 2) ASR + alignment
+                words = asr_provider.transcribe_with_alignment(
+                    str(std_mix),
+                    role=None,
+                    asr_model=args.asr_model
+                )
 
-            # Save ASR results as plain text before diarization
-            # TODO: Use plugin for this too
-            from local_transcribe.providers.writers.txt_writer import write_asr_words
-            write_asr_words(words, paths["merged"] / "asr.txt")
+                # Save ASR results as plain text before diarization
+                # TODO: Use plugin for this too
+                from local_transcribe.providers.writers.txt_writer import write_asr_words
+                write_asr_words(words, paths["merged"] / "asr.txt")
 
-            # 3) Diarize → turns
-            turns = diarization_provider.diarize(str.std_mix, words)
+                # 3) Diarize → turns
+                turns = diarization_provider.diarize(str.std_mix, words)
 
             # 4) Outputs
             write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], std_mix)
@@ -564,8 +644,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             turns_task = tracker.add_task("Merging conversation turns", total=100, stage="turns")
             tracker.update(turns_task, advance=50, description="Merging conversation turns")
             # TODO: Use plugin for merging
-            from local_transcribe.processing.merge import merge_turn_streams
-            merged = merge_turn_streams(int_turns, part_turns)
+            from local_transcribe.processing.merge import merge_turns
+            merged = merge_turns(int_turns, part_turns)
             tracker.update(turns_task, advance=50, description="Turn merging complete")
             tracker.complete_task(turns_task, stage="turns")
 

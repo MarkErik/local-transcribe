@@ -108,7 +108,7 @@ def create_plugin_template(output_path: Path, plugin_type: str) -> None:
 
     Args:
         output_path: Where to write the template file
-        plugin_type: Type of plugin ('asr', 'diarization', or 'output')
+        plugin_type: Type of plugin ('asr', 'diarization', 'combined', or 'output')
     """
     templates = {
         'asr': '''#!/usr/bin/env python3
@@ -199,6 +199,49 @@ class ExampleDiarizationProvider(DiarizationProvider):
 registry.register_diarization_provider(ExampleDiarizationProvider())
 ''',
 
+        'combined': '''#!/usr/bin/env python3
+"""
+Example Combined Plugin Template
+"""
+
+from typing import List
+from local_transcribe.framework import CombinedProvider, Turn, registry
+
+class ExampleCombinedProvider(CombinedProvider):
+    """Example combined provider implementation."""
+
+    @property
+    def name(self) -> str:
+        return "example-combined"
+
+    @property
+    def description(self) -> str:
+        return "Example combined provider (replace with your implementation)"
+
+    def transcribe_and_diarize(
+        self,
+        audio_path: str,
+        **kwargs
+    ) -> List[Turn]:
+        """
+        Implement your combined ASR + diarization logic here.
+
+        This should transcribe the audio and perform speaker diarization in one step.
+        """
+        # TODO: Implement actual combined processing
+        return [
+            Turn(
+                speaker="SPEAKER_00",
+                start=0.0,
+                end=1.0,
+                text="example text"
+            )
+        ]
+
+# Register the plugin
+registry.register_combined_provider(ExampleCombinedProvider())
+''',
+
         'output': '''#!/usr/bin/env python3
 """
 Example Output Writer Plugin Template
@@ -244,7 +287,7 @@ registry.register_output_writer(ExampleOutputWriter())
     }
 
     if plugin_type not in templates:
-        raise ValueError(f"Unknown plugin type: {plugin_type}. Must be 'asr', 'diarization', or 'output'")
+        raise ValueError(f"Unknown plugin type: {plugin_type}. Must be 'asr', 'diarization', 'combined', or 'output'")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w') as f:

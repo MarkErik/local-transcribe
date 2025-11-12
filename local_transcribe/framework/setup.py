@@ -67,16 +67,3 @@ def handle_plugin_listing(api):
     print("\nOutput Writers:")
     for name, desc in api["registry"].list_output_writers().items():
         print(f"  {name}: {desc}")
-
-    print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization|combined|turn_builder|output]")
-
-def handle_plugin_template_creation(args):
-    from local_transcribe.framework.plugin_discovery import create_plugin_template
-    from pathlib import Path
-
-    # Create template in current directory
-    template_name = f"example_{args.create_plugin_template}_plugin.py"
-    template_path = Path.cwd() / template_name
-    create_plugin_template(template_path, args.create_plugin_template)
-    print(f"Plugin template created: {template_path}")
-    print("Edit the file and place it in your plugins directory to use it.")

@@ -22,7 +22,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
     p.add_argument("--verbose", action="store_true", help="Enable verbose logging output.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
-    p.add_argument("--create-plugin-template", choices=["asr", "diarization", "combined", "turn_builder", "output"], help="Create a plugin template file and exit.")
 
     args = p.parse_args(argv)
 

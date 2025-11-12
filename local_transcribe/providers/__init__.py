@@ -3,9 +3,6 @@
 Local-transcribe providers package.
 """
 
-# Import combined providers to register them
-from . import combined
-
 # Import ASR providers to register them
 from . import asr
 
@@ -17,3 +14,6 @@ from . import turn_builders
 
 # Import writers to register them
 from . import writers
+
+# Import unified providers to register them
+from . import unified

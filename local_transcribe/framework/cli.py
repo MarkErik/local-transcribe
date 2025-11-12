@@ -107,7 +107,7 @@ def interactive_prompt(args, api):
         else:
             args.unified_model = available_models[0] if available_models else None
 
-        # Number of speakers (for combined providers)
+        # Number of speakers (for unified providers)
         if hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
             while True:
                 try:

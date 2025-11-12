@@ -109,7 +109,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
 
     def _assign_speakers_to_words(self, audio_path: str, words: List[WordSegment], num_speakers: int) -> List[WordSegment]:
         """
-        Diarize a mixed/combined track and assign speakers to words by majority overlap.
+        Diarize audio and assign speakers to words by majority overlap.
         """
         # Suppress warnings
         warnings.filterwarnings("ignore")

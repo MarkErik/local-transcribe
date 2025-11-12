@@ -20,7 +20,7 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_path: str 
 
     # Handle single audio path or dual audio paths
     if isinstance(audio_path, (str, Path)):
-        # Single audio track (combined mode)
+        # Single audio track (combined_audio mode)
         audio_path = Path(audio_path)
         cmd = [
             "ffmpeg", "-y",

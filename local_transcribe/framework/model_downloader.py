@@ -17,7 +17,7 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
     Check model availability and download missing models if needed.
 
     Args:
-        providers: Dict containing 'asr', 'diarization', and/or 'combined' providers
+        providers: Dict containing 'asr', 'diarization', and/or 'unified' providers
         models_dir: Path to the models directory
         args: Parsed command line arguments
 
@@ -25,12 +25,12 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
         0 on success, 1 on failure
     """
     # Phase 2: Model Availability Check (Offline)
-    if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
-        combined_provider = providers['combined']
-        required_combined_models = combined_provider.get_required_models(args.combined_model)
+    if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
+        unified_provider = providers['unified']
+        required_unified_models = unified_provider.get_required_models(args.unified_model)
         print(f"[*] Checking model availability offline...")
-        missing_combined_models = combined_provider.check_models_available_offline(required_combined_models, models_dir)
-        all_missing = missing_combined_models
+        missing_unified_models = unified_provider.check_models_available_offline(required_unified_models, models_dir)
+        all_missing = missing_unified_models
     else:
         asr_provider = providers['asr']
         diarization_provider = providers['diarization']
@@ -71,11 +71,11 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
 
         try:
             # Download missing models
-            if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
-                combined_provider = providers['combined']
-                if missing_combined_models:
-                    print(f"[*] Downloading combined models: {', '.join(missing_combined_models)}")
-                    combined_provider.ensure_models_available(missing_combined_models, models_dir)
+            if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
+                unified_provider = providers['unified']
+                if missing_unified_models:
+                    print(f"[*] Downloading unified models: {', '.join(missing_unified_models)}")
+                    unified_provider.ensure_models_available(missing_unified_models, models_dir)
             else:
                 asr_provider = providers['asr']
                 diarization_provider = providers['diarization']
@@ -90,11 +90,11 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
 
             # Verify downloads actually succeeded
             print("[*] Verifying downloaded models...")
-            if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
-                combined_provider = providers['combined']
-                verified_combined = combined_provider.check_models_available_offline(required_combined_models, models_dir)
-                if verified_combined:
-                    print(f"[!] ERROR: Some models failed to download properly: {', '.join(verified_combined)}")
+            if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
+                unified_provider = providers['unified']
+                verified_unified = unified_provider.check_models_available_offline(required_unified_models, models_dir)
+                if verified_unified:
+                    print(f"[!] ERROR: Some models failed to download properly: {', '.join(verified_unified)}")
                     print("[!] Please check your internet connection and HuggingFace token.")
                     return 1
             else:

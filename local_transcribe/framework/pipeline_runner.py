@@ -18,7 +18,7 @@ def run_pipeline(args, api, root):
         mode = "single_file"
         speaker_files = {"mixed": args.audio_files[0]}  # Single file with multiple speakers
     else:
-        mode = "separate_audio"
+        mode = "separate_files"
         speaker_files = {}
         
         if num_files == 2:

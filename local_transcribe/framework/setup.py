@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+# framework/setup.py - Module importing and plugin setup
+
+import sys
+import pathlib
+
+# ---------- import pipeline modules ----------
+def import_pipeline_modules(repo_root: pathlib.Path):
+    sys.path.append(str(repo_root / "local_transcribe"))
+    try:
+        # Core helpers (keep these as direct imports since they're utilities)
+        from local_transcribe.lib.create_directories import ensure_session_dirs
+        from local_transcribe.lib.audio_io import standardize_and_get_path
+        from local_transcribe.lib.progress import get_progress_tracker
+        from local_transcribe.lib.logging_config import configure_global_logging
+
+        # Import core plugin system
+        from local_transcribe.framework import registry
+        from local_transcribe.framework.plugin_discovery import PluginLoader
+
+        # Import providers to register plugins
+        import local_transcribe.providers
+
+        # Load external plugins
+        plugin_loader = PluginLoader()
+        plugin_loader.load_all_plugins()
+
+        # Return both utilities and registry
+        return {
+            "ensure_session_dirs": ensure_session_dirs,
+            "standardize_and_get_path": standardize_and_get_path,
+            "get_progress_tracker": get_progress_tracker,
+            "configure_global_logging": configure_global_logging,
+            "registry": registry,
+        }
+    except Exception as e:
+        sys.exit(f"ERROR: Failed importing pipeline modules from local_transcribe/: {e}")
+
+def handle_plugin_listing(api):
+    print("Available Plugins:")
+    print("\nASR Providers:")
+    for name, desc in api["registry"].list_asr_providers().items():
+        print(f"  {name}: {desc}")
+        # Show available models if provider supports multiple
+        provider = api["registry"].get_asr_provider(name)
+        available_models = provider.get_available_models()
+        if len(available_models) > 1:
+            print(f"    Available models: {', '.join(available_models)}")
+
+    print("\nDiarization Providers:")
+    for name, desc in api["registry"].list_diarization_providers().items():
+        print(f"  {name}: {desc}")
+
+    print("\nTurn Builder Providers:")
+    for name, desc in api["registry"].list_turn_builder_providers().items():
+        print(f"  {name}: {desc}")
+
+    print("\nCombined Providers:")
+    for name, desc in api["registry"].list_combined_providers().items():
+        print(f"  {name}: {desc}")
+        # Show available models if provider supports multiple
+        provider = api["registry"].get_combined_provider(name)
+        available_models = provider.get_available_models()
+        if len(available_models) > 1:
+            print(f"    Available models: {', '.join(available_models)}")
+
+    print("\nOutput Writers:")
+    for name, desc in api["registry"].list_output_writers().items():
+        print(f"  {name}: {desc}")
+
+    print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization|combined|turn_builder|output]")
+
+def handle_plugin_template_creation(args):
+    from local_transcribe.framework.plugin_discovery import create_plugin_template
+    from pathlib import Path
+
+    # Create template in current directory
+    template_name = f"example_{args.create_plugin_template}_plugin.py"
+    template_path = Path.cwd() / template_name
+    create_plugin_template(template_path, args.create_plugin_template)
+    print(f"Plugin template created: {template_path}")
+    print("Edit the file and place it in your plugins directory to use it.")

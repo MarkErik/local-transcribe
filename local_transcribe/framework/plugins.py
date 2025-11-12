@@ -146,6 +146,67 @@ class DiarizationProvider(ABC):
         pass
 
 
+class CombinedProvider(ABC):
+    """Abstract base class for combined ASR + diarization providers."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Return the unique name of this combined provider."""
+        pass
+
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        """Return a human-readable description of this provider."""
+        pass
+
+    @abstractmethod
+    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
+        """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs).
+
+        Args:
+            selected_model: The selected model name, if any. If None, return default models.
+        """
+        pass
+
+    def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Preload the specified models to cache. Default implementation does nothing."""
+        pass
+
+    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Ensure the specified models are available, downloading if necessary. Default implementation does nothing."""
+        pass
+
+    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which models are available offline without downloading. Returns list of missing model identifiers."""
+        # Default implementation assumes all models are missing if not overridden
+        return models
+
+    @abstractmethod
+    def get_available_models(self) -> List[str]:
+        """Return a list of available model names for this provider."""
+        pass
+
+    @abstractmethod
+    def transcribe_and_diarize(
+        self,
+        audio_path: str,
+        **kwargs
+    ) -> List[Turn]:
+        """
+        Transcribe audio file with word-level timestamps and perform speaker diarization.
+
+        Args:
+            audio_path: Path to the audio file
+            **kwargs: Provider-specific configuration options
+
+        Returns:
+            List of Turn objects with speaker assignments, timing, and text
+        """
+        pass
+
+
 class OutputWriter(ABC):
     """Abstract base class for output format writers."""
 
@@ -191,6 +252,7 @@ class PluginRegistry:
     def __init__(self):
         self._asr_providers: Dict[str, ASRProvider] = {}
         self._diarization_providers: Dict[str, DiarizationProvider] = {}
+        self._combined_providers: Dict[str, CombinedProvider] = {}
         self._output_writers: Dict[str, OutputWriter] = {}
 
     def register_asr_provider(self, provider: ASRProvider) -> None:
@@ -200,6 +262,10 @@ class PluginRegistry:
     def register_diarization_provider(self, provider: DiarizationProvider) -> None:
         """Register a diarization provider."""
         self._diarization_providers[provider.name] = provider
+
+    def register_combined_provider(self, provider: CombinedProvider) -> None:
+        """Register a combined provider."""
+        self._combined_providers[provider.name] = provider
 
     def register_output_writer(self, writer: OutputWriter) -> None:
         """Register an output writer."""
@@ -219,6 +285,13 @@ class PluginRegistry:
             raise ValueError(f"Diarization provider '{name}' not found. Available: {available}")
         return self._diarization_providers[name]
 
+    def get_combined_provider(self, name: str) -> CombinedProvider:
+        """Get a combined provider by name."""
+        if name not in self._combined_providers:
+            available = list(self._combined_providers.keys())
+            raise ValueError(f"Combined provider '{name}' not found. Available: {available}")
+        return self._combined_providers[name]
+
     def get_output_writer(self, name: str) -> OutputWriter:
         """Get an output writer by name."""
         if name not in self._output_writers:
@@ -233,6 +306,10 @@ class PluginRegistry:
     def list_diarization_providers(self) -> Dict[str, str]:
         """List all registered diarization providers with their descriptions."""
         return {name: provider.description for name, provider in self._diarization_providers.items()}
+
+    def list_combined_providers(self) -> Dict[str, str]:
+        """List all registered combined providers with their descriptions."""
+        return {name: provider.description for name, provider in self._combined_providers.items()}
 
     def list_output_writers(self) -> Dict[str, str]:
         """List all registered output writers with their descriptions."""

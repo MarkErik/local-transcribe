@@ -67,6 +67,9 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         from local_transcribe.framework import registry
         from local_transcribe.framework.plugin_discovery import PluginLoader
 
+        # Import providers to register plugins
+        import local_transcribe.providers
+
         # Load external plugins
         plugin_loader = PluginLoader()
         plugin_loader.load_all_plugins()

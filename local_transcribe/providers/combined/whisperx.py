@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""
+Combined ASR + Diarization plugin using WhisperX.
+"""
+
+from typing import List, Optional
+import os
+import pathlib
+import torch
+from local_transcribe.framework.plugins import CombinedProvider, Turn, registry
+
+
+class WhisperXCombinedProvider(CombinedProvider):
+    """Combined provider using WhisperX for ASR with word-level timestamps and speaker diarization."""
+
+    def __init__(self):
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Model mapping: user-friendly name -> WhisperX model name
+        self.model_mapping = {
+            "large-v2": "large-v2",
+            "large-v3": "large-v3",
+            "medium": "medium",
+            "small": "small",
+            "base": "base",
+        }
+        self.selected_model = None  # Will be set during transcription
+
+    @property
+    def name(self) -> str:
+        return "whisperx"
+
+    @property
+    def description(self) -> str:
+        return "WhisperX: Fast ASR with word-level timestamps and integrated speaker diarization"
+
+    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
+        models = []
+        if selected_model and selected_model in self.model_mapping:
+            models.append(self.model_mapping[selected_model])  # Whisper model
+            models.append("WAV2VEC2_ASR_LARGE_LV60K_960H")  # Default alignment model
+            models.append("pyannote/speaker-diarization")  # Diarization model
+        else:
+            # Default models
+            models = ["large-v2", "WAV2VEC2_ASR_LARGE_LV60K_960H", "pyannote/speaker-diarization"]
+        return models
+
+    def get_available_models(self) -> List[str]:
+        return list(self.model_mapping.keys())
+
+    def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Preload WhisperX models to cache."""
+        import whisperx
+        for model in models:
+            if model in self.model_mapping.values():
+                # Preload Whisper model
+                whisperx.load_model(model, device=self.device, download_root=str(models_dir / "asr"))
+            elif model.startswith("WAV2VEC2"):
+                # Preload alignment model
+                whisperx.load_align_model("en", device=self.device, download_root=str(models_dir / "asr"))
+            elif "speaker-diarization" in model:
+                # Preload diarization model (requires HF token)
+                from pyannote.audio import Pipeline
+                cache_dir = models_dir / "diarization"
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", cache_dir=str(cache_dir))
+
+    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
+        """Ensure models are available by preloading them."""
+        self.preload_models(models, models_dir)
+
+    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which models are available offline."""
+        # For simplicity, assume all are missing if not preloaded
+        # In practice, you'd check for model files
+        return models
+
+    def transcribe_and_diarize(
+        self,
+        audio_path: str,
+        **kwargs
+    ) -> List[Turn]:
+        """
+        Transcribe audio with WhisperX and perform speaker diarization.
+
+        Args:
+            audio_path: Path to the audio file
+            **kwargs: Should include 'model' key for Whisper model
+
+        Returns:
+            List of Turn objects with speaker assignments and text
+        """
+        import whisperx
+
+        model_name = kwargs.get('model', 'large-v2')
+        if model_name not in self.model_mapping:
+            raise ValueError(f"Unknown model: {model_name}")
+
+        if not os.path.exists(audio_path):
+            raise ValueError(f"Audio file not found: {audio_path}")
+
+        # Load audio
+        audio = whisperx.load_audio(audio_path)
+
+        # 1. Transcribe with Whisper
+        model = whisperx.load_model(model_name, device=self.device, compute_type="float16")
+        result = model.transcribe(audio, batch_size=16)
+        print(f"Transcription: {result['segments'][:2]}...")  # Debug
+
+        # 2. Align output
+        model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=self.device)
+        result = whisperx.align(result["segments"], model_a, metadata, audio, device=self.device, return_char_alignments=False)
+        print(f"Alignment: {result['segments'][:2]}...")  # Debug
+
+        # 3. Assign speaker labels
+        diarize_model = whisperx.DiarizationPipeline(use_auth_token=os.getenv("HF_TOKEN"), device=self.device)
+        diarize_segments = diarize_model(audio)
+        result = whisperx.assign_word_speakers(diarize_segments, result)
+        print(f"Diarization: {result['segments'][:2]}...")  # Debug
+
+        # Convert to Turns
+        turns = []
+        current_speaker = None
+        current_text = []
+        current_start = None
+        current_end = None
+
+        for segment in result["segments"]:
+            for word in segment.get("words", []):
+                speaker = word.get("speaker")
+                if speaker != current_speaker:
+                    if current_speaker is not None:
+                        turns.append(Turn(
+                            speaker=current_speaker,
+                            start=current_start,
+                            end=current_end,
+                            text=" ".join(current_text)
+                        ))
+                    current_speaker = speaker
+                    current_text = []
+                    current_start = word["start"]
+                current_text.append(word["word"])
+                current_end = word["end"]
+
+        # Add final turn
+        if current_speaker is not None:
+            turns.append(Turn(
+                speaker=current_speaker,
+                start=current_start,
+                end=current_end,
+                text=" ".join(current_text)
+            ))
+
+        return turns
+
+
+def register_combined_plugins():
+    """Register combined plugins."""
+    registry.register_combined_provider(WhisperXCombinedProvider())
+
+
+# Auto-register on import
+register_combined_plugins()

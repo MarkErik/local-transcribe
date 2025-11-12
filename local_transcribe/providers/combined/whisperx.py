@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Combined ASR + Diarization plugin using WhisperX.
+Unified ASR + Diarization plugin using WhisperX.
 """
 
 from typing import List, Optional
-import os
 import pathlib
 import torch
-from local_transcribe.framework.plugins import CombinedProvider, Turn, registry
+import whisperx
+from local_transcribe.framework.plugins import UnifiedProvider, Turn, registry
 
 
-class WhisperXCombinedProvider(CombinedProvider):
-    """Combined provider using WhisperX for ASR with word-level timestamps and speaker diarization."""
+class WhisperXUnifiedProvider(UnifiedProvider):
+    """Unified provider using WhisperX for ASR with word-level timestamps and speaker diarization."""
 
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -49,7 +49,6 @@ class WhisperXCombinedProvider(CombinedProvider):
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload WhisperX models to cache."""
-        import whisperx
         for model in models:
             if model in self.model_mapping.values():
                 # Preload Whisper model
@@ -91,8 +90,6 @@ class WhisperXCombinedProvider(CombinedProvider):
         Returns:
             List of Turn objects with speaker assignments and text
         """
-        import whisperx
-
         model_name = kwargs.get('model', 'large-v2')
         if model_name not in self.model_mapping:
             raise ValueError(f"Unknown model: {model_name}")
@@ -155,10 +152,10 @@ class WhisperXCombinedProvider(CombinedProvider):
         return turns
 
 
-def register_combined_plugins():
-    """Register combined plugins."""
-    registry.register_combined_provider(WhisperXCombinedProvider())
+def register_unified_plugins():
+    """Register unified plugins."""
+    registry.register_unified_provider(WhisperXUnifiedProvider())
 
 
 # Auto-register on import
-register_combined_plugins()
+register_unified_plugins()

@@ -55,11 +55,11 @@ def handle_plugin_listing(api):
     for name, desc in api["registry"].list_turn_builder_providers().items():
         print(f"  {name}: {desc}")
 
-    print("\nCombined Providers:")
-    for name, desc in api["registry"].list_combined_providers().items():
+    print("\nUnified Providers:")
+    for name, desc in api["registry"].list_unified_providers().items():
         print(f"  {name}: {desc}")
         # Show available models if provider supports multiple
-        provider = api["registry"].get_combined_provider(name)
+        provider = api["registry"].get_unified_provider(name)
         available_models = provider.get_available_models()
         if len(available_models) > 1:
             print(f"    Available models: {', '.join(available_models)}")

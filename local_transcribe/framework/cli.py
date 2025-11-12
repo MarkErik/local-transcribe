@@ -49,27 +49,27 @@ def interactive_prompt(args, api):
     if hasattr(args, 'audio_files') and args.audio_files:
         num_files = len(args.audio_files)
         if num_files == 1:
-            print("Mode: Single file (mixed audio with multiple speakers)")
+            print("Mode: Combined audio (single file with multiple speakers)")
             args.processing_mode = "separate"  # Will use ASR + diarization
         else:
-            print(f"Mode: Separate audio tracks ({num_files} files)")
+            print(f"Mode: Split audio tracks ({num_files} files)")
             args.processing_mode = "separate"  # Always separate for multiple files
     else:
         # Fallback for when audio files aren't set yet
         args.processing_mode = "separate"
 
-    # Check if combined mode and offer processing type choice
-    combined_providers = registry.list_combined_providers()
-    if combined_providers and hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
+    # Check if unified mode and offer processing type choice
+    unified_providers = registry.list_unified_providers()
+    if unified_providers and hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
         print("Processing Modes:")
-        print("  1. Combined Provider (ASR + Diarization in one step)")
+        print("  1. Unified Provider (ASR + Diarization in one step)")
         print("  2. Separate Providers (ASR then Diarization)")
         
         while True:
             try:
                 choice = int(input("\nChoose processing mode (1 or 2): ").strip())
                 if choice == 1:
-                    args.processing_mode = "combined"
+                    args.processing_mode = "unified"
                     break
                 elif choice == 2:
                     args.processing_mode = "separate"
@@ -81,16 +81,16 @@ def interactive_prompt(args, api):
     else:
         args.processing_mode = "separate"  # For multi-file, always separate
 
-    if args.processing_mode == "combined":
-        # Select combined provider
-        combined_providers = registry.list_combined_providers()
-        args.combined_provider = select_provider(combined_providers, "Combined Providers")
+    if args.processing_mode == "unified":
+        # Select unified provider
+        unified_providers = registry.list_unified_providers()
+        args.unified_provider = select_provider(unified_providers, "Unified Providers")
 
-        # Model selection for combined provider
-        combined_provider = registry.get_combined_provider(args.combined_provider)
-        available_models = combined_provider.get_available_models()
+        # Model selection for unified provider
+        unified_provider = registry.get_unified_provider(args.unified_provider)
+        available_models = unified_provider.get_available_models()
         if len(available_models) > 1:
-            print(f"\nAvailable models for {args.combined_provider}:")
+            print(f"\nAvailable models for {args.unified_provider}:")
             for i, model in enumerate(available_models, 1):
                 print(f"  {i}. {model}")
             
@@ -98,14 +98,14 @@ def interactive_prompt(args, api):
                 try:
                     choice = int(input(f"\nChoose model (1-{len(available_models)}): ").strip())
                     if 1 <= choice <= len(available_models):
-                        args.combined_model = available_models[choice - 1]
+                        args.unified_model = available_models[choice - 1]
                         break
                     else:
                         print("Invalid choice. Please enter a number from the list.")
                 except ValueError:
                     print("Please enter a valid number.")
         else:
-            args.combined_model = available_models[0] if available_models else None
+            args.unified_model = available_models[0] if available_models else None
 
         # Number of speakers (for combined providers)
         if hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
@@ -143,8 +143,8 @@ def interactive_prompt(args, api):
             print("Invalid input, selecting all.")
             args.selected_outputs = list(output_writers.keys())
 
-    if args.processing_mode == "combined":
-        print(f"\nSelected: Combined={args.combined_provider} ({args.combined_model}), Outputs={args.selected_outputs}")
+    if args.processing_mode == "unified":
+        print(f"\nSelected: Unified={args.unified_provider} ({args.unified_model}), Outputs={args.selected_outputs}")
     else:
         provider_info = []
         if hasattr(args, 'asr_provider') and args.asr_provider:

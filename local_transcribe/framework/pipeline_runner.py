@@ -15,10 +15,10 @@ def run_pipeline(args, api, root):
     # Determine mode and speaker mapping
     num_files = len(args.audio_files)
     if num_files == 1:
-        mode = "single_file"
-        speaker_files = {"mixed": args.audio_files[0]}  # Single file with multiple speakers
+        mode = "combined_audio"
+        speaker_files = {"combined_audio": args.audio_files[0]}  # Single file with multiple speakers
     else:
-        mode = "separate_files"
+        mode = "split_audio"
         speaker_files = {}
         
         if num_files == 2:
@@ -39,7 +39,7 @@ def run_pipeline(args, api, root):
 
     # Set default num_speakers if not provided
     if not hasattr(args, 'num_speakers') or args.num_speakers is None:
-        if mode == "single_file":
+        if mode == "combined_audio":
             args.num_speakers = 2  # Default for single file mode
         else:
             args.num_speakers = len(speaker_files)  # One speaker per file
@@ -61,8 +61,8 @@ def run_pipeline(args, api, root):
 
     # Check required providers
     try:
-        if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
-            combined_provider = api["registry"].get_combined_provider(args.combined_provider)
+        if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
+            unified_provider = api["registry"].get_unified_provider(args.unified_provider)
         else:
             asr_provider = api["registry"].get_asr_provider(args.asr_provider)
             diarization_provider = api["registry"].get_diarization_provider(args.diarization_provider)
@@ -74,10 +74,10 @@ def run_pipeline(args, api, root):
         return 1
 
     # Set default model if not specified
-    if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
-        if not hasattr(args, 'combined_model') or args.combined_model is None:
-            available_models = combined_provider.get_available_models()
-            args.combined_model = available_models[0] if available_models else None
+    if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
+        if not hasattr(args, 'unified_model') or args.unified_model is None:
+            available_models = unified_provider.get_available_models()
+            args.unified_model = available_models[0] if available_models else None
     else:
         if not hasattr(args, 'asr_model') or args.asr_model is None:
             available_models = asr_provider.get_available_models()
@@ -85,8 +85,8 @@ def run_pipeline(args, api, root):
 
     # Download required models for selected providers
     providers = {}
-    if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
-        providers['combined'] = combined_provider
+    if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
+        providers['unified'] = unified_provider
     else:
         providers['asr'] = asr_provider
         providers['diarization'] = diarization_provider
@@ -107,14 +107,14 @@ def run_pipeline(args, api, root):
         outdir = ensure_outdir(args.outdir)
         paths = api["ensure_session_dirs"](outdir, mode, speaker_files)
 
-        if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
-            print(f"[*] Mode: {mode} (single_file) | Provider: {args.combined_provider} | Outputs: {', '.join(args.selected_outputs)}")
+        if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
+            print(f"[*] Mode: {mode} (combined_audio) | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
         else:
             print(f"[*] Mode: {mode} | ASR: {args.asr_provider} | Diarization: {args.diarization_provider} | Turn Builder: general | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
-        if mode == "single_file":
-            mixed_path = ensure_file(speaker_files["mixed"], "Mixed Audio")
+        if mode == "combined_audio":
+            mixed_path = ensure_file(speaker_files["combined_audio"], "Combined Audio")
 
             # 1) Standardize
             std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
@@ -130,12 +130,12 @@ def run_pipeline(args, api, root):
             tracker.update(std_task, advance=50, description="Audio standardization complete")
             tracker.complete_task(std_task, stage="standardization")
 
-            if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
-                # Use combined provider
-                turns = combined_provider.transcribe_and_diarize(
+            if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
+                # Use unified provider
+                turns = unified_provider.transcribe_and_diarize(
                     str(std_mix),
                     args.num_speakers,
-                    model=args.combined_model
+                    model=args.unified_model
                 )
             else:
                 # 2) ASR + alignment

@@ -148,13 +148,13 @@ class DiarizationProvider(ABC):
         pass
 
 
-class CombinedProvider(ABC):
-    """Abstract base class for combined ASR + diarization providers."""
+class UnifiedProvider(ABC):
+    """Abstract base class for unified ASR + diarization providers."""
 
     @property
     @abstractmethod
     def name(self) -> str:
-        """Return the unique name of this combined provider."""
+        """Return the unique name of this unified provider."""
         pass
 
     @property
@@ -329,7 +329,7 @@ class PluginRegistry:
     def __init__(self):
         self._asr_providers: Dict[str, ASRProvider] = {}
         self._diarization_providers: Dict[str, DiarizationProvider] = {}
-        self._combined_providers: Dict[str, CombinedProvider] = {}
+        self._unified_providers: Dict[str, UnifiedProvider] = {}
         self._turn_builder_providers: Dict[str, TurnBuilderProvider] = {}
         self._asr_writers: Dict[str, ASRWriter] = {}
         self._output_writers: Dict[str, OutputWriter] = {}
@@ -342,9 +342,9 @@ class PluginRegistry:
         """Register a diarization provider."""
         self._diarization_providers[provider.name] = provider
 
-    def register_combined_provider(self, provider: CombinedProvider) -> None:
-        """Register a combined provider."""
-        self._combined_providers[provider.name] = provider
+    def register_unified_provider(self, provider: UnifiedProvider) -> None:
+        """Register a unified provider."""
+        self._unified_providers[provider.name] = provider
 
     def register_turn_builder_provider(self, provider: TurnBuilderProvider) -> None:
         """Register a turn builder provider."""
@@ -372,12 +372,12 @@ class PluginRegistry:
             raise ValueError(f"Diarization provider '{name}' not found. Available: {available}")
         return self._diarization_providers[name]
 
-    def get_combined_provider(self, name: str) -> CombinedProvider:
-        """Get a combined provider by name."""
-        if name not in self._combined_providers:
-            available = list(self._combined_providers.keys())
-            raise ValueError(f"Combined provider '{name}' not found. Available: {available}")
-        return self._combined_providers[name]
+    def get_unified_provider(self, name: str) -> UnifiedProvider:
+        """Get a unified provider by name."""
+        if name not in self._unified_providers:
+            available = list(self._unified_providers.keys())
+            raise ValueError(f"Unified provider '{name}' not found. Available: {available}")
+        return self._unified_providers[name]
 
     def get_turn_builder_provider(self, name: str) -> TurnBuilderProvider:
         """Get a turn builder provider by name."""
@@ -408,9 +408,9 @@ class PluginRegistry:
         """List all registered diarization providers with their descriptions."""
         return {name: provider.description for name, provider in self._diarization_providers.items()}
 
-    def list_combined_providers(self) -> Dict[str, str]:
-        """List all registered combined providers with their descriptions."""
-        return {name: provider.description for name, provider in self._combined_providers.items()}
+    def list_unified_providers(self) -> Dict[str, str]:
+        """List all registered unified providers with their descriptions."""
+        return {name: provider.description for name, provider in self._unified_providers.items()}
 
     def list_turn_builder_providers(self) -> Dict[str, str]:
         """List all registered turn builder providers with their descriptions."""

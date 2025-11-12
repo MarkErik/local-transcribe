@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Combined ASR + Diarization providers.
+Unified ASR + Diarization providers.
 """
 
 # Import whisperx provider to register it

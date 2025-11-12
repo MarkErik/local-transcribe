@@ -7,50 +7,6 @@ from typing import Optional
 
 from local_transcribe.framework.model_downloader import ensure_models_available
 
-def write_selected_outputs(turns, paths, selected, tracker, registry, audio_path=None):
-    """Write selected outputs for merged turns."""
-    output_task = tracker.add_task("Writing output files", total=100, stage="output")
-    tracker.update(output_task, advance=20, description="Writing transcript files")
-
-    srt_path = None
-
-    if 'timestamped-txt' in selected:
-        timestamped_writer = registry.get_output_writer("timestamped-txt")
-        timestamped_writer.write(turns, paths["merged"] / "transcript.timestamped.txt")
-
-    if 'plain-txt' in selected:
-        plain_writer = registry.get_output_writer("plain-txt")
-        plain_writer.write(turns, paths["merged"] / "transcript.txt")
-
-    if 'csv' in selected:
-        csv_writer = registry.get_output_writer("csv")
-        csv_writer.write(turns, paths["merged"] / "transcript.csv")
-
-    if 'markdown' in selected:
-        markdown_writer = registry.get_output_writer("markdown")
-        markdown_writer.write(turns, paths["merged"] / "transcript.md")
-
-    tracker.update(output_task, advance=20, description="Writing subtitle files")
-
-    if 'srt' in selected:
-        srt_writer = registry.get_output_writer("srt")
-        srt_path = paths["merged"] / "subtitles.srt"
-        srt_writer.write(turns, srt_path)
-
-    if 'vtt' in selected:
-        vtt_writer = registry.get_output_writer("vtt")
-        vtt_writer.write(turns, paths["merged"] / "subtitles.vtt")
-
-    if srt_path and audio_path is not None:
-        tracker.update(output_task, advance=30, description="Rendering video with subtitles")
-        from local_transcribe.providers.writers.render_video import render_video
-        render_video(srt_path, paths["merged"] / "video_with_subtitles.mp4", audio_path=audio_path)
-    else:
-        tracker.update(output_task, advance=30, description="Skipping video rendering")
-
-    tracker.update(output_task, advance=30, description="Finalizing outputs")
-    tracker.complete_task(output_task, stage="output")
-
 def run_pipeline(args, api, root):
     from local_transcribe.lib.environment import ensure_file, ensure_outdir
 
@@ -274,3 +230,47 @@ def run_pipeline(args, api, root):
     finally:
         # Always stop progress tracking
         tracker.stop()
+
+def write_selected_outputs(turns, paths, selected, tracker, registry, audio_path=None):
+    """Write selected outputs for merged turns."""
+    output_task = tracker.add_task("Writing output files", total=100, stage="output")
+    tracker.update(output_task, advance=20, description="Writing transcript files")
+
+    srt_path = None
+
+    if 'timestamped-txt' in selected:
+        timestamped_writer = registry.get_output_writer("timestamped-txt")
+        timestamped_writer.write(turns, paths["merged"] / "transcript.timestamped.txt")
+
+    if 'plain-txt' in selected:
+        plain_writer = registry.get_output_writer("plain-txt")
+        plain_writer.write(turns, paths["merged"] / "transcript.txt")
+
+    if 'csv' in selected:
+        csv_writer = registry.get_output_writer("csv")
+        csv_writer.write(turns, paths["merged"] / "transcript.csv")
+
+    if 'markdown' in selected:
+        markdown_writer = registry.get_output_writer("markdown")
+        markdown_writer.write(turns, paths["merged"] / "transcript.md")
+
+    tracker.update(output_task, advance=20, description="Writing subtitle files")
+
+    if 'srt' in selected:
+        srt_writer = registry.get_output_writer("srt")
+        srt_path = paths["merged"] / "subtitles.srt"
+        srt_writer.write(turns, srt_path)
+
+    if 'vtt' in selected:
+        vtt_writer = registry.get_output_writer("vtt")
+        vtt_writer.write(turns, paths["merged"] / "subtitles.vtt")
+
+    if srt_path and audio_path is not None:
+        tracker.update(output_task, advance=30, description="Rendering video with subtitles")
+        from local_transcribe.providers.writers.render_video import render_video
+        render_video(srt_path, paths["merged"] / "video_with_subtitles.mp4", audio_path=audio_path)
+    else:
+        tracker.update(output_task, advance=30, description="Skipping video rendering")
+
+    tracker.update(output_task, advance=30, description="Finalizing outputs")
+    tracker.complete_task(output_task, stage="output")

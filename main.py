@@ -97,13 +97,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--asr-provider", help="ASR provider to use")
     p.add_argument("--asr-model", help="ASR model to use (if provider supports multiple models)")
     p.add_argument("--diarization-provider", help="Diarization provider to use")
-    p.add_argument("-n","--num-speakers", type=int, default=2, help="Number of speakers expected in the audio (for diarization, default: 2)")
+    p.add_argument("--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization)")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
     p.add_argument("--verbose", action="store_true", help="Enable verbose logging output.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
-    p.add_argument("--create-plugin-template", choices=["asr", "diarization", "combined", "output"], help="Create a plugin template file and exit.")
+    p.add_argument("--create-plugin-template", choices=["asr", "diarization", "combined", "turn_builder", "output"], help="Create a plugin template file and exit.")
 
     args = p.parse_args(argv)
 
@@ -182,40 +182,19 @@ def interactive_prompt(args, api):
                     print("Please enter a valid number.")
         else:
             args.combined_model = available_models[0] if available_models else None
-    else:
-        # Separate providers
-        # ASR provider
-        asr_providers = registry.list_asr_providers()
-        if not asr_providers:
-            print("No ASR providers available.")
-            return args
 
-        args.asr_provider = select_provider(asr_providers, "ASR Providers")
-
-        # ASR model selection (if provider supports multiple models)
-        asr_provider = registry.get_asr_provider(args.asr_provider)
-        available_models = asr_provider.get_available_models()
-        if len(available_models) > 1:
-            print(f"\nAvailable models for {args.asr_provider}:")
-            for i, model in enumerate(available_models, 1):
-                print(f"  {i}. {model}")
-            
+        # Number of speakers (for combined providers)
+        if hasattr(args, 'combined') and args.combined:
             while True:
                 try:
-                    choice = int(input(f"\nChoose model (1-{len(available_models)}): ").strip())
-                    if 1 <= choice <= len(available_models):
-                        args.asr_model = available_models[choice - 1]
+                    num_speakers = int(input("\nNumber of speakers expected in the audio: ").strip())
+                    if num_speakers > 0:
+                        args.num_speakers = num_speakers
                         break
                     else:
-                        print("Invalid choice. Please enter a number from the list.")
+                        print("Please enter a positive number.")
                 except ValueError:
                     print("Please enter a valid number.")
-        else:
-            args.asr_model = available_models[0] if available_models else None
-
-        # Diarization provider
-        diar_providers = registry.list_diarization_providers()
-        args.diarization_provider = select_provider(diar_providers, "Diarization Providers")
 
     # Output formats
     output_writers = registry.list_output_writers()
@@ -337,6 +316,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         for name, desc in api["registry"].list_diarization_providers().items():
             print(f"  {name}: {desc}")
 
+        print("\nTurn Builder Providers:")
+        for name, desc in api["registry"].list_turn_builder_providers().items():
+            print(f"  {name}: {desc}")
+
         print("\nCombined Providers:")
         for name, desc in api["registry"].list_combined_providers().items():
             print(f"  {name}: {desc}")
@@ -350,11 +333,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         for name, desc in api["registry"].list_output_writers().items():
             print(f"  {name}: {desc}")
 
-        print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization|combined|output]")
+        print("\nTo create a custom plugin template, use: --create-plugin-template [asr|diarization|combined|turn_builder|output]")
         return 0
 
     if args.interactive:
         args = interactive_prompt(args, api)
+
+    # Set default num_speakers if not provided
+    if not hasattr(args, 'num_speakers') or args.num_speakers is None:
+        if combined_mode:
+            args.num_speakers = 2  # Default for combined mode
+        else:
+            args.num_speakers = 1  # Not used in dual-track
 
     # Set default outputs for non-interactive
     if not hasattr(args, 'selected_outputs') or not args.selected_outputs:
@@ -385,6 +375,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             asr_provider = api["registry"].get_asr_provider(args.asr_provider)
             diarization_provider = api["registry"].get_diarization_provider(args.diarization_provider)
+            # For separate processing, always need a turn builder
+            turn_builder_provider = api["registry"].get_turn_builder_provider("general")  # Default to general
     except ValueError as e:
         print(f"ERROR: {e}")
         print("Use --list-plugins to see available options.")
@@ -524,7 +516,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         outdir = ensure_outdir(args.outdir)
         paths = api["ensure_session_dirs"](outdir, mode)
 
-        print(f"[*] Mode: {mode} (combined) | Provider: {args.combined_provider} | Outputs: {', '.join(args.selected_outputs)}")
+        if hasattr(args, 'processing_mode') and args.processing_mode == "combined":
+            print(f"[*] Mode: {mode} (combined) | Provider: {args.combined_provider} | Outputs: {', '.join(args.selected_outputs)}")
+        else:
+            print(f"[*] Mode: {mode} | ASR: {args.asr_provider} | Diarization: {args.diarization_provider} | Turn Builder: general | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
         if combined_mode:
@@ -564,8 +559,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                 from local_transcribe.providers.writers.txt_writer import write_asr_words
                 write_asr_words(words, paths["merged"] / "asr.txt")
 
-                # 3) Diarize → turns
-                turns = diarization_provider.diarize(str.std_mix, words, args.num_speakers)
+                # 3) Diarize (assign speakers to words)
+                words_with_speakers = diarization_provider.diarize(str(std_mix), words, args.num_speakers)
+
+                # 4) Build turns
+                turns = turn_builder_provider.build_turns(words_with_speakers)
 
             # 4) Outputs
             write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], std_mix)
@@ -610,12 +608,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
             # Use dual-track diarization provider for building turns
             dual_track_provider = api["registry"].get_diarization_provider("dual-track")
-            int_turns = dual_track_provider.diarize(
-                str(std_int),
-                int_words,
-                2,  # Always 2 speakers in dual-track mode
-                speaker_label="Interviewer"
-            )
+            int_turns = turn_builder_provider.build_turns(int_words)
 
             # Save interviewer timestamped transcript
             timestamped_writer = api["registry"].get_output_writer("timestamped-txt")
@@ -632,12 +625,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             write_asr_words(part_words, paths["speaker_participant"] / "asr.txt")
 
             # Build turns for participant
-            part_turns = dual_track_provider.diarize(
-                str(std_part),
-                part_words,
-                2,  # Always 2 speakers in dual-track mode
-                speaker_label="Participant"
-            )
+            part_turns = turn_builder_provider.build_turns(part_words)
 
             # Save participant timestamped transcript
             timestamped_writer.write(part_turns, paths["speaker_participant"] / "participant.timestamped.txt")

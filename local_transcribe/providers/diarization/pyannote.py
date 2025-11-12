@@ -66,9 +66,9 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         words: List[WordSegment],
         num_speakers: int,
         **kwargs
-    ) -> List[Turn]:
+    ) -> List[WordSegment]:
         """
-        Perform speaker diarization using pyannote.
+        Perform speaker diarization using pyannote and assign speakers to words.
 
         Args:
             audio_path: Path to audio file
@@ -107,10 +107,9 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         waveform = torch.from_numpy(data).unsqueeze(0)
         return waveform, sr
 
-    def _diarize_mixed(self, audio_path: str, words: List[WordSegment], num_speakers: int) -> List[dict]:
+    def _assign_speakers_to_words(self, audio_path: str, words: List[WordSegment], num_speakers: int) -> List[WordSegment]:
         """
-        Diarize a mixed/combined track and assign speakers to words by majority overlap,
-        then build readable turns per speaker.
+        Diarize a mixed/combined track and assign speakers to words by majority overlap.
         """
         # Suppress warnings
         warnings.filterwarnings("ignore")
@@ -164,46 +163,9 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             else:
                 speaker = "Unknown"
 
-            word_speakers.append({
-                'text': word.text,
-                'start': word.start,
-                'end': word.end,
-                'speaker': speaker
-            })
+            word_speakers.append(WordSegment(text=word.text, start=word.start, end=word.end, speaker=speaker))
 
-        # Build turns per speaker
-        turns = self._build_turns_from_words(word_speakers)
-
-        return turns
-
-    def _build_turns_from_words(self, words: List[dict], max_gap_s: float = 0.8, max_chars: int = 120) -> List[dict]:
-        """
-        Group words into turns by speaker.
-        """
-        turns = []
-        current_turn = None
-
-        for word in words:
-            if current_turn is None or current_turn['speaker'] != word['speaker'] or \
-               word['start'] - current_turn['end'] > max_gap_s or \
-               len(current_turn['text']) + len(word['text']) + 1 > max_chars:
-                if current_turn:
-                    turns.append(current_turn)
-                current_turn = {
-                    'speaker': word['speaker'],
-                    'start': word['start'],
-                    'end': word['end'],
-                    'text': word['text']
-                }
-            else:
-                current_turn['end'] = word['end']
-                current_turn['text'] += ' ' + word['text']
-
-        if current_turn:
-            turns.append(current_turn)
-
-        return turns
-
+        return word_speakers
 
 def register_diarization_plugins():
     """Register diarization plugins."""

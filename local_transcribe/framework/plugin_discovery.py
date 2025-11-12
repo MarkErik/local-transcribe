@@ -108,7 +108,7 @@ def create_plugin_template(output_path: Path, plugin_type: str) -> None:
 
     Args:
         output_path: Where to write the template file
-        plugin_type: Type of plugin ('asr', 'diarization', 'combined', or 'output')
+        plugin_type: Type of plugin ('asr', 'diarization', 'combined', 'turn_builder', or 'output')
     """
     templates = {
         'asr': '''#!/usr/bin/env python3
@@ -243,6 +243,49 @@ class ExampleCombinedProvider(CombinedProvider):
 registry.register_combined_provider(ExampleCombinedProvider())
 ''',
 
+        'turn_builder': '''#!/usr/bin/env python3
+"""
+Example Turn Builder Plugin Template
+"""
+
+from typing import List
+from local_transcribe.framework import TurnBuilderProvider, WordSegment, Turn, registry
+
+class ExampleTurnBuilderProvider(TurnBuilderProvider):
+    """Example turn builder provider implementation."""
+
+    @property
+    def name(self) -> str:
+        return "example-turn-builder"
+
+    @property
+    def description(self) -> str:
+        return "Example turn builder provider (replace with your implementation)"
+
+    def build_turns(
+        self,
+        words: List[WordSegment],
+        **kwargs
+    ) -> List[Turn]:
+        """
+        Implement your turn building logic here.
+
+        This should group word segments into turns based on speaker and timing.
+        """
+        # TODO: Implement actual turn building
+        return [
+            Turn(
+                speaker="SPEAKER_00",
+                start=0.0,
+                end=1.0,
+                text="example text"
+            )
+        ]
+
+# Register the plugin
+registry.register_turn_builder_provider(ExampleTurnBuilderProvider())
+''',
+
         'output': '''#!/usr/bin/env python3
 """
 Example Output Writer Plugin Template
@@ -288,7 +331,7 @@ registry.register_output_writer(ExampleOutputWriter())
     }
 
     if plugin_type not in templates:
-        raise ValueError(f"Unknown plugin type: {plugin_type}. Must be 'asr', 'diarization', 'combined', or 'output'")
+        raise ValueError(f"Unknown plugin type: {plugin_type}. Must be 'asr', 'diarization', 'combined', 'turn_builder', or 'output'")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w') as f:

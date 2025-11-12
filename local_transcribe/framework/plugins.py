@@ -132,18 +132,18 @@ class DiarizationProvider(ABC):
         words: List[WordSegment],
         num_speakers: int,
         **kwargs
-    ) -> List[Turn]:
+    ) -> List[WordSegment]:
         """
-        Perform speaker diarization on audio and return conversation turns.
+        Perform speaker diarization on audio and assign speakers to words.
 
         Args:
             audio_path: Path to the audio file
-            words: Word segments from ASR (may have speaker=None)
+            words: Word segments from ASR (speaker=None)
             num_speakers: Number of speakers expected in the audio
             **kwargs: Provider-specific configuration options
 
         Returns:
-            List of Turn objects with speaker assignments and timing
+            List of WordSegment objects with speakers assigned
         """
         pass
 
@@ -211,6 +211,40 @@ class CombinedProvider(ABC):
         pass
 
 
+class TurnBuilderProvider(ABC):
+    """Abstract base class for turn building providers (grouping words into turns)."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Return the unique name of this turn builder provider."""
+        pass
+
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        """Return a human-readable description of this provider."""
+        pass
+
+    @abstractmethod
+    def build_turns(
+        self,
+        words: List[WordSegment],
+        **kwargs
+    ) -> List[Turn]:
+        """
+        Build conversation turns from word segments with speakers.
+
+        Args:
+            words: Word segments with speaker assignments
+            **kwargs: Provider-specific configuration options
+
+        Returns:
+            List of Turn objects grouped by speaker and timing
+        """
+        pass
+
+
 class OutputWriter(ABC):
     """Abstract base class for output format writers."""
 
@@ -257,6 +291,7 @@ class PluginRegistry:
         self._asr_providers: Dict[str, ASRProvider] = {}
         self._diarization_providers: Dict[str, DiarizationProvider] = {}
         self._combined_providers: Dict[str, CombinedProvider] = {}
+        self._turn_builder_providers: Dict[str, TurnBuilderProvider] = {}
         self._output_writers: Dict[str, OutputWriter] = {}
 
     def register_asr_provider(self, provider: ASRProvider) -> None:
@@ -270,6 +305,10 @@ class PluginRegistry:
     def register_combined_provider(self, provider: CombinedProvider) -> None:
         """Register a combined provider."""
         self._combined_providers[provider.name] = provider
+
+    def register_turn_builder_provider(self, provider: TurnBuilderProvider) -> None:
+        """Register a turn builder provider."""
+        self._turn_builder_providers[provider.name] = provider
 
     def register_output_writer(self, writer: OutputWriter) -> None:
         """Register an output writer."""
@@ -296,6 +335,13 @@ class PluginRegistry:
             raise ValueError(f"Combined provider '{name}' not found. Available: {available}")
         return self._combined_providers[name]
 
+    def get_turn_builder_provider(self, name: str) -> TurnBuilderProvider:
+        """Get a turn builder provider by name."""
+        if name not in self._turn_builder_providers:
+            available = list(self._turn_builder_providers.keys())
+            raise ValueError(f"Turn builder provider '{name}' not found. Available: {available}")
+        return self._turn_builder_providers[name]
+
     def get_output_writer(self, name: str) -> OutputWriter:
         """Get an output writer by name."""
         if name not in self._output_writers:
@@ -314,6 +360,10 @@ class PluginRegistry:
     def list_combined_providers(self) -> Dict[str, str]:
         """List all registered combined providers with their descriptions."""
         return {name: provider.description for name, provider in self._combined_providers.items()}
+
+    def list_turn_builder_providers(self) -> Dict[str, str]:
+        """List all registered turn builder providers with their descriptions."""
+        return {name: provider.description for name, provider in self._turn_builder_providers.items()}
 
     def list_output_writers(self) -> Dict[str, str]:
         """List all registered output writers with their descriptions."""

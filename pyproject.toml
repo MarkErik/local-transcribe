@@ -24,6 +24,7 @@ dependencies = [
     "torchaudio>=2.9.0",
     "tqdm>=4.67.1",
     "transformers>=4.48.0",
+    "uroman>=1.3.1",
     "whisperx>=3.0.0",
 ]
 

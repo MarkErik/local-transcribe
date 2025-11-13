@@ -35,10 +35,11 @@ def ensure_models_exist(models_dir: pathlib.Path) -> None:
     if not models_dir.exists():
         print("WARNING: models/ directory not found. Models will be downloaded automatically on first run.")
         models_dir.mkdir(parents=True, exist_ok=True)
-    # Best-effort check: confirm something for ASR exists in cache
-    expected = models_dir / "asr"
-    if not expected.exists():
-        print("WARNING: ASR models not found in ./models/asr. Models will be downloaded automatically on first run.")
+    # Check for new provider model directories
+    transcriber_dir = models_dir / "transcribers"
+    aligner_dir = models_dir / "aligners"
+    if not (transcriber_dir.exists() or aligner_dir.exists()):
+        print("WARNING: Provider models not found in ./models/. Models will be downloaded automatically on first run.")
     # We won't strictly validate HF cache layout; downloader guarantees presence.
 
 def ensure_file(path: str, label: str) -> pathlib.Path:

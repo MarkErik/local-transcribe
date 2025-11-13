@@ -90,7 +90,13 @@ def run_pipeline(args, api, root):
             else:
                 # Pure transcribers require an aligner
                 aligner_provider = api["registry"].get_aligner_provider(args.aligner_provider)
-            diarization_provider = api["registry"].get_diarization_provider(args.diarization_provider)
+            
+            # Diarization is only needed for combined audio in separate processing mode
+            if mode == "combined_audio":
+                diarization_provider = api["registry"].get_diarization_provider(args.diarization_provider)
+            else:
+                diarization_provider = None
+            
             # For separate processing, always need a turn builder
             turn_builder_provider = api["registry"].get_turn_builder_provider("general")  # Default to general
     except ValueError as e:
@@ -116,7 +122,8 @@ def run_pipeline(args, api, root):
         providers['transcriber'] = transcriber_provider
         if aligner_provider:
             providers['aligner'] = aligner_provider
-        providers['diarization'] = diarization_provider
+        if diarization_provider:
+            providers['diarization'] = diarization_provider
 
     download_result = ensure_models_available(providers, models_dir, args)
     if download_result != 0:

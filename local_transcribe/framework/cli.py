@@ -13,7 +13,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--transcriber-provider", help="Transcriber provider to use")
     p.add_argument("--transcriber-model", help="Transcriber model to use (if provider supports multiple models)")
     p.add_argument("--aligner-provider", help="Aligner provider to use (required if transcriber doesn't have built-in alignment)")
-    p.add_argument("--diarization-provider", help="Diarization provider to use")
+    p.add_argument("--diarization-provider", help="Diarization provider to use (required for single audio files with multiple speakers)")
     p.add_argument("--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization)")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
@@ -50,14 +50,14 @@ def interactive_prompt(args, api):
     if hasattr(args, 'audio_files') and args.audio_files:
         num_files = len(args.audio_files)
         if num_files == 1:
+            mode = "combined_audio"
             print("Mode: Combined audio (single file with multiple speakers)")
-            args.processing_mode = "separate"  # Will use transcription + diarization
         else:
+            mode = "split_audio"
             print(f"Mode: Split audio tracks ({num_files} files)")
-            args.processing_mode = "separate"  # Always separate for multiple files
     else:
         # Fallback for when audio files aren't set yet
-        args.processing_mode = "separate"
+        mode = "combined_audio"
 
     # Check if unified mode and offer processing type choice
     unified_providers = registry.list_unified_providers()
@@ -155,9 +155,12 @@ def interactive_prompt(args, api):
         else:
             args.aligner_provider = None
 
-        # Select diarization provider
-        diarization_providers = registry.list_diarization_providers()
-        args.diarization_provider = select_provider(diarization_providers, "Diarization Providers")
+        # Select diarization provider (only needed for combined audio in separate mode)
+        if mode == "combined_audio":
+            diarization_providers = registry.list_diarization_providers()
+            args.diarization_provider = select_provider(diarization_providers, "Diarization Providers")
+        else:
+            args.diarization_provider = None
 
         # Number of speakers
         if hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:

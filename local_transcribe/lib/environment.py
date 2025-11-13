@@ -25,7 +25,8 @@ def repo_root_from_here() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parent.parent.parent
 
 def set_offline_env(models_dir: pathlib.Path) -> None:
-    os.environ.setdefault("HF_HOME", str(models_dir))
+    # Don't set global HF_HOME - let plugins manage their own cache locations
+    # os.environ.setdefault("HF_HOME", str(models_dir))
     os.environ.setdefault("XDG_CACHE_HOME", str(models_dir / ".xdg"))
     # Runtime must be fully offline (models must already be downloaded)
     os.environ.setdefault("HF_HUB_OFFLINE", "1")

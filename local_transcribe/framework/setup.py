@@ -81,3 +81,7 @@ def handle_plugin_listing(api):
     print("\nOutput Writers:")
     for name, desc in api["registry"].list_output_writers().items():
         print(f"  {name}: {desc}")
+
+    print("\nWord Writers:")
+    for name, desc in api["registry"].list_word_writers().items():
+        print(f"  {name}: {desc}")

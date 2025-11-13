@@ -180,7 +180,7 @@ def run_pipeline(args, api, root):
                     model=args.unified_model
                 )
             else:
-                # 2) ASR + alignment
+                # 2) Transcription + alignment
                 words = transcribe_with_alignment(
                     transcriber_provider,
                     aligner_provider,
@@ -189,9 +189,9 @@ def run_pipeline(args, api, root):
                     transcriber_model=args.transcriber_model
                 )
 
-                # Save ASR results as plain text before diarization
-                asr_writer = api["registry"].get_asr_writer("asr-words")
-                asr_writer.write(words, paths["merged"] / "asr.txt")
+                # Save transcription results as plain text before diarization
+                word_writer = api["registry"].get_word_writer("word-segments")
+                word_writer.write(words, paths["merged"] / "transcription.txt")
 
                 # 3) Diarize (assign speakers to words)
                 words_with_speakers = diarization_provider.diarize(str(std_audio), words, args.num_speakers)
@@ -233,9 +233,9 @@ def run_pipeline(args, api, root):
                     transcriber_model=args.transcriber_model
                 )
                 
-                # Save individual ASR results
-                asr_writer = api["registry"].get_asr_writer("asr-words")
-                asr_writer.write(words, paths[f"speaker_{speaker_name.lower()}"] / f"{speaker_name.lower()}.txt")
+                # Save individual transcription results
+                word_writer = api["registry"].get_word_writer("word-segments")
+                word_writer.write(words, paths[f"speaker_{speaker_name.lower()}"] / f"{speaker_name.lower()}.txt")
                 
                 # 3) Build turns (no diarization needed for separate files)
                 turns = turn_builder_provider.build_turns(words)

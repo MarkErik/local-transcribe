@@ -10,7 +10,7 @@ from .plugins import (
     DiarizationProvider,
     UnifiedProvider,
     TurnBuilderProvider,
-    OutputWriter,
+    WordWriter,
     WordSegment,
     Turn,
     registry
@@ -23,7 +23,7 @@ __all__ = [
     'DiarizationProvider',
     'UnifiedProvider',
     'TurnBuilderProvider',
-    'OutputWriter',
+    'WordWriter',
     'WordSegment',
     'Turn',
     'registry'

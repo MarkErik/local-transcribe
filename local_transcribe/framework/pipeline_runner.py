@@ -175,7 +175,7 @@ def run_pipeline(args, api, root):
 
             if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
                 # Use unified provider
-                turns = unified_provider.transcribe_and_diarize(
+                transcript = unified_provider.transcribe_and_diarize(
                     str(std_audio),
                     args.num_speakers,
                     model=args.unified_model
@@ -198,13 +198,13 @@ def run_pipeline(args, api, root):
                 words_with_speakers = diarization_provider.diarize(str(std_audio), words, args.num_speakers)
 
                 # 4) Build turns
-                turns = turn_builder_provider.build_turns(words_with_speakers)
+                transcript = turn_builder_provider.build_turns(words_with_speakers)
 
             # Assign speaker names if interactive
-            turns = assign_speaker_names(turns, getattr(args, 'interactive', False), mode)
+            transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
 
             # 4) Outputs
-            write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], std_audio)
+            write_selected_outputs(transcript, paths, args.selected_outputs, tracker, api["registry"], std_audio)
 
             print("[✓] Single file processing complete.")
 
@@ -255,13 +255,13 @@ def run_pipeline(args, api, root):
             
             from local_transcribe.processing.merge import merge_turns
             all_turns = list(speaker_turns.values())
-            turns = merge_turns(*all_turns)
+            transcript = merge_turns(*all_turns)
             
             tracker.update(turns_task, advance=50, description="Conversation turns merged")
             tracker.complete_task(turns_task, stage="turns")
             
             # 4) Outputs
-            write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], None)
+            write_selected_outputs(transcript, paths, args.selected_outputs, tracker, api["registry"], None)
             
             print("[✓] Separate audio processing complete.")
 
@@ -277,8 +277,8 @@ def run_pipeline(args, api, root):
         # Always stop progress tracking
         tracker.stop()
 
-def write_selected_outputs(turns, paths, selected, tracker, registry, audio_path=None):
-    """Write selected outputs for merged turns."""
+def write_selected_outputs(transcript, paths, selected, tracker, registry, audio_path=None):
+    """Write selected outputs for merged transcript."""
     output_task = tracker.add_task("Writing output files", total=100, stage="output")
     tracker.update(output_task, advance=20, description="Writing transcript files")
 
@@ -286,30 +286,30 @@ def write_selected_outputs(turns, paths, selected, tracker, registry, audio_path
 
     if 'timestamped-txt' in selected:
         timestamped_writer = registry.get_output_writer("timestamped-txt")
-        timestamped_writer.write(turns, paths["merged"] / "transcript.timestamped.txt")
+        timestamped_writer.write(transcript, paths["merged"] / "transcript.timestamped.txt")
 
     if 'plain-txt' in selected:
         plain_writer = registry.get_output_writer("plain-txt")
-        plain_writer.write(turns, paths["merged"] / "transcript.txt")
+        plain_writer.write(transcript, paths["merged"] / "transcript.txt")
 
     if 'csv' in selected:
         csv_writer = registry.get_output_writer("csv")
-        csv_writer.write(turns, paths["merged"] / "transcript.csv")
+        csv_writer.write(transcript, paths["merged"] / "transcript.csv")
 
     if 'markdown' in selected:
         markdown_writer = registry.get_output_writer("markdown")
-        markdown_writer.write(turns, paths["merged"] / "transcript.md")
+        markdown_writer.write(transcript, paths["merged"] / "transcript.md")
 
     tracker.update(output_task, advance=20, description="Writing subtitle files")
 
     if 'srt' in selected:
         srt_writer = registry.get_output_writer("srt")
         srt_path = paths["merged"] / "subtitles.srt"
-        srt_writer.write(turns, srt_path)
+        srt_writer.write(transcript, srt_path)
 
     if 'vtt' in selected:
         vtt_writer = registry.get_output_writer("vtt")
-        vtt_writer.write(turns, paths["merged"] / "subtitles.vtt")
+        vtt_writer.write(transcript, paths["merged"] / "subtitles.vtt")
 
     if srt_path and audio_path is not None:
         tracker.update(output_task, advance=30, description="Rendering video with subtitles")

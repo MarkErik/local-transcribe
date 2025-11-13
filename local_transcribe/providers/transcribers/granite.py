@@ -55,6 +55,10 @@ class GraniteTranscriberProvider(TranscriberProvider):
         import os
         import sys
 
+        # Define cache directory first
+        cache_dir = models_dir / "transcribers" / "granite"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
         # DEBUG: Log environment state before download attempt
         print(f"DEBUG: HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
         print(f"DEBUG: HF_HOME: {os.environ.get('HF_HOME')}")
@@ -90,8 +94,6 @@ class GraniteTranscriberProvider(TranscriberProvider):
         try:
             for model in models:
                 if model in self.model_mapping.values():  # Check if it's a valid Granite model
-                    cache_dir = models_dir / "transcribers" / "granite"
-                    cache_dir.mkdir(parents=True, exist_ok=True)
                     # Use snapshot_download to download the entire repo
                     token = os.getenv("HF_TOKEN")
                     snapshot_download(model, token=token)

@@ -6,6 +6,7 @@ Transcriber plugin using IBM Granite.
 from typing import List, Optional
 import os
 import pathlib
+import re
 import torch
 import librosa
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
@@ -242,7 +243,32 @@ class GraniteTranscriberProvider(TranscriberProvider):
             new_tokens, add_special_tokens=False, skip_special_tokens=True
         )
 
-        return output_text[0].strip()
+        # Post-process the output to remove dialogue markers and quotation marks
+        cleaned_text = self._clean_transcription_output(output_text[0].strip())
+
+        return cleaned_text
+
+    def _clean_transcription_output(self, text: str) -> str:
+        """
+        Clean the transcription output by removing dialogue markers and quotation marks.
+        
+        Args:
+            text: Raw transcription output from the model
+            
+        Returns:
+            Cleaned transcription text
+        """
+        # Remove "User:" and "AI Assistant:" labels (case insensitive)
+        text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
+        
+        # Remove quotation marks
+        text = text.replace('"', '').replace('"', '').replace('"', '')
+        
+        # Clean up extra whitespace that might result from removals
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text
 
     def transcribe_with_alignment(
         self,

@@ -197,8 +197,9 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             # Find the peak probability (most likely time position)
             max_prob_time = np.argmax(token_probs)
             
-            # Convert to milliseconds
-            time_ms = (max_prob_time / time_steps) * (time_steps / sample_rate * 1000)
+            # Convert to milliseconds, accounting for model downsampling
+            inputs_to_logits_ratio = self.wav2vec2_model.config.inputs_to_logits_ratio
+            time_ms = max_prob_time * (inputs_to_logits_ratio / sample_rate) * 1000
             
             char_timestamps.append((char, time_ms))
         

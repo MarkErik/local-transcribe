@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-General turn builder provider.
+Single speaker turn builder provider.
 """
 
 from typing import List, Optional
@@ -8,16 +8,16 @@ from typing import List, Optional
 from local_transcribe.framework.plugins import TurnBuilderProvider, WordSegment, Turn, registry
 
 
-class GeneralTurnBuilderProvider(TurnBuilderProvider):
-    """General turn builder that groups words into turns based on speaker and timing."""
+class SingleSpeakerTurnBuilderProvider(TurnBuilderProvider):
+    """Single speaker turn builder that groups words into turns based on timing and length."""
 
     @property
     def name(self) -> str:
-        return "general"
+        return "single_speaker"
 
     @property
     def description(self) -> str:
-        return "General turn builder for grouping words into turns by speaker and timing"
+        return "Single speaker turn builder grouping words by gaps and length (assumes one speaker)"
 
     def build_turns(
         self,
@@ -25,10 +25,10 @@ class GeneralTurnBuilderProvider(TurnBuilderProvider):
         **kwargs
     ) -> List[Turn]:
         """
-        Build turns from words with speakers.
+        Build turns from words (assumes all words from one speaker).
 
         Args:
-            words: Word segments with speaker assignments
+            words: Word segments (all from the same speaker)
             **kwargs: Options like max_gap_s, max_chars
         """
         max_gap_s = kwargs.get('max_gap_s', 0.8)
@@ -51,7 +51,7 @@ class GeneralTurnBuilderProvider(TurnBuilderProvider):
 
     def _build_turns(self, words: List[WordSegment], max_gap_s: float, max_chars: int) -> List[dict]:
         """
-        Group word-level tokens into readable turns.
+        Group word-level tokens into readable turns (single speaker).
         """
         turns = []
         buf = []
@@ -69,8 +69,8 @@ class GeneralTurnBuilderProvider(TurnBuilderProvider):
                 current_speaker = speaker
             else:
                 gap = s - (last_end if last_end is not None else s)
-                speaker_changed = speaker != current_speaker
-                if gap > max_gap_s or speaker_changed or sum(len(x)+1 for x in buf) + len(t) > max_chars:
+                # No speaker change check since all words are from one speaker
+                if gap > max_gap_s or sum(len(x)+1 for x in buf) + len(t) > max_chars:
                     # flush
                     turns.append({
                         "speaker": current_speaker,
@@ -81,7 +81,6 @@ class GeneralTurnBuilderProvider(TurnBuilderProvider):
                     # new
                     cur_start = s
                     buf = [t]
-                    current_speaker = speaker
                 else:
                     buf.append(t)
             last_end = e
@@ -98,7 +97,7 @@ class GeneralTurnBuilderProvider(TurnBuilderProvider):
 
 def register_turn_builder_plugins():
     """Register turn builder plugins."""
-    registry.register_turn_builder_provider(GeneralTurnBuilderProvider())
+    registry.register_turn_builder_provider(SingleSpeakerTurnBuilderProvider())
 
 
 # Auto-register on import

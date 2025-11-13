@@ -99,7 +99,11 @@ def run_pipeline(args, api, root):
                 diarization_provider = None
             
             # For separate processing, always need a turn builder
-            turn_builder_provider = api["registry"].get_turn_builder_provider("general")  # Default to general
+            if mode == "combined_audio":
+                turn_builder_name = "multi_speaker"
+            else:
+                turn_builder_name = "single_speaker"
+            turn_builder_provider = api["registry"].get_turn_builder_provider(turn_builder_name)
     except ValueError as e:
         print(f"ERROR: {e}")
         print("Use --list-plugins to see available options.")
@@ -153,7 +157,7 @@ def run_pipeline(args, api, root):
             if hasattr(args, 'diarization_provider') and args.diarization_provider:
                 provider_info.append(f"Diarization: {args.diarization_provider}")
             provider_str = " | ".join(provider_info) if provider_info else "Default providers"
-            print(f"[*] Mode: {mode} | {provider_str} | Turn Builder: general | Outputs: {', '.join(args.selected_outputs)}")
+            print(f"[*] Mode: {mode} | {provider_str} | Turn Builder: {turn_builder_provider.name} | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
         if mode == "combined_audio":

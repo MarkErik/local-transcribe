@@ -261,6 +261,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         # Remove "User:" and "AI Assistant:" labels (case insensitive)
         text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bAssistant:\s*', '', text, flags=re.IGNORECASE)
         
         # Remove quotation marks
         text = text.replace('"', '').replace('"', '').replace('"', '')

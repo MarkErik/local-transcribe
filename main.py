@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # main.py - local-transcribe CLI runner
 
+from __future__ import annotations
+
 # Disable tokenizers parallelism to avoid warnings when forking processes (e.g., ffmpeg)
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-from __future__ import annotations
 import sys
 from typing import Optional
 

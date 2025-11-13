@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List
 from local_transcribe.framework.plugins import Turn
 
-def merge_turn_streams(a: List[Turn], b: List[Turn]) -> List[Turn]:
+def merge_turn(a: List[Turn], b: List[Turn]) -> List[Turn]:
     """
     Merge two turn lists (already labeled) by start time.
     Preserves overlaps (no forced stitching).

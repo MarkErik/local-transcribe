@@ -49,7 +49,6 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
 
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
-        original_hf_home = os.environ.get("HF_HOME")
         os.environ["HF_HUB_OFFLINE"] = "0"
 
         # DEBUG: Confirm environment variable was set
@@ -72,15 +71,22 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         from huggingface_hub import snapshot_download
 
         try:
-            cache_dir_wav2vec2 = models_dir / "aligners" / "wav2vec2"
-            cache_dir_wav2vec2.mkdir(parents=True, exist_ok=True)
+            # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+            xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+            if xdg_cache_home:
+                models_root = pathlib.Path(xdg_cache_home)
+            else:
+                # Fallback to standard HuggingFace cache location
+                models_root = pathlib.Path.home() / ".cache" / "huggingface"
+            
+            # Create the standard HuggingFace hub directory structure
+            cache_dir = models_root / "huggingface" / "hub"
+            cache_dir.mkdir(parents=True, exist_ok=True)
 
             for model in models:
                 if model == "facebook/wav2vec2-base-960h":
-                    # Set HF_HOME to cache directory for download
-                    os.environ["HF_HOME"] = str(cache_dir_wav2vec2)
-                    # Use snapshot_download without cache_dir parameter (uses HF_HOME)
-                    snapshot_download(model, token=os.getenv("HF_TOKEN"))
+                    # Use snapshot_download with cache_dir parameter pointing to the standard location
+                    snapshot_download(model, cache_dir=cache_dir, token=os.getenv("HF_TOKEN"))
                     print(f"[✓] {model} downloaded successfully.")
                 else:
                     print(f"Warning: Unknown model {model}, skipping download")
@@ -95,16 +101,21 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             raise Exception(f"Failed to download {model}: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
-            if original_hf_home is not None:
-                os.environ["HF_HOME"] = original_hf_home
-            else:
-                os.environ.pop("HF_HOME", None)
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Wav2Vec2 models are available offline without downloading."""
         missing_models = []
-        cache_dir = models_dir / "aligners" / "wav2vec2"
-        hub_dir = cache_dir / "hub"
+        
+        # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+        xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+        if xdg_cache_home:
+            models_root = pathlib.Path(xdg_cache_home)
+        else:
+            # Fallback to standard HuggingFace cache location
+            models_root = pathlib.Path.home() / ".cache" / "huggingface"
+        
+        # Models are stored in standard HuggingFace hub structure
+        hub_dir = models_root / "huggingface" / "hub"
 
         for model in models:
             if "/" in model:  # It's a HuggingFace model like Wav2Vec2
@@ -130,24 +141,29 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
     def _load_wav2vec2_model(self):
         """Load the Wav2Vec2 model for alignment if not already loaded."""
         if self.wav2vec2_model is None:
-            # Use the global HF_HOME which should be set to the main models directory
-            models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models")))
-            cache_dir = models_root / "aligners" / "wav2vec2"
-            cache_dir.mkdir(parents=True, exist_ok=True)
-
-            # Set HF_HOME to our cache directory
-            original_hf_home = os.environ.get("HF_HOME")
-            os.environ["HF_HOME"] = str(cache_dir)
+            # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+            xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+            if xdg_cache_home:
+                models_root = pathlib.Path(xdg_cache_home)
+            else:
+                # Fallback to standard HuggingFace cache location
+                models_root = pathlib.Path.home() / ".cache" / "huggingface"
+            
+            # The models are stored in the standard HuggingFace hub structure
+            # We don't need to set HF_HOME, just let transformers find the models in the standard location
 
             try:
                 token = os.getenv("HF_TOKEN")
+                # Models should be cached by preload_models, so use local_files_only=True
+                # Let transformers find models in the standard HuggingFace cache location
                 self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token)
                 self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token).to(self.device)
-            finally:
-                if original_hf_home is not None:
-                    os.environ["HF_HOME"] = original_hf_home
-                else:
-                    os.environ.pop("HF_HOME", None)
+            except Exception as e:
+                print(f"DEBUG: Failed to load Wav2Vec2 model {self.wav2vec2_model_name}")
+                print(f"DEBUG: Cache directory exists: {(models_root / 'huggingface' / 'hub').exists()}")
+                if (models_root / 'huggingface' / 'hub').exists():
+                    print(f"DEBUG: Cache directory contents: {list((models_root / 'huggingface' / 'hub').iterdir())}")
+                raise e
 
     def _get_char_timestamps(self, emissions: np.ndarray, predicted_tokens: np.ndarray, sample_rate: int) -> List[tuple]:
         """Extract character timestamps from CTC emissions."""

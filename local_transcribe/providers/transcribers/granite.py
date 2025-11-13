@@ -120,10 +120,23 @@ class GraniteTranscriberProvider(TranscriberProvider):
         missing_models = []
         for model in models:
             if model in self.model_mapping.values():  # Check if it's a valid Granite model
-                cache_dir = models_dir / "transcribers" / "granite"
+                # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+                xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+                if xdg_cache_home:
+                    models_root = pathlib.Path(xdg_cache_home)
+                else:
+                    # Fallback to standard HuggingFace cache location
+                    models_root = pathlib.Path.home() / ".cache" / "huggingface"
+                
+                # Models are stored in standard HuggingFace hub structure
+                hub_dir = models_root / "huggingface" / "hub"
+                
+                # Convert model name to HuggingFace cache directory format
+                hf_model_name = model.replace("/", "--")
+                model_dir = hub_dir / f"models--{hf_model_name}"
+                
                 # Check for model files (this is a simplified check)
-                hub_dir = cache_dir / "hub"
-                if not any(hub_dir.rglob("*.bin")) and not any(hub_dir.rglob("*.safetensors")):
+                if not model_dir.exists() or not any(model_dir.rglob("*.bin")) and not any(model_dir.rglob("*.safetensors")):
                     missing_models.append(model)
         return missing_models
 
@@ -132,18 +145,22 @@ class GraniteTranscriberProvider(TranscriberProvider):
         if self.model is None:
             model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-8b"])
             
-            # Use HF_HOME as the base, but ensure it's set
-            models_root = pathlib.Path(os.environ.get("HF_HOME", str(self.models_dir.parent)))
-            cache_dir = models_root / "transcribers" / "granite"
-            cache_dir.mkdir(parents=True, exist_ok=True)
-
-            # Set HF_HOME to our cache directory so loading finds the files
-            original_hf_home = os.environ.get("HF_HOME")
-            os.environ["HF_HOME"] = str(cache_dir)
+            # Use XDG_CACHE_HOME as the base (which is set to models/.xdg), falling back to standard HuggingFace cache
+            xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+            if xdg_cache_home:
+                models_root = pathlib.Path(xdg_cache_home)
+            else:
+                # Fallback to standard HuggingFace cache location
+                models_root = pathlib.Path.home() / ".cache" / "huggingface"
+            
+            # The models are stored in the standard HuggingFace hub structure under xdg_cache_home/huggingface/hub
+            # We don't need to set HF_HOME, just let transformers find the models in the standard location
+            cache_dir = models_root / "huggingface" / "hub"
 
             try:
                 token = os.getenv("HF_TOKEN")
                 # Models should be cached by preload_models, so use local_files_only=True
+                # Let transformers find models in the standard HuggingFace cache location
                 self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=True, token=token)
                 self.tokenizer = self.processor.tokenizer
 
@@ -156,12 +173,12 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 except:
                     # If not a PEFT model, use the base model
                     self.model = base_model
-            finally:
-                # Restore original HF_HOME
-                if original_hf_home is not None:
-                    os.environ["HF_HOME"] = original_hf_home
-                else:
-                    os.environ.pop("HF_HOME", None)
+            except Exception as e:
+                print(f"DEBUG: Failed to load model {model_name}")
+                print(f"DEBUG: Cache directory exists: {cache_dir.exists()}")
+                if cache_dir.exists():
+                    print(f"DEBUG: Cache directory contents: {list(cache_dir.iterdir())}")
+                raise e
 
     def transcribe(self, audio_path: str, **kwargs) -> str:
         """Transcribe audio using Granite model."""

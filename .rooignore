@@ -15,3 +15,5 @@ uv.lock
 data/
 
 models/
+
+test/

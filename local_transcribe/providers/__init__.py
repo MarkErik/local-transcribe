@@ -3,8 +3,11 @@
 Local-transcribe providers package.
 """
 
-# Import ASR providers to register them
-from . import asr
+# Import transcriber providers to register them
+from . import transcribers
+
+# Import aligner providers to register them
+from . import aligners
 
 # Import diarization providers to register them
 from . import diarization

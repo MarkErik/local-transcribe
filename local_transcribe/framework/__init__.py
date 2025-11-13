@@ -5,8 +5,11 @@ Core plugin system initialization and utilities.
 
 from .plugins import (
     PluginRegistry,
-    ASRProvider,
+    TranscriberProvider,
+    AlignerProvider,
     DiarizationProvider,
+    UnifiedProvider,
+    TurnBuilderProvider,
     OutputWriter,
     WordSegment,
     Turn,
@@ -15,8 +18,11 @@ from .plugins import (
 
 __all__ = [
     'PluginRegistry',
-    'ASRProvider',
+    'TranscriberProvider',
+    'AlignerProvider',
     'DiarizationProvider',
+    'UnifiedProvider',
+    'TurnBuilderProvider',
     'OutputWriter',
     'WordSegment',
     'Turn',

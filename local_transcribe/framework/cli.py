@@ -15,6 +15,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--aligner-provider", help="Aligner provider to use (required if transcriber doesn't have built-in alignment)")
     p.add_argument("--diarization-provider", help="Diarization provider to use (required for single audio files with multiple speakers)")
     p.add_argument("--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization)")
+    p.add_argument("--cleanup-provider", help="Cleanup provider to use for LLM-based transcript cleaning")
+    p.add_argument("--cleanup-url", help="URL for remote cleanup provider (e.g., http://ip:port for Llama.cpp server)")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
@@ -175,6 +177,38 @@ def interactive_prompt(args, api):
                 except ValueError:
                     print("Please enter a valid number.")
 
+    # Cleanup provider (optional)
+    cleanup_providers = registry.list_cleanup_providers()
+    if cleanup_providers:
+        print("\nCleanup Providers (optional LLM-based transcript cleaning):")
+        print("  0. None (skip cleanup)")
+        for i, (name, desc) in enumerate(cleanup_providers.items(), 1):
+            print(f"  {i}. {name}: {desc}")
+        
+        while True:
+            try:
+                choice = int(input("\nChoose cleanup provider (0 for none): ").strip())
+                if choice == 0:
+                    args.cleanup_provider = None
+                    break
+                elif 1 <= choice <= len(cleanup_providers):
+                    args.cleanup_provider = list(cleanup_providers.keys())[choice - 1]
+                    
+                    # If remote provider, ask for URL
+                    if args.cleanup_provider == "llama_cpp_remote":
+                        url = input("Enter Llama.cpp server URL (e.g., http://192.168.1.100:8080): ").strip()
+                        if url:
+                            args.cleanup_url = url
+                        else:
+                            args.cleanup_url = "http://localhost:8080"
+                    break
+                else:
+                    print("Invalid choice. Please enter a number from the list.")
+            except ValueError:
+                print("Please enter a valid number.")
+    else:
+        args.cleanup_provider = None
+
     # Output formats
     output_writers = registry.list_output_writers()
     print("\nAvailable Output Formats:")
@@ -208,6 +242,8 @@ def interactive_prompt(args, api):
             provider_info.append(f"Aligner={args.aligner_provider}")
         if hasattr(args, 'diarization_provider') and args.diarization_provider:
             provider_info.append(f"Diarization={args.diarization_provider}")
+        if hasattr(args, 'cleanup_provider') and args.cleanup_provider:
+            provider_info.append(f"Cleanup={args.cleanup_provider}")
         provider_str = ", ".join(provider_info) if provider_info else "Default providers"
         print(f"\nSelected: {provider_str}, Outputs={args.selected_outputs}")
     return args

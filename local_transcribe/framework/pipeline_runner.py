@@ -205,8 +205,26 @@ def run_pipeline(args, api, root):
                 # 4) Build turns
                 transcript = turn_builder_provider.build_turns(words_with_speakers)
 
+                # 4) Build turns
+                transcript = turn_builder_provider.build_turns(words_with_speakers)
+
             # Assign speaker names if interactive
             transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
+
+            # 5) Optional cleanup
+            if hasattr(args, 'cleanup_provider') and args.cleanup_provider:
+                cleanup_provider = api["registry"].get_cleanup_provider(args.cleanup_provider)
+                # Reinitialize with custom URL if provided
+                if hasattr(args, 'cleanup_url') and args.cleanup_url and hasattr(cleanup_provider, 'url'):
+                    cleanup_provider.url = args.cleanup_url
+                
+                print(f"[*] Cleaning up transcript with {args.cleanup_provider}...")
+                for turn in transcript:
+                    original_text = turn.text
+                    turn.text = cleanup_provider.cleanup_segment(original_text)
+                    if turn.text != original_text:
+                        print(f"  Cleaned: '{original_text[:50]}...' -> '{turn.text[:50]}...'")
+                print("[✓] Cleanup complete.")
 
             # 4) Outputs
             write_selected_outputs(transcript, paths, args.selected_outputs, tracker, api["registry"], std_audio)

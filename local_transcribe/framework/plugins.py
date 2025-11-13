@@ -332,6 +332,40 @@ class TurnBuilderProvider(ABC):
         pass
 
 
+class CleanupProvider(ABC):
+    """Abstract base class for transcript cleanup providers (e.g., LLM-based cleaning)."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Return the unique name of this cleanup provider."""
+        pass
+
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        """Return a human-readable description of this provider."""
+        pass
+
+    @abstractmethod
+    def cleanup_segment(
+        self,
+        text: str,
+        **kwargs
+    ) -> str:
+        """
+        Clean up a single transcript segment.
+
+        Args:
+            text: The raw transcript segment text
+            **kwargs: Provider-specific configuration options
+
+        Returns:
+            Cleaned transcript segment text
+        """
+        pass
+
+
 class WordWriter(ABC):
     """Abstract base class for word output writers."""
 
@@ -419,6 +453,7 @@ class PluginRegistry:
         self._diarization_providers: Dict[str, DiarizationProvider] = {}
         self._unified_providers: Dict[str, UnifiedProvider] = {}
         self._turn_builder_providers: Dict[str, TurnBuilderProvider] = {}
+        self._cleanup_providers: Dict[str, CleanupProvider] = {}
         self._word_writers: Dict[str, WordWriter] = {}
         self._output_writers: Dict[str, OutputWriter] = {}
 
@@ -441,6 +476,10 @@ class PluginRegistry:
     def register_turn_builder_provider(self, provider: TurnBuilderProvider) -> None:
         """Register a turn builder provider."""
         self._turn_builder_providers[provider.name] = provider
+
+    def register_cleanup_provider(self, provider: CleanupProvider) -> None:
+        """Register a cleanup provider."""
+        self._cleanup_providers[provider.name] = provider
 
     def register_word_writer(self, writer: WordWriter) -> None:
         """Register a word writer."""
@@ -485,6 +524,13 @@ class PluginRegistry:
             raise ValueError(f"Turn builder provider '{name}' not found. Available: {available}")
         return self._turn_builder_providers[name]
 
+    def get_cleanup_provider(self, name: str) -> CleanupProvider:
+        """Get a cleanup provider by name."""
+        if name not in self._cleanup_providers:
+            available = list(self._cleanup_providers.keys())
+            raise ValueError(f"Cleanup provider '{name}' not found. Available: {available}")
+        return self._cleanup_providers[name]
+
     def get_word_writer(self, name: str) -> WordWriter:
         """Get a word writer by name."""
         if name not in self._word_writers:
@@ -518,6 +564,10 @@ class PluginRegistry:
     def list_turn_builder_providers(self) -> Dict[str, str]:
         """List all registered turn builder providers with their descriptions."""
         return {name: provider.description for name, provider in self._turn_builder_providers.items()}
+
+    def list_cleanup_providers(self) -> Dict[str, str]:
+        """List all registered cleanup providers with their descriptions."""
+        return {name: provider.description for name, provider in self._cleanup_providers.items()}
 
     def list_word_writers(self) -> Dict[str, str]:
         """List all registered word writers with their descriptions."""

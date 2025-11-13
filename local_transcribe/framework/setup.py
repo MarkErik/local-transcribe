@@ -73,6 +73,10 @@ def handle_plugin_listing(api):
     for name, desc in api["registry"].list_turn_builder_providers().items():
         print(f"  {name}: {desc}")
 
+    print("\nCleanup Providers:")
+    for name, desc in api["registry"].list_cleanup_providers().items():
+        print(f"  {name}: {desc}")
+
     print("\nUnified Providers:")
     for name, desc in api["registry"].list_unified_providers().items():
         print(f"  {name}: {desc}")

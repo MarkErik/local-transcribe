@@ -263,8 +263,10 @@ class GraniteTranscriberProvider(TranscriberProvider):
         text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\bAssistant:\s*', '', text, flags=re.IGNORECASE)
         
-        # Remove quotation marks
-        text = text.replace('"', '').replace('"', '').replace('"', '')
+        # Remove all types of quotation marks using Unicode escape sequences
+        text = text.replace('"', '')  # Straight double quote (ASCII 34)
+        text = text.replace('\u201C', '')  # Curly double quote left (Unicode 8220)
+        text = text.replace('\u201D', '')  # Curly double quote right (Unicode 8221)
         
         # Clean up extra whitespace that might result from removals
         text = re.sub(r'\s+', ' ', text).strip()

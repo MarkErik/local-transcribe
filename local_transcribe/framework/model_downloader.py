@@ -34,11 +34,11 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
     else:
         transcriber_provider = providers['transcriber']
         aligner_provider = providers.get('aligner')  # May be None if transcriber has builtin alignment
-        diarization_provider = providers['diarization']
+        diarization_provider = providers.get('diarization')  # May be None for split audio
 
         required_transcriber_models = transcriber_provider.get_required_models(args.transcriber_model)
         required_aligner_models = aligner_provider.get_required_models() if aligner_provider else []
-        required_diarization_models = diarization_provider.get_required_models()
+        required_diarization_models = diarization_provider.get_required_models() if diarization_provider else []
 
         print(f"[*] Checking model availability offline...")
         missing_transcriber_models = []
@@ -85,7 +85,7 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
             else:
                 transcriber_provider = providers['transcriber']
                 aligner_provider = providers.get('aligner')
-                diarization_provider = providers['diarization']
+                diarization_provider = providers.get('diarization')  # May be None for split audio
 
                 if missing_transcriber_models:
                     print(f"[*] Downloading transcriber models: {', '.join(missing_transcriber_models)}")
@@ -95,7 +95,7 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
                     print(f"[*] Downloading aligner models: {', '.join(missing_aligner_models)}")
                     aligner_provider.ensure_models_available(missing_aligner_models, models_dir)
 
-                if missing_diarization_models:
+                if diarization_provider and missing_diarization_models:
                     print(f"[*] Downloading diarization models: {', '.join(missing_diarization_models)}")
                     diarization_provider.ensure_models_available(missing_diarization_models, models_dir)
 

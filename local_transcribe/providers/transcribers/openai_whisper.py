@@ -123,7 +123,7 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
                 model_name = self.model_mapping.get(self.selected_model, "base.en")
 
                 # Set up cache directory consistent with other providers
-                models_root = pathlib.Path(os.getenv("HF_HOME", "./models")).resolve()
+                models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models"))).resolve()
                 whisper_cache_dir = models_root / "transcribers" / "openai_whisper"
                 whisper_cache_dir.mkdir(parents=True, exist_ok=True)
 

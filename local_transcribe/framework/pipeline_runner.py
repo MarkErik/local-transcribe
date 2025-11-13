@@ -35,15 +35,15 @@ def run_pipeline(args, api, root):
     num_files = len(args.audio_files)
     if num_files == 1:
         mode = "combined_audio"
-        speaker_files = {"combined_audio": args.audio_files[0]}  # Single file with multiple speakers
+        speaker_files = {"combined_audio": str(root / args.audio_files[0])}  # Single file with multiple speakers
     else:
         mode = "split_audio"
         speaker_files = {}
         
         if num_files == 2:
             # Auto-assign: first file = interviewer, second = participant
-            speaker_files["Interviewer"] = args.audio_files[0]
-            speaker_files["Participant"] = args.audio_files[1]
+            speaker_files["Interviewer"] = str(root / args.audio_files[0])
+            speaker_files["Participant"] = str(root / args.audio_files[1])
         else:
             # 3+ files: prompt for speaker names
             print(f"You provided {num_files} audio files. Please assign a speaker name to each:")
@@ -51,7 +51,7 @@ def run_pipeline(args, api, root):
                 while True:
                     speaker_name = input(f"Speaker name for '{audio_file}': ").strip()
                     if speaker_name:
-                        speaker_files[speaker_name] = audio_file
+                        speaker_files[speaker_name] = str(root / audio_file)
                         break
                     else:
                         print("Speaker name cannot be empty.")

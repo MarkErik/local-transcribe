@@ -126,7 +126,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             os.environ.setdefault("HF_TOKEN", token)
 
         # Use HF_HOME as the base cache directory for consistency
-        hf_home = os.getenv("HF_HOME", "./models")
+        hf_home = os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models"))
         cache_dir = pathlib.Path(hf_home) / "diarization"
 
         # Load pipeline

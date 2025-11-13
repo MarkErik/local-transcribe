@@ -6,6 +6,10 @@ import pathlib
 
 # ---------- import pipeline modules ----------
 def import_pipeline_modules(repo_root: pathlib.Path):
+    # Ensure we're in the repo root to prevent relative path issues
+    import os
+    os.chdir(repo_root)
+    
     sys.path.append(str(repo_root / "local_transcribe"))
     try:
         # Core helpers (keep these as direct imports since they're utilities)

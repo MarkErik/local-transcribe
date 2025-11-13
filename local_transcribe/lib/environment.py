@@ -22,7 +22,7 @@ load_dotenv()
 # ---------- repo paths & offline env ----------
 def repo_root_from_here() -> pathlib.Path:
     # Resolve repo root as the directory containing this file
-    return pathlib.Path(__file__).resolve().parent.parent
+    return pathlib.Path(__file__).resolve().parent.parent.parent
 
 def set_offline_env(models_dir: pathlib.Path) -> None:
     os.environ.setdefault("HF_HOME", str(models_dir))

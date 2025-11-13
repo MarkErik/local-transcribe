@@ -188,7 +188,8 @@ class MFAAAlignerProvider(AlignerProvider):
         """Align transcript text to audio using MFA."""
         # Ensure MFA models directory exists
         if self.mfa_models_dir is None:
-            self.mfa_models_dir = pathlib.Path(os.getenv("HF_HOME", "./models")) / "aligners" / "mfa"
+            models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models")))
+            self.mfa_models_dir = models_root / "aligners" / "mfa"
             self.mfa_models_dir.mkdir(parents=True, exist_ok=True)
 
         # Download MFA models if needed

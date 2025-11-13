@@ -160,7 +160,7 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
             raise ValueError(f"Audio file not found: {audio_path}")
 
         # Resolve local CT2 model snapshot directory
-        models_root = pathlib.Path(os.getenv("HF_HOME", "./models")).resolve()
+        models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models"))).resolve()
         ct2_cache = models_root / "transcribers" / "ct2"
 
         local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[transcriber_model])
@@ -207,7 +207,7 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
             raise ValueError(f"Audio file not found: {audio_path}")
 
         # Resolve local CT2 model snapshot directory
-        models_root = pathlib.Path(os.getenv("HF_HOME", "./models")).resolve()
+        models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models"))).resolve()
         ct2_cache = models_root / "transcribers" / "ct2"
 
         local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[transcriber_model])

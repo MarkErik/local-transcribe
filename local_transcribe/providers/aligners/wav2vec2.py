@@ -77,11 +77,10 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
 
             for model in models:
                 if model == "facebook/wav2vec2-base-960h":
-                    os.environ["HF_HOME"] = str(cache_dir_wav2vec2)
-                    # Use snapshot_download to download the entire repo
-                    token = os.getenv("HF_TOKEN")
-                    snapshot_download(model, token=token)
+                    snapshot_download(model, cache_dir=str(cache_dir_wav2vec2), token=os.getenv("HF_TOKEN"))
                     print(f"[✓] {model} downloaded successfully.")
+                else:
+                    print(f"Warning: Unknown model {model}, skipping download")
         except Exception as e:
             print(f"DEBUG: Download failed with error: {e}")
             print(f"DEBUG: Error type: {type(e)}")
@@ -127,7 +126,9 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
     def _load_wav2vec2_model(self):
         """Load the Wav2Vec2 model for alignment if not already loaded."""
         if self.wav2vec2_model is None:
-            cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "aligners" / "wav2vec2"
+            # Use the global HF_HOME which should be set to the main models directory
+            models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models")))
+            cache_dir = models_root / "aligners" / "wav2vec2"
             cache_dir.mkdir(parents=True, exist_ok=True)
 
             # Set HF_HOME to our cache directory

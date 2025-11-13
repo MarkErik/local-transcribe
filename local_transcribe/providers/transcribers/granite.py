@@ -65,9 +65,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
 
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
-        original_hf_home = os.environ.get("HF_HOME")
         os.environ["HF_HUB_OFFLINE"] = "0"
-        os.environ["HF_HOME"] = str(cache_dir)
 
         # DEBUG: Confirm environment variable was set
         print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
@@ -96,7 +94,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 if model in self.model_mapping.values():  # Check if it's a valid Granite model
                     # Use snapshot_download to download the entire repo
                     token = os.getenv("HF_TOKEN")
-                    snapshot_download(model, token=token)
+                    snapshot_download(model, cache_dir=str(cache_dir), token=token)
                     print(f"[✓] {model} downloaded successfully.")
                 else:
                     print(f"Warning: Unknown model {model}, skipping download")
@@ -111,10 +109,6 @@ class GraniteTranscriberProvider(TranscriberProvider):
             raise Exception(f"Failed to download {model}: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
-            if original_hf_home is not None:
-                os.environ["HF_HOME"] = original_hf_home
-            else:
-                os.environ.pop("HF_HOME", None)
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Granite models are available offline without downloading."""
@@ -131,10 +125,11 @@ class GraniteTranscriberProvider(TranscriberProvider):
     def _load_model(self):
         """Load the Granite model if not already loaded."""
         if self.model is None:
-            # Get the actual model name from selected model
             model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-8b"])
-
-            cache_dir = pathlib.Path(os.environ.get("HF_HOME", "./models")) / "transcribers" / "granite"
+            
+            # Use HF_HOME as the base, but ensure it's set
+            models_root = pathlib.Path(os.environ.get("HF_HOME", str(self.models_dir.parent)))
+            cache_dir = models_root / "transcribers" / "granite"
             cache_dir.mkdir(parents=True, exist_ok=True)
 
             # Set HF_HOME to our cache directory so loading finds the files

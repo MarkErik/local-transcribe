@@ -7,7 +7,7 @@ from typing import List, Optional
 import os
 import pathlib
 import torch
-import torchaudio
+import librosa
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from peft import PeftModel
 from huggingface_hub import hf_hub_download, snapshot_download
@@ -191,11 +191,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
         self._load_model()
 
         # Load audio
-        wav, sr = torchaudio.load(audio_path, normalize=True)
-        if wav.shape[0] > 1:
-            wav = torch.mean(wav, dim=0, keepdim=True)  # Convert to mono
-        if sr != 16000:
-            wav = torchaudio.transforms.Resample(sr, 16000)(wav)
+        wav, sr = librosa.load(audio_path, sr=16000, mono=True)
+        wav = torch.from_numpy(wav).unsqueeze(0)
 
         # Create text prompt
         chat = [

@@ -47,33 +47,131 @@ class CTCAlignerProvider(AlignerProvider):
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload CTC models to cache."""
-        for model in models:
-            try:
-                # Load model and tokenizer
-                model_obj = AutoModelForCTC.from_pretrained(model).to(self.device)
-                tokenizer = AutoTokenizer.from_pretrained(model)
-                print(f"[✓] {model} loaded successfully.")
-            except Exception as e:
-                print(f"Warning: Failed to preload {model}: {e}")
+        import os
+        import sys
+
+        # DEBUG: Log environment state before download attempt
+        print(f"DEBUG: HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        print(f"DEBUG: HF_HOME: {os.environ.get('HF_HOME')}")
+        print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+
+        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        os.environ["HF_HUB_OFFLINE"] = "0"
+
+        # DEBUG: Confirm environment variable was set
+        print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        print(f"DEBUG: HF_HOME after setting: {os.environ.get('HF_HOME')}")
+
+        # Force reload of huggingface_hub modules to pick up new environment
+        print(f"DEBUG: Reloading huggingface_hub modules...")
+        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
+        for module_name in modules_to_reload:
+            del sys.modules[module_name]
+            print(f"DEBUG: Reloaded {module_name}")
+
+        # Also reload transformers modules
+        print(f"DEBUG: Reloading transformers modules...")
+        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
+        for module_name in modules_to_reload:
+            del sys.modules[module_name]
+            print(f"DEBUG: Reloaded {module_name}")
+
+        try:
+            for model in models:
+                if model == "facebook/mms-300m":
+                    # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+                    xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+                    if xdg_cache_home:
+                        models_root = pathlib.Path(xdg_cache_home)
+                    else:
+                        # Fallback to standard HuggingFace cache location
+                        models_root = pathlib.Path.home() / ".cache" / "huggingface"
+                    
+                    # Create the standard HuggingFace hub directory structure
+                    cache_dir = models_root / "huggingface" / "hub"
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Use snapshot_download with cache_dir parameter pointing to the standard location
+                    from huggingface_hub import snapshot_download
+                    snapshot_download(model, cache_dir=cache_dir, token=os.getenv("HF_TOKEN"))
+                    print(f"[✓] {model} downloaded successfully.")
+                else:
+                    print(f"Warning: Unknown model {model}, skipping download")
+        except Exception as e:
+            print(f"DEBUG: Download failed with error: {e}")
+            print(f"DEBUG: Error type: {type(e)}")
+
+            # Additional debug: Check environment at time of error
+            print(f"DEBUG: At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            print(f"DEBUG: At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+
+            raise Exception(f"Failed to download {model}: {e}")
+        finally:
+            os.environ["HF_HUB_OFFLINE"] = offline_mode
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
-        """Check which CTC models are available offline."""
+        """Check which CTC models are available offline without downloading."""
         missing_models = []
+        
+        # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+        xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+        if xdg_cache_home:
+            models_root = pathlib.Path(xdg_cache_home)
+        else:
+            # Fallback to standard HuggingFace cache location
+            models_root = pathlib.Path.home() / ".cache" / "huggingface"
+        
+        # Models are stored in standard HuggingFace hub structure
+        hub_dir = models_root / "huggingface" / "hub"
+
         for model in models:
-            try:
-                # Try to load from local cache
-                AutoModelForCTC.from_pretrained(model, local_files_only=True)
-                AutoTokenizer.from_pretrained(model, local_files_only=True)
-            except Exception:
-                missing_models.append(model)
+            if "/" in model:  # It's a HuggingFace model like MMS
+                org, repo = model.split("/")
+                model_dir_name = f"models--{org}--{repo.replace('/', '--')}"
+                model_cache_dir = hub_dir / model_dir_name
+
+                # Check if the model directory exists and contains model files
+                has_model_files = (
+                    model_cache_dir.exists() and (
+                        any(model_cache_dir.rglob("*.bin")) or
+                        any(model_cache_dir.rglob("*.safetensors")) or
+                        any(model_cache_dir.rglob("*.pt")) or
+                        any(model_cache_dir.rglob("*.pth"))
+                    )
+                )
+
+                if not has_model_files:
+                    missing_models.append(model)
+
         return missing_models
 
     def _load_model(self, model_name: str):
         """Load the CTC model and tokenizer."""
         if self.model is None or model_name != getattr(self, '_current_model', None):
-            self.model = AutoModelForCTC.from_pretrained(model_name).to(self.device)
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-            self._current_model = model_name
+            # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+            xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+            if xdg_cache_home:
+                models_root = pathlib.Path(xdg_cache_home)
+            else:
+                # Fallback to standard HuggingFace cache location
+                models_root = pathlib.Path.home() / ".cache" / "huggingface"
+            
+            # The models are stored in the standard HuggingFace hub structure
+            # We don't need to set HF_HOME, just let transformers find the models in the standard location
+
+            try:
+                token = os.getenv("HF_TOKEN")
+                # Models should be cached by preload_models, so use local_files_only=True
+                # Let transformers find models in the standard HuggingFace cache location
+                self.model = AutoModelForCTC.from_pretrained(model_name, local_files_only=True, token=token).to(self.device)
+                self.tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True, token=token)
+                self._current_model = model_name
+            except Exception as e:
+                print(f"DEBUG: Failed to load CTC model {model_name}")
+                print(f"DEBUG: Cache directory exists: {(models_root / 'huggingface' / 'hub').exists()}")
+                if (models_root / 'huggingface' / 'hub').exists():
+                    print(f"DEBUG: Cache directory contents: {list((models_root / 'huggingface' / 'hub').iterdir())}")
+                raise e
 
     def _normalize_text(self, text: str, romanize: bool = False, language: str = "eng") -> str:
         """Basic text normalization with optional romanization."""

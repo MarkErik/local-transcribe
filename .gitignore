@@ -21,6 +21,8 @@ out/
 *.csv
 *.vtt
 *.m4a
+*.json
+
 
 
 # Models

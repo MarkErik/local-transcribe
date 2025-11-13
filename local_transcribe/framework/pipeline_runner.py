@@ -211,7 +211,14 @@ def run_pipeline(args, api, root):
             # Assign speaker names if interactive
             transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
 
+            # Write raw outputs before cleanup
+            raw_dir = paths["root"] / "Transcript_Raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[*] Writing raw outputs to {raw_dir}...")
+            write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, tracker, api["registry"], std_audio)
+
             # 5) Optional cleanup
+            cleanup_done = False
             if hasattr(args, 'cleanup_provider') and args.cleanup_provider:
                 cleanup_provider = api["registry"].get_cleanup_provider(args.cleanup_provider)
                 # Reinitialize with custom URL if provided
@@ -225,9 +232,18 @@ def run_pipeline(args, api, root):
                     if turn.text != original_text:
                         print(f"  Cleaned: '{original_text[:50]}...' -> '{turn.text[:50]}...'")
                 print("[✓] Cleanup complete.")
+                cleanup_done = True
 
-            # 4) Outputs
-            write_selected_outputs(transcript, paths, args.selected_outputs, tracker, api["registry"], std_audio)
+            # Write processed outputs if cleanup was done
+            if cleanup_done:
+                processed_dir = paths["root"] / "Transcript_Processed"
+                processed_dir.mkdir(parents=True, exist_ok=True)
+                print(f"[*] Writing processed outputs to {processed_dir}...")
+                write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, tracker, api["registry"], std_audio)
+            else:
+                print("[i] No cleanup selected, raw outputs already written.")
+
+            print(f"[i] Artifacts written to: {paths['root']}")
 
             print("[✓] Single file processing complete.")
 
@@ -289,9 +305,40 @@ def run_pipeline(args, api, root):
             
             tracker.update(turns_task, advance=50, description="Conversation turns merged")
             tracker.complete_task(turns_task, stage="turns")
-            
-            # 4) Outputs
-            write_selected_outputs(transcript, paths, args.selected_outputs, tracker, api["registry"], None)
+
+            # Write raw outputs before cleanup
+            raw_dir = paths["root"] / "Transcript_Raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[*] Writing raw outputs to {raw_dir}...")
+            write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, tracker, api["registry"], None)
+
+            # 5) Optional cleanup
+            cleanup_done = False
+            if hasattr(args, 'cleanup_provider') and args.cleanup_provider:
+                cleanup_provider = api["registry"].get_cleanup_provider(args.cleanup_provider)
+                # Reinitialize with custom URL if provided
+                if hasattr(args, 'cleanup_url') and args.cleanup_url and hasattr(cleanup_provider, 'url'):
+                    cleanup_provider.url = args.cleanup_url
+                
+                print(f"[*] Cleaning up transcript with {args.cleanup_provider}...")
+                for turn in transcript:
+                    original_text = turn.text
+                    turn.text = cleanup_provider.cleanup_segment(original_text)
+                    if turn.text != original_text:
+                        print(f"  Cleaned: '{original_text[:50]}...' -> '{turn.text[:50]}...'")
+                print("[✓] Cleanup complete.")
+                cleanup_done = True
+
+            # Write processed outputs if cleanup was done
+            if cleanup_done:
+                processed_dir = paths["root"] / "Transcript_Processed"
+                processed_dir.mkdir(parents=True, exist_ok=True)
+                print(f"[*] Writing processed outputs to {processed_dir}...")
+                write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, tracker, api["registry"], None)
+            else:
+                print("[i] No cleanup selected, raw outputs already written.")
+
+            print(f"[i] Artifacts written to: {paths['root']}")
             
             print("[✓] Separate audio processing complete.")
 

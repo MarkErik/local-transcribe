@@ -166,57 +166,95 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
                 raise e
 
     def _get_char_timestamps(self, emissions: np.ndarray, predicted_tokens: np.ndarray, sample_rate: int) -> List[tuple]:
-        """Extract character timestamps from CTC emissions."""
-        # This is a simplified CTC alignment - in production, you'd use a more robust method
+        """Extract character timestamps from CTC emissions using improved alignment."""
         char_timestamps = []
-
+        
+        # Get the probability distribution over time for each token
+        time_steps = emissions.shape[0]  # Number of time steps
+        
         # Remove consecutive duplicates and blanks (CTC behavior)
         prev_token = None
+        token_indices = []
+        
         for i, token in enumerate(predicted_tokens):
-            if token != self.wav2vec2_processor.tokenizer.pad_token_id and token != prev_token:
-                if token != self.wav2vec2_processor.tokenizer.unk_token_id:
-                    char = self.wav2vec2_processor.tokenizer.decode(token)
-                    if char:  # Skip empty characters
-                        # Calculate timestamp (simplified - assumes uniform time steps)
-                        time_step = (i / len(predicted_tokens)) * (len(emissions) / sample_rate * 1000)  # in ms
-                        char_timestamps.append((char, time_step))
+            if (token != self.wav2vec2_processor.tokenizer.pad_token_id and
+                token != prev_token and
+                token != self.wav2vec2_processor.tokenizer.unk_token_id):
+                
+                char = self.wav2vec2_processor.tokenizer.decode(token)
+                if char:  # Skip empty characters
+                    token_indices.append((i, token, char))
                 prev_token = token
-
+        
+        if not token_indices:
+            return char_timestamps
+        
+        # For each token, find the most likely time position
+        for token_idx, token, char in token_indices:
+            # Get the probability of this token across all time steps
+            token_probs = emissions[token_idx, :]
+            
+            # Find the peak probability (most likely time position)
+            max_prob_time = np.argmax(token_probs)
+            
+            # Convert to milliseconds
+            time_ms = (max_prob_time / time_steps) * (time_steps / sample_rate * 1000)
+            
+            char_timestamps.append((char, time_ms))
+        
         return char_timestamps
 
     def _chars_to_words(self, transcript: str, pred_str: str, char_timestamps: List[tuple]) -> List[WordSegment]:
-        """Convert character timestamps to word timestamps by aligning with transcript."""
-        # Simple alignment: distribute timestamps evenly across words
-        # This is a fallback - proper alignment would use dynamic programming
-
+        """Convert character timestamps to word timestamps using improved alignment."""
         words = transcript.split()
         if not words:
             return []
 
         segments = []
+        
+        # Create a mapping from character position to timestamp
+        char_to_time = {}
+        for i, (char, time) in enumerate(char_timestamps):
+            char_to_time[i] = time
+        
+        # If we have no character timestamps, fall back to simple word timing
+        if not char_to_time:
+            return self._fallback_word_timing(words, len(char_timestamps))
+        
+        total_chars = sum(len(word) for word in words)
         char_idx = 0
 
         for word in words:
+            word_len = len(word)
             word_start_char = char_idx
-            word_end_char = word_start_char + len(word)
+            word_end_char = char_idx + word_len
 
-            # Find corresponding character timestamps
+            # Find timestamps for the first and last characters of this word
             start_time = None
             end_time = None
+            
+            # Look for timestamps within the word's character range
+            word_timestamps = []
+            for char_pos in range(word_start_char, min(word_end_char, len(char_timestamps))):
+                if char_pos in char_to_time:
+                    word_timestamps.append(char_to_time[char_pos])
+            
+            if word_timestamps:
+                # Use the earliest and latest timestamps in this word
+                start_time = min(word_timestamps)
+                end_time = max(word_timestamps)
+            else:
+                # If no direct timestamps, interpolate from surrounding characters
+                start_time, end_time = self._interpolate_word_timing(
+                    word_start_char, word_end_char, char_to_time, total_chars
+                )
 
-            for i, (char, time) in enumerate(char_timestamps):
-                if i >= word_start_char and start_time is None:
-                    start_time = time
-                if i >= word_end_char - 1:
-                    end_time = time
-                    break
-
-            # Fallback if timestamps not found
+            # Ensure reasonable timing
             if start_time is None:
                 start_time = 0
             if end_time is None or end_time <= start_time:
-                # Estimate duration based on word length
-                word_duration = len(word) * 50  # Rough estimate: 50ms per character
+                # Estimate duration based on word length and speech rate
+                word_duration = max(len(word) * 75, 200)  # At least 200ms for short words
                 end_time = start_time + word_duration
 
             segments.append(WordSegment(
@@ -229,6 +267,67 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             char_idx = word_end_char
 
         return segments
+    
+    def _fallback_word_timing(self, words: List[str], total_time_steps: int) -> List[WordSegment]:
+        """Fallback method for word timing when no character timestamps are available."""
+        segments = []
+        
+        # Distribute time evenly across words
+        total_duration = (total_time_steps / 16000) * 1000  # Convert to milliseconds
+        
+        for i, word in enumerate(words):
+            if i == 0:
+                start_time = 0
+            else:
+                start_time = (i / len(words)) * total_duration
+            
+            if i == len(words) - 1:
+                end_time = total_duration
+            else:
+                end_time = ((i + 1) / len(words)) * total_duration
+            
+            segments.append(WordSegment(
+                text=word,
+                start=start_time / 1000,  # Convert ms to seconds
+                end=end_time / 1000,
+                speaker=None
+            ))
+        
+        return segments
+    
+    def _interpolate_word_timing(self, word_start: int, word_end: int, char_to_time: dict, total_chars: int) -> tuple:
+        """Interpolate word timing when no direct timestamps are available."""
+        # Find the closest timestamps before and after the word
+        before_timestamp = None
+        after_timestamp = None
+        
+        # Look for timestamp before the word
+        for char_pos in range(word_start - 1, -1, -1):
+            if char_pos in char_to_time:
+                before_timestamp = char_to_time[char_pos]
+                break
+        
+        # Look for timestamp after the word
+        for char_pos in range(word_end, len(char_to_time)):
+            if char_pos in char_to_time:
+                after_timestamp = char_to_time[char_pos]
+                break
+        
+        if before_timestamp is not None and after_timestamp is not None:
+            # Interpolate between the two timestamps
+            word_duration = (after_timestamp - before_timestamp) * ((word_end - word_start) / (total_chars))
+            return before_timestamp, before_timestamp + word_duration
+        elif before_timestamp is not None:
+            # Extrapolate forward from the before timestamp
+            word_duration = max(200, (word_end - word_start) * 75)  # Minimum 200ms
+            return before_timestamp, before_timestamp + word_duration
+        elif after_timestamp is not None:
+            # Extrapolate backward from the after timestamp
+            word_duration = max(200, (word_end - word_start) * 75)
+            return after_timestamp - word_duration, after_timestamp
+        else:
+            # No surrounding timestamps found
+            return 0, max(200, (word_end - word_start) * 75)
 
     def align_transcript(
         self,

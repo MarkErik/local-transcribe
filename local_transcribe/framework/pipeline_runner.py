@@ -69,6 +69,7 @@ def run_pipeline(args, api, root):
         if args.only_final_transcript:
             args.selected_outputs = ['timestamped-txt']
         else:
+            # Include JSON outputs for debugging alignment
             args.selected_outputs = list(api["registry"].list_output_writers().keys())
 
     # Validate audio files exist
@@ -233,6 +234,7 @@ def run_pipeline(args, api, root):
                 tracker.complete_task(std_task, stage="standardization")
                 
                 # 2) ASR + alignment
+                print(f"[*] Performing transcription and alignment for {speaker_name}...")
                 words = transcribe_with_alignment(
                     transcriber_provider,
                     aligner_provider,
@@ -240,6 +242,12 @@ def run_pipeline(args, api, root):
                     role=speaker_name,
                     transcriber_model=args.transcriber_model
                 )
+                
+                # Debug: Save alignment results as JSON for inspection
+                if args.verbose:
+                    json_word_writer = api["registry"].get_word_writer("word-segments-json")
+                    json_word_writer.write(words, paths[f"speaker_{speaker_name.lower()}"] / f"{speaker_name.lower()}_alignment.json")
+                    print(f"[i] Alignment debug data saved to: speaker_{speaker_name.lower()}_alignment.json")
                 
                 # Save individual transcription results
                 word_writer = api["registry"].get_word_writer("word-segments")
@@ -303,6 +311,11 @@ def write_selected_outputs(transcript, paths, selected, tracker, registry, audio
     if 'markdown' in selected:
         markdown_writer = registry.get_output_writer("markdown")
         markdown_writer.write(transcript, paths["merged"] / "transcript.md")
+
+    if 'turns-json' in selected:
+        json_turns_writer = registry.get_output_writer("turns-json")
+        json_turns_writer.write(transcript, paths["merged"] / "transcript.turns.json")
+        print(f"[i] Final transcript JSON saved to: transcript.turns.json")
 
     tracker.update(output_task, advance=20, description="Writing subtitle files")
 

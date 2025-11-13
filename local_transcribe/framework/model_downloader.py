@@ -32,11 +32,11 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
         missing_unified_models = unified_provider.check_models_available_offline(required_unified_models, models_dir)
         all_missing = missing_unified_models
     else:
-        transcriber_provider = providers['transcriber']
+        transcriber_provider = providers.get('transcriber')
         aligner_provider = providers.get('aligner')  # May be None if transcriber has builtin alignment
         diarization_provider = providers.get('diarization')  # May be None for split audio
 
-        required_transcriber_models = transcriber_provider.get_required_models(args.transcriber_model)
+        required_transcriber_models = transcriber_provider.get_required_models(args.transcriber_model) if transcriber_provider else []
         required_aligner_models = aligner_provider.get_required_models() if aligner_provider else []
         required_diarization_models = diarization_provider.get_required_models() if diarization_provider else []
 
@@ -83,11 +83,11 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
                     print(f"[*] Downloading unified models: {', '.join(missing_unified_models)}")
                     unified_provider.ensure_models_available(missing_unified_models, models_dir)
             else:
-                transcriber_provider = providers['transcriber']
+                transcriber_provider = providers.get('transcriber')
                 aligner_provider = providers.get('aligner')
                 diarization_provider = providers.get('diarization')  # May be None for split audio
 
-                if missing_transcriber_models:
+                if transcriber_provider and missing_transcriber_models:
                     print(f"[*] Downloading transcriber models: {', '.join(missing_transcriber_models)}")
                     transcriber_provider.ensure_models_available(missing_transcriber_models, models_dir)
 
@@ -99,24 +99,31 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
                     print(f"[*] Downloading diarization models: {', '.join(missing_diarization_models)}")
                     diarization_provider.ensure_models_available(missing_diarization_models, models_dir)
 
-            # Verify downloads actually succeeded
+            # Phase 4: Final Verification (Offline)
             print("[*] Verifying downloaded models...")
-            if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
-                unified_provider = providers['unified']
-                verified_unified = unified_provider.check_models_available_offline(required_unified_models, models_dir)
-                if verified_unified:
-                    print(f"[!] ERROR: Some models failed to download properly: {', '.join(verified_unified)}")
-                    print("[!] Please check your internet connection and HuggingFace token.")
-                    return 1
-            else:
-                verified_transcriber = transcriber_provider.check_models_available_offline(required_transcriber_models, models_dir)
-                verified_aligner = aligner_provider.check_models_available_offline(required_aligner_models, models_dir) if aligner_provider else []
-                verified_diar = diarization_provider.check_models_available_offline(required_diarization_models, models_dir)
+            try:
+                # Re-check all models are now available offline
+                if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
+                    unified_provider = providers['unified']
+                    if unified_provider and unified_provider.check_models_available_offline(required_unified_models, models_dir) != []:
+                        raise Exception("Some unified models are still missing after download")
+                else:
+                    transcriber_provider = providers.get('transcriber')
+                    aligner_provider = providers.get('aligner')
+                    diarization_provider = providers.get('diarization')  # May be None for split audio
 
-                if verified_transcriber or verified_aligner or verified_diar:
-                    print(f"[!] ERROR: Some models failed to download properly: {', '.join(verified_transcriber + verified_aligner + verified_diar)}")
-                    print("[!] Please check your internet connection and HuggingFace token.")
-                    return 1
+                    if transcriber_provider and transcriber_provider.check_models_available_offline(required_transcriber_models, models_dir) != []:
+                        raise Exception("Some transcriber models are still missing after download")
+
+                    if aligner_provider and aligner_provider.check_models_available_offline(required_aligner_models, models_dir) != []:
+                        raise Exception("Some aligner models are still missing after download")
+
+                    if diarization_provider and diarization_provider.check_models_available_offline(required_diarization_models, models_dir) != []:
+                        raise Exception("Some diarization models are still missing after download")
+
+            except Exception as e:
+                print(f"ERROR: Failed to download models: {e}")
+                return 1
 
             print("[✓] All models downloaded successfully and verified.")
         except Exception as e:

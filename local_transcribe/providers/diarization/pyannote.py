@@ -72,7 +72,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
 
         Args:
             audio_path: Path to audio file
-            words: Word segments from ASR
+            words: Word segments from transcription
             num_speakers: Number of speakers expected in the audio
             **kwargs: Provider-specific options
         """

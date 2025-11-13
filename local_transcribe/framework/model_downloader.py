@@ -17,7 +17,7 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
     Check model availability and download missing models if needed.
 
     Args:
-        providers: Dict containing 'asr', 'diarization', and/or 'unified' providers
+        providers: Dict containing 'transcriber', 'aligner', 'diarization', and/or 'unified' providers
         models_dir: Path to the models directory
         args: Parsed command line arguments
 
@@ -32,23 +32,29 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
         missing_unified_models = unified_provider.check_models_available_offline(required_unified_models, models_dir)
         all_missing = missing_unified_models
     else:
-        asr_provider = providers['asr']
+        transcriber_provider = providers['transcriber']
+        aligner_provider = providers.get('aligner')  # May be None if transcriber has builtin alignment
         diarization_provider = providers['diarization']
 
-        required_asr_models = asr_provider.get_required_models(args.asr_model)
+        required_transcriber_models = transcriber_provider.get_required_models(args.transcriber_model)
+        required_aligner_models = aligner_provider.get_required_models() if aligner_provider else []
         required_diarization_models = diarization_provider.get_required_models()
 
         print(f"[*] Checking model availability offline...")
-        missing_asr_models = []
+        missing_transcriber_models = []
+        missing_aligner_models = []
         missing_diarization_models = []
 
-        if required_asr_models:
-            missing_asr_models = asr_provider.check_models_available_offline(required_asr_models, models_dir)
+        if required_transcriber_models:
+            missing_transcriber_models = transcriber_provider.check_models_available_offline(required_transcriber_models, models_dir)
+
+        if required_aligner_models:
+            missing_aligner_models = aligner_provider.check_models_available_offline(required_aligner_models, models_dir)
 
         if required_diarization_models:
             missing_diarization_models = diarization_provider.check_models_available_offline(required_diarization_models, models_dir)
 
-        all_missing = missing_asr_models + missing_diarization_models
+        all_missing = missing_transcriber_models + missing_aligner_models + missing_diarization_models
 
     # Phase 3: Conditional Download (Online Only If Needed)
     if all_missing:
@@ -77,12 +83,17 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
                     print(f"[*] Downloading unified models: {', '.join(missing_unified_models)}")
                     unified_provider.ensure_models_available(missing_unified_models, models_dir)
             else:
-                asr_provider = providers['asr']
+                transcriber_provider = providers['transcriber']
+                aligner_provider = providers.get('aligner')
                 diarization_provider = providers['diarization']
 
-                if missing_asr_models:
-                    print(f"[*] Downloading ASR models: {', '.join(missing_asr_models)}")
-                    asr_provider.ensure_models_available(missing_asr_models, models_dir)
+                if missing_transcriber_models:
+                    print(f"[*] Downloading transcriber models: {', '.join(missing_transcriber_models)}")
+                    transcriber_provider.ensure_models_available(missing_transcriber_models, models_dir)
+
+                if aligner_provider and missing_aligner_models:
+                    print(f"[*] Downloading aligner models: {', '.join(missing_aligner_models)}")
+                    aligner_provider.ensure_models_available(missing_aligner_models, models_dir)
 
                 if missing_diarization_models:
                     print(f"[*] Downloading diarization models: {', '.join(missing_diarization_models)}")
@@ -98,11 +109,12 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
                     print("[!] Please check your internet connection and HuggingFace token.")
                     return 1
             else:
-                verified_asr = asr_provider.check_models_available_offline(required_asr_models, models_dir)
+                verified_transcriber = transcriber_provider.check_models_available_offline(required_transcriber_models, models_dir)
+                verified_aligner = aligner_provider.check_models_available_offline(required_aligner_models, models_dir) if aligner_provider else []
                 verified_diar = diarization_provider.check_models_available_offline(required_diarization_models, models_dir)
 
-                if verified_asr or verified_diar:
-                    print(f"[!] ERROR: Some models failed to download properly: {', '.join(verified_asr + verified_diar)}")
+                if verified_transcriber or verified_aligner or verified_diar:
+                    print(f"[!] ERROR: Some models failed to download properly: {', '.join(verified_transcriber + verified_aligner + verified_diar)}")
                     print("[!] Please check your internet connection and HuggingFace token.")
                     return 1
 

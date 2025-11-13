@@ -35,7 +35,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
     @property
     def description(self) -> str:
-        return "IBM Granite ASR (2B/8B) for speech-to-text transcription"
+        return "IBM Granite transcription (2B/8B) for speech-to-text"
 
     @property
     def has_builtin_alignment(self) -> bool:
@@ -163,12 +163,12 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
     def transcribe(self, audio_path: str, **kwargs) -> str:
         """Transcribe audio using Granite model."""
-        asr_model = kwargs.get('asr_model', 'granite-8b')  # Default to 8b
-        if asr_model not in self.model_mapping:
-            print(f"Warning: Unknown model {asr_model}, defaulting to granite-8b")
-            asr_model = 'granite-8b'
+        transcriber_model = kwargs.get('transcriber_model', 'granite-8b')  # Default to 8b
+        if transcriber_model not in self.model_mapping:
+            print(f"Warning: Unknown model {transcriber_model}, defaulting to granite-8b")
+            transcriber_model = 'granite-8b'
 
-        self.selected_model = asr_model
+        self.selected_model = transcriber_model
         self._load_model()
 
         # Load audio

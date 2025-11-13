@@ -28,7 +28,7 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
 
     @property
     def description(self) -> str:
-        return "OpenAI Whisper ASR (tiny.en/base.en/small.en) for speech-to-text transcription"
+        return "OpenAI Whisper transcription (tiny.en/base.en/small.en) for speech-to-text"
 
     @property
     def has_builtin_alignment(self) -> bool:
@@ -137,7 +137,7 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
             raise ValueError(f"Audio file not found: {audio_path}")
 
         # Set selected model from kwargs
-        self.selected_model = kwargs.get('asr_model', 'base.en')
+        self.selected_model = kwargs.get('transcriber_model', 'base.en')
         self._load_whisper_model()
 
         # Transcribe with Whisper

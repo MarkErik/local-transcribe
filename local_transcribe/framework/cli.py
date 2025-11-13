@@ -51,7 +51,7 @@ def interactive_prompt(args, api):
         num_files = len(args.audio_files)
         if num_files == 1:
             print("Mode: Combined audio (single file with multiple speakers)")
-            args.processing_mode = "separate"  # Will use ASR + diarization
+            args.processing_mode = "separate"  # Will use transcription + diarization
         else:
             print(f"Mode: Split audio tracks ({num_files} files)")
             args.processing_mode = "separate"  # Always separate for multiple files
@@ -63,8 +63,8 @@ def interactive_prompt(args, api):
     unified_providers = registry.list_unified_providers()
     if unified_providers and hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
         print("Processing Modes:")
-        print("  1. Unified Provider (ASR + Diarization in one step)")
-        print("  2. Separate Providers (ASR then Diarization)")
+        print("  1. Unified Provider (Transcription + Diarization in one step)")
+        print("  2. Separate Providers (Transcription then Diarization)")
         
         while True:
             try:

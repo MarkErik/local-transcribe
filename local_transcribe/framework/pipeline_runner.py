@@ -137,7 +137,15 @@ def run_pipeline(args, api, root):
         if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
             print(f"[*] Mode: {mode} (combined_audio) | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
         else:
-            print(f"[*] Mode: {mode} | ASR: {args.asr_provider} | Diarization: {args.diarization_provider} | Turn Builder: general | Outputs: {', '.join(args.selected_outputs)}")
+            provider_info = []
+            if hasattr(args, 'transcriber_provider') and args.transcriber_provider:
+                provider_info.append(f"Transcriber: {args.transcriber_provider}")
+            if hasattr(args, 'aligner_provider') and args.aligner_provider:
+                provider_info.append(f"Aligner: {args.aligner_provider}")
+            if hasattr(args, 'diarization_provider') and args.diarization_provider:
+                provider_info.append(f"Diarization: {args.diarization_provider}")
+            provider_str = " | ".join(provider_info) if provider_info else "Default providers"
+            print(f"[*] Mode: {mode} | {provider_str} | Turn Builder: general | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
         if mode == "combined_audio":

@@ -21,7 +21,7 @@ _CT2_REPO_CHOICES: dict[str, list[str]] = {
 }
 
 
-def _asr_device() -> str:
+def _ctranslate_device() -> str:
     """
     Device for CTranslate2 (faster-whisper). CTranslate2 does NOT support 'mps',
     so we force CPU on Apple Silicon.
@@ -59,7 +59,7 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
 
     @property
     def description(self) -> str:
-        return "Faster-Whisper ASR with built-in word-level timestamps"
+        return "Faster-Whisper transcription with built-in word-level timestamps"
 
     @property
     def has_builtin_alignment(self) -> bool:
@@ -72,7 +72,7 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
         elif selected_model in _CT2_REPO_CHOICES:
             return _CT2_REPO_CHOICES[selected_model]
         else:
-            raise ValueError(f"Unknown ASR model: {selected_model}")
+            raise ValueError(f"Unknown transcriber model: {selected_model}")
 
     def get_available_models(self) -> List[str]:
         return list(_CT2_REPO_CHOICES.keys())
@@ -151,10 +151,10 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
 
     def transcribe(self, audio_path: str, **kwargs) -> str:
         """Transcribe audio and return text only."""
-        asr_model = kwargs.get('asr_model', 'large-v3')
+        transcriber_model = kwargs.get('transcriber_model', 'large-v3')
 
-        if asr_model not in _CT2_REPO_CHOICES:
-            raise ValueError(f"Unknown ASR model: {asr_model}")
+        if transcriber_model not in _CT2_REPO_CHOICES:
+            raise ValueError(f"Unknown transcriber model: {transcriber_model}")
 
         if not os.path.exists(audio_path):
             raise ValueError(f"Audio file not found: {audio_path}")
@@ -163,12 +163,12 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
         models_root = pathlib.Path(os.getenv("HF_HOME", "./models")).resolve()
         ct2_cache = models_root / "transcribers" / "ct2"
 
-        local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[asr_model])
+        local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[transcriber_model])
 
         # Load CT2 model
         fw = FWModel(
             str(local_model_dir),
-            device=_asr_device(),
+            device=_ctranslate_device(),
             compute_type="int8"
         )
 
@@ -196,12 +196,12 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
         Args:
             audio_path: Path to audio file
             role: Speaker role for dual-track mode
-            **kwargs: Should include 'asr_model' key
+            **kwargs: Should include 'transcriber_model' key
         """
-        asr_model = kwargs.get('asr_model', 'large-v3')
+        transcriber_model = kwargs.get('transcriber_model', 'large-v3')
 
-        if asr_model not in _CT2_REPO_CHOICES:
-            raise ValueError(f"Unknown ASR model: {asr_model}")
+        if transcriber_model not in _CT2_REPO_CHOICES:
+            raise ValueError(f"Unknown transcriber model: {transcriber_model}")
 
         if not os.path.exists(audio_path):
             raise ValueError(f"Audio file not found: {audio_path}")
@@ -210,12 +210,12 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
         models_root = pathlib.Path(os.getenv("HF_HOME", "./models")).resolve()
         ct2_cache = models_root / "transcribers" / "ct2"
 
-        local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[asr_model])
+        local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[transcriber_model])
 
         # Load CT2 model
         fw = FWModel(
             str(local_model_dir),
-            device=_asr_device(),
+            device=_ctranslate_device(),
             compute_type="int8"
         )
 

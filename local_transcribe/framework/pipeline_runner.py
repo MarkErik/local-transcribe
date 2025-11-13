@@ -6,6 +6,7 @@ import sys
 from typing import Optional
 
 from local_transcribe.framework.model_downloader import ensure_models_available
+from local_transcribe.lib.speaker_namer import assign_speaker_names
 
 def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, **kwargs):
     """Transcribe audio and return word segments with timestamps."""
@@ -198,6 +199,9 @@ def run_pipeline(args, api, root):
 
                 # 4) Build turns
                 turns = turn_builder_provider.build_turns(words_with_speakers)
+
+            # Assign speaker names if interactive
+            turns = assign_speaker_names(turns, getattr(args, 'interactive', False), mode)
 
             # 4) Outputs
             write_selected_outputs(turns, paths, args.selected_outputs, tracker, api["registry"], std_audio)

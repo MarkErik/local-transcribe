@@ -77,7 +77,10 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
 
             for model in models:
                 if model == "facebook/wav2vec2-base-960h":
-                    snapshot_download(model, cache_dir=str(cache_dir_wav2vec2), token=os.getenv("HF_TOKEN"))
+                    # Set HF_HOME to cache directory for download
+                    os.environ["HF_HOME"] = str(cache_dir_wav2vec2)
+                    # Use snapshot_download without cache_dir parameter (uses HF_HOME)
+                    snapshot_download(model, token=os.getenv("HF_TOKEN"))
                     print(f"[✓] {model} downloaded successfully.")
                 else:
                     print(f"Warning: Unknown model {model}, skipping download")
@@ -100,7 +103,8 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Wav2Vec2 models are available offline without downloading."""
         missing_models = []
-        hub_dir = models_dir / "hub"
+        cache_dir = models_dir / "aligners" / "wav2vec2"
+        hub_dir = cache_dir / "hub"
 
         for model in models:
             if "/" in model:  # It's a HuggingFace model like Wav2Vec2

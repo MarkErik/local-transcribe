@@ -65,6 +65,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
 
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        original_hf_home = os.environ.get("HF_HOME")
         os.environ["HF_HUB_OFFLINE"] = "0"
 
         # DEBUG: Confirm environment variable was set
@@ -85,16 +86,16 @@ class GraniteTranscriberProvider(TranscriberProvider):
             del sys.modules[module_name]
             print(f"DEBUG: Reloaded {module_name}")
 
-        # Now import transformers classes after environment change
-        # from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
         from huggingface_hub import snapshot_download
 
         try:
             for model in models:
                 if model in self.model_mapping.values():  # Check if it's a valid Granite model
-                    # Use snapshot_download to download the entire repo
+                    # Set HF_HOME to cache directory for download
+                    os.environ["HF_HOME"] = str(cache_dir)
+                    # Use snapshot_download without cache_dir parameter (uses HF_HOME)
                     token = os.getenv("HF_TOKEN")
-                    snapshot_download(model, cache_dir=str(cache_dir), token=token)
+                    snapshot_download(model, token=token)
                     print(f"[✓] {model} downloaded successfully.")
                 else:
                     print(f"Warning: Unknown model {model}, skipping download")
@@ -109,6 +110,10 @@ class GraniteTranscriberProvider(TranscriberProvider):
             raise Exception(f"Failed to download {model}: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
+            if original_hf_home is not None:
+                os.environ["HF_HOME"] = original_hf_home
+            else:
+                os.environ.pop("HF_HOME", None)
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Granite models are available offline without downloading."""

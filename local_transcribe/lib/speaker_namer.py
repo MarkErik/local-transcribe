@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # lib/speaker_namer.py - Interactive speaker naming for combined audio mode
 
-from typing import List, Dict
+from typing import List
+from local_transcribe.framework.plugin_interfaces import Turn
 
-def assign_speaker_names(turns: List[Dict], is_interactive: bool, mode: str) -> List[Dict]:
+def assign_speaker_names(turns: List[Turn], is_interactive: bool, mode: str) -> List[Turn]:
     """
     Assign custom names to speakers in combined audio mode if interactive.
     
     Args:
-        turns: List of turn dicts with 'speaker', 'start', 'end', 'text' keys
+        turns: List of Turn objects with speaker, start, end, text attributes
         is_interactive: Whether running in interactive mode
         mode: 'combined_audio' or 'split_audio'
     
@@ -21,7 +22,7 @@ def assign_speaker_names(turns: List[Dict], is_interactive: bool, mode: str) -> 
     # Collect unique speaker labels
     speaker_labels = set()
     for turn in turns:
-        speaker_labels.add(turn['speaker'])
+        speaker_labels.add(turn.speaker)
     
     speaker_labels = sorted(speaker_labels)
     
@@ -34,7 +35,7 @@ def assign_speaker_names(turns: List[Dict], is_interactive: bool, mode: str) -> 
     
     preview_turns = turns[:10]  # First 10 turns
     for i, turn in enumerate(preview_turns, 1):
-        print(f"{i}. {turn['speaker']}: {turn['text'][:50]}{'...' if len(turn['text']) > 50 else ''}")
+        print(f"{i}. {turn.speaker}: {turn.text[:50]}{'...' if len(turn.text) > 50 else ''}")
     
     print(f"\nFound {len(speaker_labels)} speakers: {', '.join(speaker_labels)}")
     print("Please assign names to each speaker:")
@@ -53,8 +54,12 @@ def assign_speaker_names(turns: List[Dict], is_interactive: bool, mode: str) -> 
     # Replace speaker labels in turns
     updated_turns = []
     for turn in turns:
-        updated_turn = turn.copy()
-        updated_turn['speaker'] = name_mapping.get(turn['speaker'], turn['speaker'])
+        updated_turn = Turn(
+            speaker=name_mapping.get(turn.speaker, turn.speaker),
+            start=turn.start,
+            end=turn.end,
+            text=turn.text
+        )
         updated_turns.append(updated_turn)
     
     print(f"\nSpeaker names assigned: {', '.join(f'{k} → {v}' for k, v in name_mapping.items())}")

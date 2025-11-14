@@ -9,6 +9,7 @@ wheels/
 *.egg-info
 
 .venv/
+.mfa_env/
 
 uv.lock
 
@@ -17,3 +18,5 @@ data/
 models/
 
 test/
+
+*.mp4

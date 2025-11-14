@@ -8,10 +8,23 @@ import pathlib
 class OutputManager:
     """Handles writing transcript outputs in various formats."""
     
-    def __init__(self, registry):
-        self.registry = registry
+    _instance = None
+    _registry = None
     
-    def write_selected_outputs(self, transcript: List[Any], paths: Dict[str, pathlib.Path], 
+    def __new__(cls, registry=None):
+        """Singleton pattern implementation."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._registry = registry
+        return cls._instance
+    
+    def __init__(self, registry=None):
+        """Initialize with registry (only once due to singleton pattern)."""
+        # Only set registry if this is the first initialization
+        if self.registry is None and registry is not None:
+            self.registry = registry
+    
+    def write_selected_outputs(self, transcript: List[Any], paths: Dict[str, pathlib.Path],
                              selected_formats: List[str], audio_path: Optional[pathlib.Path] = None) -> None:
         """
         Write selected outputs for merged transcript.
@@ -25,48 +38,48 @@ class OutputManager:
         print(f"[*] Writing output files...")
         
         # Write text-based outputs
-        self._write_text_outputs(transcript, paths["merged"])
+        self._write_text_outputs(transcript, paths["merged"], selected_formats)
         
         # Write subtitle outputs
-        self._write_subtitle_outputs(transcript, paths["merged"], audio_path)
+        self._write_subtitle_outputs(transcript, paths["merged"], audio_path, selected_formats)
         
         # Print completion message
         print("[✓] Output files written successfully.")
     
-    def _write_text_outputs(self, transcript: List[Any], merged_dir: pathlib.Path) -> None:
+    def _write_text_outputs(self, transcript: List[Any], merged_dir: pathlib.Path, selected_formats: List[str]) -> None:
         """Write text-based output formats."""
-        if 'timestamped-txt' in self._get_selected_formats():
+        if 'timestamped-txt' in selected_formats:
             timestamped_writer = self.registry.get_output_writer("timestamped-txt")
             timestamped_writer.write(transcript, merged_dir / "transcript.timestamped.txt")
 
-        if 'plain-txt' in self._get_selected_formats():
+        if 'plain-txt' in selected_formats:
             plain_writer = self.registry.get_output_writer("plain-txt")
             plain_writer.write(transcript, merged_dir / "transcript.txt")
 
-        if 'csv' in self._get_selected_formats():
+        if 'csv' in selected_formats:
             csv_writer = self.registry.get_output_writer("csv")
             csv_writer.write(transcript, merged_dir / "transcript.csv")
 
-        if 'markdown' in self._get_selected_formats():
+        if 'markdown' in selected_formats:
             markdown_writer = self.registry.get_output_writer("markdown")
             markdown_writer.write(transcript, merged_dir / "transcript.md")
 
-        if 'turns-json' in self._get_selected_formats():
+        if 'turns-json' in selected_formats:
             json_turns_writer = self.registry.get_output_writer("turns-json")
             json_turns_writer.write(transcript, merged_dir / "transcript.turns.json")
             print(f"[i] Final transcript JSON saved to: transcript.turns.json")
     
-    def _write_subtitle_outputs(self, transcript: List[Any], merged_dir: pathlib.Path, 
-                              audio_path: Optional[pathlib.Path]) -> None:
+    def _write_subtitle_outputs(self, transcript: List[Any], merged_dir: pathlib.Path,
+                              audio_path: Optional[pathlib.Path], selected_formats: List[str]) -> None:
         """Write subtitle outputs and optionally render video."""
         srt_path = None
         
-        if 'srt' in self._get_selected_formats():
+        if 'srt' in selected_formats:
             srt_writer = self.registry.get_output_writer("srt")
             srt_path = merged_dir / "subtitles.srt"
             srt_writer.write(transcript, srt_path)
 
-        if 'vtt' in self._get_selected_formats():
+        if 'vtt' in selected_formats:
             vtt_writer = self.registry.get_output_writer("vtt")
             vtt_writer.write(transcript, merged_dir / "subtitles.vtt")
 
@@ -85,8 +98,14 @@ class OutputManager:
         except Exception as e:
             print(f"[!] Warning: Video rendering failed: {e}")
     
-    def _get_selected_formats(self) -> List[str]:
-        """Get the list of selected formats (placeholder - will be passed from caller)."""
-        # This method is a placeholder since the actual selected formats are passed to write_selected_outputs
-        # In practice, this information comes from the args.selected_formats parameter
-        return []
+    @classmethod
+    def get_instance(cls, registry=None):
+        """Get the singleton instance of OutputManager."""
+        if cls._instance is None:
+            cls(registry)
+        return cls._instance
+    
+    def reset_singleton(self):
+        """Reset the singleton instance (useful for testing)."""
+        self.__class__._instance = None
+        self.__class__._registry = None

@@ -170,7 +170,7 @@ def run_pipeline(args, api, root):
             raw_dir = paths["root"] / "Transcript_Raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
             print(f"[*] Writing raw outputs to {raw_dir}...")
-            output_manager = OutputManager(api["registry"])
+            output_manager = OutputManager.get_instance(api["registry"])
             output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, std_audio)
 
             # 5) Optional transcript cleanup
@@ -190,7 +190,7 @@ def run_pipeline(args, api, root):
                 processed_dir = paths["root"] / "Transcript_Processed"
                 processed_dir.mkdir(parents=True, exist_ok=True)
                 print(f"[*] Writing processed outputs to {processed_dir}...")
-                output_manager = OutputManager(api["registry"])
+                output_manager = OutputManager.get_instance(api["registry"])
                 output_manager.write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, std_audio)
             else:
                 print("[i] No transcript cleanup selected, raw outputs already written.")
@@ -254,7 +254,7 @@ def run_pipeline(args, api, root):
             raw_dir = paths["root"] / "Transcript_Raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
             print(f"[*] Writing raw outputs to {raw_dir}...")
-            output_manager = OutputManager(api["registry"])
+            output_manager = OutputManager.get_instance(api["registry"])
             output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, None)
 
             # 5) Optional transcript cleanup
@@ -274,7 +274,7 @@ def run_pipeline(args, api, root):
                 processed_dir = paths["root"] / "Transcript_Processed"
                 processed_dir.mkdir(parents=True, exist_ok=True)
                 print(f"[*] Writing processed outputs to {processed_dir}...")
-                output_manager = OutputManager(api["registry"])
+                output_manager = OutputManager.get_instance(api["registry"])
                 output_manager.write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, None)
             else:
                 print("[i] No transcript cleanup selected, raw outputs already written.")

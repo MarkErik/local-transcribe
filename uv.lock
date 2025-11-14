@@ -287,15 +287,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dataclassy"
-version = "1.0.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/44/c0/a4a376e62b566708dbd157af4ad160406b82bcd9559b2eb38c66093d4e8b/dataclassy-1.0.1.tar.gz", hash = "sha256:e5a08a304f5f31b35983d3d14e60f00240fbcb38b4aea49db7d19160958b9a3d", size = 28786, upload-time = "2023-01-14T12:47:59.367Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/96/8378dfb8668c1d26533e310b2b062ebbd6f02a2acbb172f3efaa46d126ad/dataclassy-1.0.1-py3-none-any.whl", hash = "sha256:445040d809cb3bdabd420a2d9db1cb1c9bbee185ed82e9ab966977f9721d8af0", size = 24226, upload-time = "2023-01-14T12:47:56.879Z" },
-]
-
-[[package]]
 name = "decorator"
 version = "5.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -596,19 +587,6 @@ wheels = [
 ]
 
 [[package]]
-name = "kneed"
-version = "0.8.5"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-    { name = "scipy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ba/0f/958e27a378042e0366dfea8baab4a53121cb37c114117666051390cd7bb8/kneed-0.8.5.tar.gz", hash = "sha256:a4847ac4f1d04852fea278d5de7aa8bfdc3beb7fbca4a182fec0f0efee43f4b1", size = 12783, upload-time = "2023-07-09T01:51:08.93Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9a/1b/7e726d8616e813007874468c61790099ba21493e0ea07561b7d9fc53151c/kneed-0.8.5-py3-none-any.whl", hash = "sha256:2f3fbd4e9bd808e65052841448702c41ea64d5fc78735cbfc97ab25f08bd9815", size = 10290, upload-time = "2023-07-09T01:51:07.548Z" },
-]
-
-[[package]]
 name = "lazy-loader"
 version = "0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -700,7 +678,6 @@ dependencies = [
     { name = "ffmpeg-python" },
     { name = "huggingface-hub" },
     { name = "librosa" },
-    { name = "montreal-forced-aligner" },
     { name = "numpy" },
     { name = "openai-whisper" },
     { name = "pandas" },
@@ -725,7 +702,6 @@ requires-dist = [
     { name = "ffmpeg-python", specifier = ">=0.2.0" },
     { name = "huggingface-hub", specifier = ">=0.28.0" },
     { name = "librosa", specifier = ">=0.11.0" },
-    { name = "montreal-forced-aligner", specifier = ">=3.0.0" },
     { name = "numpy", specifier = ">=2.3.4" },
     { name = "openai-whisper", specifier = ">=20250625" },
     { name = "pandas", specifier = ">=2.3.3" },
@@ -823,32 +799,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
-]
-
-[[package]]
-name = "montreal-forced-aligner"
-version = "3.3.8"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "click" },
-    { name = "dataclassy" },
-    { name = "kneed" },
-    { name = "librosa" },
-    { name = "matplotlib" },
-    { name = "numpy" },
-    { name = "praatio" },
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "rich" },
-    { name = "rich-click" },
-    { name = "scikit-learn" },
-    { name = "seaborn" },
-    { name = "sqlalchemy" },
-    { name = "tqdm" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/58/e7/59872bcfd8440ad6c2c99282286c75b25b4fec0f94bbc3a768b15ec83aee/montreal_forced_aligner-3.3.8.tar.gz", hash = "sha256:e720d0a0e8aee803b8915b9ec5f62642ebc1d82f3e5267a9dce9383f7f2c203b", size = 26984174, upload-time = "2025-10-26T06:45:08.428Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/d2/10d2d4d0640396ca1571cab067537c595e843dd6ba9152c50cfee7ae0b4f/montreal_forced_aligner-3.3.8-py3-none-any.whl", hash = "sha256:31506d90607ac217856caf0d0961cb4a79e504fae1a1c58b4766aef1c6cbbd28", size = 417650, upload-time = "2025-10-26T06:45:06.473Z" },
 ]
 
 [[package]]
@@ -1367,18 +1317,6 @@ wheels = [
 ]
 
 [[package]]
-name = "praatio"
-version = "6.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3d/44/99cf2f7e4333cc10af2efd4a27658a7a18e397f5a1d181762dad02a361c4/praatio-6.2.0.tar.gz", hash = "sha256:7d2a7f8135a3e0691743ada0af84308b64e637f07038cea77d814b8aa2fa2e40", size = 85100, upload-time = "2023-12-10T09:24:26.833Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c4/8e/eb83f93f0e46c5bfd20a3040eef7ccece8ac0703b06a500fb17a57627a2e/praatio-6.2.0-py3-none-any.whl", hash = "sha256:6541018791a3f0b087a8168d1746a165937c3fff1f94c7a6883b3f470e0cf405", size = 80029, upload-time = "2023-12-10T09:24:24.375Z" },
-]
-
-[[package]]
 name = "primepy"
 version = "1.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1727,20 +1665,6 @@ wheels = [
 ]
 
 [[package]]
-name = "rich-click"
-version = "1.9.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "click" },
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-    { name = "rich" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/bf/d8/f2c1b7e9a645ba40f756d7a5b195fc104729bc6b19061ba3ab385f342931/rich_click-1.9.4.tar.gz", hash = "sha256:af73dc68e85f3bebb80ce302a642b9fe3b65f3df0ceb42eb9a27c467c1b678c8", size = 73632, upload-time = "2025-10-25T01:08:49.142Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5b/6a/1f03adcb3cc7beb6f63aecc21565e9d515ccee653187fc4619cd0b42713b/rich_click-1.9.4-py3-none-any.whl", hash = "sha256:d70f39938bcecaf5543e8750828cbea94ef51853f7d0e174cda1e10543767389", size = 70245, upload-time = "2025-10-25T01:08:47.939Z" },
-]
-
-[[package]]
 name = "safetensors"
 version = "0.6.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1800,20 +1724,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/49/7f/71a69e0afd460049d41c65c630c919c537815277dfea214031005f474d78/scipy-1.16.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:03dfc75e52f72cf23ec2ced468645321407faad8f0fe7b1f5b49264adbc29cb1", size = 38664586, upload-time = "2025-09-11T17:41:31.021Z" },
     { url = "https://files.pythonhosted.org/packages/34/95/20e02ca66fb495a95fba0642fd48e0c390d0ece9b9b14c6e931a60a12dea/scipy-1.16.2-cp312-cp312-win_amd64.whl", hash = "sha256:0ce54e07bbb394b417457409a64fd015be623f36e330ac49306433ffe04bc97e", size = 38550641, upload-time = "2025-09-11T17:41:36.61Z" },
     { url = "https://files.pythonhosted.org/packages/92/ad/13646b9beb0a95528ca46d52b7babafbe115017814a611f2065ee4e61d20/scipy-1.16.2-cp312-cp312-win_arm64.whl", hash = "sha256:2a8ffaa4ac0df81a0b94577b18ee079f13fecdb924df3328fc44a7dc5ac46851", size = 25456070, upload-time = "2025-09-11T17:41:41.3Z" },
-]
-
-[[package]]
-name = "seaborn"
-version = "0.13.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "matplotlib" },
-    { name = "numpy" },
-    { name = "pandas" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/86/59/a451d7420a77ab0b98f7affa3a1d78a313d2f7281a57afb1a34bae8ab412/seaborn-0.13.2.tar.gz", hash = "sha256:93e60a40988f4d65e9f4885df477e2fdaff6b73a9ded434c1ab356dd57eefff7", size = 1457696, upload-time = "2024-01-25T13:21:52.551Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/83/11/00d3c3dfc25ad54e731d91449895a79e4bf2384dc3ac01809010ba88f6d5/seaborn-0.13.2-py3-none-any.whl", hash = "sha256:636f8336facf092165e27924f223d3c62ca560b1f2bb5dff7ab7fad265361987", size = 294914, upload-time = "2024-01-25T13:21:49.598Z" },
 ]
 
 [[package]]

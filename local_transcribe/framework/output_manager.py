@@ -21,8 +21,8 @@ class OutputManager:
     def __init__(self, registry=None):
         """Initialize with registry (only once due to singleton pattern)."""
         # Only set registry if this is the first initialization
-        if self.registry is None and registry is not None:
-            self.registry = registry
+        if self._registry is None and registry is not None:
+            self._registry = registry
     
     def write_selected_outputs(self, transcript: List[Any], paths: Dict[str, pathlib.Path],
                              selected_formats: List[str], audio_path: Optional[pathlib.Path] = None) -> None:
@@ -49,23 +49,23 @@ class OutputManager:
     def _write_text_outputs(self, transcript: List[Any], merged_dir: pathlib.Path, selected_formats: List[str]) -> None:
         """Write text-based output formats."""
         if 'timestamped-txt' in selected_formats:
-            timestamped_writer = self.registry.get_output_writer("timestamped-txt")
+            timestamped_writer = self._registry.get_output_writer("timestamped-txt")
             timestamped_writer.write(transcript, merged_dir / "transcript.timestamped.txt")
 
         if 'plain-txt' in selected_formats:
-            plain_writer = self.registry.get_output_writer("plain-txt")
+            plain_writer = self._registry.get_output_writer("plain-txt")
             plain_writer.write(transcript, merged_dir / "transcript.txt")
 
         if 'csv' in selected_formats:
-            csv_writer = self.registry.get_output_writer("csv")
+            csv_writer = self._registry.get_output_writer("csv")
             csv_writer.write(transcript, merged_dir / "transcript.csv")
 
         if 'markdown' in selected_formats:
-            markdown_writer = self.registry.get_output_writer("markdown")
+            markdown_writer = self._registry.get_output_writer("markdown")
             markdown_writer.write(transcript, merged_dir / "transcript.md")
 
         if 'turns-json' in selected_formats:
-            json_turns_writer = self.registry.get_output_writer("turns-json")
+            json_turns_writer = self._registry.get_output_writer("turns-json")
             json_turns_writer.write(transcript, merged_dir / "transcript.turns.json")
             print(f"[i] Final transcript JSON saved to: transcript.turns.json")
     
@@ -75,12 +75,12 @@ class OutputManager:
         srt_path = None
         
         if 'srt' in selected_formats:
-            srt_writer = self.registry.get_output_writer("srt")
+            srt_writer = self._registry.get_output_writer("srt")
             srt_path = merged_dir / "subtitles.srt"
             srt_writer.write(transcript, srt_path)
 
         if 'vtt' in selected_formats:
-            vtt_writer = self.registry.get_output_writer("vtt")
+            vtt_writer = self._registry.get_output_writer("vtt")
             vtt_writer.write(transcript, merged_dir / "subtitles.vtt")
 
         # Render video with subtitles if SRT is available and audio path is provided

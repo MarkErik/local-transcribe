@@ -28,8 +28,8 @@ class AudioProcessingError(TranscriptionError):
 class TranscriptionError(TranscriptionError):
     """Exception for transcription-related errors."""
 
-    def __init__(self, message: str, cause: Exception = None, model: str = None):
-        super().__init__(message, stage="transcription", cause=cause)
+    def __init__(self, message: str, stage: str = "transcription", cause: Optional[Exception] = None, model: Optional[str] = None):
+        super().__init__(message, stage=stage, cause=cause)
         self.model = model
 
 

@@ -118,7 +118,7 @@ class MFAAAlignerProvider(AlignerProvider):
                 if line.startswith('intervals ['):
                     # Parse interval
                     # Skip to xmin, xmax, text lines
-                    i += 2  # Skip intervals [n]: and xmin =
+                    i += 1  # Skip intervals [n]: to xmin =
                     if i >= len(lines):
                         break
                     xmin_line = lines[i].strip()
@@ -137,7 +137,7 @@ class MFAAAlignerProvider(AlignerProvider):
                         end = float(xmax_line.split('=')[1].strip())
                         text = text_line.split('=')[1].strip().strip('"')
 
-                        if text:  # Skip empty intervals
+                        if text and text != "<eps>":  # Skip empty and silence intervals
                             segments.append(WordSegment(
                                 text=text,
                                 start=start,
@@ -227,19 +227,24 @@ class MFAAAlignerProvider(AlignerProvider):
 
             # Run MFA alignment
             try:
-                # MFA command: mfa align <audio_dir> <dictionary> <acoustic_model> <output_dir>
+                # MFA command: mfa align_one <audio_file> <text_file> <dictionary> <acoustic_model> <output_path>
                 # Using English dictionary and acoustic model
                 # Set MFA_ROOT_DIR to use project models directory
                 env = os.environ.copy()
                 env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
 
+                # Output TextGrid file
+                textgrid_file = output_dir / f"{audio_name.rsplit('.', 1)[0]}.TextGrid"
+
                 cmd = [
-                    "mfa", "align",
-                    str(audio_dir),
+                    "mfa", "align_one",
+                    str(audio_file),  # Audio file path
+                    str(transcript_file),  # Text file path
                     "english_us_arpa",  # Dictionary
                     "english_us_arpa",  # Acoustic model
-                    str(output_dir),
-                    "--clean",  # Clean previous runs
+                    str(textgrid_file),  # Output TextGrid path
+                    "--single_speaker",  # Single speaker mode
+                    "--beam", "100",  # Increase beam size for better alignment
                     "--quiet",  # Suppress verbose output
                 ]
 
@@ -251,18 +256,13 @@ class MFAAAlignerProvider(AlignerProvider):
                     env=env
                 )
 
-                # Parse TextGrid output
-                textgrid_file = output_dir / f"{audio_name.rsplit('.', 1)[0]}.TextGrid"
-
-                if not textgrid_file.exists():
-                    # Fallback to simple alignment if MFA fails
-                    print(f"Warning: MFA did not produce TextGrid output, falling back to simple alignment")
-                    return self._simple_alignment(audio_path, transcript)
-
                 # Parse TextGrid to extract word timestamps
-                segments = self._parse_textgrid(textgrid_file)
-
-                return segments
+                if textgrid_file.exists():
+                    segments = self._parse_textgrid(textgrid_file)
+                    return segments
+                else:
+                    print(f"Warning: MFA did not produce TextGrid output at {textgrid_file}")
+                    return self._simple_alignment(audio_path, transcript)
 
             except subprocess.CalledProcessError as e:
                 print(f"Warning: MFA alignment failed: {e.stderr}")

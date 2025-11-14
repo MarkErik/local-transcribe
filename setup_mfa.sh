@@ -62,8 +62,9 @@ if command -v uv &> /dev/null; then
     echo "Using uv..."
     uv sync
 else
-    echo "Using pip..."
-    pip install textgrid
+    echo "❌ uv not found. This project requires uv for dependency management."
+    echo "   Install uv: https://github.com/astral-sh/uv"
+    exit 1
 fi
 
 echo ""

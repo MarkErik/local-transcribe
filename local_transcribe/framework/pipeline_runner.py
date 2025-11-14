@@ -6,6 +6,8 @@ import sys
 from typing import Optional
 
 from local_transcribe.framework.model_downloader import ensure_models_available
+from local_transcribe.framework.provider_setup import ProviderSetup
+from local_transcribe.framework.output_manager import OutputManager
 from local_transcribe.lib.speaker_namer import assign_speaker_names
 from local_transcribe.lib.audio_processor import standardize_audio, cleanup_temp_audio
 
@@ -81,58 +83,28 @@ def run_pipeline(args, api, root):
             print(f"ERROR: {e}")
             return 1
 
-    # Check required providers
+    # Setup providers using ProviderSetup class
     try:
-        if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
-            unified_provider = api["registry"].get_unified_provider(args.unified_provider)
-        else:
-            transcriber_provider = api["registry"].get_transcriber_provider(args.transcriber_provider)
-            # Check if transcriber has built-in alignment
-            if transcriber_provider.has_builtin_alignment:
-                aligner_provider = None
-            else:
-                # Pure transcribers require an aligner
-                aligner_provider = api["registry"].get_aligner_provider(args.aligner_provider)
-            
-            # Diarization is only needed for combined audio in separate processing mode
-            if mode == "combined_audio":
-                diarization_provider = api["registry"].get_diarization_provider(args.diarization_provider)
-            else:
-                diarization_provider = None
-            
-            # For separate processing, always need a turn builder
-            if mode == "combined_audio":
-                turn_builder_name = "multi_speaker"
-            else:
-                turn_builder_name = getattr(args, 'turn_builder_provider', "single_speaker_length_based")
-            turn_builder_provider = api["registry"].get_turn_builder_provider(turn_builder_name)
+        provider_setup = ProviderSetup(api["registry"], args)
+        providers = provider_setup.setup_providers(mode)
+        
+        # Extract individual providers for easier access
+        unified_provider = providers.get('unified')
+        transcriber_provider = providers.get('transcriber')
+        aligner_provider = providers.get('aligner')
+        diarization_provider = providers.get('diarization')
+        turn_builder_provider = providers.get('turn_builder')
+        transcript_cleanup_provider = providers.get('transcript_cleanup')
+        
     except ValueError as e:
         print(f"ERROR: {e}")
         print("Use --list-plugins to see available options.")
         return 1
 
-    # Set default model if not specified
-    if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
-        if not hasattr(args, 'unified_model') or args.unified_model is None:
-            available_models = unified_provider.get_available_models()
-            args.unified_model = available_models[0] if available_models else None
-    else:
-        if not hasattr(args, 'transcriber_model') or args.transcriber_model is None:
-            available_models = transcriber_provider.get_available_models()
-            args.transcriber_model = available_models[0] if available_models else None
-
     # Download required models for selected providers
-    providers = {}
-    if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
-        providers['unified'] = unified_provider
-    else:
-        providers['transcriber'] = transcriber_provider
-        if aligner_provider:
-            providers['aligner'] = aligner_provider
-        if diarization_provider:
-            providers['diarization'] = diarization_provider
+    model_download_providers = provider_setup.get_model_download_providers()
 
-    download_result = ensure_models_available(providers, models_dir, args)
+    download_result = ensure_models_available(model_download_providers, models_dir, args)
     if download_result != 0:
         return download_result
 
@@ -198,16 +170,12 @@ def run_pipeline(args, api, root):
             raw_dir = paths["root"] / "Transcript_Raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
             print(f"[*] Writing raw outputs to {raw_dir}...")
-            write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, tracker, api["registry"], std_audio)
+            output_manager = OutputManager(api["registry"])
+            output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, std_audio)
 
             # 5) Optional transcript cleanup
             transcript_cleanup_done = False
-            if hasattr(args, 'transcript_cleanup_provider') and args.transcript_cleanup_provider:
-                transcript_cleanup_provider = api["registry"].get_transcript_cleanup_provider(args.transcript_cleanup_provider)
-                # Reinitialize with custom URL if provided
-                if hasattr(args, 'transcript_cleanup_url') and args.transcript_cleanup_url and hasattr(transcript_cleanup_provider, 'url'):
-                    transcript_cleanup_provider.url = args.transcript_cleanup_url
-
+            if transcript_cleanup_provider:
                 print(f"[*] Cleaning up transcript with {args.transcript_cleanup_provider}...")
                 for turn in transcript:
                     original_text = turn.text
@@ -222,7 +190,8 @@ def run_pipeline(args, api, root):
                 processed_dir = paths["root"] / "Transcript_Processed"
                 processed_dir.mkdir(parents=True, exist_ok=True)
                 print(f"[*] Writing processed outputs to {processed_dir}...")
-                write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, tracker, api["registry"], std_audio)
+                output_manager = OutputManager(api["registry"])
+                output_manager.write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, std_audio)
             else:
                 print("[i] No transcript cleanup selected, raw outputs already written.")
 
@@ -285,16 +254,12 @@ def run_pipeline(args, api, root):
             raw_dir = paths["root"] / "Transcript_Raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
             print(f"[*] Writing raw outputs to {raw_dir}...")
-            write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, tracker, api["registry"], None)
+            output_manager = OutputManager(api["registry"])
+            output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, None)
 
             # 5) Optional transcript cleanup
             transcript_cleanup_done = False
-            if hasattr(args, 'transcript_cleanup_provider') and args.transcript_cleanup_provider:
-                transcript_cleanup_provider = api["registry"].get_transcript_cleanup_provider(args.transcript_cleanup_provider)
-                # Reinitialize with custom URL if provided
-                if hasattr(args, 'transcript_cleanup_url') and args.transcript_cleanup_url and hasattr(transcript_cleanup_provider, 'url'):
-                    transcript_cleanup_provider.url = args.transcript_cleanup_url
-
+            if transcript_cleanup_provider:
                 print(f"[*] Cleaning up transcript with {args.transcript_cleanup_provider}...")
                 for turn in transcript:
                     original_text = turn.text
@@ -309,7 +274,8 @@ def run_pipeline(args, api, root):
                 processed_dir = paths["root"] / "Transcript_Processed"
                 processed_dir.mkdir(parents=True, exist_ok=True)
                 print(f"[*] Writing processed outputs to {processed_dir}...")
-                write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, tracker, api["registry"], None)
+                output_manager = OutputManager(api["registry"])
+                output_manager.write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, None)
             else:
                 print("[i] No transcript cleanup selected, raw outputs already written.")
 
@@ -332,52 +298,3 @@ def run_pipeline(args, api, root):
     finally:
         # Always stop progress tracking
         tracker.stop()
-
-def write_selected_outputs(transcript, paths, selected, tracker, registry, audio_path=None):
-    """Write selected outputs for merged transcript."""
-    output_task = tracker.add_task("Writing output files", total=100, stage="output")
-    tracker.update(output_task, advance=20, description="Writing transcript files")
-
-    srt_path = None
-
-    if 'timestamped-txt' in selected:
-        timestamped_writer = registry.get_output_writer("timestamped-txt")
-        timestamped_writer.write(transcript, paths["merged"] / "transcript.timestamped.txt")
-
-    if 'plain-txt' in selected:
-        plain_writer = registry.get_output_writer("plain-txt")
-        plain_writer.write(transcript, paths["merged"] / "transcript.txt")
-
-    if 'csv' in selected:
-        csv_writer = registry.get_output_writer("csv")
-        csv_writer.write(transcript, paths["merged"] / "transcript.csv")
-
-    if 'markdown' in selected:
-        markdown_writer = registry.get_output_writer("markdown")
-        markdown_writer.write(transcript, paths["merged"] / "transcript.md")
-
-    if 'turns-json' in selected:
-        json_turns_writer = registry.get_output_writer("turns-json")
-        json_turns_writer.write(transcript, paths["merged"] / "transcript.turns.json")
-        print(f"[i] Final transcript JSON saved to: transcript.turns.json")
-
-    tracker.update(output_task, advance=20, description="Writing subtitle files")
-
-    if 'srt' in selected:
-        srt_writer = registry.get_output_writer("srt")
-        srt_path = paths["merged"] / "subtitles.srt"
-        srt_writer.write(transcript, srt_path)
-
-    if 'vtt' in selected:
-        vtt_writer = registry.get_output_writer("vtt")
-        vtt_writer.write(transcript, paths["merged"] / "subtitles.vtt")
-
-    if srt_path and audio_path is not None:
-        tracker.update(output_task, advance=30, description="Rendering video with subtitles")
-        from local_transcribe.providers.writers.render_video import render_video
-        render_video(srt_path, paths["merged"] / "video_with_subtitles.mp4", audio_path=audio_path)
-    else:
-        tracker.update(output_task, advance=30, description="Skipping video rendering")
-
-    tracker.update(output_task, advance=30, description="Finalizing outputs")
-    tracker.complete_task(output_task, stage="output")

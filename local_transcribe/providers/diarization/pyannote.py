@@ -122,6 +122,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         audio_path: str,
         words: List[WordSegment],
         num_speakers: int,
+        models_dir: pathlib.Path,
         **kwargs
     ) -> List[WordSegment]:
         """
@@ -131,6 +132,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             audio_path: Path to audio file
             words: Word segments from transcription
             num_speakers: Number of speakers expected in the audio
+            models_dir: Directory containing the models
             **kwargs: Provider-specific options
         """
         # For now, use the direct assignment method
@@ -208,10 +210,9 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         
         print(f"DEBUG: Loading pyannote model with token: {'***' if token else 'NOT SET'}")
         
-        # Load pipeline using local files only from the specific snapshot directory
+        # Load pipeline from the specific snapshot directory
         pipeline = Pipeline.from_pretrained(
             str(latest_snapshot_dir),
-            local_files_only=True,
             token=token if token else None
         )
         # Move to GPU if available

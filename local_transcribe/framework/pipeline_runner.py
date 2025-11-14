@@ -158,7 +158,7 @@ def run_pipeline(args, api, root):
                 )
 
                 # 3) Diarize (assign speakers to words)
-                words_with_speakers = diarization_provider.diarize(str(std_audio), words, args.num_speakers)
+                words_with_speakers = diarization_provider.diarize(str(std_audio), words, args.num_speakers, models_dir)
 
                 # 4) Build turns
                 transcript = turn_builder_provider.build_turns(words_with_speakers)

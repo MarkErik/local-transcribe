@@ -230,7 +230,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         for word in words:
             # Find overlapping diarization segments
             overlaps = []
-            for segment, _, speaker in diarization.itertracks(yield_label=True):
+            for segment, speaker in diarization.speaker_diarization:
                 overlap_start = max(word.start, segment.start)
                 overlap_end = min(word.end, segment.end)
                 if overlap_start < overlap_end:

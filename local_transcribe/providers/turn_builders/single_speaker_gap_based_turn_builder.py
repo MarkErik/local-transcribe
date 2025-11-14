@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Single speaker turn builder provider.
+Single speaker gap-based turn builder provider.
 """
 
 from typing import List, Optional
@@ -8,12 +8,12 @@ from typing import List, Optional
 from local_transcribe.framework.plugins import TurnBuilderProvider, WordSegment, Turn, registry
 
 
-class SingleSpeakerTurnBuilderProvider(TurnBuilderProvider):
-    """Single speaker turn builder that groups words into turns based on timing and length."""
+class SingleSpeakerGapBasedTurnBuilderProvider(TurnBuilderProvider):
+    """Single speaker turn builder that groups words into turns based on timing gaps and length."""
 
     @property
     def name(self) -> str:
-        return "single_speaker"
+        return "single_speaker_gap_based"
 
     @property
     def description(self) -> str:
@@ -97,7 +97,7 @@ class SingleSpeakerTurnBuilderProvider(TurnBuilderProvider):
 
 def register_turn_builder_plugins():
     """Register turn builder plugins."""
-    registry.register_turn_builder_provider(SingleSpeakerTurnBuilderProvider())
+    registry.register_turn_builder_provider(SingleSpeakerGapBasedTurnBuilderProvider())
 
 
 # Auto-register on import

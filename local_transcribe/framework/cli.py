@@ -17,6 +17,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization)")
     p.add_argument("--cleanup-provider", help="Cleanup provider to use for LLM-based transcript cleaning")
     p.add_argument("--cleanup-url", help="URL for remote cleanup provider (e.g., http://ip:port for Llama.cpp server)")
+    p.add_argument("--turn-builder-provider", help="Turn builder provider to use (for grouping transcribed words into turns)")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
@@ -60,6 +61,16 @@ def interactive_prompt(args, api):
     else:
         # Fallback for when audio files aren't set yet
         mode = "combined_audio"
+
+    # Select turn builder for split audio
+    if mode == "split_audio":
+        turn_builders = registry.list_turn_builder_providers()
+        # Filter to single speaker turn builders
+        single_speaker_turn_builders = {k: v for k, v in turn_builders.items() if k.startswith("single_speaker")}
+        if len(single_speaker_turn_builders) > 1:
+            args.turn_builder_provider = select_provider(single_speaker_turn_builders, "Turn Builder Providers")
+        else:
+            args.turn_builder_provider = list(single_speaker_turn_builders.keys())[0] if single_speaker_turn_builders else "single_speaker_length_based"
 
     # Check if unified mode and offer processing type choice
     unified_providers = registry.list_unified_providers()
@@ -242,6 +253,8 @@ def interactive_prompt(args, api):
             provider_info.append(f"Aligner={args.aligner_provider}")
         if hasattr(args, 'diarization_provider') and args.diarization_provider:
             provider_info.append(f"Diarization={args.diarization_provider}")
+        if hasattr(args, 'turn_builder_provider') and args.turn_builder_provider:
+            provider_info.append(f"Turn Builder={args.turn_builder_provider}")
         if hasattr(args, 'cleanup_provider') and args.cleanup_provider:
             provider_info.append(f"Cleanup={args.cleanup_provider}")
         provider_str = ", ".join(provider_info) if provider_info else "Default providers"

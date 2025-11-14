@@ -103,7 +103,7 @@ def run_pipeline(args, api, root):
             if mode == "combined_audio":
                 turn_builder_name = "multi_speaker"
             else:
-                turn_builder_name = "single_speaker"
+                turn_builder_name = getattr(args, 'turn_builder_provider', "single_speaker_length_based")
             turn_builder_provider = api["registry"].get_turn_builder_provider(turn_builder_name)
     except ValueError as e:
         print(f"ERROR: {e}")

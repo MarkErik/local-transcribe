@@ -238,6 +238,6 @@ class VTTWriter(OutputWriter):
         write_vtt(turn_dicts, output_path)
 
 
-# Register the writers
+# Register the file_writers
 registry.register_output_writer(SRTWriter())
 registry.register_output_writer(VTTWriter())

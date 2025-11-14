@@ -136,7 +136,7 @@ class PlainTextWriter(OutputWriter):
         write_plain_txt(turn_dicts, output_path)
 
 
-# Register the writers
+# Register the file_writers
 registry.register_output_writer(TimestampedTextWriter())
 registry.register_output_writer(PlainTextWriter())
 registry.register_word_writer(WordSegmentsWriter())

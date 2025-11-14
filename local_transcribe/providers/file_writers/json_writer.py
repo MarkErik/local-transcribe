@@ -130,6 +130,6 @@ class TurnsJsonWriter(OutputWriter):
         write_turns_json(turn_dicts, output_path)
 
 
-# Register the writers
+# Register the file_writers
 registry.register_word_writer(WordSegmentsJsonWriter())
 registry.register_output_writer(TurnsJsonWriter())

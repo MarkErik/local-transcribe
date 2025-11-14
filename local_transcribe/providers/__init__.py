@@ -15,8 +15,8 @@ from . import diarization
 # Import turn builders to register them
 from . import turn_builders
 
-# Import writers to register them
-from . import writers
+# Import file_writers to register them
+from . import file_writers
 
 # Import unified providers to register them
 from . import unified

@@ -78,27 +78,6 @@ def interactive_prompt(args, api):
         # Fallback for when audio files aren't set yet
         mode = "combined_audio"
 
-    # Select turn builder for split audio
-    if mode == "split_audio":
-        turn_builders = registry._turn_builder_providers
-        # Filter to single speaker turn builders
-        single_speaker_turn_builders = {k: v for k, v in turn_builders.items() if k.startswith("single_speaker")}
-        if len(single_speaker_turn_builders) > 1:
-            print(f"\nAvailable Turn Builder Providers:")
-            for i, (name, provider) in enumerate(single_speaker_turn_builders.items(), 1):
-                display_name = getattr(provider, 'short_name', provider.description)
-                print(f"  {i}. {display_name}")
-            
-            while True:
-                try:
-                    choice = int(input(f"\nChoose turn builder (number): ").strip())
-                    if 1 <= choice <= len(single_speaker_turn_builders):
-                        args.turn_builder_provider = list(single_speaker_turn_builders.keys())[choice - 1]
-                        break
-                    else:
-                        print("Invalid choice. Please enter a number from the list.")
-                except ValueError:
-                    print("Please enter a valid number.")
     # Check if unified mode and offer processing type choice
     unified_providers = registry.list_unified_providers()
     if unified_providers and hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:

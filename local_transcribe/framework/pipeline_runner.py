@@ -195,10 +195,6 @@ def run_pipeline(args, api, root):
                     transcriber_model=args.transcriber_model
                 )
 
-                # Save transcription results as plain text before diarization
-                word_writer = api["registry"].get_word_writer("word-segments")
-                word_writer.write(words, paths["merged"] / "transcription.txt")
-
                 # 3) Diarize (assign speakers to words)
                 words_with_speakers = diarization_provider.diarize(str(std_audio), words, args.num_speakers)
 

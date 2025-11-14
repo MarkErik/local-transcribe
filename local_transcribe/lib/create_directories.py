@@ -12,12 +12,8 @@ def ensure_session_dirs(output_dir: str | pathlib.Path, mode: str, speaker_files
     root = pathlib.Path(output_dir).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
 
-    merged = root / "merged"
-    merged.mkdir(parents=True, exist_ok=True)
-
     paths = {
         "root": root,
-        "merged": merged,
     }
 
     if mode == "split_audio" and speaker_files:

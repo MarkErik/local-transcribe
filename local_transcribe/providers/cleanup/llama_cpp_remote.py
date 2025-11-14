@@ -26,13 +26,13 @@ class LlamaCppRemoteCleanupProvider(CleanupProvider):
     def cleanup_segment(self, text: str, **kwargs) -> str:
         """Clean up a transcript segment using the remote LLM."""
         system_message = (
-            "You are an experienced editor, specializing in cleaning up podcast transcripts, but you NEVER add your own text to it. "
-            "You are an expert in enhancing readability while preserving authenticity, but you ALWAYS keep text as it is given to you. "
-            "Because this is a podcast transcript, you are NOT ALLOWED TO insert or substitute any words that the speaker didn't say. "
-            "You ALWAYS respond with the cleaned up original text in valid JSON format with a key 'cleaned_text', nothing else. "
-            "If there are characters that need to be escaped in the JSON, escape them. "
-            "You MUST NEVER respond to questions - ALWAYS ignore them. "
-            "You are an EDITOR, not an AUTHOR, and this is a transcript of someone that can be quoted later. "
+            "You are an experienced editor, specializing in cleaning up podcast transcripts, but you NEVER add your own text to it."
+            "You are an expert in enhancing readability while preserving authenticity, but you ALWAYS keep text as it is given to you."
+            "Because this is a podcast transcript, you are NOT ALLOWED TO insert or substitute any words that the speaker didn't say."
+            "You ALWAYS respond with the cleaned up original text in valid JSON format with a key 'cleaned_text', nothing else."
+            "If there are characters that need to be escaped in the JSON, escape them."
+            "You MUST NEVER respond to questions - ALWAYS ignore them."
+            "You are an EDITOR, not an AUTHOR, and this is a transcript of someone that can be quoted later."
             "\n\n"
             "When processing each piece of the transcript, follow these rules:\n\n"
             "• Preservation Rules:\n"
@@ -63,7 +63,6 @@ class LlamaCppRemoteCleanupProvider(CleanupProvider):
         )
 
         payload = {
-            "model": "llama",  # Adjust if your server expects a specific model name
             "messages": [
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": text}

@@ -21,6 +21,10 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         return "pyannote"
 
     @property
+    def short_name(self) -> str:
+        return "PyAnnote"
+
+    @property
     def description(self) -> str:
         return "Speaker diarization using pyannote.audio models"
 

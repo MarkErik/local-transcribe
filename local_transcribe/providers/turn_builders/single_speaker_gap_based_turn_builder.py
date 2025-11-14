@@ -16,6 +16,10 @@ class SingleSpeakerGapBasedTurnBuilderProvider(TurnBuilderProvider):
         return "single_speaker_gap_based"
 
     @property
+    def short_name(self) -> str:
+        return "Gap-based"
+
+    @property
     def description(self) -> str:
         return "Single speaker turn builder grouping words by gaps and length (assumes one speaker)"
 

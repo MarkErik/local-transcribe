@@ -35,6 +35,10 @@ class GraniteTranscriberProvider(TranscriberProvider):
         return "granite"
 
     @property
+    def short_name(self) -> str:
+        return "IBM Granite"
+
+    @property
     def description(self) -> str:
         return "IBM Granite transcription (2B/8B) for speech-to-text"
 

@@ -28,15 +28,31 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
     return args
 
-def select_provider(providers, prompt):
-    """Helper to select a provider from a dict."""
-    print(f"\nAvailable {prompt}:")
-    for i, (name, desc) in enumerate(providers.items(), 1):
-        print(f"  {i}. {name}: {desc}")
+def select_provider(registry, provider_type):
+    """Helper to select a provider from registry."""
+    if provider_type == "transcriber":
+        providers = registry._transcriber_providers
+    elif provider_type == "aligner":
+        providers = registry._aligner_providers
+    elif provider_type == "diarization":
+        providers = registry._diarization_providers
+    elif provider_type == "unified":
+        providers = registry._unified_providers
+    elif provider_type == "cleanup":
+        providers = registry._cleanup_providers
+    elif provider_type == "turn_builder":
+        providers = registry._turn_builder_providers
+    else:
+        raise ValueError(f"Unknown provider type: {provider_type}")
+    
+    print(f"\nAvailable {provider_type.capitalize()} Providers:")
+    for i, (name, provider) in enumerate(providers.items(), 1):
+        display_name = getattr(provider, 'short_name', provider.description)
+        print(f"  {i}. {display_name}")
 
     while True:
         try:
-            choice = int(input(f"\nChoose {prompt.lower()} (number): ").strip())
+            choice = int(input(f"\nChoose {provider_type.lower()} (number): ").strip())
             if 1 <= choice <= len(providers):
                 return list(providers.keys())[choice - 1]
             else:
@@ -64,14 +80,25 @@ def interactive_prompt(args, api):
 
     # Select turn builder for split audio
     if mode == "split_audio":
-        turn_builders = registry.list_turn_builder_providers()
+        turn_builders = registry._turn_builder_providers
         # Filter to single speaker turn builders
         single_speaker_turn_builders = {k: v for k, v in turn_builders.items() if k.startswith("single_speaker")}
         if len(single_speaker_turn_builders) > 1:
-            args.turn_builder_provider = select_provider(single_speaker_turn_builders, "Turn Builder Providers")
-        else:
-            args.turn_builder_provider = list(single_speaker_turn_builders.keys())[0] if single_speaker_turn_builders else "single_speaker_length_based"
-
+            print(f"\nAvailable Turn Builder Providers:")
+            for i, (name, provider) in enumerate(single_speaker_turn_builders.items(), 1):
+                display_name = getattr(provider, 'short_name', provider.description)
+                print(f"  {i}. {display_name}")
+            
+            while True:
+                try:
+                    choice = int(input(f"\nChoose turn builder (number): ").strip())
+                    if 1 <= choice <= len(single_speaker_turn_builders):
+                        args.turn_builder_provider = list(single_speaker_turn_builders.keys())[choice - 1]
+                        break
+                    else:
+                        print("Invalid choice. Please enter a number from the list.")
+                except ValueError:
+                    print("Please enter a valid number.")
     # Check if unified mode and offer processing type choice
     unified_providers = registry.list_unified_providers()
     if unified_providers and hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
@@ -98,7 +125,7 @@ def interactive_prompt(args, api):
     if args.processing_mode == "unified":
         # Select unified provider
         unified_providers = registry.list_unified_providers()
-        args.unified_provider = select_provider(unified_providers, "Unified Providers")
+        args.unified_provider = select_provider(registry, "unified")
 
         # Model selection for unified provider
         unified_provider = registry.get_unified_provider(args.unified_provider)
@@ -137,7 +164,7 @@ def interactive_prompt(args, api):
     else:
         # Select transcriber provider
         transcriber_providers = registry.list_transcriber_providers()
-        args.transcriber_provider = select_provider(transcriber_providers, "Transcriber Providers")
+        args.transcriber_provider = select_provider(registry, "transcriber")
 
         # Model selection for transcriber provider
         transcriber_provider = registry.get_transcriber_provider(args.transcriber_provider)
@@ -164,14 +191,38 @@ def interactive_prompt(args, api):
         if not transcriber_provider.has_builtin_alignment:
             # Select aligner provider
             aligner_providers = registry.list_aligner_providers()
-            args.aligner_provider = select_provider(aligner_providers, "Aligner Providers")
+            args.aligner_provider = select_provider(registry, "aligner")
         else:
             args.aligner_provider = None
+
+        # Select turn builder for split audio
+        if mode == "split_audio":
+            turn_builders = registry._turn_builder_providers
+            # Filter to single speaker turn builders
+            single_speaker_turn_builders = {k: v for k, v in turn_builders.items() if k.startswith("single_speaker")}
+            if len(single_speaker_turn_builders) > 1:
+                print(f"\nAvailable Turn Builder Providers:")
+                for i, (name, provider) in enumerate(single_speaker_turn_builders.items(), 1):
+                    display_name = getattr(provider, 'short_name', provider.description)
+                    print(f"  {i}. {display_name}")
+                
+                while True:
+                    try:
+                        choice = int(input(f"\nChoose turn builder (number): ").strip())
+                        if 1 <= choice <= len(single_speaker_turn_builders):
+                            args.turn_builder_provider = list(single_speaker_turn_builders.keys())[choice - 1]
+                            break
+                        else:
+                            print("Invalid choice. Please enter a number from the list.")
+                    except ValueError:
+                        print("Please enter a valid number.")
+            else:
+                args.turn_builder_provider = list(single_speaker_turn_builders.keys())[0] if single_speaker_turn_builders else "single_speaker_length_based"
 
         # Select diarization provider (only needed for combined audio in separate mode)
         if mode == "combined_audio":
             diarization_providers = registry.list_diarization_providers()
-            args.diarization_provider = select_provider(diarization_providers, "Diarization Providers")
+            args.diarization_provider = select_provider(registry, "diarization")
         else:
             args.diarization_provider = None
 

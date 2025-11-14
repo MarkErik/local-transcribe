@@ -27,6 +27,10 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
         return "openai_whisper"
 
     @property
+    def short_name(self) -> str:
+        return "OpenAI Whisper"
+
+    @property
     def description(self) -> str:
         return "OpenAI Whisper transcription (tiny.en/base.en/small.en) for speech-to-text"
 

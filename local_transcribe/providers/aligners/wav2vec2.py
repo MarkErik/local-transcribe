@@ -29,6 +29,10 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         return "wav2vec2"
 
     @property
+    def short_name(self) -> str:
+        return "Wav2Vec2"
+
+    @property
     def description(self) -> str:
         return "Wav2Vec2 forced alignment for accurate word-level timestamps"
 

@@ -20,6 +20,10 @@ class LlamaCppRemoteCleanupProvider(CleanupProvider):
         return "llama_cpp_remote"
 
     @property
+    def short_name(self) -> str:
+        return "Llama.cpp Remote"
+
+    @property
     def description(self) -> str:
         return "Remote Llama.cpp server for LLM-based transcript cleanup"
 

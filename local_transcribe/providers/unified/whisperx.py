@@ -30,6 +30,10 @@ class WhisperXUnifiedProvider(UnifiedProvider):
         return "whisperx"
 
     @property
+    def short_name(self) -> str:
+        return "WhisperX"
+
+    @property
     def description(self) -> str:
         return "WhisperX: Fast ASR with word-level timestamps and integrated speaker diarization"
 

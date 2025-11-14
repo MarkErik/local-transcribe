@@ -16,6 +16,10 @@ class MultiSpeakerTurnBuilderProvider(TurnBuilderProvider):
         return "multi_speaker"
 
     @property
+    def short_name(self) -> str:
+        return "Multi-speaker"
+
+    @property
     def description(self) -> str:
         return "Multi-speaker turn builder grouping words by speaker changes, gaps, and length"
 

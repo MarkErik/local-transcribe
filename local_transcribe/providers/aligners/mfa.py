@@ -23,6 +23,10 @@ class MFAAAlignerProvider(AlignerProvider):
         return "mfa"
 
     @property
+    def short_name(self) -> str:
+        return "MFA"
+
+    @property
     def description(self) -> str:
         return "Montreal Forced Aligner for precise word-level timestamps"
 

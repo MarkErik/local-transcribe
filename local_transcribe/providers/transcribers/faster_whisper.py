@@ -58,6 +58,10 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
         return "faster_whisper"
 
     @property
+    def short_name(self) -> str:
+        return "Faster-Whisper"
+
+    @property
     def description(self) -> str:
         return "Faster-Whisper transcription with built-in word-level timestamps"
 

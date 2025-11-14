@@ -16,6 +16,10 @@ class SingleSpeakerLengthBasedTurnBuilderProvider(TurnBuilderProvider):
         return "single_speaker_length_based"
 
     @property
+    def short_name(self) -> str:
+        return "Length-based"
+
+    @property
     def description(self) -> str:
         return "Single speaker length-based turn builder grouping words by length limits with sentence boundary preservation"
 

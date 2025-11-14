@@ -47,6 +47,12 @@ class TranscriberProvider(ABC):
 
     @property
     @abstractmethod
+    def short_name(self) -> str:
+        """Return a short display name for UI selection."""
+        pass
+
+    @property
+    @abstractmethod
     def has_builtin_alignment(self) -> bool:
         """Return True if this transcriber provides built-in word-level alignment."""
         pass
@@ -132,6 +138,12 @@ class AlignerProvider(ABC):
         """Return a human-readable description of this provider."""
         pass
 
+    @property
+    @abstractmethod
+    def short_name(self) -> str:
+        """Return a short display name for UI selection."""
+        pass
+
     @abstractmethod
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs).
@@ -195,6 +207,12 @@ class DiarizationProvider(ABC):
         """Return a human-readable description of this provider."""
         pass
 
+    @property
+    @abstractmethod
+    def short_name(self) -> str:
+        """Return a short display name for UI selection."""
+        pass
+
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs). Default empty."""
         return []
@@ -248,6 +266,12 @@ class UnifiedProvider(ABC):
     @abstractmethod
     def description(self) -> str:
         """Return a human-readable description of this provider."""
+        pass
+
+    @property
+    @abstractmethod
+    def short_name(self) -> str:
+        """Return a short display name for UI selection."""
         pass
 
     @abstractmethod
@@ -309,6 +333,12 @@ class TurnBuilderProvider(ABC):
 
     @property
     @abstractmethod
+    def short_name(self) -> str:
+        """Return a short display name for UI selection."""
+        pass
+
+    @property
+    @abstractmethod
     def description(self) -> str:
         """Return a human-readable description of this provider."""
         pass
@@ -345,6 +375,12 @@ class CleanupProvider(ABC):
     @abstractmethod
     def description(self) -> str:
         """Return a human-readable description of this provider."""
+        pass
+
+    @property
+    @abstractmethod
+    def short_name(self) -> str:
+        """Return a short display name for UI selection."""
         pass
 
     @abstractmethod

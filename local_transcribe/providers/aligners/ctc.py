@@ -34,6 +34,10 @@ class CTCAlignerProvider(AlignerProvider):
         return "ctc"
 
     @property
+    def short_name(self) -> str:
+        return "CTC"
+
+    @property
     def description(self) -> str:
         return "CTC-based forced alignment for multilingual word-level timestamps"
 

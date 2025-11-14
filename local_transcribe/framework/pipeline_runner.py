@@ -201,9 +201,6 @@ def run_pipeline(args, api, root):
                 # 4) Build turns
                 transcript = turn_builder_provider.build_turns(words_with_speakers)
 
-                # 4) Build turns
-                transcript = turn_builder_provider.build_turns(words_with_speakers)
-
             # Assign speaker names if interactive
             transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
 

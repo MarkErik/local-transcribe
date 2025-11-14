@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 from typing import List
-from local_transcribe.framework.plugins import Turn
+from local_transcribe.framework.plugin_interfaces import Turn
 
 def merge_turns(a: List[Turn], b: List[Turn]) -> List[Turn]:
     """

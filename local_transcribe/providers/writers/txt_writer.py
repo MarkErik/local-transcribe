@@ -77,7 +77,7 @@ def write_word_segments(words: List[Union[WordSegment, Dict]], path: str | Path)
 
 
 # Plugin classes
-from local_transcribe.framework.plugins import OutputWriter, WordWriter, Turn, registry, WordSegment
+from local_transcribe.framework.plugin_interfaces import OutputWriter, WordWriter, Turn, registry, WordSegment
 from typing import List
 
 

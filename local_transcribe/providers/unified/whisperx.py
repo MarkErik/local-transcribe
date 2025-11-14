@@ -4,10 +4,11 @@ Unified ASR + Diarization plugin using WhisperX.
 """
 
 from typing import List, Optional
+import os
 import pathlib
 import torch
 import whisperx
-from local_transcribe.framework.plugins import UnifiedProvider, Turn, registry
+from local_transcribe.framework.plugin_interfaces import UnifiedProvider, Turn, registry
 
 
 class WhisperXUnifiedProvider(UnifiedProvider):

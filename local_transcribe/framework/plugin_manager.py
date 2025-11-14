@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# framework/setup.py - Module importing and plugin setup
+# framework/plugin_manager.py - Plugin management and module importing
 
 import sys
 import pathlib

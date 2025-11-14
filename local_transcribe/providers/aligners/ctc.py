@@ -12,7 +12,7 @@ import numpy as np
 import librosa
 from transformers import AutoModelForCTC, AutoTokenizer
 from uroman import Uroman
-from local_transcribe.framework.plugins import AlignerProvider, WordSegment, registry
+from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
 
 
 # Initialize uroman for romanization

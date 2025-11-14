@@ -8,7 +8,7 @@ import os
 import pathlib
 import tempfile
 import subprocess
-from local_transcribe.framework.plugins import AlignerProvider, WordSegment, registry
+from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
 
 
 class MFAAAlignerProvider(AlignerProvider):

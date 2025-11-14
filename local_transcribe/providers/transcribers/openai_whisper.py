@@ -6,7 +6,7 @@ Transcriber plugin using OpenAI Whisper.
 from typing import List, Optional
 import os
 import pathlib
-from local_transcribe.framework.plugins import TranscriberProvider, WordSegment, registry
+from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 
 
 class OpenAIWhisperTranscriberProvider(TranscriberProvider):

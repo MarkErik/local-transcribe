@@ -4,7 +4,7 @@ from typing import List, Dict, Union, Any
 from pathlib import Path
 import json
 
-from local_transcribe.framework.plugins import OutputWriter, WordWriter, Turn, registry, WordSegment
+from local_transcribe.framework.plugin_interfaces import OutputWriter, WordWriter, Turn, registry, WordSegment
 
 
 def write_word_segments_json(words: List[Union[WordSegment, Dict]], path: str | Path) -> None:

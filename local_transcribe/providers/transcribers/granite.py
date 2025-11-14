@@ -12,7 +12,7 @@ import librosa
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from peft import PeftModel
 from huggingface_hub import hf_hub_download, snapshot_download
-from local_transcribe.framework.plugins import TranscriberProvider, WordSegment, registry
+from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 
 
 class GraniteTranscriberProvider(TranscriberProvider):

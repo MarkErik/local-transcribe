@@ -7,6 +7,7 @@ from typing import Optional
 
 from local_transcribe.framework.model_downloader import ensure_models_available
 from local_transcribe.lib.speaker_namer import assign_speaker_names
+from local_transcribe.lib.audio_processor import standardize_audio, cleanup_temp_audio
 
 def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, **kwargs):
     """Transcribe audio and return word segments with timestamps."""
@@ -165,18 +166,7 @@ def run_pipeline(args, api, root):
             mixed_path = ensure_file(speaker_files["combined_audio"], "Combined Audio")
 
             # 1) Standardize
-            std_task = tracker.add_task("Audio standardization", total=100, stage="standardization")
-            # Create a temp dir for standardized audio to avoid ffmpeg in-place editing
-            temp_audio_dir = outdir / "temp_audio"
-            temp_audio_dir.mkdir(exist_ok=True)
-
-            # Standardize combined audio
-            tracker.update(std_task, advance=50, description="Standardizing combined audio")
-            std_audio = api["standardize_and_get_path"](mixed_path, tmpdir=temp_audio_dir)
-
-            # Complete the standardization task
-            tracker.update(std_task, advance=50, description="Audio standardization complete")
-            tracker.complete_task(std_task, stage="standardization")
+            std_audio = standardize_audio(mixed_path, outdir, tracker, api)
 
             if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
                 # Use unified provider
@@ -250,15 +240,7 @@ def run_pipeline(args, api, root):
                 audio_path = ensure_file(audio_file, speaker_name)
                 
                 # 1) Standardize
-                std_task = tracker.add_task(f"Audio standardization for {speaker_name}", total=100, stage="standardization")
-                temp_audio_dir = outdir / "temp_audio"
-                temp_audio_dir.mkdir(exist_ok=True)
-                
-                tracker.update(std_task, advance=50, description=f"Standardizing {speaker_name} audio")
-                std_audio = api["standardize_and_get_path"](audio_path, tmpdir=temp_audio_dir)
-                
-                tracker.update(std_task, advance=50, description=f"{speaker_name} audio standardization complete")
-                tracker.complete_task(std_task, stage="standardization")
+                std_audio = standardize_audio(audio_path, outdir, tracker, api, speaker_name)
                 
                 # 2) ASR + alignment
                 print(f"[*] Performing transcription and alignment for {speaker_name}...")
@@ -340,6 +322,10 @@ def run_pipeline(args, api, root):
         
         # Print performance summary
         tracker.print_summary()
+        
+        # Clean up temporary audio files
+        cleanup_temp_audio(outdir)
+        print("[✓] Temporary audio files cleaned up.")
         
         return 0
         

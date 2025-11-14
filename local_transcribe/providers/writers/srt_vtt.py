@@ -196,7 +196,7 @@ def write_vtt(turns: List[Dict], path: str | Path) -> None:
 
 
 # Plugin classes
-from local_transcribe.framework.plugins import OutputWriter, Turn, registry
+from local_transcribe.framework.plugin_interfaces import OutputWriter, Turn, registry
 from typing import List
 
 

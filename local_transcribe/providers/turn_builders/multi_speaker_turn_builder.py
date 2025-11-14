@@ -5,7 +5,7 @@ General turn builder provider.
 
 from typing import List, Optional
 
-from local_transcribe.framework.plugins import TurnBuilderProvider, WordSegment, Turn, registry
+from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, Turn, registry
 
 
 class MultiSpeakerTurnBuilderProvider(TurnBuilderProvider):

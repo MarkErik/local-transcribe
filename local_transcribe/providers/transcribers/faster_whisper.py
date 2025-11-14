@@ -7,7 +7,7 @@ from typing import List, Optional
 import os
 import pathlib
 from faster_whisper import WhisperModel as FWModel
-from local_transcribe.framework.plugins import TranscriberProvider, WordSegment, registry
+from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 
 
 # CT2 (faster-whisper) repos to search locally under ./models/transcribers/ct2/...

@@ -11,7 +11,7 @@ import subprocess
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
 
 
-class MFAAAlignerProvider(AlignerProvider):
+class MFAAlignerProvider(AlignerProvider):
     """Aligner provider using Montreal Forced Aligner for word-level timestamps."""
 
     def __init__(self):
@@ -48,16 +48,30 @@ class MFAAAlignerProvider(AlignerProvider):
         # For simplicity, assume MFA models need to be downloaded
         return models
 
+    def _get_mfa_command(self):
+        """Get the MFA command, checking local environment first."""
+        # Check if MFA is available in project-local environment
+        project_root = pathlib.Path(__file__).parent.parent.parent.parent
+        local_mfa_env = project_root / ".mfa_env" / "bin" / "mfa"
+        
+        if local_mfa_env.exists():
+            return str(local_mfa_env)
+        
+        # Fall back to system MFA
+        return "mfa"
+
     def _ensure_mfa_models(self):
         """Ensure MFA acoustic model and dictionary are downloaded to project directory."""
         # Set MFA_ROOT_DIR environment variable to use project models directory
         env = os.environ.copy()
         env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
 
+        mfa_cmd = self._get_mfa_command()
+        
         try:
             # Check if models are already downloaded
             result = subprocess.run(
-                ["mfa", "model", "list", "acoustic"],
+                [mfa_cmd, "model", "list", "acoustic"],
                 capture_output=True,
                 text=True,
                 check=True,
@@ -67,13 +81,13 @@ class MFAAAlignerProvider(AlignerProvider):
             if "english_us_arpa" not in result.stdout:
                 print(f"[*] Downloading MFA English acoustic model to {self.mfa_models_dir}...")
                 subprocess.run(
-                    ["mfa", "model", "download", "acoustic", "english_us_arpa"],
+                    [mfa_cmd, "model", "download", "acoustic", "english_us_arpa"],
                     check=True,
                     env=env
                 )
 
             result = subprocess.run(
-                ["mfa", "model", "list", "dictionary"],
+                [mfa_cmd, "model", "list", "dictionary"],
                 capture_output=True,
                 text=True,
                 check=True,
@@ -83,7 +97,7 @@ class MFAAAlignerProvider(AlignerProvider):
             if "english_us_arpa" not in result.stdout:
                 print(f"[*] Downloading MFA English dictionary to {self.mfa_models_dir}...")
                 subprocess.run(
-                    ["mfa", "model", "download", "dictionary", "english_us_arpa"],
+                    [mfa_cmd, "model", "download", "dictionary", "english_us_arpa"],
                     check=True,
                     env=env
                 )
@@ -232,12 +246,17 @@ class MFAAAlignerProvider(AlignerProvider):
                 # Set MFA_ROOT_DIR to use project models directory
                 env = os.environ.copy()
                 env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
+                
+                # Add MFA environment bin directory to PATH so MFA can find OpenFST binaries
+                mfa_env_bin = pathlib.Path(self._get_mfa_command()).parent
+                env["PATH"] = str(mfa_env_bin) + os.pathsep + env.get("PATH", "")
 
                 # Output TextGrid file
                 textgrid_file = output_dir / f"{audio_name.rsplit('.', 1)[0]}.TextGrid"
 
+                mfa_cmd = self._get_mfa_command()
                 cmd = [
-                    "mfa", "align_one",
+                    mfa_cmd, "align_one",
                     str(audio_file),  # Audio file path
                     str(transcript_file),  # Text file path
                     "english_us_arpa",  # Dictionary
@@ -270,7 +289,7 @@ class MFAAAlignerProvider(AlignerProvider):
                 return self._simple_alignment(audio_path, transcript)
             except FileNotFoundError:
                 print(f"Warning: MFA not installed or not in PATH")
-                print(f"Install with: conda install -c conda-forge montreal-forced-aligner")
+                print(f"Run: bash setup_mfa.sh")
                 print(f"Falling back to simple alignment")
                 return self._simple_alignment(audio_path, transcript)
 
@@ -282,7 +301,7 @@ class MFAAAlignerProvider(AlignerProvider):
 
 def register_aligner_plugins():
     """Register aligner plugins."""
-    registry.register_aligner_provider(MFAAAlignerProvider())
+    registry.register_aligner_provider(MFAAlignerProvider())
 
 
 # Auto-register on import

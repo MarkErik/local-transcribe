@@ -29,7 +29,8 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         return "Speaker diarization using pyannote.audio models"
 
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
-        return ["pyannote/speaker-diarization"]
+        # Return the actual HuggingFace model ID that needs to be downloaded
+        return ["pyannote/speaker-diarization-community-1"]
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload pyannote models to cache."""
@@ -55,12 +56,11 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             print(f"DEBUG: Reloaded {module_name}")
 
         try:
+            from huggingface_hub import snapshot_download
+            
             for model in models:
-                if model == "pyannote/speaker-diarization":
-                    # Preload by creating the pipeline briefly
-                    from pyannote.audio import Pipeline
-                    
-                    # Define cache directory first (consistent with other providers) - use diarizers not transcribers
+                if model == "pyannote/speaker-diarization-community-1":
+                    # Define cache directory first (consistent with other providers)
                     cache_dir = models_dir / "diarization" / "pyannote"
                     cache_dir.mkdir(parents=True, exist_ok=True)
                     
@@ -70,12 +70,8 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
                     print(f"DEBUG: Attempting to download pyannote model to cache_dir: {cache_dir}")
                     print(f"DEBUG: Using HF_TOKEN: {'***' if token else 'NOT SET'}")
                     
-                    # This will download and cache the model
-                    Pipeline.from_pretrained(
-                        "pyannote/speaker-diarization-community-1",
-                        cache_dir=str(cache_dir),
-                        token=token if token else None
-                    )
+                    # Use snapshot_download like other working providers
+                    snapshot_download(model, cache_dir=str(cache_dir), token=token)
                     print(f"[✓] {model} downloaded successfully.")
                     
                     # DEBUG: Check what was actually created
@@ -103,13 +99,13 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         """Check which pyannote models are available offline without downloading."""
         missing_models = []
         
-        # Use the same cache directory structure as download - diarizers not transcribers
-        cache_dir = models_dir / "diarizers" / "pyannote"
+        # Use the same cache directory structure as download
+        cache_dir = models_dir / "diarization" / "pyannote"
         
         for model in models:
-            if model == "pyannote/speaker-diarization":
+            if model == "pyannote/speaker-diarization-community-1":
                 # Convert model name to HuggingFace cache directory format
-                hf_model_name = "pyannote--speaker-diarization-community-1".replace("/", "--")
+                hf_model_name = model.replace("/", "--")
                 model_dir = cache_dir / f"models--{hf_model_name}"
                 
                 # Check for snapshots directory (this is the standard HF structure)
@@ -137,7 +133,8 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             num_speakers: Number of speakers expected in the audio
             **kwargs: Provider-specific options
         """
-        turns_dicts = self._diarize_mixed(audio_path, words, num_speakers)
+        # For now, use the direct assignment method
+        return self._assign_speakers_to_words(audio_path, words, num_speakers, models_dir)
 
         # Convert to Turn
         turns = [
@@ -168,7 +165,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         waveform = torch.from_numpy(data).unsqueeze(0)
         return waveform, sr
 
-    def _assign_speakers_to_words(self, audio_path: str, words: List[WordSegment], num_speakers: int) -> List[WordSegment]:
+    def _assign_speakers_to_words(self, audio_path: str, words: List[WordSegment], num_speakers: int, models_dir: pathlib.Path) -> List[WordSegment]:
         """
         Diarize audio and assign speakers to words by majority overlap.
         """
@@ -193,21 +190,27 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         hf_model_name = "pyannote--speaker-diarization-community-1".replace("/", "--")
         model_dir = cache_dir / f"models--{hf_model_name}"
         
-        # Use the actual model directory for loading
-        if not model_dir.exists():
+        # Find the latest snapshot directory (like other providers do)
+        snapshots_dir = model_dir / "snapshots"
+        if not snapshots_dir.exists() or not any(snapshots_dir.iterdir()):
             raise FileNotFoundError(f"PyAnnote model not found at {model_dir}. Please run with --download-models first.")
         
-        print(f"DEBUG: Loading pyannote model from: {model_dir}")
+        # Get the latest snapshot directory
+        snapshot_dirs = [p for p in snapshots_dir.iterdir() if p.is_dir()]
+        if not snapshot_dirs:
+            raise FileNotFoundError(f"No snapshots found in {snapshots_dir}")
+        
+        latest_snapshot_dir = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
+        print(f"DEBUG: Loading pyannote model from: {latest_snapshot_dir}")
 
         # Get token from environment
         token = os.getenv("HF_TOKEN", "")
         
         print(f"DEBUG: Loading pyannote model with token: {'***' if token else 'NOT SET'}")
         
-        # Load pipeline using local files only
+        # Load pipeline using local files only from the specific snapshot directory
         pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-community-1",
-            cache_dir=str(cache_dir),  # Pass the correct cache directory
+            str(latest_snapshot_dir),
             local_files_only=True,
             token=token if token else None
         )

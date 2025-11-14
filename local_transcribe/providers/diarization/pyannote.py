@@ -61,7 +61,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
                     from pyannote.audio import Pipeline
                     
                     # Define cache directory first (consistent with other providers) - use diarizers not transcribers
-                    cache_dir = models_dir / "diarizers" / "pyannote"
+                    cache_dir = models_dir / "diarization" / "pyannote"
                     cache_dir.mkdir(parents=True, exist_ok=True)
                     
                     # Get token from environment
@@ -186,8 +186,8 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         if token:
             os.environ.setdefault("HF_TOKEN", token)
 
-        # Use the same cache directory structure as download - diarizers not transcribers
-        cache_dir = models_dir / "diarizers" / "pyannote"
+        # Use the same cache directory structure as download
+        cache_dir = models_dir / "diarization" / "pyannote"
         
         # Convert model name to HuggingFace cache directory format
         hf_model_name = "pyannote--speaker-diarization-community-1".replace("/", "--")

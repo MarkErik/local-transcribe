@@ -67,8 +67,8 @@ class LlamaCppRemoteCleanupProvider(CleanupProvider):
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": text}
             ],
-            "max_tokens": 1024,  # Allow enough for the cleaned text
-            "temperature": 0.0,  # Deterministic output
+            "max_tokens": 2048,  # Allow enough for the cleaned text
+            "temperature": 0.5,  # Deterministic output
             "stream": False
         }
 

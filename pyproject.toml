@@ -9,6 +9,7 @@ dependencies = [
     "ffmpeg-python>=0.2.0",
     "huggingface-hub>=0.28.0",
     "librosa>=0.11.0",
+    "mlx-whisper>=0.4.3",
     "numpy>=2.3.4",
     "openai-whisper>=20250625",
     "pandas>=2.3.3",

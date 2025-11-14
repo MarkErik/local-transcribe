@@ -42,12 +42,10 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
         
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
-        original_hf_home = os.environ.get("HF_HOME")
         os.environ["HF_HUB_OFFLINE"] = "0"
         
         # DEBUG: Confirm environment variable was set
         print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        print(f"DEBUG: HF_HOME after setting: {os.environ.get('HF_HOME')}")
 
         # Force reload of huggingface_hub modules to pick up new environment
         print(f"DEBUG: Reloading huggingface_hub modules...")
@@ -62,12 +60,9 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
                     # Preload by creating the pipeline briefly
                     from pyannote.audio import Pipeline
                     
-                    # Define cache directory first (consistent with other providers)
-                    cache_dir = models_dir / "transcribers" / "pyannote"
+                    # Define cache directory first (consistent with other providers) - use diarizers not transcribers
+                    cache_dir = models_dir / "diarizers" / "pyannote"
                     cache_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    # Set HF_HOME to cache directory for download consistency
-                    os.environ["HF_HOME"] = str(cache_dir)
                     
                     # Get token from environment
                     token = os.getenv("HF_TOKEN", "")
@@ -99,10 +94,6 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             raise Exception(f"Failed to download {model}: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
-            if original_hf_home is not None:
-                os.environ["HF_HOME"] = original_hf_home
-            else:
-                os.environ.pop("HF_HOME", None)
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
@@ -112,25 +103,18 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         """Check which pyannote models are available offline without downloading."""
         missing_models = []
         
-        # Use XDG_CACHE_HOME as the base (which is set to models/.xdg), falling back to standard HuggingFace cache
-        xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
-        if xdg_cache_home:
-            models_root = pathlib.Path(xdg_cache_home)
-        else:
-            # Fallback to standard HuggingFace cache location
-            models_root = pathlib.Path.home() / ".cache" / "huggingface"
-        
-        # Models are stored in standard HuggingFace hub structure under xdg_cache_home/huggingface/hub
-        hub_dir = models_root / "huggingface" / "hub"
+        # Use the same cache directory structure as download - diarizers not transcribers
+        cache_dir = models_dir / "diarizers" / "pyannote"
         
         for model in models:
             if model == "pyannote/speaker-diarization":
                 # Convert model name to HuggingFace cache directory format
                 hf_model_name = "pyannote--speaker-diarization-community-1".replace("/", "--")
-                model_dir = hub_dir / f"models--{hf_model_name}"
+                model_dir = cache_dir / f"models--{hf_model_name}"
                 
-                # Check for model files (this is a simplified check)
-                if not model_dir.exists() or not any(model_dir.rglob("*.bin")) and not any(model_dir.rglob("*.safetensors")):
+                # Check for snapshots directory (this is the standard HF structure)
+                snapshots_dir = model_dir / "snapshots"
+                if not snapshots_dir.exists() or not any(snapshots_dir.iterdir()):
                     missing_models.append(model)
             else:
                 missing_models.append(model)  # Assume unknown models are missing
@@ -202,20 +186,12 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         if token:
             os.environ.setdefault("HF_TOKEN", token)
 
-        # Use XDG_CACHE_HOME as the base (which is set to models/.xdg), falling back to standard HuggingFace cache
-        xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
-        if xdg_cache_home:
-            models_root = pathlib.Path(xdg_cache_home)
-        else:
-            # Fallback to standard HuggingFace cache location
-            models_root = pathlib.Path.home() / ".cache" / "huggingface"
-        
-        # Models are stored in standard HuggingFace hub structure under xdg_cache_home/huggingface/hub
-        hub_dir = models_root / "huggingface" / "hub"
+        # Use the same cache directory structure as download - diarizers not transcribers
+        cache_dir = models_dir / "diarizers" / "pyannote"
         
         # Convert model name to HuggingFace cache directory format
         hf_model_name = "pyannote--speaker-diarization-community-1".replace("/", "--")
-        model_dir = hub_dir / f"models--{hf_model_name}"
+        model_dir = cache_dir / f"models--{hf_model_name}"
         
         # Use the actual model directory for loading
         if not model_dir.exists():
@@ -231,7 +207,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         # Load pipeline using local files only
         pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-community-1",
-            cache_dir=str(model_dir.parent),  # Pass parent directory (hub)
+            cache_dir=str(cache_dir),  # Pass the correct cache directory
             local_files_only=True,
             token=token if token else None
         )

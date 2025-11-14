@@ -6,11 +6,11 @@ Remote Llama.cpp cleanup provider for transcript processing.
 import json
 import requests
 from typing import Optional
-from local_transcribe.framework.plugin_interfaces import CleanupProvider, registry
+from local_transcribe.framework.plugin_interfaces import TranscriptCleanupProvider, registry
 
 
-class LlamaCppRemoteCleanupProvider(CleanupProvider):
-    """Cleanup provider using a remote Llama.cpp server via HTTP API."""
+class LlamaCppRemoteTranscriptCleanupProvider(TranscriptCleanupProvider):
+    """Transcript cleanup provider using a remote Llama.cpp server via HTTP API."""
 
     def __init__(self, url: str = "http://localhost:8080"):
         self.url = url.rstrip('/')
@@ -27,7 +27,7 @@ class LlamaCppRemoteCleanupProvider(CleanupProvider):
     def description(self) -> str:
         return "Remote Llama.cpp server for LLM-based transcript cleanup"
 
-    def cleanup_segment(self, text: str, **kwargs) -> str:
+    def transcript_cleanup_segment(self, text: str, **kwargs) -> str:
         """Clean up a transcript segment using the remote LLM."""
         system_message = (
             "You are an experienced editor, specializing in cleaning up podcast transcripts, but you NEVER add your own text to it."
@@ -96,12 +96,12 @@ class LlamaCppRemoteCleanupProvider(CleanupProvider):
             return text  # Return original text on error
 
 
-def register_cleanup_plugins():
-    """Register cleanup plugins."""
+def register_transcript_cleanup_plugins():
+    """Register transcript cleanup plugins."""
     # Default local instance; can be overridden
-    provider = LlamaCppRemoteCleanupProvider()
-    registry.register_cleanup_provider(provider)
+    provider = LlamaCppRemoteTranscriptCleanupProvider()
+    registry.register_transcript_cleanup_provider(provider)
 
 
 # Auto-register on import
-register_cleanup_plugins()
+register_transcript_cleanup_plugins()

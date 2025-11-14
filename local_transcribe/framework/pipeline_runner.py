@@ -200,31 +200,31 @@ def run_pipeline(args, api, root):
             print(f"[*] Writing raw outputs to {raw_dir}...")
             write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, tracker, api["registry"], std_audio)
 
-            # 5) Optional cleanup
-            cleanup_done = False
-            if hasattr(args, 'cleanup_provider') and args.cleanup_provider:
-                cleanup_provider = api["registry"].get_cleanup_provider(args.cleanup_provider)
+            # 5) Optional transcript cleanup
+            transcript_cleanup_done = False
+            if hasattr(args, 'transcript_cleanup_provider') and args.transcript_cleanup_provider:
+                transcript_cleanup_provider = api["registry"].get_transcript_cleanup_provider(args.transcript_cleanup_provider)
                 # Reinitialize with custom URL if provided
-                if hasattr(args, 'cleanup_url') and args.cleanup_url and hasattr(cleanup_provider, 'url'):
-                    cleanup_provider.url = args.cleanup_url
-                
-                print(f"[*] Cleaning up transcript with {args.cleanup_provider}...")
+                if hasattr(args, 'transcript_cleanup_url') and args.transcript_cleanup_url and hasattr(transcript_cleanup_provider, 'url'):
+                    transcript_cleanup_provider.url = args.transcript_cleanup_url
+
+                print(f"[*] Cleaning up transcript with {args.transcript_cleanup_provider}...")
                 for turn in transcript:
                     original_text = turn.text
-                    turn.text = cleanup_provider.cleanup_segment(original_text)
+                    turn.text = transcript_cleanup_provider.transcript_cleanup_segment(original_text)
                     if turn.text != original_text:
                         print(f"  Cleaned: '{original_text[:50]}...' -> '{turn.text[:50]}...'")
-                print("[✓] Cleanup complete.")
-                cleanup_done = True
+                print("[✓] Transcript cleanup complete.")
+                transcript_cleanup_done = True
 
-            # Write processed outputs if cleanup was done
-            if cleanup_done:
+            # Write processed outputs if transcript cleanup was done
+            if transcript_cleanup_done:
                 processed_dir = paths["root"] / "Transcript_Processed"
                 processed_dir.mkdir(parents=True, exist_ok=True)
                 print(f"[*] Writing processed outputs to {processed_dir}...")
                 write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, tracker, api["registry"], std_audio)
             else:
-                print("[i] No cleanup selected, raw outputs already written.")
+                print("[i] No transcript cleanup selected, raw outputs already written.")
 
             print(f"[i] Artifacts written to: {paths['root']}")
 
@@ -287,31 +287,31 @@ def run_pipeline(args, api, root):
             print(f"[*] Writing raw outputs to {raw_dir}...")
             write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, tracker, api["registry"], None)
 
-            # 5) Optional cleanup
-            cleanup_done = False
-            if hasattr(args, 'cleanup_provider') and args.cleanup_provider:
-                cleanup_provider = api["registry"].get_cleanup_provider(args.cleanup_provider)
+            # 5) Optional transcript cleanup
+            transcript_cleanup_done = False
+            if hasattr(args, 'transcript_cleanup_provider') and args.transcript_cleanup_provider:
+                transcript_cleanup_provider = api["registry"].get_transcript_cleanup_provider(args.transcript_cleanup_provider)
                 # Reinitialize with custom URL if provided
-                if hasattr(args, 'cleanup_url') and args.cleanup_url and hasattr(cleanup_provider, 'url'):
-                    cleanup_provider.url = args.cleanup_url
-                
-                print(f"[*] Cleaning up transcript with {args.cleanup_provider}...")
+                if hasattr(args, 'transcript_cleanup_url') and args.transcript_cleanup_url and hasattr(transcript_cleanup_provider, 'url'):
+                    transcript_cleanup_provider.url = args.transcript_cleanup_url
+
+                print(f"[*] Cleaning up transcript with {args.transcript_cleanup_provider}...")
                 for turn in transcript:
                     original_text = turn.text
-                    turn.text = cleanup_provider.cleanup_segment(original_text)
+                    turn.text = transcript_cleanup_provider.transcript_cleanup_segment(original_text)
                     if turn.text != original_text:
                         print(f"  Cleaned: '{original_text[:50]}...' -> '{turn.text[:50]}...'")
-                print("[✓] Cleanup complete.")
-                cleanup_done = True
+                print("[✓] Transcript cleanup complete.")
+                transcript_cleanup_done = True
 
-            # Write processed outputs if cleanup was done
-            if cleanup_done:
+            # Write processed outputs if transcript cleanup was done
+            if transcript_cleanup_done:
                 processed_dir = paths["root"] / "Transcript_Processed"
                 processed_dir.mkdir(parents=True, exist_ok=True)
                 print(f"[*] Writing processed outputs to {processed_dir}...")
                 write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, tracker, api["registry"], None)
             else:
-                print("[i] No cleanup selected, raw outputs already written.")
+                print("[i] No transcript cleanup selected, raw outputs already written.")
 
             print(f"[i] Artifacts written to: {paths['root']}")
             

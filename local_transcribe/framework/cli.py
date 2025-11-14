@@ -15,8 +15,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--aligner-provider", help="Aligner provider to use (required if transcriber doesn't have built-in alignment)")
     p.add_argument("--diarization-provider", help="Diarization provider to use (required for single audio files with multiple speakers)")
     p.add_argument("--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization)")
-    p.add_argument("--cleanup-provider", help="Cleanup provider to use for LLM-based transcript cleaning")
-    p.add_argument("--cleanup-url", help="URL for remote cleanup provider (e.g., http://ip:port for Llama.cpp server)")
+    p.add_argument("--transcript-cleanup-provider", help="Transcript cleanup provider to use for LLM-based transcript cleaning")
+    p.add_argument("--transcript-cleanup-url", help="URL for remote transcript cleanup provider (e.g., http://ip:port for Llama.cpp server)")
     p.add_argument("--turn-builder-provider", help="Turn builder provider to use (for grouping transcribed words into turns)")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
@@ -38,8 +38,8 @@ def select_provider(registry, provider_type):
         providers = registry._diarization_providers
     elif provider_type == "unified":
         providers = registry._unified_providers
-    elif provider_type == "cleanup":
-        providers = registry._cleanup_providers
+    elif provider_type == "transcript_cleanup":
+        providers = registry._transcript_cleanup_providers
     elif provider_type == "turn_builder":
         providers = registry._turn_builder_providers
     else:
@@ -218,37 +218,37 @@ def interactive_prompt(args, api):
                 except ValueError:
                     print("Please enter a valid number.")
 
-    # Cleanup provider (optional)
-    cleanup_providers = registry.list_cleanup_providers()
-    if cleanup_providers:
-        print("\nCleanup Providers (optional LLM-based transcript cleaning):")
+    # Transcript cleanup provider (optional)
+    transcript_cleanup_providers = registry.list_transcript_cleanup_providers()
+    if transcript_cleanup_providers:
+        print("\nTranscript Cleanup Providers (optional LLM-based transcript cleaning):")
         print("  0. None (skip cleanup)")
-        for i, (name, desc) in enumerate(cleanup_providers.items(), 1):
+        for i, (name, desc) in enumerate(transcript_cleanup_providers.items(), 1):
             print(f"  {i}. {name}: {desc}")
         
         while True:
             try:
-                choice = int(input("\nChoose cleanup provider (0 for none): ").strip())
+                choice = int(input("\nChoose transcript cleanup provider (0 for none): ").strip())
                 if choice == 0:
-                    args.cleanup_provider = None
+                    args.transcript_cleanup_provider = None
                     break
-                elif 1 <= choice <= len(cleanup_providers):
-                    args.cleanup_provider = list(cleanup_providers.keys())[choice - 1]
-                    
+                elif 1 <= choice <= len(transcript_cleanup_providers):
+                    args.transcript_cleanup_provider = list(transcript_cleanup_providers.keys())[choice - 1]
+
                     # If remote provider, ask for URL
-                    if args.cleanup_provider == "llama_cpp_remote":
+                    if args.transcript_cleanup_provider == "llama_cpp_remote":
                         url = input("Enter Llama.cpp server URL (e.g., http://192.168.1.100:8080): ").strip()
                         if url:
-                            args.cleanup_url = url
+                            args.transcript_cleanup_url = url
                         else:
-                            args.cleanup_url = "http://localhost:8080"
+                            args.transcript_cleanup_url = "http://localhost:8080"
                     break
                 else:
                     print("Invalid choice. Please enter a number from the list.")
             except ValueError:
                 print("Please enter a valid number.")
     else:
-        args.cleanup_provider = None
+        args.transcript_cleanup_provider = None
 
     # Output formats
     output_writers = registry.list_output_writers()
@@ -285,8 +285,8 @@ def interactive_prompt(args, api):
             provider_info.append(f"Diarization={args.diarization_provider}")
         if hasattr(args, 'turn_builder_provider') and args.turn_builder_provider:
             provider_info.append(f"Turn Builder={args.turn_builder_provider}")
-        if hasattr(args, 'cleanup_provider') and args.cleanup_provider:
-            provider_info.append(f"Cleanup={args.cleanup_provider}")
+            if hasattr(args, 'transcript_cleanup_provider') and args.transcript_cleanup_provider:
+                provider_info.append(f"Transcript Cleanup={args.transcript_cleanup_provider}")
         provider_str = ", ".join(provider_info) if provider_info else "Default providers"
         print(f"\nSelected: {provider_str}, Outputs={args.selected_outputs}")
     return args

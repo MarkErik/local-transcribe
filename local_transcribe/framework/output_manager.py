@@ -92,7 +92,7 @@ class OutputManager:
         """Render video with subtitles using SRT file."""
         print(f"[*] Rendering video with subtitles...")
         try:
-            from local_transcribe.providers.writers.render_video import render_video
+            from local_transcribe.providers.file_writers.render_video import render_video
             render_video(srt_path, output_path, audio_path=audio_path)
             print(f"[✓] Video rendered successfully: {output_path.name}")
         except Exception as e:

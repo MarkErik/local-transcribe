@@ -34,19 +34,75 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload pyannote models to cache."""
         import os
+        import sys
+        
+        # DEBUG: Log environment state before download attempt
+        print(f"DEBUG: HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        print(f"DEBUG: HF_HOME: {os.environ.get('HF_HOME')}")
+        print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+        
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        original_hf_home = os.environ.get("HF_HOME")
         os.environ["HF_HUB_OFFLINE"] = "0"
+        
+        # DEBUG: Confirm environment variable was set
+        print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        print(f"DEBUG: HF_HOME after setting: {os.environ.get('HF_HOME')}")
+
+        # Force reload of huggingface_hub modules to pick up new environment
+        print(f"DEBUG: Reloading huggingface_hub modules...")
+        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
+        for module_name in modules_to_reload:
+            del sys.modules[module_name]
+            print(f"DEBUG: Reloaded {module_name}")
+
         try:
             for model in models:
                 if model == "pyannote/speaker-diarization":
                     # Preload by creating the pipeline briefly
                     from pyannote.audio import Pipeline
-                    cache_dir = models_dir / "diarization"
+                    
+                    # Define cache directory first (consistent with other providers)
+                    cache_dir = models_dir / "transcribers" / "pyannote"
                     cache_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # Set HF_HOME to cache directory for download consistency
+                    os.environ["HF_HOME"] = str(cache_dir)
+                    
+                    # Get token from environment
+                    token = os.getenv("HF_TOKEN", "")
+                    
+                    print(f"DEBUG: Attempting to download pyannote model to cache_dir: {cache_dir}")
+                    print(f"DEBUG: Using HF_TOKEN: {'***' if token else 'NOT SET'}")
+                    
                     # This will download and cache the model
-                    Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", cache_dir=str(cache_dir))
+                    Pipeline.from_pretrained(
+                        "pyannote/speaker-diarization-community-1",
+                        cache_dir=str(cache_dir),
+                        token=token if token else None
+                    )
+                    print(f"[✓] {model} downloaded successfully.")
+                    
+                    # DEBUG: Check what was actually created
+                    if cache_dir.exists():
+                        print(f"DEBUG: After download, cache directory contents: {list(cache_dir.iterdir())}")
+                else:
+                    print(f"Warning: Unknown model {model}, skipping download")
+        except Exception as e:
+            print(f"DEBUG: Download failed with error: {e}")
+            print(f"DEBUG: Error type: {type(e)}")
+
+            # Additional debug: Check environment at time of error
+            print(f"DEBUG: At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            print(f"DEBUG: At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+
+            raise Exception(f"Failed to download {model}: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
+            if original_hf_home is not None:
+                os.environ["HF_HOME"] = original_hf_home
+            else:
+                os.environ.pop("HF_HOME", None)
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
@@ -55,13 +111,30 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which pyannote models are available offline without downloading."""
         missing_models = []
+        
+        # Use XDG_CACHE_HOME as the base (which is set to models/.xdg), falling back to standard HuggingFace cache
+        xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+        if xdg_cache_home:
+            models_root = pathlib.Path(xdg_cache_home)
+        else:
+            # Fallback to standard HuggingFace cache location
+            models_root = pathlib.Path.home() / ".cache" / "huggingface"
+        
+        # Models are stored in standard HuggingFace hub structure under xdg_cache_home/huggingface/hub
+        hub_dir = models_root / "huggingface" / "hub"
+        
         for model in models:
             if model == "pyannote/speaker-diarization":
-                # Check if the pyannote model directory exists
-                cache_dir = models_dir / "diarization"
-                model_dir = cache_dir / "models--pyannote--speaker-diarization-community-1"
-                if not (model_dir.exists() and any(model_dir.iterdir())):
+                # Convert model name to HuggingFace cache directory format
+                hf_model_name = "pyannote--speaker-diarization-community-1".replace("/", "--")
+                model_dir = hub_dir / f"models--{hf_model_name}"
+                
+                # Check for model files (this is a simplified check)
+                if not model_dir.exists() or not any(model_dir.rglob("*.bin")) and not any(model_dir.rglob("*.safetensors")):
                     missing_models.append(model)
+            else:
+                missing_models.append(model)  # Assume unknown models are missing
+                
         return missing_models
 
     def diarize(
@@ -129,14 +202,38 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         if token:
             os.environ.setdefault("HF_TOKEN", token)
 
-        # Use HF_HOME as the base cache directory for consistency
-        hf_home = os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models"))
-        cache_dir = pathlib.Path(hf_home) / "diarization"
+        # Use XDG_CACHE_HOME as the base (which is set to models/.xdg), falling back to standard HuggingFace cache
+        xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+        if xdg_cache_home:
+            models_root = pathlib.Path(xdg_cache_home)
+        else:
+            # Fallback to standard HuggingFace cache location
+            models_root = pathlib.Path.home() / ".cache" / "huggingface"
+        
+        # Models are stored in standard HuggingFace hub structure under xdg_cache_home/huggingface/hub
+        hub_dir = models_root / "huggingface" / "hub"
+        
+        # Convert model name to HuggingFace cache directory format
+        hf_model_name = "pyannote--speaker-diarization-community-1".replace("/", "--")
+        model_dir = hub_dir / f"models--{hf_model_name}"
+        
+        # Use the actual model directory for loading
+        if not model_dir.exists():
+            raise FileNotFoundError(f"PyAnnote model not found at {model_dir}. Please run with --download-models first.")
+        
+        print(f"DEBUG: Loading pyannote model from: {model_dir}")
 
-        # Load pipeline
+        # Get token from environment
+        token = os.getenv("HF_TOKEN", "")
+        
+        print(f"DEBUG: Loading pyannote model with token: {'***' if token else 'NOT SET'}")
+        
+        # Load pipeline using local files only
         pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-community-1",
-            cache_dir=str(cache_dir),
+            cache_dir=str(model_dir.parent),  # Pass parent directory (hub)
+            local_files_only=True,
+            token=token if token else None
         )
         # Move to GPU if available
         if torch.cuda.is_available():

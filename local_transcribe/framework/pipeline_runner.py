@@ -226,7 +226,7 @@ def run_pipeline(args, api, root):
 
         else:
             # Process separate audio files
-            speaker_turns = {}
+            all_words = []
             
             for speaker_name, audio_file in speaker_files.items():
                 print(f"[*] Processing {speaker_name}...")
@@ -256,23 +256,16 @@ def run_pipeline(args, api, root):
                 word_writer = api["registry"].get_word_writer("word-segments")
                 word_writer.write(words, paths[f"speaker_{speaker_name.lower()}"] / f"{speaker_name.lower()}.txt")
                 
-                # 3) Build turns (no diarization needed for separate files)
-                turns = turn_builder_provider.build_turns(words)
-                speaker_turns[speaker_name] = turns
-                
-                # Write individual speaker outputs
-                timestamped_writer = api["registry"].get_output_writer("timestamped-txt")
-                timestamped_writer.write(turns, paths[f"speaker_{speaker_name.lower()}"] / f"{speaker_name.lower()}.timestamped.txt")
+                # Add words to the combined list
+                all_words.extend(words)
             
-            # 3) Merge turns
-            turns_task = tracker.add_task("Merging conversation turns", total=100, stage="turns")
-            tracker.update(turns_task, advance=50, description="Merging conversation turns")
+            # 3) Build and merge turns using the split_audio_turn_builder
+            turns_task = tracker.add_task("Building and merging conversation turns", total=100, stage="turns")
+            tracker.update(turns_task, advance=50, description="Building optimal turns from all speakers")
             
-            from local_transcribe.processing.merge import merge_turns
-            all_turns = list(speaker_turns.values())
-            transcript = merge_turns(*all_turns)
+            transcript = turn_builder_provider.build_turns(all_words)
             
-            tracker.update(turns_task, advance=50, description="Conversation turns merged")
+            tracker.update(turns_task, advance=50, description="Conversation turns built and merged")
             tracker.complete_task(turns_task, stage="turns")
 
             # Write raw outputs before cleanup

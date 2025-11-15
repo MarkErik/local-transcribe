@@ -76,22 +76,24 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
 
     def _build_speaker_turns(self, words: List[WordSegment], **kwargs) -> List[dict]:
         """
-        Build optimal turns for a single speaker.
+        Build optimal turns for a single speaker, optimized for interview scenarios.
         
-        This method focuses on keeping sentences intact and creating natural
-        turn boundaries based on content rather than arbitrary time limits.
+        This method is designed to handle long, coherent responses typical in interviews
+        while still creating natural turn boundaries when appropriate.
         """
         if not words:
             return []
             
-        # Configuration parameters
-        max_gap_s = kwargs.get('max_gap_s', 1.5)  # Increased gap tolerance
-        min_turn_duration_s = kwargs.get('min_turn_duration_s', 2.0)  # Minimum turn duration
-        max_turn_duration_s = kwargs.get('max_turn_duration_s', 30.0)  # Maximum turn duration
+        # Configuration parameters - adjusted for interview scenarios
+        max_gap_s = kwargs.get('max_gap_s', 2.0)  # Increased gap tolerance for thoughtful pauses
+        min_turn_duration_s = kwargs.get('min_turn_duration_s', 3.0)  # Slightly higher minimum
+        max_turn_duration_s = kwargs.get('max_turn_duration_s', 120.0)  # Much longer for extended responses
+        max_words_per_turn = kwargs.get('max_words_per_turn', 500)  # Word count limit as backup
         
         turns = []
         current_turn_words = []
         current_start = None
+        current_topic_context = ""  # Track the topic/context of the current turn
         
         for i, word in enumerate(words):
             if not word.text.strip():
@@ -101,28 +103,51 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
             if current_start is None:
                 current_start = word.start
                 current_turn_words = [word]
+                current_topic_context = self._extract_topic_context(word.text)
                 continue
             
             # Check if we should start a new turn
             last_word = current_turn_words[-1]
             gap = word.start - last_word.end
             
-            # Conditions for starting a new turn:
-            # 1. Large gap between words
-            large_gap = gap > max_gap_s
-            
-            # 2. Sentence boundary with sufficient pause
-            sentence_boundary = self._is_sentence_boundary(last_word.text) and gap > 0.5
-            
-            # 3. Turn getting too long
+            # Get current turn statistics
             turn_duration = word.end - current_start
-            too_long = turn_duration > max_turn_duration_s
+            turn_word_count = len(current_turn_words)
+            turn_text_so_far = " ".join(w.text for w in current_turn_words)
             
-            # 4. Minimum duration met and natural break point
+            # Conditions for starting a new turn:
+            # 1. Very large gap between words (indicating end of thought)
+            very_large_gap = gap > max_gap_s * 2  # Double the normal gap tolerance
+            
+            # 2. Strong sentence boundary with significant pause AND topic shift
+            strong_sentence_boundary = (
+                self._is_strong_sentence_boundary(last_word.text) and
+                gap > max_gap_s and
+                self._indicates_topic_shift(last_word.text, word.text)
+            )
+            
+            # 3. Turn getting extremely long (safety valve)
+            extremely_long = (
+                turn_duration > max_turn_duration_s or
+                turn_word_count > max_words_per_turn
+            )
+            
+            # 4. Natural break point with minimum duration met AND not in middle of explanation
             min_duration_met = (last_word.end - current_start) >= min_turn_duration_s
-            natural_break = self._is_natural_break_point(last_word.text, word.text)
+            natural_break = self._is_interview_appropriate_break(turn_text_so_far, last_word.text, word.text)
             
-            if large_gap or (sentence_boundary and min_duration_met) or too_long or (min_duration_met and natural_break):
+            # 5. Question-answer pattern detected (interviewer question followed by response)
+            is_question_answer = self._is_question_answer_transition(last_word.text, word.text)
+            
+            should_split = (
+                very_large_gap or
+                strong_sentence_boundary or
+                extremely_long or
+                (min_duration_met and natural_break) or
+                is_question_answer
+            )
+            
+            if should_split:
                 # Finalize current turn
                 turn_text = " ".join(w.text for w in current_turn_words).strip()
                 if turn_text:  # Only add non-empty turns
@@ -136,9 +161,13 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
                 # Start new turn
                 current_start = word.start
                 current_turn_words = [word]
+                current_topic_context = self._extract_topic_context(word.text)
             else:
                 # Continue current turn
                 current_turn_words.append(word)
+                # Update topic context gradually
+                if len(current_turn_words) % 10 == 0:  # Update every 10 words
+                    current_topic_context = self._extract_topic_context(turn_text_so_far + " " + word.text)
         
         # Add final turn if there are remaining words
         if current_turn_words:
@@ -229,6 +258,101 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         """Check if text ends with a sentence boundary."""
         sentence_endings = r'[.!?]+\s*$'
         return bool(re.search(sentence_endings, text))
+
+    def _is_strong_sentence_boundary(self, text: str) -> bool:
+        """
+        Check if text ends with a strong sentence boundary that likely indicates
+        a complete thought or topic conclusion.
+        """
+        # Strong endings include multiple punctuation or specific patterns
+        strong_endings = r'[.!?]{2,}\s*$|(?<=[.!?])\s+(?:So|Now|Well|Anyway|To conclude)\b'
+        return bool(re.search(strong_endings, text, re.IGNORECASE))
+
+    def _extract_topic_context(self, text: str) -> str:
+        """
+        Extract key topic/context words from text to track topic continuity.
+        Returns a simplified representation of the main topic.
+        """
+        # Simple extraction: remove common words and keep key nouns/verbs
+        common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
+        words = text.lower().split()
+        key_words = [w for w in words if w not in common_words and len(w) > 3]
+        return ' '.join(key_words[:10])  # Keep first 10 key words as context
+
+    def _indicates_topic_shift(self, last_text: str, next_text: str) -> bool:
+        """
+        Check if there's a topic shift between two segments.
+        This helps avoid splitting when someone is continuing the same thought.
+        """
+        last_context = self._extract_topic_context(last_text)
+        next_context = self._extract_topic_context(next_text)
+        
+        # If contexts share significant words, likely same topic
+        last_words = set(last_context.split())
+        next_words = set(next_context.split())
+        
+        if not last_words or not next_words:
+            return False
+            
+        # Calculate overlap
+        overlap = len(last_words.intersection(next_words))
+        overlap_ratio = overlap / max(len(last_words), len(next_words))
+        
+        # Low overlap suggests topic shift
+        return overlap_ratio < 0.3
+
+    def _is_interview_appropriate_break(self, current_text: str, last_text: str, next_text: str) -> bool:
+        """
+        Determine if a break is appropriate in an interview context.
+        More conservative about breaking extended responses.
+        """
+        # Don't break in the middle of explanations or examples
+        explanation_indicators = {
+            'for example', 'for instance', 'such as', 'like', 'including',
+            'specifically', 'particularly', 'especially', 'namely'
+        }
+        
+        # Don't break during transitional phrases
+        continuation_phrases = {
+            'on the other hand', 'in addition', 'furthermore', 'moreover',
+            'as well as', 'not only', 'but also', 'what\'s more'
+        }
+        
+        text_so_far = current_text + " " + last_text
+        text_lower = text_so_far.lower()
+        
+        # Check if we're in the middle of an explanation
+        for indicator in explanation_indicators:
+            if indicator in text_lower and next_text.lower() not in {'but', 'however', 'although'}:
+                return False
+        
+        # Check if we're in a transitional phrase
+        for phrase in continuation_phrases:
+            if phrase in text_lower:
+                return False
+        
+        # Use the original natural break logic as fallback
+        return self._is_natural_break_point(last_text, next_text)
+
+    def _is_question_answer_transition(self, last_text: str, next_text: str) -> bool:
+        """
+        Detect question-answer patterns typical in interviews.
+        This helps identify when an interviewer's question ends and a response begins.
+        """
+        # Check if last text ends with a question mark
+        if '?' in last_text:
+            # Check if next text starts with answer patterns
+            answer_starters = {
+                'well', 'so', 'i think', 'i believe', 'i feel', 'in my opinion',
+                'from my experience', 'based on', 'honestly', 'actually'
+            }
+            
+            next_lower = next_text.lower().strip()
+            for starter in answer_starters:
+                if next_lower.startswith(starter):
+                    return True
+        
+        return False
 
     def _is_natural_break_point(self, last_text: str, next_text: str) -> bool:
         """

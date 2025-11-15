@@ -202,61 +202,142 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
         # Load audio
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)
-        wav = torch.from_numpy(wav).unsqueeze(0)
+        
+        # Calculate audio duration in seconds
+        duration = len(wav) / sr
+        
+        # For audio longer than 30 seconds, process in chunks to avoid memory issues
+        max_chunk_duration = 30.0  # seconds
+        
+        if duration > max_chunk_duration:
+            if kwargs.get('verbose', False):
+                print(f"[i] Audio duration: {duration:.1f}s - processing in chunks to manage memory")
+            return self._transcribe_chunked(wav, sr, **kwargs)
+        else:
+            return self._transcribe_single(wav, **kwargs)
 
-        # Create text prompt
-        chat = [
-            {
-                "role": "system",
-                "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: April 9, 2024.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
-            },
-            {
-                "role": "user",
-                "content": "<|audio|>can you transcribe the speech into a written format?",
-            }
-        ]
+    def _transcribe_single(self, wav, **kwargs) -> str:
+        """Transcribe a single audio segment."""
+        try:
+            wav_tensor = torch.from_numpy(wav).unsqueeze(0)
 
-        text = self.tokenizer.apply_chat_template(
-            chat, tokenize=False, add_generation_prompt=True
-        )
+            # Create text prompt
+            chat = [
+                {
+                    "role": "system",
+                    "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: April 9, 2024.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
+                },
+                {
+                    "role": "user",
+                    "content": "<|audio|>can you transcribe the speech into a written format?",
+                }
+            ]
 
-        # Process inputs
-        model_inputs = self.processor(
-            text,
-            wav,
-            device=self.device,
-            return_tensors="pt",
-        ).to(self.device)
+            text = self.tokenizer.apply_chat_template(
+                chat, tokenize=False, add_generation_prompt=True
+            )
 
-        # Generate transcription
-        model_outputs = self.model.generate(
-            **model_inputs,
-            max_new_tokens=200,
-            num_beams=4,
-            do_sample=False,
-            min_length=1,
-            top_p=1.0,
-            repetition_penalty=3.0,
-            length_penalty=1.0,
-            temperature=1.0,
-            bos_token_id=self.tokenizer.bos_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
-            pad_token_id=self.tokenizer.pad_token_id,
-        )
+            # Process inputs
+            model_inputs = self.processor(
+                text,
+                wav_tensor,
+                device=self.device,
+                return_tensors="pt",
+            ).to(self.device)
 
-        # Extract generated text
-        num_input_tokens = model_inputs["input_ids"].shape[-1]
-        new_tokens = torch.unsqueeze(model_outputs[0, num_input_tokens:], dim=0)
+            # Generate transcription with no_grad to prevent gradient accumulation
+            with torch.no_grad():
+                model_outputs = self.model.generate(
+                    **model_inputs,
+                    max_new_tokens=200,
+                    num_beams=4,
+                    do_sample=False,
+                    min_length=1,
+                    top_p=1.0,
+                    repetition_penalty=3.0,
+                    length_penalty=1.0,
+                    temperature=1.0,
+                    bos_token_id=self.tokenizer.bos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
 
-        output_text = self.tokenizer.batch_decode(
-            new_tokens, add_special_tokens=False, skip_special_tokens=True
-        )
+            # Extract generated text
+            num_input_tokens = model_inputs["input_ids"].shape[-1]
+            new_tokens = torch.unsqueeze(model_outputs[0, num_input_tokens:], dim=0)
 
-        # Post-process the output to remove dialogue markers and quotation marks
-        cleaned_text = self._clean_transcription_output(output_text[0].strip(), verbose=kwargs.get('verbose', False))
+            output_text = self.tokenizer.batch_decode(
+                new_tokens, add_special_tokens=False, skip_special_tokens=True
+            )
 
-        return cleaned_text
+            # Post-process the output to remove dialogue markers and quotation marks
+            cleaned_text = self._clean_transcription_output(output_text[0].strip(), verbose=kwargs.get('verbose', False))
 
+            return cleaned_text
+            
+        finally:
+            # Explicitly clean up tensors and memory
+            if 'wav_tensor' in locals():
+                del wav_tensor
+            if 'model_inputs' in locals():
+                # Delete individual tensors from model_inputs dict
+                for key in list(model_inputs.keys()):
+                    del model_inputs[key]
+                del model_inputs
+            if 'model_outputs' in locals():
+                del model_outputs
+            if 'new_tokens' in locals():
+                del new_tokens
+            
+            # Force garbage collection and empty cache
+            import gc
+            gc.collect()
+            
+            # Clear MPS cache if using MPS
+            if self.device == "mps":
+                torch.mps.empty_cache()
+            elif self.device == "cuda":
+                torch.cuda.empty_cache()
+
+    def _transcribe_chunked(self, wav, sr, **kwargs) -> str:
+        """Transcribe audio in chunks to manage memory for long files."""
+        chunk_duration = 30.0  # seconds
+        chunk_samples = int(chunk_duration * sr)
+        overlap_samples = int(1.0 * sr)  # 1 second overlap to avoid cutting words
+        
+        chunks = []
+        total_samples = len(wav)
+        start = 0
+        chunk_num = 0
+        
+        verbose = kwargs.get('verbose', False)
+        
+        while start < total_samples:
+            chunk_num += 1
+            end = min(start + chunk_samples, total_samples)
+            chunk_wav = wav[start:end]
+            
+            if verbose:
+                chunk_duration_sec = len(chunk_wav) / sr
+                print(f"[i] Processing chunk {chunk_num} ({chunk_duration_sec:.1f}s)...")
+            
+            # Transcribe chunk
+            chunk_text = self._transcribe_single(chunk_wav, **kwargs)
+            chunks.append(chunk_text)
+            
+            # Move to next chunk with overlap
+            start = end - overlap_samples
+            if start >= total_samples - overlap_samples:
+                break
+        
+        # Combine chunks with spaces
+        full_transcript = " ".join(chunks)
+        
+        if verbose:
+            print(f"[✓] Combined {chunk_num} chunks into final transcript")
+        
+        return full_transcript
+            
     def _clean_transcription_output(self, text: str, verbose: bool = False) -> str:
         """
         Clean the transcription output by removing dialogue markers and quotation marks.

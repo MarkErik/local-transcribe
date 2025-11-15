@@ -19,7 +19,12 @@ class GraniteTranscriberProvider(TranscriberProvider):
     """Transcriber provider using IBM Granite for speech-to-text transcription."""
 
     def __init__(self):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
         # Model mapping: user-friendly name -> HuggingFace model name
         self.model_mapping = {
             "granite-2b": "ibm-granite/granite-speech-3.3-2b",

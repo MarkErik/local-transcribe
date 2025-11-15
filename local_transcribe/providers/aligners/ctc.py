@@ -24,7 +24,12 @@ class CTCAlignerProvider(AlignerProvider):
     """Aligner provider using CTC-based forced alignment for accurate word-level timestamps."""
 
     def __init__(self):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
         self.model_name = "facebook/mms-300m"  # Multilingual CTC model
         self.model = None
         self.tokenizer = None

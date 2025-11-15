@@ -15,7 +15,12 @@ class WhisperXUnifiedProvider(UnifiedProvider):
     """Unified provider using WhisperX for ASR with word-level timestamps and speaker diarization."""
 
     def __init__(self):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
         # Model mapping: user-friendly name -> WhisperX model name
         self.model_mapping = {
             "large-v2": "large-v2",

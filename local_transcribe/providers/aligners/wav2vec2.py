@@ -18,7 +18,12 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
     """Aligner provider using Wav2Vec2 for forced alignment of transcripts to audio."""
 
     def __init__(self):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
         self.wav2vec2_model_name = "facebook/wav2vec2-base-960h"  # English model
 
         # Wav2Vec2 components for alignment

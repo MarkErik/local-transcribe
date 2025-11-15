@@ -218,6 +218,8 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         # Move to GPU if available
         if torch.cuda.is_available():
             pipeline.to(torch.device("cuda"))
+        elif torch.backends.mps.is_available():
+            pipeline.to(torch.device("mps"))
 
         # Load waveform
         waveform, sample_rate = self._load_waveform_mono_32f(audio_path)

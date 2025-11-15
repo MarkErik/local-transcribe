@@ -86,6 +86,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
         self,
         audio_path: str,
         num_speakers: int,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[Turn]:
         """
@@ -94,6 +95,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
         Args:
             audio_path: Path to the audio file
             num_speakers: Number of speakers expected in the audio
+            device: Device to use (cuda/mps/cpu). If None, uses global config.
             **kwargs: Should include 'model' key for Whisper model
 
         Returns:
@@ -111,7 +113,9 @@ class WhisperXUnifiedProvider(UnifiedProvider):
 
         try:
             # 1. Transcribe with Whisper
-            model = whisperx.load_model(model_name, device=self.device, compute_type="float16")
+            # Use appropriate compute type based on device
+            compute_type = "float16" if self.device in ["cuda", "mps"] else "int8"
+            model = whisperx.load_model(model_name, device=self.device, compute_type=compute_type)
             with torch.no_grad():
                 result = model.transcribe(audio, batch_size=16)
             print(f"Transcription: {result['segments'][:2]}...")  # Debug

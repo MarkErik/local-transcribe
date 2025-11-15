@@ -413,9 +413,17 @@ class CTCAlignerProvider(AlignerProvider):
         self,
         audio_path: str,
         transcript: str,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[WordSegment]:
-        """Align transcript to audio using CTC forced alignment."""
+        """Align transcript to audio using CTC forced alignment.
+        
+        Args:
+            audio_path: Path to audio file
+            transcript: Transcript text
+            device: Device to use (cuda/mps/cpu). If None, uses global config.
+            **kwargs: Additional options including 'role' or 'speaker'
+        """
         # Extract speaker from kwargs (passed from split_audio mode)
         speaker = kwargs.get('role') or kwargs.get('speaker')
         

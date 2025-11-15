@@ -77,7 +77,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         # For now, assume all models need to be downloaded (conservative approach)
         return models
 
-    def transcribe(self, audio_path: str, **kwargs) -> str:
+    def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> str:
         """Transcribe audio using MLX Whisper model."""
         if not os.path.exists(audio_path):
             raise ValueError(f"Audio file not found: {audio_path}")
@@ -99,6 +99,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         self,
         audio_path: str,
         role: Optional[str] = None,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[WordSegment]:
         """

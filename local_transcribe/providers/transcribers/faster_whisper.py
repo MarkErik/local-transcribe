@@ -23,9 +23,20 @@ _CT2_REPO_CHOICES: dict[str, list[str]] = {
 
 def _ctranslate_device() -> str:
     """
-    Device for CTranslate2 (faster-whisper). CTranslate2 does NOT support 'mps',
-    so we force CPU on Apple Silicon.
+    Device for CTranslate2 (faster-whisper). CTranslate2 supports CUDA and CPU,
+    but does NOT support MPS, so we fall back to CPU when MPS is selected.
     """
+    from local_transcribe.lib.config import get_system_capability
+    import torch
+    
+    selected_device = get_system_capability()
+    
+    # CTranslate2 supports CUDA
+    if selected_device == "cuda" and torch.cuda.is_available():
+        return "cuda"
+    
+    # CTranslate2 does NOT support MPS, fall back to CPU
+    # CPU is also the default for any other case
     return "cpu"
 
 
@@ -153,7 +164,7 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
                 missing_models.append(model)
         return missing_models
 
-    def transcribe(self, audio_path: str, **kwargs) -> str:
+    def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> str:
         """Transcribe audio and return text only."""
         transcriber_model = kwargs.get('transcriber_model', 'large-v3')
 
@@ -192,6 +203,7 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
         self,
         audio_path: str,
         role: Optional[str] = None,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[WordSegment]:
         """
@@ -200,6 +212,7 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
         Args:
             audio_path: Path to audio file
             role: Speaker role for dual-track mode
+            device: Device to use (cuda/mps/cpu). If None, uses global config.
             **kwargs: Should include 'transcriber_model' key
         """
         transcriber_model = kwargs.get('transcriber_model', 'large-v3')

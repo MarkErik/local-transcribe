@@ -14,15 +14,21 @@ from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_t
 
 def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, verbose=False, base_name="", **kwargs):
     """Transcribe audio and return word segments with timestamps."""
+    from local_transcribe.lib.config import get_system_capability
+    
     # Add verbose and role to kwargs so they're passed to providers
     kwargs['verbose'] = verbose
     kwargs['role'] = role
+    
+    # Get device from global config to pass explicitly
+    device = get_system_capability()
     
     if transcriber_provider.has_builtin_alignment:
         # Transcriber has built-in alignment
         segments = transcriber_provider.transcribe_with_alignment(
             audio_path,
             role=role,
+            device=device,
             **kwargs
         )
         # Verbose: Save word segments
@@ -32,14 +38,14 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/transcription_alignment/{base_name}word_segments.json")
     else:
         # Use transcriber + aligner composition
-        transcript = transcriber_provider.transcribe(audio_path, **kwargs)
+        transcript = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
         # Verbose: Save raw transcript
         if verbose and intermediate_dir:
             with open(intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt", "w", encoding="utf-8") as f:
                 f.write(transcript)
             print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
         # Pass role to aligner via kwargs (already added above)
-        segments = aligner_provider.align_transcript(audio_path, transcript, **kwargs)
+        segments = aligner_provider.align_transcript(audio_path, transcript, device=device, **kwargs)
         # Verbose: Save word segments (speaker should already be assigned by aligner)
         if verbose and intermediate_dir:
             json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
@@ -168,9 +174,13 @@ def run_pipeline(args, api, root):
 
             if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
                 # Use unified provider
+                from local_transcribe.lib.config import get_system_capability
+                device = get_system_capability()
+                
                 transcript = unified_provider.transcribe_and_diarize(
                     str(std_audio),
                     args.num_speakers,
+                    device=device,
                     model=args.unified_model
                 )
                 # Verbose: Save unified turns
@@ -194,7 +204,16 @@ def run_pipeline(args, api, root):
                 )
 
                 # 3) Diarize (assign speakers to words)
-                words_with_speakers = diarization_provider.diarize(str(std_audio), words, args.num_speakers, models_dir)
+                from local_transcribe.lib.config import get_system_capability
+                device = get_system_capability()
+                
+                words_with_speakers = diarization_provider.diarize(
+                    str(std_audio), 
+                    words, 
+                    args.num_speakers,
+                    device=device,
+                    models_dir=models_dir
+                )
                 # Verbose: Save diarized segments
                 if args.verbose:
                     json_word_writer = api["registry"].get_word_writer("word-segments-json")

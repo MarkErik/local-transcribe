@@ -123,7 +123,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         audio_path: str,
         words: List[WordSegment],
         num_speakers: int,
-        models_dir: pathlib.Path,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[WordSegment]:
         """
@@ -133,11 +133,11 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             audio_path: Path to audio file
             words: Word segments from transcription
             num_speakers: Number of speakers expected in the audio
-            models_dir: Directory containing the models
+            device: Device to use (cuda/mps/cpu). If None, uses global config.
             **kwargs: Provider-specific options
         """
         # For now, use the direct assignment method
-        return self._assign_speakers_to_words(audio_path, words, num_speakers, models_dir)
+        return self._assign_speakers_to_words(audio_path, words, num_speakers, kwargs.get('models_dir'))
 
         # Convert to Turn
         turns = [
@@ -216,10 +216,20 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             str(latest_snapshot_dir),
             token=token if token else None
         )
-        # Move to GPU if available
+        # Move to GPU if available and supported
         device = get_system_capability()
         if device != "cpu":
-            pipeline.to(torch.device(device))
+            try:
+                if device == "cuda" and torch.cuda.is_available():
+                    pipeline.to(torch.device("cuda"))
+                    print(f"[i] PyAnnote using CUDA device")
+                elif device == "mps" and torch.backends.mps.is_available():
+                    pipeline.to(torch.device("mps"))
+                    print(f"[i] PyAnnote using MPS device")
+                else:
+                    print(f"[!] Warning: {device} not available, using CPU for PyAnnote")
+            except Exception as e:
+                print(f"[!] Warning: Could not move PyAnnote pipeline to {device}, using CPU: {e}")
 
         # Load waveform
         waveform, sample_rate = self._load_waveform_mono_32f(audio_path)

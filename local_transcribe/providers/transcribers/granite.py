@@ -189,7 +189,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
                     print(f"DEBUG: Cache directory contents: {list(cache_dir.iterdir())}")
                 raise e
 
-    def transcribe(self, audio_path: str, **kwargs) -> str:
+    def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> str:
         """Transcribe audio using Granite model."""
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')  # Default to 8b
         if transcriber_model not in self.model_mapping:
@@ -385,6 +385,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         self,
         audio_path: str,
         role: Optional[str] = None,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[WordSegment]:
         """

@@ -244,9 +244,20 @@ class MFAAlignerProvider(AlignerProvider):
         self,
         audio_path: str,
         transcript: str,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[WordSegment]:
-        """Align transcript text to audio using MFA."""
+        """Align transcript to audio using Montreal Forced Aligner.
+        
+        Note: MFA is a command-line tool and doesn't use GPU acceleration,
+        so the device parameter is ignored.
+        
+        Args:
+            audio_path: Path to audio file
+            transcript: Transcript text
+            device: Device to use (ignored for MFA)
+            **kwargs: Additional options including 'role' or 'speaker'
+        """
         # Extract speaker from kwargs (passed from split_audio mode)
         speaker = kwargs.get('role') or kwargs.get('speaker')
         
@@ -258,6 +269,8 @@ class MFAAlignerProvider(AlignerProvider):
 
         # Download MFA models if needed
         self._ensure_mfa_models()
+        
+        if not os.path.exists(audio_path):
 
         # Create a temporary directory for MFA processing
         with tempfile.TemporaryDirectory() as temp_dir:

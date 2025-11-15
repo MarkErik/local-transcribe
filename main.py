@@ -12,7 +12,6 @@ from typing import Optional
 
 from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist, validate_system_capability
 from local_transcribe.lib.config import set_system_capability
-from local_transcribe.lib.config import set_system_capability
 from local_transcribe.framework.cli import parse_args, interactive_prompt
 from local_transcribe.framework.plugin_manager import import_pipeline_modules, handle_plugin_listing
 from local_transcribe.framework.pipeline_runner import run_pipeline

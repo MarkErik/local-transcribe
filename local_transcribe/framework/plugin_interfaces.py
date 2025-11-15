@@ -88,6 +88,7 @@ class TranscriberProvider(ABC):
     def transcribe(
         self,
         audio_path: str,
+        device: Optional[str] = None,
         **kwargs
     ) -> str:
         """
@@ -95,6 +96,7 @@ class TranscriberProvider(ABC):
 
         Args:
             audio_path: Path to the audio file
+            device: Device to use for processing (cuda/mps/cpu). If None, uses global config.
             **kwargs: Provider-specific configuration options
 
         Returns:
@@ -107,6 +109,7 @@ class TranscriberProvider(ABC):
         self,
         audio_path: str,
         role: Optional[str] = None,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[WordSegment]:
         """
@@ -115,6 +118,7 @@ class TranscriberProvider(ABC):
         Args:
             audio_path: Path to the audio file
             role: Optional speaker role (e.g., "Interviewer", "Participant")
+            device: Device to use for processing (cuda/mps/cpu). If None, uses global config.
             **kwargs: Provider-specific configuration options
 
         Returns:
@@ -176,6 +180,7 @@ class AlignerProvider(ABC):
         self,
         audio_path: str,
         transcript: str,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[WordSegment]:
         """
@@ -184,6 +189,7 @@ class AlignerProvider(ABC):
         Args:
             audio_path: Path to the audio file
             transcript: Transcript text to align
+            device: Device to use for processing (cuda/mps/cpu). If None, uses global config.
             **kwargs: Provider-specific configuration options
 
         Returns:
@@ -236,6 +242,7 @@ class DiarizationProvider(ABC):
         audio_path: str,
         words: List[WordSegment],
         num_speakers: int,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[WordSegment]:
         """
@@ -245,6 +252,7 @@ class DiarizationProvider(ABC):
             audio_path: Path to the audio file
             words: Word segments from ASR (speaker=None)
             num_speakers: Number of speakers expected in the audio
+            device: Device to use for processing (cuda/mps/cpu). If None, uses global config.
             **kwargs: Provider-specific configuration options
 
         Returns:
@@ -306,6 +314,7 @@ class UnifiedProvider(ABC):
         self,
         audio_path: str,
         num_speakers: int,
+        device: Optional[str] = None,
         **kwargs
     ) -> List[Turn]:
         """
@@ -313,7 +322,8 @@ class UnifiedProvider(ABC):
 
         Args:
             audio_path: Path to the audio file
-            num_speakers: Number of speakers expected in the audio            
+            num_speakers: Number of speakers expected in the audio
+            device: Device to use for processing (cuda/mps/cpu). If None, uses global config.
             **kwargs: Provider-specific configuration options
 
         Returns:

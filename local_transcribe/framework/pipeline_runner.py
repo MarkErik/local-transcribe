@@ -14,8 +14,9 @@ from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_t
 
 def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, verbose=False, base_name="", **kwargs):
     """Transcribe audio and return word segments with timestamps."""
-    # Add verbose to kwargs so it's passed to providers
+    # Add verbose and role to kwargs so they're passed to providers
     kwargs['verbose'] = verbose
+    kwargs['role'] = role
     
     if transcriber_provider.has_builtin_alignment:
         # Transcriber has built-in alignment
@@ -37,16 +38,13 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             with open(intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt", "w", encoding="utf-8") as f:
                 f.write(transcript)
             print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
+        # Pass role to aligner via kwargs (already added above)
         segments = aligner_provider.align_transcript(audio_path, transcript, **kwargs)
-        # Verbose: Save word segments
+        # Verbose: Save word segments (speaker should already be assigned by aligner)
         if verbose and intermediate_dir:
             json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
             json_word_writer.write(segments, intermediate_dir / "alignment" / f"{base_name}word_segments.json")
             print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/alignment/{base_name}word_segments.json")
-        # Add speaker role if provided
-        if role:
-            for segment in segments:
-                segment.speaker = role
     return segments
 
 def run_pipeline(args, api, root):

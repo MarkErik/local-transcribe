@@ -10,6 +10,7 @@ from local_transcribe.framework.provider_setup import ProviderSetup
 from local_transcribe.framework.output_manager import OutputManager
 from local_transcribe.lib.speaker_namer import assign_speaker_names
 from local_transcribe.lib.audio_processor import standardize_audio, cleanup_temp_audio
+from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_transcript_for_llm
 
 def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, **kwargs):
     """Transcribe audio and return word segments with timestamps."""
@@ -173,7 +174,30 @@ def run_pipeline(args, api, root):
             output_manager = OutputManager.get_instance(api["registry"])
             output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, std_audio)
 
-            # 5) Optional transcript cleanup
+            # 5) Prepare transcript for LLM processing
+            print("[*] Preparing transcript for LLM processing...")
+            try:
+                prep_result = prepare_transcript_for_llm(
+                    transcript,
+                    max_words_per_segment=getattr(args, 'max_words_per_segment', 500),
+                    standardize_speakers=getattr(args, 'standardize_speakers', True),
+                    normalize_whitespace=getattr(args, 'normalize_whitespace', True),
+                    handle_special_chars=getattr(args, 'handle_special_chars', True)
+                )
+                
+                # Update transcript with processed turns
+                transcript = prep_result['turns']
+                
+                print(f"[✓] Transcript preparation complete: {prep_result['stats']['segments_created']} segments created")
+                if args.verbose:
+                    print(f"    - Original turns: {prep_result['stats']['original_turns']}")
+                    print(f"    - Words processed: {prep_result['stats']['words_processed']}")
+                    print(f"    - Turns split: {prep_result['stats']['turns_split']}")
+            except Exception as e:
+                print(f"[!] Warning: Error during transcript preparation: {str(e)}")
+                print("[i] Continuing with original transcript...")
+
+            # 6) Optional transcript LLM-based cleanup
             transcript_cleanup_done = False
             if transcript_cleanup_provider:
                 print(f"[*] Cleaning up transcript with {args.transcript_cleanup_provider}...")
@@ -257,7 +281,30 @@ def run_pipeline(args, api, root):
             output_manager = OutputManager.get_instance(api["registry"])
             output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, None)
 
-            # 5) Optional transcript cleanup
+            # 5) Prepare transcript for LLM processing
+            print("[*] Preparing transcript for LLM processing...")
+            try:
+                prep_result = prepare_transcript_for_llm(
+                    transcript,
+                    max_words_per_segment=getattr(args, 'max_words_per_segment', 500),
+                    standardize_speakers=getattr(args, 'standardize_speakers', True),
+                    normalize_whitespace=getattr(args, 'normalize_whitespace', True),
+                    handle_special_chars=getattr(args, 'handle_special_chars', True)
+                )
+                
+                # Update transcript with processed turns
+                transcript = prep_result['turns']
+                
+                print(f"[✓] Transcript preparation complete: {prep_result['stats']['segments_created']} segments created")
+                if args.verbose:
+                    print(f"    - Original turns: {prep_result['stats']['original_turns']}")
+                    print(f"    - Words processed: {prep_result['stats']['words_processed']}")
+                    print(f"    - Turns split: {prep_result['stats']['turns_split']}")
+            except Exception as e:
+                print(f"[!] Warning: Error during transcript preparation: {str(e)}")
+                print("[i] Continuing with original transcript...")
+
+            # 6) Optional LLM-based transcript cleanup
             transcript_cleanup_done = False
             if transcript_cleanup_provider:
                 print(f"[*] Cleaning up transcript with {args.transcript_cleanup_provider}...")

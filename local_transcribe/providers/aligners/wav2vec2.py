@@ -7,6 +7,7 @@ from typing import List, Optional
 import os
 import pathlib
 import torch
+import torchaudio
 import numpy as np
 import librosa
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
@@ -169,182 +170,200 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
                     print(f"DEBUG: Cache directory contents: {list((models_root / 'huggingface' / 'hub').iterdir())}")
                 raise e
 
-    def _get_char_timestamps(self, emissions: np.ndarray, predicted_tokens: np.ndarray, sample_rate: int) -> List[tuple]:
-        """Extract character timestamps from CTC emissions using improved alignment."""
-        char_timestamps = []
+    def _get_token_timestamps(self, emissions: torch.Tensor, transcript: str) -> List[tuple]:
+        """Extract token timestamps using proper CTC forced alignment."""
+        # Use torchaudio's forced alignment which properly handles CTC
+        # emissions shape: [batch=1, time, vocab]
         
-        # Get the probability distribution over time for each token
-        time_steps = emissions.shape[0]  # Number of time steps
+        # Get the tokenizer's vocabulary
+        dictionary = {c: i for i, c in enumerate(self.wav2vec2_processor.tokenizer.get_vocab().keys())}
         
-        # Remove consecutive duplicates and blanks (CTC behavior)
-        prev_token = None
-        token_indices = []
+        # Prepare the transcript tokens
+        transcript_normalized = transcript.upper()  # Wav2Vec2 uses uppercase
+        tokens = []
+        for char in transcript_normalized:
+            if char == ' ':
+                tokens.append('|')  # Wav2Vec2 uses | for space
+            elif char in dictionary:
+                tokens.append(char)
         
-        for i, token in enumerate(predicted_tokens):
-            if (token != self.wav2vec2_processor.tokenizer.pad_token_id and
-                token != prev_token and
-                token != self.wav2vec2_processor.tokenizer.unk_token_id):
-                
-                char = self.wav2vec2_processor.tokenizer.decode(token)
-                if char:  # Skip empty characters
-                    token_indices.append((i, token, char))
-                prev_token = token
+        if not tokens:
+            return []
         
-        if not token_indices:
-            return char_timestamps
+        # Convert to token IDs
+        token_ids = [dictionary.get(t, dictionary.get('[UNK]', 0)) for t in tokens]
         
-        # For each token, find the most likely time position
-        for token_idx, token, char in token_indices:
-            # Get the probability of this token across all time steps
-            token_probs = emissions[token_idx, :]
+        try:
+            # Use torchaudio's forced_align for proper CTC alignment
+            # This gives us the time positions where each token appears
+            token_spans = torchaudio.functional.forced_align(
+                emissions.log_softmax(dim=-1),  # Shape: [batch, time, vocab]
+                torch.tensor([token_ids]),  # Shape: [batch, target_length]
+                blank=self.wav2vec2_processor.tokenizer.pad_token_id
+            )
             
-            # Find the peak probability (most likely time position)
-            max_prob_time = np.argmax(token_probs)
+            # Extract timestamps from alignment
+            # token_spans is a list of (token_idx, start_frame, end_frame) tuples
+            token_timestamps = []
             
-            # Convert to milliseconds, accounting for model downsampling
-            inputs_to_logits_ratio = self.wav2vec2_model.config.inputs_to_logits_ratio
-            time_ms = max_prob_time * (inputs_to_logits_ratio / sample_rate) * 1000
+            for i, (token_id, start_frame, end_frame) in enumerate(token_spans[0]):
+                if i < len(tokens):
+                    char = tokens[i]
+                    # Convert frames to time (emissions are downsampled by ~320x from 16kHz)
+                    # Wav2Vec2 base has stride of 20ms per frame
+                    start_time = start_frame * 0.02  # 20ms per frame
+                    end_time = end_frame * 0.02
+                    token_timestamps.append((char, start_time * 1000, end_time * 1000))  # Convert to ms
             
-            char_timestamps.append((char, time_ms))
-        
-        return char_timestamps
+            return token_timestamps
+            
+        except Exception as e:
+            # Fallback to simple frame-based alignment if forced_align fails
+            print(f"Warning: Forced alignment failed ({e}), using fallback method")
+            return self._fallback_token_alignment(emissions, tokens)
 
-    def _chars_to_words(self, transcript: str, pred_str: str, char_timestamps: List[tuple]) -> List[WordSegment]:
-        """Convert character timestamps to word timestamps using improved alignment."""
+    def _fallback_token_alignment(self, emissions: torch.Tensor, tokens: List[str]) -> List[tuple]:
+        """Fallback token alignment using simple peak detection."""
+        token_timestamps = []
+        emissions_np = emissions[0].cpu().numpy()  # [time, vocab]
+        
+        # Get the vocabulary
+        dictionary = {c: i for i, c in enumerate(self.wav2vec2_processor.tokenizer.get_vocab().keys())}
+        
+        # For each token, find where it's most likely in the emission sequence
+        time_per_token = emissions_np.shape[0] / max(len(tokens), 1)
+        
+        for i, token in enumerate(tokens):
+            token_id = dictionary.get(token, dictionary.get('[UNK]', 0))
+            
+            # Search in a window around expected position
+            expected_time = int(i * time_per_token)
+            window_start = max(0, expected_time - int(time_per_token))
+            window_end = min(emissions_np.shape[0], expected_time + int(time_per_token * 2))
+            
+            # Find peak probability for this token in the window
+            window_probs = emissions_np[window_start:window_end, token_id]
+            if len(window_probs) > 0:
+                peak_pos = window_start + np.argmax(window_probs)
+                start_time = peak_pos * 0.02 * 1000  # 20ms per frame, convert to ms
+                end_time = (peak_pos + 1) * 0.02 * 1000
+                token_timestamps.append((token, start_time, end_time))
+        
+        return token_timestamps
+
+    def _chars_to_words(self, transcript: str, token_timestamps: List[tuple], speaker: Optional[str] = None) -> List[WordSegment]:
+        """Convert token timestamps to word timestamps."""
         words = transcript.split()
         if not words:
             return []
-
+        
+        if not token_timestamps:
+            return self._fallback_word_timing(words, 0, speaker)
+        
         segments = []
+        token_idx = 0
         
-        # Create a mapping from character position to timestamp
-        char_to_time = {}
-        for i, (char, time) in enumerate(char_timestamps):
-            char_to_time[i] = time
-        
-        # If we have no character timestamps, fall back to simple word timing
-        if not char_to_time:
-            return self._fallback_word_timing(words, len(char_timestamps))
-        
-        total_chars = sum(len(word) for word in words)
-        char_idx = 0
-
+        # Process each word
         for word in words:
-            word_len = len(word)
-            word_start_char = char_idx
-            word_end_char = char_idx + word_len
-
-            # Find timestamps for the first and last characters of this word
-            start_time = None
-            end_time = None
+            word_upper = word.upper()
+            word_tokens = []
             
-            # Look for timestamps within the word's character range
-            word_timestamps = []
-            for char_pos in range(word_start_char, min(word_end_char, len(char_timestamps))):
-                if char_pos in char_to_time:
-                    word_timestamps.append(char_to_time[char_pos])
+            # Collect tokens for this word
+            for char in word_upper:
+                if token_idx < len(token_timestamps):
+                    token, start_ms, end_ms = token_timestamps[token_idx]
+                    # Handle space token (|)
+                    if token == '|':
+                        token_idx += 1
+                        if token_idx < len(token_timestamps):
+                            token, start_ms, end_ms = token_timestamps[token_idx]
+                    
+                    # Match character (case-insensitive)
+                    if token.upper() == char.upper() or (token == '|' and char == ' '):
+                        word_tokens.append((start_ms, end_ms))
+                        token_idx += 1
+                    else:
+                        # Try to skip ahead to find matching token
+                        found = False
+                        for skip in range(1, min(5, len(token_timestamps) - token_idx)):
+                            next_token = token_timestamps[token_idx + skip][0]
+                            if next_token.upper() == char.upper():
+                                token_idx += skip
+                                word_tokens.append((token_timestamps[token_idx][1], token_timestamps[token_idx][2]))
+                                token_idx += 1
+                                found = True
+                                break
+                        if not found:
+                            token_idx += 1
             
-            if word_timestamps:
-                # Use the earliest and latest timestamps in this word
-                start_time = min(word_timestamps)
-                end_time = max(word_timestamps)
+            # Skip space token if present
+            if token_idx < len(token_timestamps) and token_timestamps[token_idx][0] == '|':
+                token_idx += 1
+            
+            # Determine word boundaries from tokens
+            if word_tokens:
+                start_time = min(t[0] for t in word_tokens)
+                end_time = max(t[1] for t in word_tokens)
             else:
-                # If no direct timestamps, interpolate from surrounding characters
-                start_time, end_time = self._interpolate_word_timing(
-                    word_start_char, word_end_char, char_to_time, total_chars
-                )
-
-            # Ensure reasonable timing
-            if start_time is None:
-                start_time = 0
-            if end_time is None or end_time <= start_time:
-                # Estimate duration based on word length and speech rate
-                word_duration = max(len(word) * 75, 200)  # At least 200ms for short words
-                end_time = start_time + word_duration
-
+                # Estimate timing if no tokens matched
+                if segments:
+                    start_time = segments[-1].end * 1000
+                else:
+                    start_time = 0
+                # Estimate ~150ms per character
+                end_time = start_time + len(word) * 150
+            
             segments.append(WordSegment(
                 text=word,
-                start=start_time / 1000,  # Convert ms to seconds
+                start=start_time / 1000,  # Convert to seconds
                 end=end_time / 1000,
-                speaker=None
+                speaker=speaker
             ))
-
-            char_idx = word_end_char
-
+        
         return segments
     
-    def _fallback_word_timing(self, words: List[str], total_time_steps: int) -> List[WordSegment]:
+    def _fallback_word_timing(self, words: List[str], total_time_steps: int, speaker: Optional[str] = None) -> List[WordSegment]:
         """Fallback method for word timing when no character timestamps are available."""
         segments = []
         
-        # Distribute time evenly across words
-        total_duration = (total_time_steps / 16000) * 1000  # Convert to milliseconds
+        # Distribute time evenly across words based on word length
+        total_chars = sum(len(w) for w in words)
+        current_time = 0
         
-        for i, word in enumerate(words):
-            if i == 0:
-                start_time = 0
-            else:
-                start_time = (i / len(words)) * total_duration
-            
-            if i == len(words) - 1:
-                end_time = total_duration
-            else:
-                end_time = ((i + 1) / len(words)) * total_duration
+        for word in words:
+            # Allocate time proportional to word length
+            word_duration = (len(word) / max(total_chars, 1)) * total_time_steps
+            # Minimum 100ms per word
+            word_duration = max(word_duration, 100)
             
             segments.append(WordSegment(
                 text=word,
-                start=start_time / 1000,  # Convert ms to seconds
-                end=end_time / 1000,
-                speaker=None
+                start=current_time / 1000,  # Convert ms to seconds
+                end=(current_time + word_duration) / 1000,
+                speaker=speaker
             ))
+            
+            current_time += word_duration
         
         return segments
     
-    def _interpolate_word_timing(self, word_start: int, word_end: int, char_to_time: dict, total_chars: int) -> tuple:
-        """Interpolate word timing when no direct timestamps are available."""
-        # Find the closest timestamps before and after the word
-        before_timestamp = None
-        after_timestamp = None
-        
-        # Look for timestamp before the word
-        for char_pos in range(word_start - 1, -1, -1):
-            if char_pos in char_to_time:
-                before_timestamp = char_to_time[char_pos]
-                break
-        
-        # Look for timestamp after the word
-        for char_pos in range(word_end, len(char_to_time)):
-            if char_pos in char_to_time:
-                after_timestamp = char_to_time[char_pos]
-                break
-        
-        if before_timestamp is not None and after_timestamp is not None:
-            # Interpolate between the two timestamps
-            word_duration = (after_timestamp - before_timestamp) * ((word_end - word_start) / (total_chars))
-            return before_timestamp, before_timestamp + word_duration
-        elif before_timestamp is not None:
-            # Extrapolate forward from the before timestamp
-            word_duration = max(200, (word_end - word_start) * 75)  # Minimum 200ms
-            return before_timestamp, before_timestamp + word_duration
-        elif after_timestamp is not None:
-            # Extrapolate backward from the after timestamp
-            word_duration = max(200, (word_end - word_start) * 75)
-            return after_timestamp - word_duration, after_timestamp
-        else:
-            # No surrounding timestamps found
-            return 0, max(200, (word_end - word_start) * 75)
-
     def align_transcript(
         self,
         audio_path: str,
         transcript: str,
         **kwargs
     ) -> List[WordSegment]:
-        """Align transcript text to audio using Wav2Vec2."""
+        """Align transcript text to audio using Wav2Vec2 forced alignment."""
+        # Extract speaker from kwargs (passed from split_audio mode)
+        speaker = kwargs.get('role') or kwargs.get('speaker')
+        
         self._load_wav2vec2_model()
 
         # Load audio
         speech, sr = librosa.load(audio_path, sr=16000)
+        
+        # Get audio duration for fallback
+        audio_duration_ms = len(speech) / sr * 1000
 
         # Process audio for Wav2Vec2
         inputs = self.wav2vec2_processor(speech, sampling_rate=16_000, return_tensors="pt", padding=True)
@@ -353,24 +372,16 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         with torch.no_grad():
             logits = self.wav2vec2_model(**inputs).logits
 
-        # Get predicted tokens
-        predicted_ids = torch.argmax(logits, dim=-1)
-        predicted_tokens = predicted_ids[0].cpu().numpy()
+        # Get token timestamps using proper CTC forced alignment
+        token_timestamps = self._get_token_timestamps(logits, transcript)
 
-        # Decode to text (this gives us character-level alignment)
-        pred_str = self.wav2vec2_processor.batch_decode(predicted_ids)[0]
-
-        # For word-level alignment, we need to map the transcript words to time positions
-        # This is a simplified approach - in practice, you'd want more sophisticated alignment
-
-        # Get emission timestamps (time positions for each character)
-        emissions = logits[0].cpu().numpy()
-
-        # Use CTC alignment to get character timestamps
-        char_timestamps = self._get_char_timestamps(emissions, predicted_tokens, sr)
-
-        # Convert character timestamps to word timestamps
-        return self._chars_to_words(transcript, pred_str, char_timestamps)
+        # Convert token timestamps to word timestamps
+        if token_timestamps:
+            return self._chars_to_words(transcript, token_timestamps, speaker=speaker)
+        else:
+            # Fallback to simple timing
+            words = transcript.split()
+            return self._fallback_word_timing(words, audio_duration_ms, speaker=speaker)
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""

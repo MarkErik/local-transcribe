@@ -206,14 +206,21 @@ class GraniteTranscriberProvider(TranscriberProvider):
         # Calculate audio duration in seconds
         duration = len(wav) / sr
         
-        # For audio longer than 30 seconds, process in chunks to avoid memory issues
-        max_chunk_duration = 30.0  # seconds
+        # Check if user wants to disable chunking for quality
+        disable_chunking = kwargs.get('disable_chunking', False)
         
-        if duration > max_chunk_duration:
+        # For audio longer than 2 minutes, process in chunks to avoid memory issues
+        max_chunk_duration = 120.0  # seconds (2 minutes)
+        
+        if duration > max_chunk_duration and not disable_chunking:
             if kwargs.get('verbose', False):
                 print(f"[i] Audio duration: {duration:.1f}s - processing in chunks to manage memory")
+                print(f"[i] Note: Chunking may slightly reduce transcription quality at segment boundaries")
+                print(f"[i] Use disable_chunking=True for maximum quality (higher memory usage)")
             return self._transcribe_chunked(wav, sr, **kwargs)
         else:
+            if duration > max_chunk_duration and disable_chunking and kwargs.get('verbose', False):
+                print(f"[i] Audio duration: {duration:.1f}s - processing without chunking (higher memory usage)")
             return self._transcribe_single(wav, **kwargs)
 
     def _transcribe_single(self, wav, **kwargs) -> str:
@@ -301,9 +308,9 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
     def _transcribe_chunked(self, wav, sr, **kwargs) -> str:
         """Transcribe audio in chunks to manage memory for long files."""
-        chunk_duration = 30.0  # seconds
+        chunk_duration = 120.0  # seconds (2 minutes)
         chunk_samples = int(chunk_duration * sr)
-        overlap_samples = int(1.0 * sr)  # 1 second overlap to avoid cutting words
+        overlap_samples = int(2.0 * sr)  # 2 second overlap to avoid cutting words
         
         chunks = []
         total_samples = len(wav)

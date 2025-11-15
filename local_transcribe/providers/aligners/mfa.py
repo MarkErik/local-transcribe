@@ -105,43 +105,50 @@ class MFAAlignerProvider(AlignerProvider):
             print(f"Warning: Failed to check/download MFA models: {e}")
             raise
 
-    def _parse_textgrid(self, textgrid_path: pathlib.Path) -> List[WordSegment]:
+    def _parse_textgrid(self, textgrid_path: pathlib.Path, speaker: Optional[str] = None) -> List[WordSegment]:
         """Parse MFA TextGrid output to extract word timestamps."""
-        # This is a simplified TextGrid parser
-        # In production, you'd want a more robust parser
         segments = []
 
         try:
             with open(textgrid_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
 
-            # Find the word tier (usually tier 2)
+            # Find the word tier
             word_tier_start = None
+            word_tier_end = None
+            
             for i, line in enumerate(lines):
                 if 'name = "words"' in line:
                     word_tier_start = i
+                # Find the next tier (phones) to know where words tier ends
+                elif word_tier_start is not None and 'name = "phones"' in line:
+                    word_tier_end = i
                     break
 
             if word_tier_start is None:
                 raise ValueError("Could not find word tier in TextGrid")
+            
+            # If we didn't find the phones tier, parse until end of file
+            if word_tier_end is None:
+                word_tier_end = len(lines)
 
-            # Parse intervals
+            # Parse intervals only within the words tier
             i = word_tier_start
-            while i < len(lines):
+            while i < word_tier_end:
                 line = lines[i].strip()
                 if line.startswith('intervals ['):
                     # Parse interval
                     # Skip to xmin, xmax, text lines
-                    i += 1  # Skip intervals [n]: to xmin =
-                    if i >= len(lines):
+                    i += 1  # Move to xmin line
+                    if i >= word_tier_end:
                         break
                     xmin_line = lines[i].strip()
-                    i += 1
-                    if i >= len(lines):
+                    i += 1  # Move to xmax line
+                    if i >= word_tier_end:
                         break
                     xmax_line = lines[i].strip()
-                    i += 1
-                    if i >= len(lines):
+                    i += 1  # Move to text line
+                    if i >= word_tier_end:
                         break
                     text_line = lines[i].strip()
 
@@ -151,11 +158,13 @@ class MFAAlignerProvider(AlignerProvider):
                         end = float(xmax_line.split('=')[1].strip())
                         text = text_line.split('=')[1].strip().strip('"')
 
-                        if text and text != "<eps>":  # Skip empty and silence intervals
+                        # Skip empty intervals, silence markers, and special tokens
+                        if text and text not in ["", "<eps>", "sil", "sp", "spn"]:
                             segments.append(WordSegment(
                                 text=text,
                                 start=start,
-                                end=end
+                                end=end,
+                                speaker=speaker
                             ))
                     except (ValueError, IndexError):
                         pass
@@ -168,7 +177,7 @@ class MFAAlignerProvider(AlignerProvider):
 
         return segments
 
-    def _simple_alignment(self, audio_path: str, transcript: str) -> List[WordSegment]:
+    def _simple_alignment(self, audio_path: str, transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
         """Fallback to simple even-distribution alignment."""
         import librosa
 
@@ -191,7 +200,8 @@ class MFAAlignerProvider(AlignerProvider):
             segments.append(WordSegment(
                 text=word,
                 start=current_time,
-                end=current_time + word_duration
+                end=current_time + word_duration,
+                speaker=speaker
             ))
             current_time += word_duration
 
@@ -204,6 +214,9 @@ class MFAAlignerProvider(AlignerProvider):
         **kwargs
     ) -> List[WordSegment]:
         """Align transcript text to audio using MFA."""
+        # Extract speaker from kwargs (passed from split_audio mode)
+        speaker = kwargs.get('role') or kwargs.get('speaker')
+        
         # Ensure MFA models directory exists
         if self.mfa_models_dir is None:
             models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models")))
@@ -277,21 +290,21 @@ class MFAAlignerProvider(AlignerProvider):
 
                 # Parse TextGrid to extract word timestamps
                 if textgrid_file.exists():
-                    segments = self._parse_textgrid(textgrid_file)
+                    segments = self._parse_textgrid(textgrid_file, speaker=speaker)
                     return segments
                 else:
                     print(f"Warning: MFA did not produce TextGrid output at {textgrid_file}")
-                    return self._simple_alignment(audio_path, transcript)
+                    return self._simple_alignment(audio_path, transcript, speaker=speaker)
 
             except subprocess.CalledProcessError as e:
                 print(f"Warning: MFA alignment failed: {e.stderr}")
                 print(f"Falling back to simple alignment")
-                return self._simple_alignment(audio_path, transcript)
+                return self._simple_alignment(audio_path, transcript, speaker=speaker)
             except FileNotFoundError:
                 print(f"Warning: MFA not installed or not in PATH")
                 print(f"Run: bash setup_mfa.sh")
                 print(f"Falling back to simple alignment")
-                return self._simple_alignment(audio_path, transcript)
+                return self._simple_alignment(audio_path, transcript, speaker=speaker)
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure MFA models are available."""

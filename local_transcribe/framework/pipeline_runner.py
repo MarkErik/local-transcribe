@@ -128,6 +128,15 @@ def run_pipeline(args, api, root):
     # Configure logging based on verbose flag
     api["configure_global_logging"](log_level="INFO" if args.verbose else "WARNING")
 
+    # Compute capabilities for directory creation
+    capabilities = {
+        "mode": mode,
+        "unified": unified_provider is not None,
+        "has_builtin_alignment": transcriber_provider.has_builtin_alignment if transcriber_provider else False,
+        "aligner": aligner_provider is not None,
+        "diarization": diarization_provider is not None
+    }
+
     # Initialize progress tracking
     tracker = api["get_progress_tracker"]()
     tracker.start()
@@ -135,7 +144,7 @@ def run_pipeline(args, api, root):
     try:
         # Ensure outdir & subdirs
         outdir = ensure_outdir(args.outdir)
-        paths = api["ensure_session_dirs"](outdir, mode, speaker_files, args.verbose)
+        paths = api["ensure_session_dirs"](outdir, mode, speaker_files, args.verbose, capabilities)
 
         if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
             print(f"[*] Mode: {mode} (combined_audio) | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")

@@ -312,12 +312,24 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
             'as well as', 'not only', 'but also', 'what\'s more'
         }
         
-        text_so_far = current_text + " " + last_text
+        text_so_far = (current_text + " " + last_text).strip()
         text_lower = text_so_far.lower()
-        
-        # Check if we're in the middle of an explanation
+
+        # Precompiled regex to detect contrastive or inverting conjunctions at the
+        # *start* of the next_text such as "but", "however", or "although".
+        # This is robust to leading whitespace and punctuation and avoids false
+        # negatives when next_text is a phrase like "But I think...".
+        CONTRAST_START_RE = re.compile(r"^\s*(but|however|although)\b", flags=re.I)
+
+        # Check if we're in the middle of an explanation; allow a break if the
+        # next text *starts* with a contrastive conjunction (e.g., "But...").
         for indicator in explanation_indicators:
-            if indicator in text_lower and next_text.lower() not in {'but', 'however', 'although'}:
+            if indicator in text_lower:
+                # If next_text begins with a contrastive conjunction, allow break
+                # (i.e., we are finishing a thought and continuing with a contrast).
+                if CONTRAST_START_RE.match(next_text or ""):
+                    return True
+                # Otherwise, do not break in the middle of an explanation
                 return False
         
         # Check if we're in a transitional phrase
@@ -325,7 +337,12 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
             if phrase in text_lower:
                 return False
         
-        # Use the original natural break logic as fallback
+        # Check if we're in a transitional phrase; don't break in the middle
+        for phrase in continuation_phrases:
+            if phrase in text_lower:
+                return False
+
+        # Fallback: use the natural break heuristic
         return self._is_natural_break_point(last_text, next_text)
 
     def _is_question_answer_transition(self, last_text: str, next_text: str) -> bool:

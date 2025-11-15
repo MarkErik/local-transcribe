@@ -12,23 +12,23 @@ import numpy as np
 import librosa
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
+from local_transcribe.lib.config import get_system_capability, clear_device_cache
 
 
 class Wav2Vec2AlignerProvider(AlignerProvider):
     """Aligner provider using Wav2Vec2 for forced alignment of transcripts to audio."""
 
     def __init__(self):
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
+        # Device is determined dynamically
         self.wav2vec2_model_name = "facebook/wav2vec2-base-960h"  # English model
 
         # Wav2Vec2 components for alignment
         self.wav2vec2_processor = None
         self.wav2vec2_model = None
+
+    @property
+    def device(self):
+        return get_system_capability()
 
     @property
     def name(self) -> str:
@@ -436,10 +436,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             import gc
             gc.collect()
             
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+            clear_device_cache()
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""

@@ -13,19 +13,14 @@ from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from peft import PeftModel
 from huggingface_hub import hf_hub_download, snapshot_download
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
+from local_transcribe.lib.config import get_system_capability, clear_device_cache
 
 
 class GraniteTranscriberProvider(TranscriberProvider):
     """Transcriber provider using IBM Granite for speech-to-text transcription."""
 
     def __init__(self):
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
-        # Model mapping: user-friendly name -> HuggingFace model name
+        # Device is determined dynamically
         self.model_mapping = {
             "granite-2b": "ibm-granite/granite-speech-3.3-2b",
             "granite-8b": "ibm-granite/granite-speech-3.3-8b"
@@ -33,6 +28,10 @@ class GraniteTranscriberProvider(TranscriberProvider):
         self.selected_model = None  # Will be set during transcription
         self.processor = None
         self.model = None
+
+    @property
+    def device(self):
+        return get_system_capability()
         self.tokenizer = None
 
     @property
@@ -300,11 +299,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
             import gc
             gc.collect()
             
-            # Clear MPS cache if using MPS
-            if self.device == "mps":
-                torch.mps.empty_cache()
-            elif self.device == "cuda":
-                torch.cuda.empty_cache()
+            clear_device_cache()
 
     def _transcribe_chunked(self, wav, sr, **kwargs) -> str:
         """Transcribe audio in chunks to manage memory for long files."""

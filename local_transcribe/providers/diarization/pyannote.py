@@ -11,6 +11,7 @@ import torch
 import soundfile as sf
 from pyannote.audio import Pipeline
 from local_transcribe.framework.plugin_interfaces import DiarizationProvider, WordSegment, Turn, registry
+from local_transcribe.lib.config import get_system_capability, clear_device_cache
 
 
 class PyAnnoteDiarizationProvider(DiarizationProvider):
@@ -216,10 +217,9 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             token=token if token else None
         )
         # Move to GPU if available
-        if torch.cuda.is_available():
-            pipeline.to(torch.device("cuda"))
-        elif torch.backends.mps.is_available():
-            pipeline.to(torch.device("mps"))
+        device = get_system_capability()
+        if device != "cpu":
+            pipeline.to(torch.device(device))
 
         # Load waveform
         waveform, sample_rate = self._load_waveform_mono_32f(audio_path)
@@ -266,10 +266,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             gc.collect()
             
             # Clear GPU cache
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+            clear_device_cache()
 
 def register_diarization_plugins():
     """Register diarization plugins."""

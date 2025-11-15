@@ -9,19 +9,14 @@ import pathlib
 import torch
 import whisperx
 from local_transcribe.framework.plugin_interfaces import UnifiedProvider, Turn, registry
+from local_transcribe.lib.config import get_system_capability, clear_device_cache
 
 
 class WhisperXUnifiedProvider(UnifiedProvider):
     """Unified provider using WhisperX for ASR with word-level timestamps and speaker diarization."""
 
     def __init__(self):
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
-        # Model mapping: user-friendly name -> WhisperX model name
+        # Device is determined dynamically
         self.model_mapping = {
             "large-v2": "large-v2",
             "large-v3": "large-v3",
@@ -30,6 +25,10 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             "base": "base",
         }
         self.selected_model = None  # Will be set during transcription
+
+    @property
+    def device(self):
+        return get_system_capability()
 
     @property
     def name(self) -> str:
@@ -119,10 +118,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             
             # Clean up transcription model
             del model
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+            clear_device_cache()
 
             # 2. Align output
             model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=self.device)
@@ -133,10 +129,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             # Clean up alignment model
             del model_a
             del metadata
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+            clear_device_cache()
 
             # 3. Assign speaker labels
             diarize_model = whisperx.DiarizationPipeline(use_auth_token=os.getenv("HF_TOKEN"), device=self.device)
@@ -148,10 +141,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             # Clean up diarization model
             del diarize_model
             del diarize_segments
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+            clear_device_cache()
 
             # Convert to Turns
             turns = []
@@ -196,10 +186,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             import gc
             gc.collect()
             
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+            clear_device_cache()
 
 
 def register_unified_plugins():

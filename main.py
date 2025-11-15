@@ -10,7 +10,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import sys
 from typing import Optional
 
-from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist
+from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist, validate_system_capability
+from local_transcribe.lib.config import set_system_capability
+from local_transcribe.lib.config import set_system_capability
 from local_transcribe.framework.cli import parse_args, interactive_prompt
 from local_transcribe.framework.plugin_manager import import_pipeline_modules, handle_plugin_listing
 from local_transcribe.framework.pipeline_runner import run_pipeline
@@ -18,6 +20,14 @@ from local_transcribe.framework.pipeline_runner import run_pipeline
 # ---------- main ----------
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
+
+    # Validate system capability
+    if hasattr(args, 'system') and args.system:
+        args.system = validate_system_capability(args.system)
+        set_system_capability(args.system)
+    else:
+        # Default to CPU if not specified
+        set_system_capability("cpu")
 
     # Early validation for required args
     if not args.list_plugins:

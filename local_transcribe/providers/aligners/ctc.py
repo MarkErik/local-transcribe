@@ -14,6 +14,7 @@ import librosa
 from transformers import AutoModelForCTC, AutoTokenizer
 from uroman import Uroman
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
+from local_transcribe.lib.config import get_system_capability, clear_device_cache
 
 
 # Initialize uroman for romanization
@@ -24,14 +25,13 @@ class CTCAlignerProvider(AlignerProvider):
     """Aligner provider using CTC-based forced alignment for accurate word-level timestamps."""
 
     def __init__(self):
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
+        # Device is determined dynamically
         self.model_name = "facebook/mms-300m"  # Multilingual CTC model
         self.model = None
+
+    @property
+    def device(self):
+        return get_system_capability()
         self.tokenizer = None
         self.sample_rate = 16000
 
@@ -288,10 +288,7 @@ class CTCAlignerProvider(AlignerProvider):
         # Clear cache after processing
         import gc
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        elif torch.backends.mps.is_available():
-            torch.mps.empty_cache()
+        clear_device_cache()
         
         return emissions, stride
 

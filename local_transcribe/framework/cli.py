@@ -4,6 +4,8 @@
 import argparse
 from typing import Optional
 
+from local_transcribe.lib.environment import get_available_system_capabilities
+
 # ---------- CLI ----------
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -23,6 +25,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
     p.add_argument("--verbose", action="store_true", help="Enable verbose logging output.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
+    p.add_argument("--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration. If not specified, will auto-detect available capabilities.")
 
     args = p.parse_args(argv)
 
@@ -64,6 +67,28 @@ def interactive_prompt(args, api):
     registry = api["registry"]
     print("\n=== Interactive Mode ===")
     print("Select your processing options:\n")
+
+    # System capability selection
+    available_capabilities = get_available_system_capabilities()
+    if len(available_capabilities) > 1:
+        print("Available System Capabilities:")
+        for i, cap in enumerate(available_capabilities, 1):
+            print(f"  {i}. {cap.upper()}")
+        
+        while True:
+            try:
+                choice = int(input(f"\nChoose system capability (number): ").strip())
+                if 1 <= choice <= len(available_capabilities):
+                    args.system = available_capabilities[choice - 1]
+                    break
+                else:
+                    print("Invalid choice. Please enter a number from the list.")
+            except ValueError:
+                print("Please enter a valid number.")
+    else:
+        args.system = available_capabilities[0]  # Only CPU available
+
+    print(f"✓ Selected system capability: {args.system.upper()}")
 
     # Determine mode based on number of audio files
     if hasattr(args, 'audio_files') and args.audio_files:

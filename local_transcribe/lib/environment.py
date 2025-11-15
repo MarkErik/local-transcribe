@@ -6,7 +6,7 @@ import os
 import sys
 import pathlib
 import warnings
-from typing import Optional
+from typing import Optional, List
 from dotenv import load_dotenv
 
 # Aggressively suppress warnings
@@ -19,7 +19,30 @@ os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
 # Load environment variables from .env file
 load_dotenv()
 
-# ---------- repo paths & offline env ----------
+# ---------- system capabilities ----------
+def get_available_system_capabilities() -> List[str]:
+    """Check available system capabilities for ML acceleration."""
+    capabilities = ["cpu"]  # CPU is always available
+    
+    try:
+        import torch
+        if torch.cuda.is_available():
+            capabilities.append("cuda")
+        if torch.backends.mps.is_available():
+            capabilities.append("mps")
+    except ImportError:
+        pass  # torch not available, only CPU
+    
+    return capabilities
+
+def validate_system_capability(capability: str) -> str:
+    """Validate and return a valid system capability, defaulting to CPU if invalid."""
+    available = get_available_system_capabilities()
+    if capability in available:
+        return capability
+    else:
+        print(f"WARNING: System capability '{capability}' is not available on this system. Available: {available}. Defaulting to 'cpu'.")
+        return "cpu"
 def repo_root_from_here() -> pathlib.Path:
     # Resolve repo root as the directory containing this file
     return pathlib.Path(__file__).resolve().parent.parent.parent

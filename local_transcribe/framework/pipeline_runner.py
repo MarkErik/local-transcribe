@@ -153,7 +153,7 @@ def run_pipeline(args, api, root):
         paths = api["ensure_session_dirs"](outdir, mode, speaker_files, args.verbose, capabilities)
 
         if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
-            print(f"[*] Mode: {mode} (combined_audio) | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
+            print(f"[*] Mode: {mode} (combined_audio) | System: {args.system.upper()} | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
         else:
             provider_info = []
             if hasattr(args, 'transcriber_provider') and args.transcriber_provider:
@@ -163,7 +163,7 @@ def run_pipeline(args, api, root):
             if hasattr(args, 'diarization_provider') and args.diarization_provider:
                 provider_info.append(f"Diarization: {args.diarization_provider}")
             provider_str = " | ".join(provider_info) if provider_info else "Default providers"
-            print(f"[*] Mode: {mode} | {provider_str} | Turn Builder: {turn_builder_provider.name} | Outputs: {', '.join(args.selected_outputs)}")
+            print(f"[*] Mode: {mode} | System: {args.system.upper()} | {provider_str} | Turn Builder: {turn_builder_provider.name} | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
         if mode == "combined_audio":

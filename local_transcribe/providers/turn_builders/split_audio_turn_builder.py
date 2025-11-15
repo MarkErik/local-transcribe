@@ -342,11 +342,6 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         for phrase in continuation_phrases:
             if phrase in text_lower:
                 return False
-        
-        # Check if we're in a transitional phrase; don't break in the middle
-        for phrase in continuation_phrases:
-            if phrase in text_lower:
-                return False
 
         # Fallback: use the natural break heuristic
         return self._is_natural_break_point(last_text, next_text)

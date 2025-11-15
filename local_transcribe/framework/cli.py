@@ -177,26 +177,42 @@ def interactive_prompt(args, api):
         # Select turn builder for split audio
         if mode == "split_audio":
             turn_builders = registry._turn_builder_providers
-            # Filter to single speaker turn builders
+            # For split audio mode, show the split_audio_turn_builder as the primary option
+            split_audio_turn_builders = {k: v for k, v in turn_builders.items() if k.startswith("split_audio")}
+            # Also include single speaker turn builders as fallback options
             single_speaker_turn_builders = {k: v for k, v in turn_builders.items() if k.startswith("single_speaker")}
-            if len(single_speaker_turn_builders) > 1:
+            
+            # Combine split_audio first, then single_speaker options
+            all_turn_builders = {**split_audio_turn_builders, **single_speaker_turn_builders}
+            
+            if len(all_turn_builders) > 1:
                 print(f"\nAvailable Turn Builder Providers:")
-                for i, (name, provider) in enumerate(single_speaker_turn_builders.items(), 1):
+                for i, (name, provider) in enumerate(all_turn_builders.items(), 1):
                     display_name = getattr(provider, 'short_name', provider.description)
-                    print(f"  {i}. {display_name}")
+                    # Mark the recommended option
+                    if name.startswith("split_audio"):
+                        print(f"  {i}. {display_name} (RECOMMENDED)")
+                    else:
+                        print(f"  {i}. {display_name}")
                 
                 while True:
                     try:
                         choice = int(input(f"\nChoose turn builder (number): ").strip())
-                        if 1 <= choice <= len(single_speaker_turn_builders):
-                            args.turn_builder_provider = list(single_speaker_turn_builders.keys())[choice - 1]
+                        if 1 <= choice <= len(all_turn_builders):
+                            args.turn_builder_provider = list(all_turn_builders.keys())[choice - 1]
                             break
                         else:
                             print("Invalid choice. Please enter a number from the list.")
                     except ValueError:
                         print("Please enter a valid number.")
             else:
-                args.turn_builder_provider = list(single_speaker_turn_builders.keys())[0] if single_speaker_turn_builders else "single_speaker_length_based"
+                # Default to split_audio_turn_builder if available, otherwise fall back
+                if split_audio_turn_builders:
+                    args.turn_builder_provider = list(split_audio_turn_builders.keys())[0]
+                elif single_speaker_turn_builders:
+                    args.turn_builder_provider = list(single_speaker_turn_builders.keys())[0]
+                else:
+                    args.turn_builder_provider = "split_audio_turn_builder"  # Fallback default
 
         # Select diarization provider (only needed for combined audio in separate mode)
         if mode == "combined_audio":

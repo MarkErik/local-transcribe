@@ -3,7 +3,7 @@
 Split audio turn builder provider that creates optimal turns and merges them in a single step.
 """
 
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict
 import re
 
 from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, Turn, registry
@@ -248,10 +248,6 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         
         return merged_turns
 
-    def _is_sentence_boundary(self, text: str) -> bool:
-        """Check if text ends with a sentence boundary."""
-        sentence_endings = r'[.!?]+\s*$'
-        return bool(re.search(sentence_endings, text))
 
     def _is_strong_sentence_boundary(self, text: str) -> bool:
         """

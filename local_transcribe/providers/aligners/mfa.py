@@ -105,13 +105,33 @@ class MFAAlignerProvider(AlignerProvider):
             print(f"Warning: Failed to check/download MFA models: {e}")
             raise
 
-    def _parse_textgrid(self, textgrid_path: pathlib.Path, speaker: Optional[str] = None) -> List[WordSegment]:
-        """Parse MFA TextGrid output to extract word timestamps."""
+    def _parse_textgrid(self, textgrid_path: pathlib.Path, original_transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
+        """Parse MFA TextGrid output to extract word timestamps.
+        
+        Args:
+            textgrid_path: Path to the TextGrid file
+            original_transcript: Original transcript with punctuation/capitalization
+            speaker: Speaker identifier
+        """
         segments = []
 
         try:
             with open(textgrid_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
+            
+            # Build a mapping of normalized words to original words
+            original_words = original_transcript.split()
+            normalized_to_original = {}
+            word_usage_count = {}  # Track how many times we've used each normalized form
+            
+            for orig_word in original_words:
+                # Normalize: lowercase and strip punctuation
+                normalized = ''.join(c.lower() for c in orig_word if c.isalnum())
+                if normalized:
+                    if normalized not in normalized_to_original:
+                        normalized_to_original[normalized] = []
+                        word_usage_count[normalized] = 0
+                    normalized_to_original[normalized].append(orig_word)
 
             # Find the word tier
             word_tier_start = None
@@ -156,12 +176,25 @@ class MFAAlignerProvider(AlignerProvider):
                     try:
                         start = float(xmin_line.split('=')[1].strip())
                         end = float(xmax_line.split('=')[1].strip())
-                        text = text_line.split('=')[1].strip().strip('"')
+                        mfa_text = text_line.split('=')[1].strip().strip('"')
 
                         # Skip empty intervals, silence markers, and special tokens
-                        if text and text not in ["", "<eps>", "sil", "sp", "spn"]:
+                        if mfa_text and mfa_text not in ["", "<eps>", "sil", "sp", "spn"]:
+                            # Map MFA's normalized text back to original formatting
+                            normalized_key = mfa_text.lower()
+                            
+                            if normalized_key in normalized_to_original:
+                                # Get the next occurrence of this word from the original transcript
+                                word_list = normalized_to_original[normalized_key]
+                                usage_idx = word_usage_count[normalized_key] % len(word_list)
+                                original_text = word_list[usage_idx]
+                                word_usage_count[normalized_key] += 1
+                            else:
+                                # Fallback: use MFA's text if we can't find a mapping
+                                original_text = mfa_text
+                            
                             segments.append(WordSegment(
-                                text=text,
+                                text=original_text,
                                 start=start,
                                 end=end,
                                 speaker=speaker
@@ -245,8 +278,14 @@ class MFAAlignerProvider(AlignerProvider):
             shutil.copy(audio_path, audio_file)
 
             # Create matching transcript file (.lab extension)
+            # MFA needs text without punctuation, so normalize it
+            normalized_transcript = ' '.join(
+                ''.join(c for c in word if c.isalnum() or c == "'")
+                for word in transcript.split()
+            )
+            
             transcript_file = audio_dir / f"{audio_name.rsplit('.', 1)[0]}.lab"
-            transcript_file.write_text(transcript, encoding='utf-8')
+            transcript_file.write_text(normalized_transcript, encoding='utf-8')
 
             # Setup output directory for alignments
             output_dir = temp_path / "output"
@@ -290,7 +329,7 @@ class MFAAlignerProvider(AlignerProvider):
 
                 # Parse TextGrid to extract word timestamps
                 if textgrid_file.exists():
-                    segments = self._parse_textgrid(textgrid_file, speaker=speaker)
+                    segments = self._parse_textgrid(textgrid_file, transcript, speaker=speaker)
                     return segments
                 else:
                     print(f"Warning: MFA did not produce TextGrid output at {textgrid_file}")

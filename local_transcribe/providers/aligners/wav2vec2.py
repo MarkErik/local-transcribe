@@ -171,12 +171,13 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
                 raise e
 
     def _get_token_timestamps(self, emissions: torch.Tensor, transcript: str) -> List[tuple]:
-        """Extract token timestamps using proper CTC forced alignment."""
-        # Use torchaudio's forced alignment which properly handles CTC
+        """Extract token timestamps using CTC alignment with frame-level paths."""
         # emissions shape: [batch=1, time, vocab]
         
         # Get the tokenizer's vocabulary
-        dictionary = {c: i for i, c in enumerate(self.wav2vec2_processor.tokenizer.get_vocab().keys())}
+        vocab = self.wav2vec2_processor.tokenizer.get_vocab()
+        dictionary = {c: i for i, c in enumerate(vocab.keys())}
+        id_to_char = {i: c for c, i in vocab.items()}
         
         # Prepare the transcript tokens
         transcript_normalized = transcript.upper()  # Wav2Vec2 uses uppercase
@@ -194,26 +195,52 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         token_ids = [dictionary.get(t, dictionary.get('[UNK]', 0)) for t in tokens]
         
         try:
-            # Use torchaudio's forced_align for proper CTC alignment
-            # This gives us the time positions where each token appears
+            # Get frame-by-frame best predictions
+            emissions_squeezed = emissions[0]  # Remove batch dimension: [time, vocab]
+            predicted_ids = torch.argmax(emissions_squeezed, dim=-1)  # [time]
+            
+            # Use torchaudio's forced_align to get the alignment path
+            # This returns frame indices where each target token is aligned
             token_spans = torchaudio.functional.forced_align(
                 emissions.log_softmax(dim=-1),  # Shape: [batch, time, vocab]
                 torch.tensor([token_ids]),  # Shape: [batch, target_length]
                 blank=self.wav2vec2_processor.tokenizer.pad_token_id
             )
             
-            # Extract timestamps from alignment
-            # token_spans is a list of (token_idx, start_frame, end_frame) tuples
+            # token_spans[0] contains tuples of (target_token_idx, frame_idx)
+            # We need to group consecutive frames by target token
             token_timestamps = []
             
-            for i, (token_id, start_frame, end_frame) in enumerate(token_spans[0]):
-                if i < len(tokens):
-                    char = tokens[i]
-                    # Convert frames to time (emissions are downsampled by ~320x from 16kHz)
-                    # Wav2Vec2 base has stride of 20ms per frame
-                    start_time = start_frame * 0.02  # 20ms per frame
-                    end_time = end_frame * 0.02
-                    token_timestamps.append((char, start_time * 1000, end_time * 1000))  # Convert to ms
+            if len(token_spans[0]) > 0:
+                # Group frames by token
+                current_token_idx = None
+                current_start = None
+                current_end = None
+                
+                for target_idx, frame_idx in token_spans[0]:
+                    if current_token_idx is None or target_idx != current_token_idx:
+                        # Save previous token if exists
+                        if current_token_idx is not None and current_token_idx < len(tokens):
+                            char = tokens[current_token_idx]
+                            # Convert frames to time (20ms per frame for Wav2Vec2 base)
+                            start_time = current_start * 0.02 * 1000  # Convert to ms
+                            end_time = (current_end + 1) * 0.02 * 1000  # +1 to include the end frame
+                            token_timestamps.append((char, start_time, end_time))
+                        
+                        # Start new token
+                        current_token_idx = target_idx
+                        current_start = frame_idx
+                        current_end = frame_idx
+                    else:
+                        # Continue current token
+                        current_end = frame_idx
+                
+                # Don't forget the last token
+                if current_token_idx is not None and current_token_idx < len(tokens):
+                    char = tokens[current_token_idx]
+                    start_time = current_start * 0.02 * 1000
+                    end_time = (current_end + 1) * 0.02 * 1000
+                    token_timestamps.append((char, start_time, end_time))
             
             return token_timestamps
             
@@ -252,7 +279,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         return token_timestamps
 
     def _chars_to_words(self, transcript: str, token_timestamps: List[tuple], speaker: Optional[str] = None) -> List[WordSegment]:
-        """Convert token timestamps to word timestamps."""
+        """Convert character-level token timestamps to word timestamps."""
         words = transcript.split()
         if not words:
             return []
@@ -265,53 +292,57 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         
         # Process each word
         for word in words:
-            word_upper = word.upper()
-            word_tokens = []
+            # Strip all punctuation for alignment, but keep the original word for output
+            # Only match alphanumeric characters and apostrophes/hyphens that are internal to words
+            word_chars = [c for c in word.upper() if c.isalnum()]
+            word_token_times = []
             
-            # Collect tokens for this word
-            for char in word_upper:
-                if token_idx < len(token_timestamps):
-                    token, start_ms, end_ms = token_timestamps[token_idx]
-                    # Handle space token (|)
-                    if token == '|':
-                        token_idx += 1
-                        if token_idx < len(token_timestamps):
-                            token, start_ms, end_ms = token_timestamps[token_idx]
+            # Collect all character tokens for this word
+            chars_matched = 0
+            while token_idx < len(token_timestamps) and chars_matched < len(word_chars):
+                token_char, start_ms, end_ms = token_timestamps[token_idx]
+                
+                # Skip space tokens between words
+                if token_char == '|':
+                    token_idx += 1
+                    continue
+                
+                # Check if this token matches the expected character
+                if chars_matched < len(word_chars) and token_char.upper() == word_chars[chars_matched].upper():
+                    word_token_times.append((start_ms, end_ms))
+                    chars_matched += 1
+                    token_idx += 1
+                else:
+                    # Token doesn't match - try to skip ahead to find it
+                    found = False
+                    for skip in range(1, min(10, len(token_timestamps) - token_idx)):
+                        if token_timestamps[token_idx + skip][0] == '|':
+                            continue
+                        if token_timestamps[token_idx + skip][0].upper() == word_chars[chars_matched].upper():
+                            # Found the matching character ahead
+                            token_idx += skip
+                            found = True
+                            break
                     
-                    # Match character (case-insensitive)
-                    if token.upper() == char.upper() or (token == '|' and char == ' '):
-                        word_tokens.append((start_ms, end_ms))
+                    if not found:
+                        # Give up on this character, move to next
+                        chars_matched += 1
                         token_idx += 1
-                    else:
-                        # Try to skip ahead to find matching token
-                        found = False
-                        for skip in range(1, min(5, len(token_timestamps) - token_idx)):
-                            next_token = token_timestamps[token_idx + skip][0]
-                            if next_token.upper() == char.upper():
-                                token_idx += skip
-                                word_tokens.append((token_timestamps[token_idx][1], token_timestamps[token_idx][2]))
-                                token_idx += 1
-                                found = True
-                                break
-                        if not found:
-                            token_idx += 1
             
-            # Skip space token if present
-            if token_idx < len(token_timestamps) and token_timestamps[token_idx][0] == '|':
-                token_idx += 1
-            
-            # Determine word boundaries from tokens
-            if word_tokens:
-                start_time = min(t[0] for t in word_tokens)
-                end_time = max(t[1] for t in word_tokens)
+            # Determine word boundaries from collected character tokens
+            if word_token_times:
+                # Word starts at the earliest character start time
+                start_time = min(t[0] for t in word_token_times)
+                # Word ends at the latest character end time
+                end_time = max(t[1] for t in word_token_times)
             else:
-                # Estimate timing if no tokens matched
+                # Fallback: estimate timing if no tokens matched
                 if segments:
                     start_time = segments[-1].end * 1000
                 else:
                     start_time = 0
-                # Estimate ~150ms per character
-                end_time = start_time + len(word) * 150
+                # Estimate ~150ms per character as minimum
+                end_time = start_time + max(len(word) * 150, 200)
             
             segments.append(WordSegment(
                 text=word,

@@ -110,37 +110,64 @@ class WhisperXUnifiedProvider(UnifiedProvider):
         # Load audio
         audio = whisperx.load_audio(audio_path)
 
-        # 1. Transcribe with Whisper
-        model = whisperx.load_model(model_name, device=self.device, compute_type="float16")
-        result = model.transcribe(audio, batch_size=16)
-        print(f"Transcription: {result['segments'][:2]}...")  # Debug
+        try:
+            # 1. Transcribe with Whisper
+            model = whisperx.load_model(model_name, device=self.device, compute_type="float16")
+            with torch.no_grad():
+                result = model.transcribe(audio, batch_size=16)
+            print(f"Transcription: {result['segments'][:2]}...")  # Debug
+            
+            # Clean up transcription model
+            del model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            elif torch.backends.mps.is_available():
+                torch.mps.empty_cache()
 
-        # 2. Align output
-        model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=self.device)
-        result = whisperx.align(result["segments"], model_a, metadata, audio, device=self.device, return_char_alignments=False)
-        print(f"Alignment: {result['segments'][:2]}...")  # Debug
+            # 2. Align output
+            model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=self.device)
+            with torch.no_grad():
+                result = whisperx.align(result["segments"], model_a, metadata, audio, device=self.device, return_char_alignments=False)
+            print(f"Alignment: {result['segments'][:2]}...")  # Debug
+            
+            # Clean up alignment model
+            del model_a
+            del metadata
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            elif torch.backends.mps.is_available():
+                torch.mps.empty_cache()
 
-        # 3. Assign speaker labels
-        diarize_model = whisperx.DiarizationPipeline(use_auth_token=os.getenv("HF_TOKEN"), device=self.device)
-        diarize_segments = diarize_model(audio, num_speakers=num_speakers)
-        result = whisperx.assign_word_speakers(diarize_segments, result)
-        print(f"Diarization: {result['segments'][:2]}...")  # Debug
+            # 3. Assign speaker labels
+            diarize_model = whisperx.DiarizationPipeline(use_auth_token=os.getenv("HF_TOKEN"), device=self.device)
+            with torch.no_grad():
+                diarize_segments = diarize_model(audio, num_speakers=num_speakers)
+                result = whisperx.assign_word_speakers(diarize_segments, result)
+            print(f"Diarization: {result['segments'][:2]}...")  # Debug
+            
+            # Clean up diarization model
+            del diarize_model
+            del diarize_segments
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            elif torch.backends.mps.is_available():
+                torch.mps.empty_cache()
 
-        # Convert to Turns
-        turns = []
-        current_speaker = None
-        current_text = []
-        current_start = None
-        current_end = None
+            # Convert to Turns
+            turns = []
+            current_speaker = None
+            current_text = []
+            current_start = None
+            current_end = None
 
-        for segment in result["segments"]:
-            for word in segment.get("words", []):
-                speaker = word.get("speaker")
-                if speaker != current_speaker:
-                    if current_speaker is not None:
-                        turns.append(Turn(
-                            speaker=current_speaker,
-                            start=current_start,
+            for segment in result["segments"]:
+                for word in segment.get("words", []):
+                    speaker = word.get("speaker")
+                    if speaker != current_speaker:
+                        if current_speaker is not None:
+                            turns.append(Turn(
+                                speaker=current_speaker,
+                                start=current_start,
                             end=current_end,
                             text=" ".join(current_text)
                         ))
@@ -150,16 +177,29 @@ class WhisperXUnifiedProvider(UnifiedProvider):
                 current_text.append(word["word"])
                 current_end = word["end"]
 
-        # Add final turn
-        if current_speaker is not None:
-            turns.append(Turn(
-                speaker=current_speaker,
-                start=current_start,
-                end=current_end,
-                text=" ".join(current_text)
-            ))
+            # Add final turn
+            if current_speaker is not None:
+                turns.append(Turn(
+                    speaker=current_speaker,
+                    start=current_start,
+                    end=current_end,
+                    text=" ".join(current_text)
+                ))
 
-        return turns
+            return turns
+            
+        finally:
+            # Final cleanup
+            if 'audio' in locals():
+                del audio
+            
+            import gc
+            gc.collect()
+            
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            elif torch.backends.mps.is_available():
+                torch.mps.empty_cache()
 
 
 def register_unified_plugins():

@@ -224,31 +224,52 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         # Load waveform
         waveform, sample_rate = self._load_waveform_mono_32f(audio_path)
 
-        # Run diarization
-        diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate, "num_speakers": num_speakers})
+        try:
+            # Run diarization with no_grad to prevent gradient accumulation
+            with torch.no_grad():
+                diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate, "num_speakers": num_speakers})
 
-        # Assign speakers to words by majority overlap
-        word_speakers = []
-        for word in words:
-            # Find overlapping diarization segments
-            overlaps = []
-            for segment, speaker in diarization.speaker_diarization:
-                overlap_start = max(word.start, segment.start)
-                overlap_end = min(word.end, segment.end)
-                if overlap_start < overlap_end:
-                    overlap_duration = overlap_end - overlap_start
-                    overlaps.append((overlap_duration, speaker))
+            # Assign speakers to words by majority overlap
+            word_speakers = []
+            for word in words:
+                # Find overlapping diarization segments
+                overlaps = []
+                for segment, speaker in diarization.speaker_diarization:
+                    overlap_start = max(word.start, segment.start)
+                    overlap_end = min(word.end, segment.end)
+                    if overlap_start < overlap_end:
+                        overlap_duration = overlap_end - overlap_start
+                        overlaps.append((overlap_duration, speaker))
 
-            # Assign speaker with majority overlap
-            if overlaps:
-                overlaps.sort(reverse=True)
-                speaker = overlaps[0][1]
-            else:
-                speaker = "Unknown"
+                # Assign speaker with majority overlap
+                if overlaps:
+                    overlaps.sort(reverse=True)
+                    speaker = overlaps[0][1]
+                else:
+                    speaker = "Unknown"
 
-            word_speakers.append(WordSegment(text=word.text, start=word.start, end=word.end, speaker=speaker))
+                word_speakers.append(WordSegment(text=word.text, start=word.start, end=word.end, speaker=speaker))
 
-        return word_speakers
+            return word_speakers
+            
+        finally:
+            # Clean up tensors and memory
+            if 'waveform' in locals():
+                del waveform
+            if 'pipeline' in locals():
+                del pipeline
+            if 'diarization' in locals():
+                del diarization
+            
+            # Force garbage collection and empty cache
+            import gc
+            gc.collect()
+            
+            # Clear GPU cache
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            elif torch.backends.mps.is_available():
+                torch.mps.empty_cache()
 
 def register_diarization_plugins():
     """Register diarization plugins."""

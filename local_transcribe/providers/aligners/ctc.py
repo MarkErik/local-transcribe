@@ -274,9 +274,25 @@ class CTCAlignerProvider(AlignerProvider):
 
             if stride is None:
                 stride = float(chunk.size(0) * 1000 / chunk_emissions.size(0) / self.sample_rate)
+            
+            # Clean up chunk tensors immediately
+            del chunk
+            del chunk_emissions
 
         # Concatenate emissions
         emissions = torch.cat(emissions_list, dim=0)
+        
+        # Clean up emissions list
+        del emissions_list
+        
+        # Clear cache after processing
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+        
         return emissions, stride
 
     def _forced_align(self, emissions: torch.Tensor, tokens: List[str], blank_id: int = 0) -> List[tuple]:

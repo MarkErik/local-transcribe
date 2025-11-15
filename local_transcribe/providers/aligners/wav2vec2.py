@@ -395,29 +395,51 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         
         self._load_wav2vec2_model()
 
-        # Load audio
-        speech, sr = librosa.load(audio_path, sr=16000)
-        
-        # Get audio duration for fallback
-        audio_duration_ms = len(speech) / sr * 1000
+        try:
+            # Load audio
+            speech, sr = librosa.load(audio_path, sr=16000)
+            
+            # Get audio duration for fallback
+            audio_duration_ms = len(speech) / sr * 1000
 
-        # Process audio for Wav2Vec2
-        inputs = self.wav2vec2_processor(speech, sampling_rate=16_000, return_tensors="pt", padding=True)
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            # Process audio for Wav2Vec2
+            inputs = self.wav2vec2_processor(speech, sampling_rate=16_000, return_tensors="pt", padding=True)
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        with torch.no_grad():
-            logits = self.wav2vec2_model(**inputs).logits
+            with torch.no_grad():
+                logits = self.wav2vec2_model(**inputs).logits
 
-        # Get token timestamps using proper CTC forced alignment
-        token_timestamps = self._get_token_timestamps(logits, transcript)
+            # Get token timestamps using proper CTC forced alignment
+            token_timestamps = self._get_token_timestamps(logits, transcript)
 
-        # Convert token timestamps to word timestamps
-        if token_timestamps:
-            return self._chars_to_words(transcript, token_timestamps, speaker=speaker)
-        else:
-            # Fallback to simple timing
-            words = transcript.split()
-            return self._fallback_word_timing(words, audio_duration_ms, speaker=speaker)
+            # Convert token timestamps to word timestamps
+            if token_timestamps:
+                result = self._chars_to_words(transcript, token_timestamps, speaker=speaker)
+            else:
+                # Fallback to simple timing
+                words = transcript.split()
+                result = self._fallback_word_timing(words, audio_duration_ms, speaker=speaker)
+            
+            return result
+            
+        finally:
+            # Clean up tensors and memory
+            if 'speech' in locals():
+                del speech
+            if 'inputs' in locals():
+                for key in list(inputs.keys()):
+                    del inputs[key]
+                del inputs
+            if 'logits' in locals():
+                del logits
+            
+            import gc
+            gc.collect()
+            
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            elif torch.backends.mps.is_available():
+                torch.mps.empty_cache()
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""

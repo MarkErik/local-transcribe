@@ -166,6 +166,26 @@ def interactive_prompt(args, api):
         else:
             args.transcriber_model = available_models[0] if available_models else None
 
+        # Granite-specific options
+        if args.transcriber_provider == "granite":
+            print(f"\nGranite Chunking Options:")
+            print(f"  Chunking processes long audio in segments to manage memory.")
+            print(f"  - ON: Stable memory usage, slight quality reduction at boundaries")
+            print(f"  - OFF: Maximum quality, higher memory usage (may crash on long audio)")
+            
+            while True:
+                choice = input(f"\nEnable chunking? (y/n) [y]: ").strip().lower()
+                if choice in ['y', 'yes', '']:
+                    args.disable_chunking = False
+                    print("✓ Chunking enabled (recommended for stability)")
+                    break
+                elif choice in ['n', 'no']:
+                    args.disable_chunking = True
+                    print("✓ Chunking disabled (maximum quality, monitor memory)")
+                    break
+                else:
+                    print("Please enter 'y' or 'n'.")
+
         # Check if aligner is needed
         if not transcriber_provider.has_builtin_alignment:
             # Select aligner provider

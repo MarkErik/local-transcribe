@@ -189,7 +189,8 @@ def run_pipeline(args, api, root):
                     verbose=args.verbose,
                     base_name="",
                     registry=api["registry"],
-                    transcriber_model=args.transcriber_model
+                    transcriber_model=args.transcriber_model,
+                    disable_chunking=getattr(args, 'disable_chunking', False)
                 )
 
                 # 3) Diarize (assign speakers to words)
@@ -291,7 +292,8 @@ def run_pipeline(args, api, root):
                     verbose=args.verbose,
                     base_name=f"{speaker_name.lower()}_",
                     registry=api["registry"],
-                    transcriber_model=args.transcriber_model
+                    transcriber_model=args.transcriber_model,
+                    disable_chunking=getattr(args, 'disable_chunking', False)
                 )
                 
                 # Add words to the combined list

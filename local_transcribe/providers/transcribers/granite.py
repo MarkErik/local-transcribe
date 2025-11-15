@@ -32,7 +32,6 @@ class GraniteTranscriberProvider(TranscriberProvider):
     @property
     def device(self):
         return get_system_capability()
-        self.tokenizer = None
 
     @property
     def name(self) -> str:
@@ -174,6 +173,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 self.tokenizer = self.processor.tokenizer
 
                 # Load base model
+                print(f"[i] Loading Granite model on device: {self.device}")
                 base_model = AutoModelForSpeechSeq2Seq.from_pretrained(model_name, local_files_only=True, token=token).to(self.device)
 
                 # Check if this is a PEFT model

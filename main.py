@@ -20,12 +20,12 @@ from local_transcribe.framework.pipeline_runner import run_pipeline
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
 
-    # Validate system capability
+    # Validate system capability if provided via command line
     if hasattr(args, 'system') and args.system:
         args.system = validate_system_capability(args.system)
         set_system_capability(args.system)
     else:
-        # Default to CPU if not specified
+        # Default to CPU if not specified (will be overridden in interactive mode)
         set_system_capability("cpu")
 
     # Early validation for required args
@@ -50,6 +50,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.interactive:
         args = interactive_prompt(args, api)
+        # Update system capability after interactive selection
+        if hasattr(args, 'system') and args.system:
+            args.system = validate_system_capability(args.system)
+            set_system_capability(args.system)
+            print(f"[i] System capability set to: {args.system.upper()}")
 
     # Run the pipeline
     return run_pipeline(args, api, root)

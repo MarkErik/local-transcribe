@@ -47,6 +47,11 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         Returns:
             List of merged Turn objects ready for output
         """
+        # Validate speaker labels: in split audio mode, all words should have a speaker
+        missing_speakers = [w for w in words if not w.speaker or not str(w.speaker).strip()]
+        if missing_speakers:
+            raise ValueError("split_audio_turn_builder requires WordSegment.speaker to be set on all word segments in split audio mode")
+
         # Group words by speaker first
         speaker_words = self._group_words_by_speaker(words)
         
@@ -64,9 +69,14 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         """Group word segments by speaker."""
         speaker_words = {}
         for word in words:
-            if word.speaker not in speaker_words:
-                speaker_words[word.speaker] = []
-            speaker_words[word.speaker].append(word)
+            # Speaker must be present for split_audio mode; use the raw speaker string
+            if not word.speaker or not str(word.speaker).strip():
+                # This should have been validated by build_turns; defensive programming
+                raise ValueError("WordSegment missing speaker in split_audio mode")
+            speaker_key = str(word.speaker).strip()
+            if speaker_key not in speaker_words:
+                speaker_words[speaker_key] = []
+            speaker_words[speaker_key].append(word)
         
         # Sort each speaker's words by timestamp
         for speaker in speaker_words:
@@ -95,6 +105,12 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         current_start = None
         current_topic_context = ""  # Track the topic/context of the current turn
         
+        # speaker label for all words in this list (they share same speaker)
+        if not words:
+            return []
+        if not words[0].speaker or not str(words[0].speaker).strip():
+            raise ValueError("WordSegment missing speaker in split_audio mode")
+        speaker_label = str(words[0].speaker).strip()
         for i, word in enumerate(words):
             if not word.text.strip():
                 continue
@@ -152,7 +168,7 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
                 turn_text = " ".join(w.text for w in current_turn_words).strip()
                 if turn_text:  # Only add non-empty turns
                     turns.append({
-                        "speaker": words[0].speaker,  # All words from same speaker
+                        "speaker": speaker_label,  # All words from same speaker
                         "start": current_start,
                         "end": last_word.end,
                         "text": turn_text
@@ -174,7 +190,7 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
             turn_text = " ".join(w.text for w in current_turn_words).strip()
             if turn_text:
                 turns.append({
-                    "speaker": words[0].speaker,
+                    "speaker": speaker_label,
                     "start": current_start,
                     "end": current_turn_words[-1].end,
                     "text": turn_text

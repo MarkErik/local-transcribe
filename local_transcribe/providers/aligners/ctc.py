@@ -8,6 +8,7 @@ from typing import List, Optional
 import os
 import pathlib
 import torch
+import torchaudio
 import numpy as np
 import librosa
 from transformers import AutoModelForCTC, AutoTokenizer
@@ -195,12 +196,31 @@ class CTCAlignerProvider(AlignerProvider):
         
         return text.strip()
 
-    def _preprocess_text(self, text: str, romanize: bool = False, language: str = "eng") -> List[str]:
-        """Preprocess text into tokens for alignment with optional romanization."""
+    def _preprocess_text(self, text: str, romanize: bool = False, language: str = "eng") -> tuple:
+        """Preprocess text into characters/tokens for alignment with optional romanization."""
         normalized = self._normalize_text(text, romanize, language)
-        # Split into words
         words = normalized.split()
-        return words
+        
+        # Create character sequence with word boundaries marked
+        # We need both the character sequence for alignment and word boundaries for segmentation
+        chars = []
+        word_boundaries = []  # List of (word_text, start_char_idx, end_char_idx)
+        char_idx = 0
+        
+        for word in words:
+            word_start = char_idx
+            for char in word:
+                chars.append(char)
+                char_idx += 1
+            word_end = char_idx
+            word_boundaries.append((word, word_start, word_end))
+            
+            # Add space between words (except after last word)
+            if word != words[-1]:
+                chars.append(' ')
+                char_idx += 1
+        
+        return chars, word_boundaries
 
     def _generate_emissions(self, audio_path: str, window_length: int = 30, context_length: int = 2, batch_size: int = 4) -> tuple:
         """Generate CTC emissions from audio with chunked processing."""
@@ -255,99 +275,120 @@ class CTCAlignerProvider(AlignerProvider):
         return emissions, stride
 
     def _forced_align(self, emissions: torch.Tensor, tokens: List[str], blank_id: int = 0) -> List[tuple]:
-        """Perform forced alignment using dynamic programming."""
+        """Perform forced alignment using torchaudio's CTC forced alignment."""
         # Convert tokens to vocabulary indices
         vocab = self.tokenizer.get_vocab()
         token_indices = []
+        
         for token in tokens:
             if token in vocab:
                 token_indices.append(vocab[token])
             else:
-                # Handle unknown tokens - skip or use unk token
-                unk_id = vocab.get('<unk>', vocab.get('[UNK]', blank_id))
-                token_indices.append(unk_id)
+                # Try lowercase/uppercase variants
+                if token.lower() in vocab:
+                    token_indices.append(vocab[token.lower()])
+                elif token.upper() in vocab:
+                    token_indices.append(vocab[token.upper()])
+                else:
+                    # Skip unknown tokens or use blank
+                    unk_id = vocab.get('<unk>', vocab.get('[UNK]', vocab.get('|', blank_id)))
+                    if unk_id != blank_id:
+                        token_indices.append(unk_id)
 
         if not token_indices:
             return []
 
-        # Convert to numpy for alignment
-        log_probs = torch.log_softmax(emissions, dim=-1).cpu().numpy()
-        targets = np.array(token_indices, dtype=np.int64)
+        try:
+            # Use torchaudio's forced_align for proper CTC alignment
+            log_probs = torch.log_softmax(emissions, dim=-1)
+            
+            # Ensure emissions has batch dimension: [batch, time, vocab]
+            if log_probs.dim() == 2:
+                log_probs = log_probs.unsqueeze(0)
+            
+            token_spans = torchaudio.functional.forced_align(
+                log_probs,
+                torch.tensor([token_indices]),
+                blank=blank_id
+            )
+            
+            # Convert to list of (token_id, frame) tuples
+            alignment = []
+            for token_id, start_frame, end_frame in token_spans[0]:
+                # Use the middle of the span as the representative frame
+                mid_frame = (start_frame + end_frame) // 2
+                alignment.append((token_id.item(), mid_frame.item()))
+            
+            return alignment
+            
+        except Exception as e:
+            print(f"Warning: Forced alignment failed ({e}), using fallback")
+            return self._fallback_align(emissions, token_indices, blank_id)
 
-        # Simple CTC forced alignment implementation
-        T, V = log_probs.shape
-        L = len(targets)
-
-        # Initialize DP table
-        dp = np.full((T, L + 1), -np.inf)
-        dp[0, 0] = log_probs[0, blank_id]  # Start with blank
-
-        # Fill DP table
-        for t in range(1, T):
-            for s in range(L + 1):
-                # Stay in blank
-                if s == 0:
-                    dp[t, s] = dp[t-1, s] + log_probs[t, blank_id]
-                else:
-                    # From previous state
-                    prev_score = dp[t-1, s]
-                    # From same state (repeat)
-                    if s > 0:
-                        prev_score = np.logaddexp(prev_score, dp[t-1, s-1])
-                    # Add emission probability
-                    if s < L:
-                        dp[t, s] = prev_score + log_probs[t, targets[s]]
-                    else:
-                        dp[t, s] = prev_score + log_probs[t, blank_id]
-
-        # Backtrack to find alignment
+    def _fallback_align(self, emissions: torch.Tensor, token_indices: List[int], blank_id: int) -> List[tuple]:
+        """Fallback alignment using simple frame-based distribution."""
         alignment = []
-        t, s = T - 1, L
-        while t >= 0:
-            if s > 0 and (s == L or dp[t, s] == dp[t-1, s-1] + log_probs[t, targets[s]] if s < L else dp[t-1, s-1] + log_probs[t, blank_id]):
-                alignment.append((targets[s-1], t))
-                s -= 1
-            t -= 1
-
-        alignment.reverse()
+        
+        if emissions.dim() == 3:
+            emissions = emissions.squeeze(0)
+        
+        T = emissions.shape[0]
+        frames_per_token = T / max(len(token_indices), 1)
+        
+        for i, token_id in enumerate(token_indices):
+            frame = int(i * frames_per_token + frames_per_token / 2)
+            frame = min(frame, T - 1)
+            alignment.append((token_id, frame))
+        
         return alignment
 
-    def _alignment_to_segments(self, alignment: List[tuple], tokens: List[str], stride: float) -> List[WordSegment]:
-        """Convert alignment to word segments."""
-        # For now, create segments based on token timing
-        # Group consecutive tokens into words
-        word_groups = []
-        current_group = []
-        for token_idx, frame_idx in alignment:
-            token_text = self.tokenizer.decode(token_idx).strip()
-            if token_text and token_text != '<pad>' and token_text != '<unk>':
-                current_group.append((token_text, frame_idx))
-            elif current_group:
-                word_groups.append(current_group)
-                current_group = []
-
-        if current_group:
-            word_groups.append(current_group)
-
-        # Convert groups to segments
+    def _alignment_to_segments(self, alignment: List[tuple], word_boundaries: List[tuple], stride: float, speaker: Optional[str] = None) -> List[WordSegment]:
+        """Convert character-level alignment to word segments using word boundaries."""
+        if not alignment or not word_boundaries:
+            return []
+        
+        # Create a mapping from character index to frame
+        char_to_frame = {}
+        for i, (token_id, frame) in enumerate(alignment):
+            char_to_frame[i] = frame
+        
         segments = []
-        for group in word_groups:
-            if not group:
-                continue
-            word_text = ''.join(token for token, _ in group)
-            start_frame = min(frame for _, frame in group)
-            end_frame = max(frame for _, frame in group)
-
+        
+        # For each word, find the frames corresponding to its characters
+        for word_text, start_char, end_char in word_boundaries:
+            # Collect frames for characters in this word
+            word_frames = []
+            for char_idx in range(start_char, end_char):
+                if char_idx in char_to_frame:
+                    word_frames.append(char_to_frame[char_idx])
+            
+            if word_frames:
+                start_frame = min(word_frames)
+                end_frame = max(word_frames)
+            else:
+                # Fallback: estimate based on position
+                if segments:
+                    # Continue from last segment
+                    start_frame = int(segments[-1].end * 1000 / stride)
+                else:
+                    start_frame = 0
+                # Estimate duration based on word length (~100ms per character)
+                end_frame = start_frame + len(word_text) * 5
+            
             start_time = start_frame * stride / 1000  # Convert to seconds
             end_time = end_frame * stride / 1000
-
+            
+            # Ensure end time is after start time
+            if end_time <= start_time:
+                end_time = start_time + 0.1  # Minimum 100ms
+            
             segments.append(WordSegment(
                 text=word_text,
                 start=start_time,
                 end=end_time,
-                speaker=None
+                speaker=speaker
             ))
-
+        
         return segments
 
     def align_transcript(
@@ -357,26 +398,29 @@ class CTCAlignerProvider(AlignerProvider):
         **kwargs
     ) -> List[WordSegment]:
         """Align transcript to audio using CTC forced alignment."""
+        # Extract speaker from kwargs (passed from split_audio mode)
+        speaker = kwargs.get('role') or kwargs.get('speaker')
+        
         model_name = kwargs.get('model', self.model_name)
         romanize = kwargs.get('romanize', False)
         language = kwargs.get('language', 'eng')
         
         self._load_model(model_name)
 
-        # Preprocess text
-        tokens = self._preprocess_text(transcript, romanize, language)
+        # Preprocess text into characters and word boundaries
+        chars, word_boundaries = self._preprocess_text(transcript, romanize, language)
 
         # Generate emissions
         emissions, stride = self._generate_emissions(audio_path)
 
         # Get blank token id
-        blank_id = self.tokenizer.pad_token_id
+        blank_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
 
-        # Perform forced alignment
-        alignment = self._forced_align(emissions, tokens, blank_id)
+        # Perform forced alignment on characters
+        alignment = self._forced_align(emissions, chars, blank_id)
 
-        # Convert to word segments
-        segments = self._alignment_to_segments(alignment, tokens, stride)
+        # Convert character alignment to word segments
+        segments = self._alignment_to_segments(alignment, word_boundaries, stride, speaker=speaker)
 
         return segments
 

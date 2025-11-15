@@ -230,16 +230,10 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
                             text=merged_text.strip()
                         )
                     else:
-                        # Don't merge - adjust timestamps to avoid overlap
-                        if turn["start"] < last_turn.end:
-                            # Move start time slightly to avoid overlap
-                            adjusted_start = last_turn.end + 0.01
-                        else:
-                            adjusted_start = turn["start"]
-                        
+                        # Don't merge - preserve original timestamps and allow overlap
                         merged_turns.append(Turn(
                             speaker=turn["speaker"],
-                            start=adjusted_start,
+                            start=turn["start"],
                             end=turn["end"],
                             text=turn["text"]
                         ))

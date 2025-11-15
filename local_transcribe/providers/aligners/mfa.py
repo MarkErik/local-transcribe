@@ -271,6 +271,7 @@ class MFAAlignerProvider(AlignerProvider):
         self._ensure_mfa_models()
         
         if not os.path.exists(audio_path):
+            raise ValueError(f"Audio file not found: {audio_path}")
 
         # Create a temporary directory for MFA processing
         with tempfile.TemporaryDirectory() as temp_dir:

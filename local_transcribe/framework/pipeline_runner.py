@@ -180,6 +180,7 @@ def run_pipeline(args, api, root):
                 prep_result = prepare_transcript_for_llm(
                     transcript,
                     max_words_per_segment=getattr(args, 'max_words_per_segment', 500),
+                    preparation_mode=getattr(args, 'preparation_mode', 'basic'),
                     standardize_speakers=getattr(args, 'standardize_speakers', True),
                     normalize_whitespace=getattr(args, 'normalize_whitespace', True),
                     handle_special_chars=getattr(args, 'handle_special_chars', True)
@@ -287,6 +288,7 @@ def run_pipeline(args, api, root):
                 prep_result = prepare_transcript_for_llm(
                     transcript,
                     max_words_per_segment=getattr(args, 'max_words_per_segment', 500),
+                    preparation_mode=getattr(args, 'preparation_mode', 'basic'),
                     standardize_speakers=getattr(args, 'standardize_speakers', True),
                     normalize_whitespace=getattr(args, 'normalize_whitespace', True),
                     handle_special_chars=getattr(args, 'handle_special_chars', True)

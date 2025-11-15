@@ -18,8 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 def prepare_transcript_for_llm(
-    turns: List[Turn], 
+    turns: List[Turn],
     max_words_per_segment: int = 500,
+    preparation_mode: str = "basic",
     standardize_speakers: bool = True,
     normalize_whitespace: bool = True,
     handle_special_chars: bool = True
@@ -40,7 +41,11 @@ def prepare_transcript_for_llm(
         - 'segments': List of text segments ready for LLM processing
         - 'stats': Statistics about the preparation process
     """
-    logger.info(f"Preparing {len(turns)} turns for LLM processing")
+    logger.info(f"Preparing {len(turns)} turns for LLM processing in {preparation_mode} mode")
+    
+    # Validate preparation mode
+    if preparation_mode not in ["basic", "advanced"]:
+        raise ValueError(f"Invalid preparation mode: {preparation_mode}. Must be 'basic' or 'advanced'")
     
     # Initialize statistics
     stats = {
@@ -48,7 +53,8 @@ def prepare_transcript_for_llm(
         'processed_turns': 0,
         'segments_created': 0,
         'words_processed': 0,
-        'turns_split': 0
+        'turns_split': 0,
+        'preparation_mode': preparation_mode
     }
     
     try:
@@ -58,15 +64,17 @@ def prepare_transcript_for_llm(
         for turn in turns:
             processed_text = turn.text
             
-            # Normalize whitespace if requested
-            if normalize_whitespace:
-                processed_text = _normalize_whitespace(processed_text)
+            # Apply advanced preprocessing only in advanced mode
+            if preparation_mode == "advanced":
+                # Normalize whitespace if requested
+                if normalize_whitespace:
+                    processed_text = _normalize_whitespace(processed_text)
+                
+                # Handle special characters if requested
+                if handle_special_chars:
+                    processed_text = _handle_special_characters(processed_text)
             
-            # Handle special characters if requested
-            if handle_special_chars:
-                processed_text = _handle_special_characters(processed_text)
-            
-            # Standardize speaker label if requested
+            # Standardize speaker label if requested (applied in both modes)
             processed_speaker = turn.speaker
             if standardize_speakers:
                 processed_speaker = _standardize_speaker_label(turn.speaker)
@@ -91,7 +99,7 @@ def prepare_transcript_for_llm(
         if len(turns) > 0:
             stats['turns_split'] = len(segments) - len(turns)
         
-        logger.info(f"Transcript preparation complete: {stats['segments_created']} segments created from {stats['processed_turns']} turns")
+        logger.info(f"Transcript preparation complete ({preparation_mode} mode): {stats['segments_created']} segments created from {stats['processed_turns']} turns")
         
         return {
             'turns': processed_turns,

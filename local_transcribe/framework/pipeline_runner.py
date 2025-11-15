@@ -128,7 +128,7 @@ def run_pipeline(args, api, root):
     # Configure logging based on verbose flag
     api["configure_global_logging"](log_level="INFO" if args.verbose else "WARNING")
 
-    # Compute capabilities for directory creation
+    # Compute capabilities for directory creation if the verbose flag is set
     capabilities = {
         "mode": mode,
         "unified": unified_provider is not None,

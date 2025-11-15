@@ -12,24 +12,39 @@ from local_transcribe.lib.speaker_namer import assign_speaker_names
 from local_transcribe.lib.audio_processor import standardize_audio, cleanup_temp_audio
 from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_transcript_for_llm
 
-def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, **kwargs):
+def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, verbose=False, base_name="", **kwargs):
     """Transcribe audio and return word segments with timestamps."""
     if transcriber_provider.has_builtin_alignment:
         # Transcriber has built-in alignment
-        return transcriber_provider.transcribe_with_alignment(
+        segments = transcriber_provider.transcribe_with_alignment(
             audio_path,
             role=role,
             **kwargs
         )
+        # Verbose: Save word segments
+        if verbose and intermediate_dir:
+            json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
+            json_word_writer.write(segments, intermediate_dir / "transcription_alignment" / f"{base_name}word_segments.json")
+            print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/transcription_alignment/{base_name}word_segments.json")
     else:
         # Use transcriber + aligner composition
         transcript = transcriber_provider.transcribe(audio_path, **kwargs)
+        # Verbose: Save raw transcript
+        if verbose and intermediate_dir:
+            with open(intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt", "w", encoding="utf-8") as f:
+                f.write(transcript)
+            print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
         segments = aligner_provider.align_transcript(audio_path, transcript, **kwargs)
+        # Verbose: Save word segments
+        if verbose and intermediate_dir:
+            json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
+            json_word_writer.write(segments, intermediate_dir / "alignment" / f"{base_name}word_segments.json")
+            print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/alignment/{base_name}word_segments.json")
         # Add speaker role if provided
         if role:
             for segment in segments:
                 segment.speaker = role
-        return segments
+    return segments
 
 def run_pipeline(args, api, root):
     from local_transcribe.lib.environment import ensure_file, ensure_outdir
@@ -119,7 +134,7 @@ def run_pipeline(args, api, root):
     try:
         # Ensure outdir & subdirs
         outdir = ensure_outdir(args.outdir)
-        paths = api["ensure_session_dirs"](outdir, mode, speaker_files)
+        paths = api["ensure_session_dirs"](outdir, mode, speaker_files, args.verbose)
 
         if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
             print(f"[*] Mode: {mode} (combined_audio) | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
@@ -148,6 +163,11 @@ def run_pipeline(args, api, root):
                     args.num_speakers,
                     model=args.unified_model
                 )
+                # Verbose: Save unified turns
+                if args.verbose:
+                    json_turns_writer = api["registry"].get_output_writer("turns-json")
+                    json_turns_writer.write(transcript, paths["intermediate"] / "turns" / "unified_turns.json")
+                    print("[i] Verbose: Unified turns saved to Intermediate_Outputs/turns/unified_turns.json")
             else:
                 # 2) Transcription + alignment
                 words = transcribe_with_alignment(
@@ -155,14 +175,28 @@ def run_pipeline(args, api, root):
                     aligner_provider,
                     str(std_audio),
                     role=None,
+                    intermediate_dir=paths.get("intermediate"),
+                    verbose=args.verbose,
+                    base_name="",
+                    registry=api["registry"],
                     transcriber_model=args.transcriber_model
                 )
 
                 # 3) Diarize (assign speakers to words)
                 words_with_speakers = diarization_provider.diarize(str(std_audio), words, args.num_speakers, models_dir)
+                # Verbose: Save diarized segments
+                if args.verbose:
+                    json_word_writer = api["registry"].get_word_writer("word-segments-json")
+                    json_word_writer.write(words_with_speakers, paths["intermediate"] / "diarization" / "diarized_word_segments.json")
+                    print("[i] Verbose: Diarized word segments saved to Intermediate_Outputs/diarization/diarized_word_segments.json")
 
                 # 4) Build turns
                 transcript = turn_builder_provider.build_turns(words_with_speakers)
+                # Verbose: Save raw turns
+                if args.verbose:
+                    json_turns_writer = api["registry"].get_output_writer("turns-json")
+                    json_turns_writer.write(transcript, paths["intermediate"] / "turns" / "raw_turns.json")
+                    print("[i] Verbose: Raw turns saved to Intermediate_Outputs/turns/raw_turns.json")
 
             # Assign speaker names if interactive
             transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
@@ -243,23 +277,15 @@ def run_pipeline(args, api, root):
                     aligner_provider,
                     str(std_audio),
                     role=speaker_name,
+                    intermediate_dir=paths.get("intermediate"),
+                    verbose=args.verbose,
+                    base_name=f"{speaker_name.lower()}_",
+                    registry=api["registry"],
                     transcriber_model=args.transcriber_model
                 )
                 
-                # Debug: Save alignment results as JSON for inspection
-                if args.verbose:
-                    json_word_writer = api["registry"].get_word_writer("word-segments-json")
-                    json_word_writer.write(words, paths[f"speaker_{speaker_name.lower()}"] / f"{speaker_name.lower()}_alignment.json")
-                    print(f"[i] Alignment debug data saved to: speaker_{speaker_name.lower()}_alignment.json")
-                
-                # Save individual transcription results
-                word_writer = api["registry"].get_word_writer("word-segments")
-                word_writer.write(words, paths[f"speaker_{speaker_name.lower()}"] / f"{speaker_name.lower()}.txt")
-                
                 # Add words to the combined list
-                all_words.extend(words)
-            
-            # 3) Build and merge turns using the split_audio_turn_builder
+                all_words.extend(words)            # 3) Build and merge turns using the split_audio_turn_builder
             turns_task = tracker.add_task("Building and merging conversation turns", total=100, stage="turns")
             tracker.update(turns_task, advance=50, description="Building optimal turns from all speakers")
             
@@ -267,6 +293,12 @@ def run_pipeline(args, api, root):
             
             tracker.update(turns_task, advance=50, description="Conversation turns built and merged")
             tracker.complete_task(turns_task, stage="turns")
+            
+            # Verbose: Save merged turns
+            if args.verbose:
+                json_turns_writer = api["registry"].get_output_writer("turns-json")
+                json_turns_writer.write(transcript, paths["intermediate"] / "turns" / "merged_turns.json")
+                print("[i] Verbose: Merged turns saved to Intermediate_Outputs/turns/merged_turns.json")
 
             # Write raw outputs before cleanup
             raw_dir = paths["root"] / "Transcript_Raw"

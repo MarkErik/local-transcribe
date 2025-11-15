@@ -14,6 +14,9 @@ from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_t
 
 def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, verbose=False, base_name="", **kwargs):
     """Transcribe audio and return word segments with timestamps."""
+    # Add verbose to kwargs so it's passed to providers
+    kwargs['verbose'] = verbose
+    
     if transcriber_provider.has_builtin_alignment:
         # Transcriber has built-in alignment
         segments = transcriber_provider.transcribe_with_alignment(

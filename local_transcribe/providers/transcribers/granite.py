@@ -248,20 +248,32 @@ class GraniteTranscriberProvider(TranscriberProvider):
         )
 
         # Post-process the output to remove dialogue markers and quotation marks
-        cleaned_text = self._clean_transcription_output(output_text[0].strip())
+        cleaned_text = self._clean_transcription_output(output_text[0].strip(), verbose=kwargs.get('verbose', False))
 
         return cleaned_text
 
-    def _clean_transcription_output(self, text: str) -> str:
+    def _clean_transcription_output(self, text: str, verbose: bool = False) -> str:
         """
         Clean the transcription output by removing dialogue markers and quotation marks.
         
         Args:
             text: Raw transcription output from the model
+            verbose: If True, print how many labels were removed
             
         Returns:
             Cleaned transcription text
         """
+        # Patterns for labels to remove
+        label_patterns = [
+            r'\bUser:\s*',
+            r'\bAI Assistant:\s*',
+            r'\bAssistant:\s*'
+        ]
+        
+        # Count labels before removal if verbose
+        if verbose:
+            total_removed = sum(len(re.findall(pat, text, flags=re.IGNORECASE)) for pat in label_patterns)
+        
         # Remove "User:" and "AI Assistant:" labels (case insensitive)
         text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
@@ -274,6 +286,10 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         # Clean up extra whitespace that might result from removals
         text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Print count if verbose
+        if verbose and total_removed > 0:
+            print(f"Removed {total_removed} labels from transcript.")
         
         return text
 

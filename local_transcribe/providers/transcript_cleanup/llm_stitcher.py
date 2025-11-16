@@ -57,11 +57,12 @@ class LLMStitcherProvider(StitcherProvider):
         words2 = " ".join(chunk2["words"])
 
         system_message = (
-            "You are an expert at merging transcript chunks into coherent text. "
-            "Your task is to combine the provided chunks by intelligently connecting overlapping or adjacent words. "
-            "Do not add any new words, summarize, or alter the existing content. "
-            "Only rearrange and merge the given words to resolve gaps and overlaps. "
-            "Return the merged text as a single coherent string. "
+            "You are an expert at merging transcript chunks."
+            "Your task is to combine the provided chunks intelligently as the chunks may have overlapping words."
+            "The chunks are from a transcription of audio, and words may have been truncated at boundaries, so there may not be exact word matches at the last words of a chunk, or the first word of a chunk. That is why you have to be intelligent about what is considered an overlap that needs to be merged."
+            "Do not add any new words, summarize, or alter the existing content."
+            "Only merge the given chunks to resolve overlaps."
+            "Return the merged text as a single string."
             "Respond with only the merged text, no explanations or additional content."
         )
 

@@ -334,6 +334,10 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 prev_words = prev_chunk_text.split()[-10:]
                 curr_words = chunk_text.split()
                 
+                if verbose:
+                    print(f"[i] Chunk {chunk_num-1} end (last 10 words): {' '.join(prev_words)}")
+                    print(f"[i] Chunk {chunk_num} start (first 10 words): {' '.join(curr_words[:10])}")
+                
                 # Find longest matching sequence at the boundary
                 max_overlap = min(len(prev_words), len(curr_words))
                 overlap_length = 0
@@ -344,9 +348,14 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 
                 # Remove the overlapping portion from current chunk
                 if overlap_length > 0:
+                    removed_text = " ".join(curr_words[:overlap_length])
                     chunk_text = " ".join(curr_words[overlap_length:])
                     if verbose:
+                        print(f"[i] Found {overlap_length} overlapping words: '{removed_text}'")
                         print(f"[i] Removed {overlap_length} overlapping words at chunk boundary")
+                else:
+                    if verbose:
+                        print(f"[i] No overlapping words found between chunks")
             
             chunks.append(chunk_text)
             # Store the ORIGINAL untrimmed chunk text for next comparison

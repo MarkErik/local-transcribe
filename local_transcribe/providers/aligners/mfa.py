@@ -329,7 +329,7 @@ class MFAAlignerProvider(AlignerProvider):
                     "english_us_arpa",  # Acoustic model
                     str(textgrid_file),  # Output TextGrid path
                     "--single_speaker",  # Single speaker mode
-                    "--beam", "100",  # Increase beam size for better alignment
+                    "--beam", "400",  # Increase beam size for better alignment (higher = more tolerant)
                     "--quiet",  # Suppress verbose output
                 ]
 

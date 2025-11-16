@@ -22,10 +22,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--turn-builder-provider", help="Turn builder provider to use (for grouping transcribed words into turns)")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
-    p.add_argument("--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
-    p.add_argument("--verbose", action="store_true", help="Enable verbose logging output.")
+    p.add_argument("-i", "--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
+    p.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging output.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
-    p.add_argument("--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration. If not specified, will auto-detect available capabilities.")
+    p.add_argument("-s", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration. If not specified, will auto-detect available capabilities.")
 
     args = p.parse_args(argv)
 
@@ -70,25 +70,46 @@ def interactive_prompt(args, api):
 
     # System capability selection
     available_capabilities = get_available_system_capabilities()
+    
+    # Determine preferred default: MPS > CUDA > CPU
+    if "mps" in available_capabilities:
+        default_capability = "mps"
+        default_index = 1  # MPS will be shown as option 1
+    elif "cuda" in available_capabilities:
+        default_capability = "cuda"
+        default_index = 1  # CUDA will be shown as option 1
+    else:
+        default_capability = "cpu"
+        default_index = 1  # CPU will be shown as option 1
+    
     if len(available_capabilities) > 1:
         print("Available System Capabilities:")
         for i, cap in enumerate(available_capabilities, 1):
-            print(f"  {i}. {cap.upper()}")
+            marker = " (DEFAULT)" if cap == default_capability else ""
+            print(f"  {i}. {cap.upper()}{marker}")
         
         while True:
             try:
-                choice = int(input(f"\nChoose system capability (number): ").strip())
-                if 1 <= choice <= len(available_capabilities):
-                    args.system = available_capabilities[choice - 1]
+                choice_input = input(f"\nChoose system capability (number, or press Enter for default): ").strip()
+                
+                # If user presses Enter, default to the preferred capability
+                if not choice_input:
+                    args.system = default_capability
+                    print(f"✓ Selected system capability: {args.system.upper()} (default)")
                     break
                 else:
-                    print("Invalid choice. Please enter a number from the list.")
+                    choice = int(choice_input)
+                    if 1 <= choice <= len(available_capabilities):
+                        args.system = available_capabilities[choice - 1]
+                        print(f"✓ Selected system capability: {args.system.upper()}")
+                        break
+                    else:
+                        print("Invalid choice. Please enter a number from the list.")
             except ValueError:
                 print("Please enter a valid number.")
     else:
         args.system = available_capabilities[0]  # Only CPU available
-
-    print(f"✓ Selected system capability: {args.system.upper()}")
+        print(f"✓ Selected system capability: {args.system.upper()}")
 
     # Determine mode based on number of audio files
     if hasattr(args, 'audio_files') and args.audio_files:
@@ -289,7 +310,14 @@ def interactive_prompt(args, api):
         
         while True:
             try:
-                choice = int(input("\nChoose transcript cleanup provider (0 for none): ").strip())
+                choice_input = input("\nChoose transcript cleanup provider (0 for none, or press Enter for default): ").strip()
+                
+                # If user presses Enter, default to 0 (None)
+                if not choice_input:
+                    choice = 0
+                else:
+                    choice = int(choice_input)
+                    
                 if choice == 0:
                     args.transcript_cleanup_provider = None
                     break

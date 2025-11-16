@@ -2,6 +2,10 @@
 from __future__ import annotations
 import subprocess
 from pathlib import Path
+from typing import List
+from local_transcribe.framework.plugin_interfaces import OutputWriter, Turn
+from local_transcribe.framework import registry
+
 
 def render_video(subs_path: str | Path, output_mp4: str | Path, audio_path: str | Path | list[str | Path], width: int = 1920, height: int = 1080):
     """
@@ -52,3 +56,55 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_path: str 
         ]
 
     subprocess.run(cmd, check=True)
+
+
+class VideoWriter(OutputWriter):
+    """Output writer for MP4 video with burned-in subtitles."""
+    
+    @property
+    def name(self) -> str:
+        return "video"
+    
+    @property
+    def description(self) -> str:
+        return "MP4 video with burned-in subtitles and original audio"
+    
+    @property
+    def supported_formats(self) -> List[str]:
+        return [".mp4"]
+    
+    def write(self, turns: List[Turn], output_path: str, **kwargs) -> None:
+        """Write MP4 video with subtitles.
+        
+        Args:
+            turns: List of conversation turns
+            output_path: Output MP4 file path
+            **kwargs: Additional arguments including 'audio_path'
+        """
+        # Convert Turn to dict for compatibility with SRT writer
+        turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
+        
+        # Import SRT writer to generate subtitles first
+        from .str_writer import write_srt
+        
+        # Create temporary SRT file
+        srt_path = Path(output_path).with_suffix('.srt')
+        write_srt(turn_dicts, srt_path)
+        
+        try:
+            # Get audio path from kwargs or use default
+            audio_path = kwargs.get('audio_path')
+            if audio_path is None:
+                raise ValueError("audio_path is required for video generation")
+            
+            # Render the video
+            render_video(srt_path, output_path, audio_path)
+            
+        finally:
+            # Clean up temporary SRT file
+            if srt_path.exists():
+                srt_path.unlink()
+
+
+# Register the video writer with the global registry
+registry.register_output_writer(VideoWriter())

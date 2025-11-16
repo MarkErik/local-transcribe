@@ -311,28 +311,31 @@ def interactive_prompt(args, api):
     else:
         args.transcript_cleanup_provider = None
 
-    # Output formats
+    # Output formats - filter out SRT and VTT as they're now handled internally by video
     output_writers = registry.list_output_writers()
+    filtered_writers = {name: desc for name, desc in output_writers.items()
+                       if name not in ['srt', 'vtt']}
+    
     print("\nAvailable Output Formats:")
-    for i, (name, desc) in enumerate(output_writers.items(), 1):
+    for i, (name, desc) in enumerate(filtered_writers.items(), 1):
         print(f"  {i}. {name}: {desc}")
 
     print("\nEnter numbers separated by commas (e.g., 1,3,5), or press Enter for all formats:")
     choice = input("Choose output formats: ").strip()
 
     if not choice:
-        args.selected_outputs = list(output_writers.keys())
+        args.selected_outputs = list(filtered_writers.keys())
     else:
         try:
             indices = [int(x.strip()) - 1 for x in choice.split(',') if x.strip()]
-            valid_indices = [i for i in indices if 0 <= i < len(output_writers)]
-            args.selected_outputs = [list(output_writers.keys())[i] for i in valid_indices]
+            valid_indices = [i for i in indices if 0 <= i < len(filtered_writers)]
+            args.selected_outputs = [list(filtered_writers.keys())[i] for i in valid_indices]
             if not args.selected_outputs:
                 print("No valid choices, selecting all.")
-                args.selected_outputs = list(output_writers.keys())
+                args.selected_outputs = list(filtered_writers.keys())
         except ValueError:
             print("Invalid input, selecting all.")
-            args.selected_outputs = list(output_writers.keys())
+            args.selected_outputs = list(filtered_writers.keys())
 
     if args.processing_mode == "unified":
         print(f"\nSelected: Unified={args.unified_provider} ({args.unified_model}), Outputs={args.selected_outputs}")

@@ -336,7 +336,16 @@ def run_pipeline(args, api, root):
             raw_dir.mkdir(parents=True, exist_ok=True)
             print(f"[*] Writing raw outputs to {raw_dir}...")
             output_manager = OutputManager.get_instance(api["registry"])
-            output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, None)
+            
+            # For split audio mode, collect all audio files for video generation
+            audio_paths_for_video = list(speaker_files.values()) if mode == "split_audio" else None
+            
+            output_manager.write_selected_outputs(
+                transcript,
+                {**paths, "merged": raw_dir},
+                args.selected_outputs,
+                audio_paths_for_video
+            )
 
             # 5) Prepare transcript for LLM processing
             print("[*] Preparing transcript for LLM processing...")
@@ -380,7 +389,16 @@ def run_pipeline(args, api, root):
                 processed_dir.mkdir(parents=True, exist_ok=True)
                 print(f"[*] Writing processed outputs to {processed_dir}...")
                 output_manager = OutputManager.get_instance(api["registry"])
-                output_manager.write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, None)
+                
+                # For split audio mode, collect all audio files for video generation
+                audio_paths_for_video = list(speaker_files.values()) if mode == "split_audio" else None
+                
+                output_manager.write_selected_outputs(
+                    transcript,
+                    {**paths, "merged": processed_dir},
+                    args.selected_outputs,
+                    audio_paths_for_video
+                )
             else:
                 print("[i] No transcript cleanup selected, raw outputs already written.")
 

@@ -208,8 +208,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
         # Check if user wants to disable chunking for quality
         disable_chunking = kwargs.get('disable_chunking', False)
         
-        # For audio longer than 1 minute, process in chunks to avoid memory issues
-        max_chunk_duration = 60.0  # seconds (1 minute)
+        # For audio longer than 1.5 minutes, process in chunks to avoid memory issues
+        max_chunk_duration = 90.0  # seconds (1.5 minutes)
         
         if duration > max_chunk_duration and not disable_chunking:
             if kwargs.get('verbose', False):

@@ -218,7 +218,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 print(f"[i] Audio duration: {duration:.1f}s - processing in chunks to manage memory")
                 print(f"[i] Note: Chunking may slightly reduce transcription quality at segment boundaries")
                 print(f"[i] Use disable_chunking=True for maximum quality (higher memory usage)")
-            return self._transcribe_chunked(wav, sr, output_mode=output_mode, **kwargs)
+            return self._transcribe_chunked(wav, sr, **kwargs)
         else:
             if duration > max_chunk_duration and disable_chunking and kwargs.get('verbose', False):
                 print(f"[i] Audio duration: {duration:.1f}s - processing without chunking (higher memory usage)")

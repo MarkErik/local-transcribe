@@ -3,7 +3,7 @@
 Transcriber plugin using IBM Granite.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Union, Dict, Any
 import os
 import pathlib
 import re
@@ -190,8 +190,9 @@ class GraniteTranscriberProvider(TranscriberProvider):
                     print(f"DEBUG: Cache directory contents: {list(cache_dir.iterdir())}")
                 raise e
 
-    def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> str:
+    def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> Union[str, List[Dict[str, Any]]]:
         """Transcribe audio using Granite model."""
+        output_mode = kwargs.get('output_mode', 'stitched')
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')  # Default to 8b
         if transcriber_model not in self.model_mapping:
             print(f"Warning: Unknown model {transcriber_model}, defaulting to granite-8b")
@@ -217,11 +218,17 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 print(f"[i] Audio duration: {duration:.1f}s - processing in chunks to manage memory")
                 print(f"[i] Note: Chunking may slightly reduce transcription quality at segment boundaries")
                 print(f"[i] Use disable_chunking=True for maximum quality (higher memory usage)")
-            return self._transcribe_chunked(wav, sr, **kwargs)
+            return self._transcribe_chunked(wav, sr, output_mode=output_mode, **kwargs)
         else:
             if duration > max_chunk_duration and disable_chunking and kwargs.get('verbose', False):
                 print(f"[i] Audio duration: {duration:.1f}s - processing without chunking (higher memory usage)")
-            return self._transcribe_single(wav, **kwargs)
+            if output_mode == 'chunked':
+                # For single chunk, return as list with one chunk
+                chunk_text = self._transcribe_single(wav, **kwargs)
+                words = chunk_text.split()
+                return [{"chunk_id": 1, "words": words}]
+            else:
+                return self._transcribe_single(wav, **kwargs)
 
     def _transcribe_single(self, wav, **kwargs) -> str:
         """Transcribe a single audio segment."""
@@ -346,7 +353,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         return 0
 
-    def _transcribe_chunked(self, wav, sr, **kwargs) -> str:
+    def _transcribe_chunked(self, wav, sr, output_mode='stitched', **kwargs) -> Union[str, List[Dict[str, Any]]]:
         """Transcribe audio in chunks to manage memory for long files."""
         chunk_duration = 30.0  # seconds (0.5 minutes)
         chunk_samples = int(chunk_duration * sr)
@@ -373,33 +380,38 @@ class GraniteTranscriberProvider(TranscriberProvider):
             chunk_text = self._transcribe_single(chunk_wav, **kwargs)
             original_chunk_text = chunk_text  # Save original before trimming
             
-            # Remove duplicate text from overlap region
-            if chunk_num > 1 and prev_chunk_text:
-                # Get last ~15 words from previous chunk (3 seconds at ~2-3 words/sec = 6-9 words + buffer)
-                prev_words = prev_chunk_text.split()[-15:]
-                curr_words = chunk_text.split()
-                
-                if verbose:
-                    print(f"[i] Chunk {chunk_num-1} end (last 15 words): {' '.join(prev_words)}")
-                    print(f"[i] Chunk {chunk_num} start (first 15 words): {' '.join(curr_words[:15])}")
-                
-                # Try exact matching first, then fuzzy matching
-                overlap_length = self._find_fuzzy_overlap(prev_words, curr_words, verbose)
-                
-                # Remove the overlapping portion from current chunk
-                if overlap_length > 0:
-                    removed_text = " ".join(curr_words[:overlap_length])
-                    chunk_text = " ".join(curr_words[overlap_length:])
+            if output_mode == 'chunked':
+                # For chunked mode, collect words without trimming overlap
+                words = chunk_text.split()
+                chunks.append({"chunk_id": chunk_num, "words": words})
+            else:
+                # For stitched mode, handle overlap trimming
+                if chunk_num > 1 and prev_chunk_text:
+                    # Get last ~15 words from previous chunk (3 seconds at ~2-3 words/sec = 6-9 words + buffer)
+                    prev_words = prev_chunk_text.split()[-15:]
+                    curr_words = chunk_text.split()
+                    
                     if verbose:
-                        print(f"[i] Found {overlap_length} overlapping words: '{removed_text}'")
-                        print(f"[i] Removed {overlap_length} overlapping words at chunk boundary")
-                else:
-                    if verbose:
-                        print(f"[i] No overlapping words found between chunks")
-            
-            chunks.append(chunk_text)
-            # Store the ORIGINAL untrimmed chunk text for next comparison
-            prev_chunk_text = original_chunk_text
+                        print(f"[i] Chunk {chunk_num-1} end (last 15 words): {' '.join(prev_words)}")
+                        print(f"[i] Chunk {chunk_num} start (first 15 words): {' '.join(curr_words[:15])}")
+                    
+                    # Try exact matching first, then fuzzy matching
+                    overlap_length = self._find_fuzzy_overlap(prev_words, curr_words, verbose)
+                    
+                    # Remove the overlapping portion from current chunk
+                    if overlap_length > 0:
+                        removed_text = " ".join(curr_words[:overlap_length])
+                        chunk_text = " ".join(curr_words[overlap_length:])
+                        if verbose:
+                            print(f"[i] Found {overlap_length} overlapping words: '{removed_text}'")
+                            print(f"[i] Removed {overlap_length} overlapping words at chunk boundary")
+                    else:
+                        if verbose:
+                            print(f"[i] No overlapping words found between chunks")
+                
+                chunks.append(chunk_text)
+                # Store the ORIGINAL untrimmed chunk text for next comparison
+                prev_chunk_text = original_chunk_text
             
             # Move to next chunk: advance by chunk size minus overlap
             # This ensures we have 2 seconds of overlap, not 28 seconds
@@ -407,13 +419,16 @@ class GraniteTranscriberProvider(TranscriberProvider):
             if start >= total_samples:
                 break
         
-        # Combine chunks with spaces
-        full_transcript = " ".join(chunks)
-        
-        if verbose:
-            print(f"[✓] Combined {chunk_num} chunks into final transcript")
-        
-        return full_transcript
+        if output_mode == 'chunked':
+            return chunks
+        else:
+            # Combine chunks with spaces
+            full_transcript = " ".join(chunks)
+            
+            if verbose:
+                print(f"[✓] Combined {chunk_num} chunks into final transcript")
+            
+            return full_transcript
             
     def _clean_transcription_output(self, text: str, verbose: bool = False) -> str:
         """

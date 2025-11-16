@@ -38,7 +38,17 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/transcription_alignment/{base_name}word_segments.json")
     else:
         # Use transcriber + aligner composition
-        transcript = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
+        output_mode = kwargs.get('output_mode', 'stitched')
+        transcript_result = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
+        
+        if output_mode == 'chunked':
+            # Chunked output: stitch using LLM
+            stitcher_name = kwargs.get('stitcher', 'llm_stitcher')
+            stitcher_provider = kwargs['registry'].get_stitcher_provider(stitcher_name)
+            transcript = stitcher_provider.stitch_chunks(transcript_result, **kwargs)
+        else:
+            transcript = transcript_result
+        
         # Verbose: Save raw transcript
         if verbose and intermediate_dir:
             with open(intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt", "w", encoding="utf-8") as f:
@@ -200,7 +210,10 @@ def run_pipeline(args, api, root):
                     base_name="",
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
-                    disable_chunking=getattr(args, 'disable_chunking', False)
+                    disable_chunking=getattr(args, 'disable_chunking', False),
+                    output_mode=getattr(args, 'output_mode', 'stitched'),
+                    stitcher=getattr(args, 'stitcher', 'llm_stitcher'),
+                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', '0.0.0.0:8080')
                 )
 
                 # 3) Diarize (assign speakers to words)
@@ -316,7 +329,10 @@ def run_pipeline(args, api, root):
                     base_name=f"{speaker_name.lower()}_",
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
-                    disable_chunking=getattr(args, 'disable_chunking', False)
+                    disable_chunking=getattr(args, 'disable_chunking', False),
+                    output_mode=getattr(args, 'output_mode', 'stitched'),
+                    stitcher=getattr(args, 'stitcher', 'llm_stitcher'),
+                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', '0.0.0.0:8080')
                 )
                 
                 # Add words to the combined list

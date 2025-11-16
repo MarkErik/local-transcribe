@@ -20,3 +20,6 @@ from . import file_writers
 
 # Import unified providers to register them
 from . import unified
+
+# Import transcript_cleanup providers to register them
+from . import transcript_cleanup

@@ -7,7 +7,7 @@ transcription, alignment, diarization, and output writer components.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Protocol
+from typing import List, Dict, Any, Optional, Union, Protocol
 from dataclasses import dataclass
 import pathlib
 
@@ -90,17 +90,19 @@ class TranscriberProvider(ABC):
         audio_path: str,
         device: Optional[str] = None,
         **kwargs
-    ) -> str:
+    ) -> Union[str, List[Dict[str, Any]]]:
         """
-        Transcribe audio file and return transcript text.
+        Transcribe audio file and return transcript text or chunked data.
 
         Args:
             audio_path: Path to the audio file
             device: Device to use for processing (cuda/mps/cpu). If None, uses global config.
-            **kwargs: Provider-specific configuration options
+            **kwargs: Provider-specific configuration options. 
+                     'output_mode' can be 'stitched' (default) for string output or 'chunked' for list of chunks.
 
         Returns:
-            Transcript text as a string
+            If output_mode='stitched': Transcript text as a string
+            If output_mode='chunked': List of dicts with 'chunk_id' and 'words' keys
         """
         pass
 
@@ -412,6 +414,46 @@ class TranscriptCleanupProvider(ABC):
         pass
 
 
+class StitcherProvider(ABC):
+    """Abstract base class for transcript stitcher providers (e.g., LLM-based stitching of chunks)."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Return the unique name of this stitcher provider."""
+        pass
+
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        """Return a human-readable description of this provider."""
+        pass
+
+    @property
+    @abstractmethod
+    def short_name(self) -> str:
+        """Return a short display name for UI selection."""
+        pass
+
+    @abstractmethod
+    def stitch_chunks(
+        self,
+        chunks: List[Dict[str, Any]],
+        **kwargs
+    ) -> str:
+        """
+        Stitch chunked transcript data into a coherent transcript.
+
+        Args:
+            chunks: List of dicts with 'chunk_id' and 'words' keys
+            **kwargs: Provider-specific configuration options
+
+        Returns:
+            Stitched transcript text
+        """
+        pass
+
+
 class WordWriter(ABC):
     """Abstract base class for word output writers."""
 
@@ -500,6 +542,7 @@ class PluginRegistry:
         self._unified_providers: Dict[str, UnifiedProvider] = {}
         self._turn_builder_providers: Dict[str, TurnBuilderProvider] = {}
         self._transcript_cleanup_providers: Dict[str, TranscriptCleanupProvider] = {}
+        self._stitcher_providers: Dict[str, StitcherProvider] = {}
         self._word_writers: Dict[str, WordWriter] = {}
         self._output_writers: Dict[str, OutputWriter] = {}
 
@@ -526,6 +569,10 @@ class PluginRegistry:
     def register_transcript_cleanup_provider(self, provider: TranscriptCleanupProvider) -> None:
         """Register a transcript cleanup provider."""
         self._transcript_cleanup_providers[provider.name] = provider
+
+    def register_stitcher_provider(self, provider: StitcherProvider) -> None:
+        """Register a stitcher provider."""
+        self._stitcher_providers[provider.name] = provider
 
     def register_word_writer(self, writer: WordWriter) -> None:
         """Register a word writer."""
@@ -577,6 +624,13 @@ class PluginRegistry:
             raise ValueError(f"Transcript cleanup provider '{name}' not found. Available: {available}")
         return self._transcript_cleanup_providers[name]
 
+    def get_stitcher_provider(self, name: str) -> StitcherProvider:
+        """Get a stitcher provider by name."""
+        if name not in self._stitcher_providers:
+            available = list(self._stitcher_providers.keys())
+            raise ValueError(f"Stitcher provider '{name}' not found. Available: {available}")
+        return self._stitcher_providers[name]
+
     def get_word_writer(self, name: str) -> WordWriter:
         """Get a word writer by name."""
         if name not in self._word_writers:
@@ -615,7 +669,13 @@ class PluginRegistry:
         """List all registered transcript cleanup providers with their descriptions."""
         return {name: provider.description for name, provider in self._transcript_cleanup_providers.items()}
 
+    def list_stitcher_providers(self) -> Dict[str, str]:
+        """List all registered stitcher providers with their descriptions."""
+        return {name: provider.description for name, provider in self._stitcher_providers.items()}
+
     def list_word_writers(self) -> Dict[str, str]:
+        """List all registered word writers with their descriptions."""
+        return {name: writer.description for name, writer in self._word_writers.items()}
         """List all registered word writers with their descriptions."""
         return {name: writer.description for name, writer in self._word_writers.items()}
 

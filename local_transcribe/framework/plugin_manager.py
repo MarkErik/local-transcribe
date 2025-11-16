@@ -77,6 +77,10 @@ def handle_plugin_listing(api):
     for name, desc in api["registry"].list_transcript_cleanup_providers().items():
         print(f"  {name}: {desc}")
 
+    print("\nStitcher Providers:")
+    for name, desc in api["registry"].list_stitcher_providers().items():
+        print(f"  {name}: {desc}")
+
     print("\nUnified Providers:")
     for name, desc in api["registry"].list_unified_providers().items():
         print(f"  {name}: {desc}")

@@ -43,6 +43,8 @@ def select_provider(registry, provider_type):
         providers = registry._unified_providers
     elif provider_type == "transcript_cleanup":
         providers = registry._transcript_cleanup_providers
+    elif provider_type == "stitcher":
+        providers = registry._stitcher_providers
     elif provider_type == "turn_builder":
         providers = registry._turn_builder_providers
     else:
@@ -231,6 +233,30 @@ def interactive_prompt(args, api):
                     break
                 else:
                     print("Please enter 'y' or 'n'.")
+
+            # Stitching method choice
+            print(f"\nStitching Options:")
+            print(f"  - Built-in: Fast, uses overlap detection to merge chunks")
+            print(f"  - LLM: Slower, uses AI to intelligently merge chunks (requires LLM server)")
+            
+            while True:
+                choice = input(f"\nChoose stitching method (1=Built-in, 2=LLM) [1]: ").strip()
+                if choice in ['1', '']:
+                    args.output_mode = 'stitched'
+                    print("✓ Using built-in stitching")
+                    break
+                elif choice == '2':
+                    args.output_mode = 'chunked'
+                    args.stitcher = 'llm_stitcher'
+                    # Prompt for LLM URL
+                    llm_url = input("LLM server URL [0.0.0.0:8080]: ").strip()
+                    if not llm_url:
+                        llm_url = "0.0.0.0:8080"
+                    args.llm_stitcher_url = llm_url
+                    print(f"✓ Using LLM stitching with URL: {llm_url}")
+                    break
+                else:
+                    print("Please enter 1 or 2.")
 
         # Check if aligner is needed
         if not transcriber_provider.has_builtin_alignment:

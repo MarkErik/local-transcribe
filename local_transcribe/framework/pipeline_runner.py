@@ -213,7 +213,7 @@ def run_pipeline(args, api, root):
                     disable_chunking=getattr(args, 'disable_chunking', False),
                     output_mode=getattr(args, 'output_mode', 'stitched'),
                     stitcher=getattr(args, 'stitcher', 'llm_stitcher'),
-                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', '0.0.0.0:8080')
+                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                 )
 
                 # 3) Diarize (assign speakers to words)
@@ -332,7 +332,7 @@ def run_pipeline(args, api, root):
                     disable_chunking=getattr(args, 'disable_chunking', False),
                     output_mode=getattr(args, 'output_mode', 'stitched'),
                     stitcher=getattr(args, 'stitcher', 'llm_stitcher'),
-                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', '0.0.0.0:8080')
+                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                 )
                 
                 # Add words to the combined list

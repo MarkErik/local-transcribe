@@ -251,7 +251,11 @@ def interactive_prompt(args, api):
                     # Prompt for LLM URL
                     llm_url = input("LLM server URL [0.0.0.0:8080]: ").strip()
                     if not llm_url:
-                        llm_url = "0.0.0.0:8080"
+                        llm_url = "http://0.0.0.0:8080"
+                    else:
+                        # Add http:// if not present
+                        if not llm_url.startswith(('http://', 'https://')):
+                            llm_url = f"http://{llm_url}"
                     args.llm_stitcher_url = llm_url
                     print(f"✓ Using LLM stitching with URL: {llm_url}")
                     break

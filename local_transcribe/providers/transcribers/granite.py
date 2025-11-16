@@ -227,15 +227,15 @@ class GraniteTranscriberProvider(TranscriberProvider):
         try:
             wav_tensor = torch.from_numpy(wav).unsqueeze(0)
 
-            # Create text prompt
+            # Create text prompt - use direct instruction to avoid conversational responses
             chat = [
                 {
                     "role": "system",
-                    "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: April 9, 2024.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
+                    "content": "You are a speech transcription system. Output only the exact spoken words, nothing else.",
                 },
                 {
                     "role": "user",
-                    "content": "<|audio|>can you transcribe the speech into a written format?",
+                    "content": "<|audio|>Transcribe:",
                 }
             ]
 
@@ -255,14 +255,15 @@ class GraniteTranscriberProvider(TranscriberProvider):
             with torch.no_grad():
                 model_outputs = self.model.generate(
                     **model_inputs,
-                    max_new_tokens=200,
+                    max_new_tokens=1024,  # Increased to handle longer transcriptions
                     num_beams=4,
                     do_sample=False,
                     min_length=1,
                     top_p=1.0,
-                    repetition_penalty=3.0,
+                    repetition_penalty=1.2,  # Reduced from 3.0 to avoid unnatural divergence
                     length_penalty=1.0,
                     temperature=1.0,
+                    early_stopping=True,  # Stop when EOS token is generated
                     bos_token_id=self.tokenizer.bos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     pad_token_id=self.tokenizer.pad_token_id,
@@ -342,42 +343,63 @@ class GraniteTranscriberProvider(TranscriberProvider):
             
     def _clean_transcription_output(self, text: str, verbose: bool = False) -> str:
         """
-        Clean the transcription output by removing dialogue markers and quotation marks.
+        Clean the transcription output by removing dialogue markers, quotation marks,
+        and AI-generated meta-commentary.
         
         Args:
             text: Raw transcription output from the model
-            verbose: If True, print how many labels were removed
+            verbose: If True, print details about what was removed
             
         Returns:
             Cleaned transcription text
         """
-        # Patterns for labels to remove
+        original_text = text
+        
+        # Remove common AI meta-commentary patterns that indicate hallucination
+        meta_patterns = [
+            r"Transcribe this speech into a written format.*?(?:Sure,?\s*here'?s the transcription:?\s*)?",
+            r"I'?m an AI and (?:don'?t have|can'?t).*?(?:\.|$)",
+            r"However, I can provide.*?(?:\.|$)",
+            r"Here'?s a (?:possible )?(?:response|transcription):?\s*",
+            r"In essence,.*?(?:\.|$)",
+            r"I'?m sorry.*?as a text-based AI.*?(?:\.|$)",
+            r"Here'?s a general process:.*$",
+            r"\d+\.\s*\*\*[^*]+\*\*:.*$",  # Numbered list items like "1. **Listen Carefully**:"
+            r"As for the user'?s question.*?(?:\.|$)",
+            r"The user (?:seems to be|is) (?:asking|inquiring).*?(?:\.|$)",
+        ]
+        
+        for pattern in meta_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Remove dialogue markers and labels
         label_patterns = [
             r'\bUser:\s*',
             r'\bAI Assistant:\s*',
-            r'\bAssistant:\s*'
+            r'\bAssistant:\s*',
+            r'\bSpeaker:\s*',
         ]
         
-        # Count labels before removal if verbose
-        if verbose:
-            total_removed = sum(len(re.findall(pat, text, flags=re.IGNORECASE)) for pat in label_patterns)
+        for pattern in label_patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
         
-        # Remove "User:" and "AI Assistant:" labels (case insensitive)
-        text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'\bAssistant:\s*', '', text, flags=re.IGNORECASE)
-        
-        # Remove all types of quotation marks using Unicode escape sequences
+        # Remove all types of quotation marks
         text = text.replace('"', '')  # Straight double quote (ASCII 34)
         text = text.replace('\u201C', '')  # Curly double quote left (Unicode 8220)
         text = text.replace('\u201D', '')  # Curly double quote right (Unicode 8221)
+        text = text.replace("'", "'")  # Normalize smart quotes to regular apostrophes
+        text = text.replace('\u2018', "'")  # Left single quote
+        text = text.replace('\u2019', "'")  # Right single quote
         
         # Clean up extra whitespace that might result from removals
         text = re.sub(r'\s+', ' ', text).strip()
         
-        # Print count if verbose
-        if verbose and total_removed > 0:
-            print(f"Removed {total_removed} labels from transcript.")
+        # Print details if verbose and significant changes were made
+        if verbose:
+            removed_length = len(original_text) - len(text)
+            if removed_length > 50:
+                print(f"[!] Removed {removed_length} characters of AI meta-commentary from transcript")
+                print(f"[!] Consider adjusting generation parameters if this happens frequently")
         
         return text
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # framework/output_manager.py - Output writing and formatting logic
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import pathlib
 
 
@@ -25,7 +25,8 @@ class OutputManager:
             self._registry = registry
     
     def write_selected_outputs(self, transcript: List[Any], paths: Dict[str, pathlib.Path],
-                             selected_formats: List[str], audio_path: Optional[pathlib.Path | list[pathlib.Path]] = None) -> None:
+                             selected_formats: List[str], audio_config: Optional[Union[pathlib.Path, Dict[str, str], list[pathlib.Path]]] = None,
+                             generate_video: bool = True) -> None:
         """
         Write selected outputs for merged transcript.
         
@@ -33,7 +34,11 @@ class OutputManager:
             transcript: List of conversation turns to write
             paths: Dictionary containing output paths
             selected_formats: List of output formats to generate
-            audio_path: Optional audio path or list of audio paths for video rendering
+            audio_config: Optional audio configuration for video rendering:
+                - Single path for combined_audio mode
+                - Dict mapping speaker names to audio paths for split_audio mode
+                - List of audio paths (legacy format)
+            generate_video: Whether to generate video output (default: True)
         """
         print(f"[*] Writing output files...")
         
@@ -41,8 +46,8 @@ class OutputManager:
         self._write_text_outputs(transcript, paths["merged"], selected_formats)
         
         # Write video output (includes SRT generation internally)
-        if 'video' in selected_formats:
-            self._write_video_output(transcript, paths["merged"], audio_path)
+        if 'video' in selected_formats and generate_video:
+            self._write_video_output(transcript, paths["merged"], audio_config)
         
         # Print completion message
         print("[✓] Output files written successfully.")
@@ -78,15 +83,15 @@ class OutputManager:
         pass
     
     def _write_video_output(self, transcript: List[Any], merged_dir: pathlib.Path,
-                           audio_path: Optional[pathlib.Path | list[pathlib.Path]]) -> None:
+                           audio_config: Optional[Union[pathlib.Path, Dict[str, str], list[pathlib.Path]]] = None) -> None:
         """Write video output with subtitles."""
         print(f"[*] Rendering video with subtitles...")
         try:
             video_writer = self._registry.get_output_writer("video")
             video_path = merged_dir / "video_with_subtitles.mp4"
             
-            # Pass audio path as kwargs to the video writer
-            video_writer.write(transcript, str(video_path), audio_path=audio_path)
+            # Pass audio configuration as kwargs to the video writer
+            video_writer.write(transcript, str(video_path), audio_config=audio_config)
             print(f"[✓] Video rendered successfully: {video_path.name}")
         except Exception as e:
             print(f"[!] Warning: Video rendering failed: {e}")

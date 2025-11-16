@@ -227,16 +227,18 @@ def run_pipeline(args, api, root):
                     json_turns_writer = api["registry"].get_output_writer("turns-json")
                     json_turns_writer.write(transcript, paths["intermediate"] / "turns" / "raw_turns.json")
                     print("[i] Verbose: Raw turns saved to Intermediate_Outputs/turns/raw_turns.json")
-
-            # Assign speaker names if interactive
-            transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
-
-            # Write raw outputs before cleanup
-            raw_dir = paths["root"] / "Transcript_Raw"
-            raw_dir.mkdir(parents=True, exist_ok=True)
-            print(f"[*] Writing raw outputs to {raw_dir}...")
-            output_manager = OutputManager.get_instance(api["registry"])
-            output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, std_audio)
+    
+                # Assign speaker names if interactive
+                transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
+    
+                # Write raw outputs including video (this is the only place video should be generated)
+                raw_dir = paths["root"] / "Transcript_Raw"
+                raw_dir.mkdir(parents=True, exist_ok=True)
+                print(f"[*] Writing raw outputs to {raw_dir}...")
+                output_manager = OutputManager.get_instance(api["registry"])
+                # For combined_audio mode, pass the single standardized audio file
+                audio_config = std_audio if mode == "combined_audio" else None
+                output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, audio_config, generate_video=True)
 
             # 5) Prepare transcript for LLM processing
             print("[*] Preparing transcript for LLM processing...")
@@ -274,13 +276,15 @@ def run_pipeline(args, api, root):
                 print("[✓] Transcript cleanup complete.")
                 transcript_cleanup_done = True
 
-            # Write processed outputs if transcript cleanup was done
+            # Write processed outputs if transcript cleanup was done (NO VIDEO generation)
             if transcript_cleanup_done:
                 processed_dir = paths["root"] / "Transcript_Processed"
                 processed_dir.mkdir(parents=True, exist_ok=True)
                 print(f"[*] Writing processed outputs to {processed_dir}...")
                 output_manager = OutputManager.get_instance(api["registry"])
-                output_manager.write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, std_audio)
+                # For combined_audio mode, pass the single standardized audio file
+                audio_config = std_audio if mode == "combined_audio" else None
+                output_manager.write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, audio_config, generate_video=False)
             else:
                 print("[i] No transcript cleanup selected, raw outputs already written.")
 
@@ -331,20 +335,21 @@ def run_pipeline(args, api, root):
                 json_turns_writer.write(transcript, paths["intermediate"] / "turns" / "merged_turns.json")
                 print("[i] Verbose: Merged turns saved to Intermediate_Outputs/turns/merged_turns.json")
 
-            # Write raw outputs before cleanup
+            # Write raw outputs including video (this is the only place video should be generated)
             raw_dir = paths["root"] / "Transcript_Raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
             print(f"[*] Writing raw outputs to {raw_dir}...")
             output_manager = OutputManager.get_instance(api["registry"])
             
-            # For split audio mode, collect all audio files for video generation
-            audio_paths_for_video = list(speaker_files.values()) if mode == "split_audio" else None
+            # For split audio mode, pass the speaker_files dictionary for video generation
+            audio_config = speaker_files if mode == "split_audio" else None
             
             output_manager.write_selected_outputs(
                 transcript,
                 {**paths, "merged": raw_dir},
                 args.selected_outputs,
-                audio_paths_for_video
+                audio_config,
+                generate_video=True
             )
 
             # 5) Prepare transcript for LLM processing
@@ -383,21 +388,22 @@ def run_pipeline(args, api, root):
                 print("[✓] Transcript cleanup complete.")
                 transcript_cleanup_done = True
 
-            # Write processed outputs if transcript cleanup was done
+            # Write processed outputs if transcript cleanup was done (NO VIDEO generation)
             if transcript_cleanup_done:
                 processed_dir = paths["root"] / "Transcript_Processed"
                 processed_dir.mkdir(parents=True, exist_ok=True)
                 print(f"[*] Writing processed outputs to {processed_dir}...")
                 output_manager = OutputManager.get_instance(api["registry"])
                 
-                # For split audio mode, collect all audio files for video generation
-                audio_paths_for_video = list(speaker_files.values()) if mode == "split_audio" else None
+                # For split audio mode, pass the speaker_files dictionary for video generation
+                audio_config = speaker_files if mode == "split_audio" else None
                 
                 output_manager.write_selected_outputs(
                     transcript,
                     {**paths, "merged": processed_dir},
                     args.selected_outputs,
-                    audio_paths_for_video
+                    audio_config,
+                    generate_video=False
                 )
             else:
                 print("[i] No transcript cleanup selected, raw outputs already written.")

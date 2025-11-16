@@ -326,11 +326,12 @@ class GraniteTranscriberProvider(TranscriberProvider):
             
             # Transcribe chunk
             chunk_text = self._transcribe_single(chunk_wav, **kwargs)
+            original_chunk_text = chunk_text  # Save original before trimming
             
             # Remove duplicate text from overlap region
             if chunk_num > 1 and prev_chunk_text:
-                # Get last ~20 words from previous chunk to search for overlap
-                prev_words = prev_chunk_text.split()[-20:]
+                # Get last ~10 words from previous chunk (2 seconds at ~2-3 words/sec = 4-6 words + buffer)
+                prev_words = prev_chunk_text.split()[-10:]
                 curr_words = chunk_text.split()
                 
                 # Find longest matching sequence at the boundary
@@ -348,11 +349,13 @@ class GraniteTranscriberProvider(TranscriberProvider):
                         print(f"[i] Removed {overlap_length} overlapping words at chunk boundary")
             
             chunks.append(chunk_text)
-            prev_chunk_text = chunk_text
+            # Store the ORIGINAL untrimmed chunk text for next comparison
+            prev_chunk_text = original_chunk_text
             
-            # Move to next chunk with overlap
-            start = end - overlap_samples
-            if start >= total_samples - overlap_samples:
+            # Move to next chunk: advance by chunk size minus overlap
+            # This ensures we have 2 seconds of overlap, not 28 seconds
+            start = start + chunk_samples - overlap_samples
+            if start >= total_samples:
                 break
         
         # Combine chunks with spaces

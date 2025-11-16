@@ -167,21 +167,38 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
             try:
                 token = os.getenv("HF_TOKEN")
-                # Models should be cached by preload_models, so use local_files_only=True
-                # Let transformers find models in the standard HuggingFace cache location
-                self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=True, token=token)
-                self.tokenizer = self.processor.tokenizer
+                
+                # Temporarily enable warnings to catch PEFT issues
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("always")
+                    
+                    # Models should be cached by preload_models, so use local_files_only=True
+                    # Let transformers find models in the standard HuggingFace cache location
+                    self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=True, token=token)
+                    self.tokenizer = self.processor.tokenizer
 
-                # Load base model
-                print(f"[i] Loading Granite model on device: {self.device}")
-                base_model = AutoModelForSpeechSeq2Seq.from_pretrained(model_name, local_files_only=True, token=token).to(self.device)
+                    # Load base model
+                    print(f"[i] Loading Granite model on device: {self.device}")
+                    base_model = AutoModelForSpeechSeq2Seq.from_pretrained(model_name, local_files_only=True, token=token).to(self.device)
 
-                # Check if this is a PEFT model
-                try:
-                    self.model = PeftModel.from_pretrained(base_model, model_name, token=token).to(self.device)
-                except:
-                    # If not a PEFT model, use the base model
-                    self.model = base_model
+                    # CRITICAL: Load PEFT adapter - without this, model generates meta-commentary instead of transcriptions
+                    # See: https://huggingface.co/ibm-granite/granite-speech-3.3-8b/discussions/18
+                    try:
+                        self.model = PeftModel.from_pretrained(base_model, model_name, token=token).to(self.device)
+                        print(f"[✓] PEFT adapter loaded successfully")
+                    except Exception as peft_error:
+                        print(f"\n{'='*70}")
+                        print(f"[!] CRITICAL WARNING: Failed to load PEFT adapter!")
+                        print(f"[!] Error: {peft_error}")
+                        print(f"[!] ")
+                        print(f"[!] Without PEFT adapter, the model will generate meta-commentary,")
+                        print(f"[!] summaries, and AI responses instead of transcriptions.")
+                        print(f"[!] ")
+                        print(f"[!] To fix, run: uv pip install --reinstall peft transformers")
+                        print(f"{'='*70}\n")
+                        # Still use base model but warn user
+                        self.model = base_model
             except Exception as e:
                 print(f"DEBUG: Failed to load model {model_name}")
                 print(f"DEBUG: Cache directory exists: {cache_dir.exists()}")
@@ -303,7 +320,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
     def _transcribe_chunked(self, wav, sr, **kwargs) -> str:
         """Transcribe audio in chunks to manage memory for long files."""
-        chunk_duration = 120.0  # seconds (2 minutes)
+        chunk_duration = 30.0  # seconds (0.5 minutes)
         chunk_samples = int(chunk_duration * sr)
         overlap_samples = int(2.0 * sr)  # 2 second overlap to avoid cutting words
         

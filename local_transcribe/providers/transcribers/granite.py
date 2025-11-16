@@ -9,6 +9,7 @@ import pathlib
 import re
 import torch
 import librosa
+from difflib import SequenceMatcher
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from peft import PeftModel
 from huggingface_hub import hf_hub_download, snapshot_download
@@ -301,11 +302,55 @@ class GraniteTranscriberProvider(TranscriberProvider):
             
             clear_device_cache()
 
+    def _fuzzy_word_match(self, word1: str, word2: str, threshold: float = 0.8) -> bool:
+        """Check if two words are similar enough using fuzzy matching."""
+        # Handle exact matches first
+        if word1 == word2:
+            return True
+        
+        # Handle filler words - ignore them in matching BUT preserve them in final transcript
+        filler_words = {'like', 'um', 'uh', 'ah', 'er', 'you know', 'i mean'}
+        if word1.lower() in filler_words or word2.lower() in filler_words:
+            return True
+        
+        # Use sequence similarity for partial word matches
+        similarity = SequenceMatcher(None, word1.lower(), word2.lower()).ratio()
+        return similarity >= threshold
+
+    def _find_fuzzy_overlap(self, prev_words: List[str], curr_words: List[str], verbose: bool = False) -> int:
+        """Find overlapping words using fuzzy matching."""
+        max_possible = min(len(prev_words), len(curr_words))
+        best_overlap = 0
+        
+        # Try exact matching first
+        for i in range(1, max_possible + 1):
+            if prev_words[-i:] == curr_words[:i]:
+                best_overlap = i
+        
+        if best_overlap > 0:
+            return best_overlap
+        
+        # If no exact match, try fuzzy matching
+        for overlap_length in range(max_possible, 0, -1):
+            match_count = 0
+            required_matches = max(1, int(overlap_length * 0.7))  # Require 70% of words to match
+            
+            for j in range(overlap_length):
+                if self._fuzzy_word_match(prev_words[-(overlap_length-j)], curr_words[j]):
+                    match_count += 1
+            
+            if match_count >= required_matches:
+                if verbose:
+                    print(f"[i] Fuzzy match found: {match_count}/{overlap_length} words matched")
+                return overlap_length
+        
+        return 0
+
     def _transcribe_chunked(self, wav, sr, **kwargs) -> str:
         """Transcribe audio in chunks to manage memory for long files."""
         chunk_duration = 30.0  # seconds (0.5 minutes)
         chunk_samples = int(chunk_duration * sr)
-        overlap_samples = int(2.0 * sr)  # 2 second overlap to avoid cutting words
+        overlap_samples = int(3.0 * sr)  # 3 second overlap to avoid cutting words
         
         chunks = []
         total_samples = len(wav)
@@ -330,21 +375,16 @@ class GraniteTranscriberProvider(TranscriberProvider):
             
             # Remove duplicate text from overlap region
             if chunk_num > 1 and prev_chunk_text:
-                # Get last ~10 words from previous chunk (2 seconds at ~2-3 words/sec = 4-6 words + buffer)
-                prev_words = prev_chunk_text.split()[-10:]
+                # Get last ~15 words from previous chunk (3 seconds at ~2-3 words/sec = 6-9 words + buffer)
+                prev_words = prev_chunk_text.split()[-15:]
                 curr_words = chunk_text.split()
                 
                 if verbose:
-                    print(f"[i] Chunk {chunk_num-1} end (last 10 words): {' '.join(prev_words)}")
-                    print(f"[i] Chunk {chunk_num} start (first 10 words): {' '.join(curr_words[:10])}")
+                    print(f"[i] Chunk {chunk_num-1} end (last 15 words): {' '.join(prev_words)}")
+                    print(f"[i] Chunk {chunk_num} start (first 15 words): {' '.join(curr_words[:15])}")
                 
-                # Find longest matching sequence at the boundary
-                max_overlap = min(len(prev_words), len(curr_words))
-                overlap_length = 0
-                
-                for i in range(1, max_overlap + 1):
-                    if prev_words[-i:] == curr_words[:i]:
-                        overlap_length = i
+                # Try exact matching first, then fuzzy matching
+                overlap_length = self._find_fuzzy_overlap(prev_words, curr_words, verbose)
                 
                 # Remove the overlapping portion from current chunk
                 if overlap_length > 0:

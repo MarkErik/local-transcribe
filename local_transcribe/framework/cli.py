@@ -45,8 +45,6 @@ def select_provider(registry, provider_type):
         providers = registry._unified_providers
     elif provider_type == "transcript_cleanup":
         providers = registry._transcript_cleanup_providers
-    elif provider_type == "stitcher":
-        providers = registry._stitcher_providers
     elif provider_type == "turn_builder":
         providers = registry._turn_builder_providers
     else:
@@ -267,7 +265,6 @@ def interactive_prompt(args, api):
                     break
                 elif choice == '2':
                     args.output_mode = 'chunked'
-                    args.stitcher = 'llm_stitcher'
                     # Prompt for LLM URL
                     default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                     llm_url = input(f"LLM server URL [{default_url}]: ").strip()

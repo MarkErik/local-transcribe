@@ -43,9 +43,8 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
         
         if output_mode == 'chunked':
             # Chunked output: stitch using LLM
-            stitcher_name = kwargs.get('stitcher', 'llm_stitcher')
-            stitcher_provider = kwargs['registry'].get_stitcher_provider(stitcher_name)
-            transcript = stitcher_provider.stitch_chunks(transcript_result, **kwargs)
+            from local_transcribe.processing.llm_stitcher import stitch_chunks
+            transcript = stitch_chunks(transcript_result, **kwargs)
         else:
             transcript = transcript_result
         
@@ -214,7 +213,6 @@ def run_pipeline(args, api, root):
                     transcriber_model=args.transcriber_model,
                     disable_chunking=getattr(args, 'disable_chunking', False),
                     output_mode=getattr(args, 'output_mode', 'stitched'),
-                    stitcher=getattr(args, 'stitcher', 'llm_stitcher'),
                     llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                 )
 
@@ -337,7 +335,6 @@ def run_pipeline(args, api, root):
                     transcriber_model=args.transcriber_model,
                     disable_chunking=getattr(args, 'disable_chunking', False),
                     output_mode=getattr(args, 'output_mode', 'stitched'),
-                    stitcher=getattr(args, 'stitcher', 'llm_stitcher'),
                     llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                 )
                 

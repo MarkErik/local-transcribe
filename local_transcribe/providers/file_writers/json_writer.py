@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-from typing import List, Dict, Union, Any
+from typing import List, Dict, Union, Any, Optional
 from pathlib import Path
 import json
 
@@ -60,7 +60,6 @@ def write_turns_json(turns: List[Union[Turn, Dict]], path: str | Path) -> None:
                 "start": t.start,
                 "end": t.end,
                 "text": t.text,
-                "duration": t.end - t.start if t.end and t.start else 0,
                 "word_count": len(t.text.split()) if t.text else 0
             }
         else:
@@ -70,7 +69,6 @@ def write_turns_json(turns: List[Union[Turn, Dict]], path: str | Path) -> None:
                 "start": t.get("start", 0),
                 "end": t.get("end", 0),
                 "text": t.get("text", ""),
-                "duration": t.get("end", 0) - t.get("start", 0),
                 "word_count": len(t.get("text", "").split()) if t.get("text") else 0
             }
         

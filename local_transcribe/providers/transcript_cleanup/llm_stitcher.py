@@ -52,6 +52,9 @@ class LLMStitcherProvider(StitcherProvider):
             # Only one chunk, return its words
             return " ".join(chunk1["words"])
 
+        # Allow timeout override via kwargs
+        timeout = kwargs.get('timeout', 300)  # Default 5 minutes for LLM generation
+
         # Prepare the prompt
         words1 = " ".join(chunk1["words"])
         words2 = " ".join(chunk2["words"])
@@ -79,7 +82,7 @@ class LLMStitcherProvider(StitcherProvider):
         }
 
         try:
-            response = requests.post(f"{self.url}/v1/chat/completions", json=payload, timeout=120)
+            response = requests.post(f"{self.url}/v1/chat/completions", json=payload, timeout=timeout)
             response.raise_for_status()
             result = response.json()
 

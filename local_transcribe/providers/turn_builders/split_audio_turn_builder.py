@@ -5,6 +5,8 @@ Split audio turn builder provider that creates optimal turns and merges them in 
 
 from typing import List, Dict
 import re
+from collections import defaultdict
+import numpy as np
 
 from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, Turn, registry
 
@@ -90,8 +92,21 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         if not words:
             return []
             
+        # Compute adaptive pause thresholds based on speaker's pause distribution
+        gaps = []
+        for i in range(1, len(words)):
+            gap = words[i].start - words[i-1].end
+            if 0 < gap < 10:  # Filter reasonable gaps
+                gaps.append(gap)
+        
+        if len(gaps) >= 5:
+            intra_threshold = np.percentile(gaps, 75)
+            break_threshold = np.percentile(gaps, 95) * 1.5
+        else:
+            intra_threshold = 1.0
+            break_threshold = 3.0
+        
         # Configuration parameters - adjusted for interview scenarios
-        max_gap_s = kwargs.get('max_gap_s', 2.0)  # Increased gap tolerance for thoughtful pauses
         min_turn_duration_s = kwargs.get('min_turn_duration_s', 3.0)  # Slightly higher minimum
         max_turn_duration_s = kwargs.get('max_turn_duration_s', 120.0)  # Much longer for extended responses
         max_words_per_turn = kwargs.get('max_words_per_turn', 500)  # Word count limit as backup
@@ -125,14 +140,17 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
             turn_word_count = len(current_turn_words)
             turn_text_so_far = " ".join(w.text for w in current_turn_words)
             
+            # Compute coherence score: higher means more likely to continue
+            coherence = 1 - (gap / turn_duration) if turn_duration > 0 else 1
+            
             # Conditions for starting a new turn:
             # 1. Very large gap between words (indicating end of thought)
-            very_large_gap = gap > max_gap_s * 2  # Double the normal gap tolerance
+            very_large_gap = gap > break_threshold
             
             # 2. Strong sentence boundary with significant pause AND topic shift
             strong_sentence_boundary = (
                 self._is_strong_sentence_boundary(last_word.text) and
-                gap > max_gap_s and
+                gap > break_threshold and
                 self._indicates_topic_shift(last_word.text, word.text)
             )
             
@@ -149,13 +167,26 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
             # 5. Question-answer pattern detected (interviewer question followed by response)
             is_question_answer = self._is_question_answer_transition(last_word.text, word.text)
             
-            should_split = (
-                very_large_gap or
-                strong_sentence_boundary or
-                extremely_long or
-                (min_duration_met and natural_break) or
-                is_question_answer
-            )
+            # Determine split based on gap ranges and coherence
+            if gap < intra_threshold:
+                # Very short pause - only split for extreme cases
+                should_split = extremely_long or is_question_answer
+            elif gap < break_threshold:
+                # Moderate pause - split only with strong evidence
+                should_split = (
+                    strong_sentence_boundary or
+                    (min_duration_met and natural_break and coherence < 0.8) or
+                    is_question_answer
+                )
+            else:
+                # Long pause - likely a break, but avoid splitting very short coherent turns
+                should_split = (
+                    very_large_gap or
+                    strong_sentence_boundary or
+                    extremely_long or
+                    is_question_answer or
+                    (min_duration_met and natural_break)
+                ) and not (turn_word_count < 5 and coherence > 0.5)
             
             if should_split:
                 # Finalize current turn
@@ -378,7 +409,7 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         next_word = next_text.strip().split()[0] if next_text.strip() else ""
         
         # Break after certain conjunctions or transition words
-        break_after = {'and', 'but', 'or', 'so', 'because', 'however', 'therefore'}
+        break_after = {'but', 'so', 'because', 'however', 'therefore'}
         if last_word.lower() in break_after:
             return True
             

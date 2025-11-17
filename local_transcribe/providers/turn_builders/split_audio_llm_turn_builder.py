@@ -115,17 +115,11 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
             for i, seg in enumerate(stripped_segments)
         ])
 
-        prompt = f"""You are an expert at merging conversational transcripts into coherent turns. Given the following speaker segments (in order), merge them into logical turns. Each turn should group related sentences or ideas from the same speaker, avoiding unnecessary fragmentation.
-
-Segments:
+        prompt = f"""Segments:
 {segments_text}
 
-Output a JSON list of turns, where each turn has "speaker" and "text" (concatenated from merged segments). Preserve the order and do not reorder speakers.
-
 Example Output:
-[{"speaker": "A", "text": "Hello, how are you? I'm doing well."}, {"speaker": "B", "text": "That's great to hear."}]
-
-Important: Only output valid JSON, no additional text."""
+[{{"speaker": "A", "text": "Hello, how are you? I'm doing well."}}, {{"speaker": "B", "text": "That's great to hear."}}]"""
 
         return prompt
 
@@ -142,25 +136,20 @@ Important: Only output valid JSON, no additional text."""
             LLM response text
         """
         payload = {
-            "prompt": prompt,
-            "stream": False,
-            "temperature": 0.1  # Low temperature for consistent merging
+            "messages": [
+                {"role": "system", "content": "You are an expert at merging conversational transcripts into coherent turns. Given the following speaker segments (in order), merge them into logical turns. Each turn should group related sentences or ideas from the same speaker, avoiding unnecessary fragmentation. Output a JSON list of turns, where each turn has \"speaker\" and \"text\" (concatenated from merged segments). Preserve the order and do not reorder speakers. Important: Only output valid JSON, no additional text."},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 4096,
+            "temperature": 0.1,  # Low temperature for consistent merging
+            "stream": False
         }
 
-        response = requests.post(url, json=payload, timeout=timeout)
+        response = requests.post(f"{url}/v1/chat/completions", json=payload, timeout=timeout)
         response.raise_for_status()
 
-        # Try to extract content from common LLM response formats
-        data = response.json()
-        if "response" in data:
-            return data["response"]
-        elif "content" in data:
-            return data["content"]
-        elif "text" in data:
-            return data["text"]
-        else:
-            # Fallback: return the raw text
-            return response.text
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
 
     def _parse_response(self, response_text: str) -> List[Dict[str, str]]:
         """

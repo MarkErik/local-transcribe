@@ -15,7 +15,7 @@ from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, Wo
 class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
     """
     Split audio LLM turn builder that takes individual speaker timestamped data,
-    strips duration fields to save context, and uses an LLM to intelligently merge
+    includes start and end times for better context, and uses an LLM to intelligently merge
     text into coherent turns.
     """
 
@@ -29,7 +29,7 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
 
     @property
     def description(self) -> str:
-        return "LLM-based turn builder that merges speaker segments intelligently while stripping durations for context efficiency"
+        return "LLM-based turn builder that merges speaker segments intelligently using start and end times for better context"
 
     def build_turns(
         self,
@@ -95,19 +95,21 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
 
     def _strip_durations(self, words: List[WordSegment]) -> List[Dict[str, Any]]:
         """
-        Strip duration/timing fields from words, keeping only speaker and text with indices.
+        Prepare segments for LLM, keeping speaker, text, indices, start and end times.
 
         Args:
             words: Original word segments
 
         Returns:
-            List of dicts with speaker, text, and original index
+            List of dicts with speaker, text, original index, start and end times
         """
         return [
             {
                 "speaker": word.speaker,
                 "text": word.text,
-                "index": i
+                "index": i,
+                "start": word.start,
+                "end": word.end
             }
             for i, word in enumerate(words)
         ]
@@ -117,13 +119,13 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         Build the prompt for the LLM.
 
         Args:
-            stripped_segments: Segments with speaker, text, index
+            stripped_segments: Segments with speaker, text, index, start, end
 
         Returns:
             Formatted prompt string
         """
         segments_text = "\n".join([
-            f"{i+1}. Speaker {seg['speaker']}: \"{seg['text']}\""
+            f"{i+1}. Speaker {seg['speaker']}: \"{seg['text']}\" (start: {seg['start']:.2f}, end: {seg['end']:.2f})"
             for i, seg in enumerate(stripped_segments)
         ])
 
@@ -149,10 +151,10 @@ Example Output:
         """
         payload = {
             "messages": [
-                {"role": "system", "content": "You are an expert at merging conversational transcripts into coherent turns. Given the following speaker segments (in order), merge them into logical turns. Each turn should group related sentences or ideas from the same speaker, avoiding unnecessary fragmentation. Output a JSON list of turns, where each turn has \"speaker\" and \"text\" (concatenated from merged segments). Preserve the order and do not reorder speakers. Important: Only output valid JSON, no additional text."},
+                {"role": "system", "content": "You are an expert at merging conversational transcripts into coherent turns. Given the following speaker segments (in order, with start and end times), merge them into logical turns. Each turn should group related sentences or ideas from the same speaker, avoiding unnecessary fragmentation. Consider timing gaps to determine natural turn boundaries. Output a JSON list of turns, where each turn has \"speaker\" and \"text\" (concatenated from merged segments). Preserve the order and do not reorder speakers. Do not add any words. Do not remove any words. Do not re-interpret or summarize. Important: Only output valid JSON, no additional text."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 4096,
+            "max_tokens": 32768,
             "temperature": 0.1,  # Low temperature for consistent merging
             "stream": False
         }

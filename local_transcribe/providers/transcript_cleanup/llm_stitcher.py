@@ -76,7 +76,7 @@ class LLMStitcherProvider(StitcherProvider):
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_content}
             ],
-            "max_tokens": 4096,  # Allow enough for merged text
+            "max_tokens": 32768,  # Allow enough for merged text
             "temperature": 0.1,  # Low temperature for consistency
             "stream": False
         }

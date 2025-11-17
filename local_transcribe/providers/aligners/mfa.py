@@ -354,6 +354,10 @@ class MFAAlignerProvider(AlignerProvider):
                 # Add MFA environment bin directory to PATH so MFA can find OpenFST binaries
                 mfa_env_bin = pathlib.Path(self._get_mfa_command()).parent
                 env["PATH"] = str(mfa_env_bin) + os.pathsep + env.get("PATH", "")
+                
+                print(f"[MFA] MFA environment bin: {mfa_env_bin}")
+                print(f"[MFA] Updated PATH: {env['PATH']}")
+                print(f"[MFA] Checking if fstcompile exists: {(mfa_env_bin / 'fstcompile').exists()}")
 
                 # Output TextGrid file
                 textgrid_file = output_dir / f"{audio_name.rsplit('.', 1)[0]}.TextGrid"
@@ -370,7 +374,7 @@ class MFAAlignerProvider(AlignerProvider):
                     "--beam", "15",  # Increase beam size for better alignment (higher = more tolerant)
                     "--retry_beam", "60",
                     "--lattice_beam","15",
-                    "--quiet",  # Suppress verbose output
+                    #"--quiet",  # Suppress verbose output
                 ]
 
                 print(f"[MFA] Running command: {' '.join(cmd)}")

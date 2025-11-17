@@ -236,7 +236,10 @@ def run_pipeline(args, api, root):
                     print("[i] Verbose: Diarized word segments saved to Intermediate_Outputs/diarization/diarized_word_segments.json")
 
                 # 4) Build turns
-                transcript = turn_builder_provider.build_turns(words_with_speakers)
+                turn_kwargs = {}
+                if hasattr(args, 'llm_turn_builder_url') and args.llm_turn_builder_url:
+                    turn_kwargs['llm_url'] = args.llm_turn_builder_url
+                transcript = turn_builder_provider.build_turns(words_with_speakers, **turn_kwargs)
                 # Verbose: Save raw turns
                 if args.verbose:
                     json_turns_writer = api["registry"].get_output_writer("turns-json")
@@ -343,7 +346,10 @@ def run_pipeline(args, api, root):
             turns_task = tracker.add_task("Building and merging conversation turns", total=100, stage="turns")
             tracker.update(turns_task, advance=50, description="Building optimal turns from all speakers")
             
-            transcript = turn_builder_provider.build_turns(all_words)
+            turn_kwargs = {}
+            if hasattr(args, 'llm_turn_builder_url') and args.llm_turn_builder_url:
+                turn_kwargs['llm_url'] = args.llm_turn_builder_url
+            transcript = turn_builder_provider.build_turns(all_words, **turn_kwargs)
             
             tracker.update(turns_task, advance=50, description="Conversation turns built and merged")
             tracker.complete_task(turns_task, stage="turns")

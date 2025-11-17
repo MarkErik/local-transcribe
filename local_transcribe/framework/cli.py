@@ -310,6 +310,18 @@ def interactive_prompt(args, api):
                 else:
                     args.turn_builder_provider = "split_audio_turn_builder"  # Fallback default
 
+            # If LLM turn builder selected, prompt for URL
+            if hasattr(args, 'turn_builder_provider') and args.turn_builder_provider == "split_audio_llm":
+                llm_url = input("LLM server URL for turn building [http://0.0.0.0:8080]: ").strip()
+                if not llm_url:
+                    llm_url = "http://0.0.0.0:8080"
+                else:
+                    # Add http:// if not present
+                    if not llm_url.startswith(('http://', 'https://')):
+                        llm_url = f"http://{llm_url}"
+                args.llm_turn_builder_url = llm_url
+                print(f"✓ Using LLM turn builder with URL: {llm_url}")
+
         # Select diarization provider (only needed for combined audio in separate mode)
         if mode == "combined_audio":
             diarization_providers = registry.list_diarization_providers()

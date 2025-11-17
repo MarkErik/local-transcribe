@@ -350,6 +350,7 @@ class MFAAlignerProvider(AlignerProvider):
                 # Set MFA_ROOT_DIR to use project models directory
                 env = os.environ.copy()
                 env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
+                env["MFA_NO_HISTORY"] = "1"  # Disable command history to prevent atexit issues
                 
                 # Add MFA environment bin directory to PATH so MFA can find OpenFST binaries
                 mfa_env_bin = pathlib.Path(self._get_mfa_command()).parent

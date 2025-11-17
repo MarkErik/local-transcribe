@@ -55,18 +55,22 @@ class MFAAlignerProvider(AlignerProvider):
         local_mfa_env = project_root / ".mfa_env" / "bin" / "mfa"
         
         if local_mfa_env.exists():
+            print(f"[MFA] Using local MFA: {local_mfa_env}")
             return str(local_mfa_env)
         
         # Fall back to system MFA
+        print(f"[MFA] Using system MFA: mfa")
         return "mfa"
 
     def _ensure_mfa_models(self):
         """Ensure MFA acoustic model and dictionary are downloaded to project directory."""
+        print(f"[MFA] Checking MFA models in {self.mfa_models_dir}")
         # Set MFA_ROOT_DIR environment variable to use project models directory
         env = os.environ.copy()
         env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
 
         mfa_cmd = self._get_mfa_command()
+        print(f"[MFA] Using MFA command: {mfa_cmd}")
         
         try:
             # Check if models are already downloaded
@@ -77,14 +81,18 @@ class MFAAlignerProvider(AlignerProvider):
                 check=True,
                 env=env
             )
+            print(f"[MFA] Available acoustic models: {result.stdout.strip()}")
 
             if "english_us_arpa" not in result.stdout:
-                print(f"[*] Downloading MFA English acoustic model to {self.mfa_models_dir}...")
+                print(f"[MFA] Downloading MFA English acoustic model to {self.mfa_models_dir}...")
                 subprocess.run(
                     [mfa_cmd, "model", "download", "acoustic", "english_us_arpa"],
                     check=True,
                     env=env
                 )
+                print(f"[MFA] Acoustic model downloaded successfully")
+            else:
+                print(f"[MFA] Acoustic model english_us_arpa already available")
 
             result = subprocess.run(
                 [mfa_cmd, "model", "list", "dictionary"],
@@ -93,16 +101,23 @@ class MFAAlignerProvider(AlignerProvider):
                 check=True,
                 env=env
             )
+            print(f"[MFA] Available dictionaries: {result.stdout.strip()}")
 
             if "english_us_arpa" not in result.stdout:
-                print(f"[*] Downloading MFA English dictionary to {self.mfa_models_dir}...")
+                print(f"[MFA] Downloading MFA English dictionary to {self.mfa_models_dir}...")
                 subprocess.run(
                     [mfa_cmd, "model", "download", "dictionary", "english_us_arpa"],
                     check=True,
                     env=env
                 )
+                print(f"[MFA] Dictionary downloaded successfully")
+            else:
+                print(f"[MFA] Dictionary english_us_arpa already available")
+
         except subprocess.CalledProcessError as e:
-            print(f"Warning: Failed to check/download MFA models: {e}")
+            print(f"[MFA] ERROR: Failed to check/download MFA models: {e}")
+            print(f"[MFA] stdout: {e.stdout}")
+            print(f"[MFA] stderr: {e.stderr}")
             raise
 
     def _parse_textgrid(self, textgrid_path: pathlib.Path, original_transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
@@ -113,11 +128,14 @@ class MFAAlignerProvider(AlignerProvider):
             original_transcript: Original transcript with punctuation/capitalization
             speaker: Speaker identifier
         """
+        print(f"[MFA] Parsing TextGrid: {textgrid_path}")
         segments = []
 
         try:
             with open(textgrid_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
+            
+            print(f"[MFA] TextGrid has {len(lines)} lines")
             
             # Build a mapping of normalized words to original words
             original_words = original_transcript.split()
@@ -140,20 +158,25 @@ class MFAAlignerProvider(AlignerProvider):
             for i, line in enumerate(lines):
                 if 'name = "words"' in line:
                     word_tier_start = i
+                    print(f"[MFA] Found word tier at line {i}")
                 # Find the next tier (phones) to know where words tier ends
                 elif word_tier_start is not None and 'name = "phones"' in line:
                     word_tier_end = i
+                    print(f"[MFA] Word tier ends at line {i}")
                     break
 
             if word_tier_start is None:
+                print(f"[MFA] ERROR: Could not find word tier in TextGrid")
                 raise ValueError("Could not find word tier in TextGrid")
             
             # If we didn't find the phones tier, parse until end of file
             if word_tier_end is None:
                 word_tier_end = len(lines)
+                print(f"[MFA] No phones tier found, parsing until end of file")
 
             # Parse intervals only within the words tier
             i = word_tier_start
+            interval_count = 0
             while i < word_tier_end:
                 line = lines[i].strip()
                 if line.startswith('intervals ['):
@@ -180,6 +203,7 @@ class MFAAlignerProvider(AlignerProvider):
 
                         # Skip empty intervals, silence markers, and special tokens
                         if mfa_text and mfa_text not in ["", "<eps>", "sil", "sp", "spn"]:
+                            interval_count += 1
                             # Map MFA's normalized text back to original formatting
                             normalized_key = mfa_text.lower()
                             
@@ -199,13 +223,16 @@ class MFAAlignerProvider(AlignerProvider):
                                 end=end,
                                 speaker=speaker
                             ))
-                    except (ValueError, IndexError):
+                    except (ValueError, IndexError) as e:
+                        print(f"[MFA] Warning: Failed to parse interval at line {i}: {e}")
                         pass
 
                 i += 1
 
+            print(f"[MFA] Successfully parsed {interval_count} intervals, created {len(segments)} segments")
+
         except Exception as e:
-            print(f"Warning: Failed to parse TextGrid: {e}")
+            print(f"[MFA] ERROR: Failed to parse TextGrid: {e}")
             raise
 
         return segments
@@ -221,10 +248,13 @@ class MFAAlignerProvider(AlignerProvider):
         words = transcript.split()
 
         if not words:
+            print(f"[MFA] Simple alignment: No words in transcript")
             return []
 
         # Simple even distribution
         word_duration = duration / len(words)
+
+        print(f"[MFA] Simple alignment: Audio duration={duration:.2f}s, {len(words)} words, word_duration={word_duration:.3f}s")
 
         segments = []
         current_time = 0.0
@@ -258,14 +288,19 @@ class MFAAlignerProvider(AlignerProvider):
             device: Device to use (ignored for MFA)
             **kwargs: Additional options including 'role' or 'speaker'
         """
+        print(f"[MFA] Starting alignment for audio: {audio_path}")
+        print(f"[MFA] Transcript: {transcript[:200]}..." if len(transcript) > 200 else f"[MFA] Transcript: {transcript}")
+        
         # Extract speaker from kwargs (passed from split_audio mode)
         speaker = kwargs.get('role') or kwargs.get('speaker')
+        print(f"[MFA] Speaker: {speaker}")
         
         # Ensure MFA models directory exists
         if self.mfa_models_dir is None:
             models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models")))
             self.mfa_models_dir = models_root / "aligners" / "mfa"
             self.mfa_models_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[MFA] Using MFA models directory: {self.mfa_models_dir}")
 
         # Download MFA models if needed
         self._ensure_mfa_models()
@@ -297,6 +332,9 @@ class MFAAlignerProvider(AlignerProvider):
                 ''.join(c for c in word if c.isalnum() or c == "'")
                 for word in transcript.split()
             )
+            
+            print(f"[MFA] Normalized transcript: {normalized_transcript[:200]}..." if len(normalized_transcript) > 200 else f"[MFA] Normalized transcript: {normalized_transcript}")
+            print(f"[MFA] Temp directory: {temp_path}")
             
             transcript_file = audio_dir / f"{audio_name.rsplit('.', 1)[0]}.lab"
             transcript_file.write_text(normalized_transcript, encoding='utf-8')
@@ -335,6 +373,11 @@ class MFAAlignerProvider(AlignerProvider):
                     "--quiet",  # Suppress verbose output
                 ]
 
+                print(f"[MFA] Running command: {' '.join(cmd)}")
+                print(f"[MFA] Audio file: {audio_file} (exists: {audio_file.exists()})")
+                print(f"[MFA] Transcript file: {transcript_file} (content: {normalized_transcript[:100]}...)")
+                print(f"[MFA] Expected output: {textgrid_file}")
+
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
@@ -343,22 +386,32 @@ class MFAAlignerProvider(AlignerProvider):
                     env=env
                 )
 
+                print(f"[MFA] Command completed successfully. Exit code: {result.returncode}")
+                print(f"[MFA] stdout: {result.stdout[:500]}...")
+                print(f"[MFA] stderr: {result.stderr[:500]}...")
+
                 # Parse TextGrid to extract word timestamps
                 if textgrid_file.exists():
+                    print(f"[MFA] TextGrid file exists at {textgrid_file}, parsing...")
                     segments = self._parse_textgrid(textgrid_file, transcript, speaker=speaker)
+                    print(f"[MFA] Successfully parsed {len(segments)} word segments from TextGrid")
                     return segments
                 else:
-                    print(f"Warning: MFA did not produce TextGrid output at {textgrid_file}")
+                    print(f"[MFA] ERROR: TextGrid file not found at {textgrid_file}")
+                    print(f"[MFA] Falling back to simple alignment")
                     return self._simple_alignment(audio_path, transcript, speaker=speaker)
 
             except subprocess.CalledProcessError as e:
-                print(f"Warning: MFA alignment failed: {e.stderr}")
-                print(f"Falling back to simple alignment")
+                print(f"[MFA] ERROR: MFA alignment failed with exit code {e.returncode}")
+                print(f"[MFA] Command: {' '.join(cmd)}")
+                print(f"[MFA] stdout: {e.stdout[:1000]}")
+                print(f"[MFA] stderr: {e.stderr[:1000]}")
+                print(f"[MFA] Falling back to simple alignment")
                 return self._simple_alignment(audio_path, transcript, speaker=speaker)
             except FileNotFoundError:
-                print(f"Warning: MFA not installed or not in PATH")
-                print(f"Run: bash setup_mfa.sh")
-                print(f"Falling back to simple alignment")
+                print(f"[MFA] ERROR: MFA command not found: {mfa_cmd}")
+                print(f"[MFA] Run: bash setup_mfa.sh")
+                print(f"[MFA] Falling back to simple alignment")
                 return self._simple_alignment(audio_path, transcript, speaker=speaker)
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:

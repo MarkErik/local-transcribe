@@ -37,7 +37,6 @@ def write_word_segments_json(words: List[Union[WordSegment, Dict]], path: str | 
     json_data = {
         "metadata": {
             "total_words": len(word_data),
-            "total_duration": max((w["end"] for w in word_data if w["end"]), default=0),
             "format_version": "1.0"
         },
         "words": word_data
@@ -78,7 +77,6 @@ def write_turns_json(turns: List[Union[Turn, Dict]], path: str | Path) -> None:
     json_data = {
         "metadata": {
             "total_turns": len(turn_data),
-            "total_duration": max((t["end"] for t in turn_data if t["end"]), default=0),
             "total_words": sum(t["word_count"] for t in turn_data),
             "speakers": list(set(t["speaker"] for t in turn_data if t["speaker"])),
             "format_version": "1.0"

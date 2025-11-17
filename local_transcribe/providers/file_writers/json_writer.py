@@ -20,8 +20,7 @@ def write_word_segments_json(words: List[Union[WordSegment, Dict]], path: str | 
                 "text": w.text,
                 "start": w.start,
                 "end": w.end,
-                "speaker": w.speaker,
-                "duration": w.end - w.start if w.end and w.start else 0
+                "speaker": w.speaker
             }
         else:
             # Dictionary
@@ -29,8 +28,7 @@ def write_word_segments_json(words: List[Union[WordSegment, Dict]], path: str | 
                 "text": w.get("text", ""),
                 "start": w.get("start", 0),
                 "end": w.get("end", 0),
-                "speaker": w.get("speaker"),
-                "duration": w.get("end", 0) - w.get("start", 0)
+                "speaker": w.get("speaker")
             }
         
         word_data.append(word_dict)

@@ -381,7 +381,9 @@ class MFAAlignerProvider(AlignerProvider):
                 # Output TextGrid file
                 textgrid_file = output_dir / f"{audio_name.rsplit('.', 1)[0]}.TextGrid"
 
+                project_root = pathlib.Path(__file__).parent.parent.parent.parent
                 mfa_cmd = self._get_mfa_command()
+                config_path = project_root / "mfa_config.yaml"
                 cmd = [
                     mfa_cmd, "align_one",
                     str(audio_file),  # Audio file path
@@ -389,6 +391,7 @@ class MFAAlignerProvider(AlignerProvider):
                     "english_us_arpa",  # Dictionary
                     "english_us_arpa",  # Acoustic model
                     str(textgrid_file),  # Output TextGrid path
+                    "--config_path", str(config_path),
                     "--single_speaker",  # Single speaker mode
                     "--quiet",  # Suppress verbose output
                 ]

@@ -1,0 +1,3 @@
+beam: 15
+retry_beam: 60
+lattice_beam: 15

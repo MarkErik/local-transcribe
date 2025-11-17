@@ -53,7 +53,7 @@ class LLMStitcherProvider(StitcherProvider):
             return " ".join(chunk1["words"])
 
         # Allow timeout override via kwargs
-        timeout = kwargs.get('timeout', 300)  # Default 5 minutes for LLM generation
+        timeout = kwargs.get('timeout', None)  # No timeout by default
 
         # Prepare the prompt
         words1 = " ".join(chunk1["words"])

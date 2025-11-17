@@ -69,7 +69,7 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
 
         # Query LLM
         llm_url = kwargs.get('llm_url', 'http://0.0.0.0:8080')
-        timeout = kwargs.get('timeout', 300)  # Increased default timeout for LLM generation
+        timeout = kwargs.get('timeout', None)  # No timeout by default for LLM generation
         try:
             response_text = self._query_llm(prompt, llm_url, timeout)
             print(f"DEBUG: LLM response (first 500 chars): {response_text[:500]}...")

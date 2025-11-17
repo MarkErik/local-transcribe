@@ -29,6 +29,8 @@ class LlamaCppRemoteTranscriptCleanupProvider(TranscriptCleanupProvider):
 
     def transcript_cleanup_segment(self, text: str, **kwargs) -> str:
         """Clean up a transcript segment using the remote LLM."""
+        # Allow timeout override via kwargs
+        timeout = kwargs.get('timeout', None)  # No timeout by default
         system_message = (
             "You are an experienced editor, specializing in cleaning up podcast transcripts, but you NEVER add your own text to it."
             "You are an expert in enhancing readability while preserving authenticity, but you ALWAYS keep text as it is given to you."
@@ -77,7 +79,7 @@ class LlamaCppRemoteTranscriptCleanupProvider(TranscriptCleanupProvider):
         }
 
         try:
-            response = requests.post(f"{self.url}/v1/chat/completions", json=payload, timeout=60)
+            response = requests.post(f"{self.url}/v1/chat/completions", json=payload, timeout=timeout)
             response.raise_for_status()
             result = response.json()
 

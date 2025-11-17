@@ -369,10 +369,10 @@ def interactive_prompt(args, api):
     else:
         args.transcript_cleanup_provider = None
 
-    # Output formats - filter out SRT and VTT as they're now handled internally by video
+    # Output formats - filter out SRT as it's now handled internally by video
     output_writers = registry.list_output_writers()
     filtered_writers = {name: desc for name, desc in output_writers.items()
-                       if name not in ['srt', 'vtt']}
+                       if name not in ['srt']}
     
     print("\nAvailable Output Formats:")
     for i, (name, desc) in enumerate(filtered_writers.items(), 1):

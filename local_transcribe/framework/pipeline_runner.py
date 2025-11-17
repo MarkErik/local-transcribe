@@ -106,7 +106,9 @@ def run_pipeline(args, api, root):
             args.selected_outputs = ['timestamped-txt']
         else:
             # Include JSON outputs for debugging alignment
-            args.selected_outputs = list(api["registry"].list_output_writers().keys())
+            all_writers = list(api["registry"].list_output_writers().keys())
+            print(f"[i] Available output writers: {all_writers}")
+            args.selected_outputs = all_writers
 
     # Validate audio files exist
     for speaker, audio_file in speaker_files.items():
@@ -251,6 +253,7 @@ def run_pipeline(args, api, root):
                 output_manager = OutputManager.get_instance(api["registry"])
                 # For combined_audio mode, pass the single standardized audio file
                 audio_config = std_audio if mode == "combined_audio" else None
+                print(f"[i] Writing raw outputs with formats: {args.selected_outputs}")
                 output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, audio_config, generate_video=True)
 
             # 5) Prepare transcript for LLM processing
@@ -360,6 +363,7 @@ def run_pipeline(args, api, root):
             # For split audio mode, pass the speaker_files dictionary for video generation
             audio_config = speaker_files if mode == "split_audio" else None
             
+            print(f"[i] Writing raw outputs with formats: {args.selected_outputs}")
             output_manager.write_selected_outputs(
                 transcript,
                 {**paths, "merged": raw_dir},

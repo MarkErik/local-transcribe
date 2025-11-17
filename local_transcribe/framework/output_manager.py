@@ -41,13 +41,18 @@ class OutputManager:
             generate_video: Whether to generate video output (default: True)
         """
         print(f"[*] Writing output files...")
+        print(f"[i] Selected formats: {selected_formats}")
+        print(f"[i] Generate video: {generate_video}")
         
         # Write text-based outputs
         self._write_text_outputs(transcript, paths["merged"], selected_formats)
         
         # Write video output (includes SRT generation internally)
         if 'video' in selected_formats and generate_video:
+            print(f"[i] Video format detected, attempting to generate...")
             self._write_video_output(transcript, paths["merged"], audio_config)
+        else:
+            print(f"[i] Video skipped - format not in {selected_formats} or generate_video={generate_video}")
         
         # Print completion message
         print("[✓] Output files written successfully.")
@@ -87,14 +92,31 @@ class OutputManager:
         """Write video output with subtitles."""
         print(f"[*] Rendering video with subtitles...")
         try:
+            # Check if video writer is available
             video_writer = self._registry.get_output_writer("video")
+            if video_writer is None:
+                print("[!] Warning: Video writer not found in registry")
+                return
+                
+            print(f"[i] Found video writer: {video_writer.name}")
             video_path = merged_dir / "video_with_subtitles.mp4"
+            
+            # Check audio config
+            if audio_config is None:
+                print("[!] Warning: No audio configuration provided for video generation")
+                return
+                
+            print(f"[i] Audio config type: {type(audio_config)}")
+            if isinstance(audio_config, dict):
+                print(f"[i] Number of audio tracks: {len(audio_config)}")
             
             # Pass audio configuration as kwargs to the video writer
             video_writer.write(transcript, str(video_path), audio_config=audio_config)
             print(f"[✓] Video rendered successfully: {video_path.name}")
         except Exception as e:
             print(f"[!] Warning: Video rendering failed: {e}")
+            import traceback
+            traceback.print_exc()
     
     # _render_video_with_subtitles is deprecated and replaced by _write_video_output
     

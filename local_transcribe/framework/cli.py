@@ -136,18 +136,24 @@ def interactive_prompt(args, api):
         print("  2. Separate Providers (Transcription then Diarization)")
         
         while True:
-            try:
-                choice = int(input("\nChoose processing mode (1 or 2): ").strip())
-                if choice == 1:
-                    args.processing_mode = "unified"
-                    break
-                elif choice == 2:
-                    args.processing_mode = "separate"
-                    break
-                else:
-                    print("Invalid choice. Please enter 1 or 2.")
-            except ValueError:
-                print("Please enter a valid number.")
+            choice_input = input("\nChoose processing mode (1 or 2) [1]: ").strip()
+            if not choice_input:
+                choice = 1
+            else:
+                try:
+                    choice = int(choice_input)
+                except ValueError:
+                    print("Please enter a valid number.")
+                    continue
+            
+            if choice == 1:
+                args.processing_mode = "unified"
+                break
+            elif choice == 2:
+                args.processing_mode = "separate"
+                break
+            else:
+                print("Invalid choice. Please enter 1 or 2.")
     else:
         args.processing_mode = "separate"  # For multi-file, always separate
 
@@ -165,15 +171,21 @@ def interactive_prompt(args, api):
                 print(f"  {i}. {model}")
             
             while True:
-                try:
-                    choice = int(input(f"\nChoose model (1-{len(available_models)}): ").strip())
-                    if 1 <= choice <= len(available_models):
-                        args.unified_model = available_models[choice - 1]
-                        break
-                    else:
-                        print("Invalid choice. Please enter a number from the list.")
-                except ValueError:
-                    print("Please enter a valid number.")
+                choice_input = input(f"\nChoose model (1-{len(available_models)}) [1]: ").strip()
+                if not choice_input:
+                    choice = 1
+                else:
+                    try:
+                        choice = int(choice_input)
+                    except ValueError:
+                        print("Please enter a valid number.")
+                        continue
+                
+                if 1 <= choice <= len(available_models):
+                    args.unified_model = available_models[choice - 1]
+                    break
+                else:
+                    print("Invalid choice. Please enter a number from the list.")
         else:
             args.unified_model = available_models[0] if available_models else None
 
@@ -204,15 +216,21 @@ def interactive_prompt(args, api):
                 print(f"  {i}. {model}")
             
             while True:
-                try:
-                    choice = int(input(f"\nChoose model (1-{len(available_models)}): ").strip())
-                    if 1 <= choice <= len(available_models):
-                        args.transcriber_model = available_models[choice - 1]
-                        break
-                    else:
-                        print("Invalid choice. Please enter a number from the list.")
-                except ValueError:
-                    print("Please enter a valid number.")
+                choice_input = input(f"\nChoose model (1-{len(available_models)}) [1]: ").strip()
+                if not choice_input:
+                    choice = 1
+                else:
+                    try:
+                        choice = int(choice_input)
+                    except ValueError:
+                        print("Please enter a valid number.")
+                        continue
+                
+                if 1 <= choice <= len(available_models):
+                    args.transcriber_model = available_models[choice - 1]
+                    break
+                else:
+                    print("Invalid choice. Please enter a number from the list.")
         else:
             args.transcriber_model = available_models[0] if available_models else None
 
@@ -295,15 +313,21 @@ def interactive_prompt(args, api):
                         print(f"  {i}. {display_name}")
                 
                 while True:
-                    try:
-                        choice = int(input(f"\nChoose turn builder (number): ").strip())
-                        if 1 <= choice <= len(all_turn_builders):
-                            args.turn_builder_provider = list(all_turn_builders.keys())[choice - 1]
-                            break
-                        else:
-                            print("Invalid choice. Please enter a number from the list.")
-                    except ValueError:
-                        print("Please enter a valid number.")
+                    choice_input = input(f"\nChoose turn builder (number) [1]: ").strip()
+                    if not choice_input:
+                        choice = 1
+                    else:
+                        try:
+                            choice = int(choice_input)
+                        except ValueError:
+                            print("Please enter a valid number.")
+                            continue
+                    
+                    if 1 <= choice <= len(all_turn_builders):
+                        args.turn_builder_provider = list(all_turn_builders.keys())[choice - 1]
+                        break
+                    else:
+                        print("Invalid choice. Please enter a number from the list.")
             else:
                 # Default to split_audio_turn_builder if available, otherwise fall back
                 if split_audio_turn_builders:

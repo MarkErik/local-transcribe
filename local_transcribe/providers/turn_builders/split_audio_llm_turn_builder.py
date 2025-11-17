@@ -48,7 +48,12 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         """
         # Validate input
         if not words:
+            print("DEBUG: No words provided, returning empty list.")
             return []
+
+        print(f"DEBUG: Received {len(words)} word segments.")
+        for i, word in enumerate(words[:5]):  # Print first 5 for brevity
+            print(f"DEBUG: Word {i}: speaker={word.speaker}, text='{word.text}', start={word.start}, end={word.end}")
 
         # Check that all words have speakers (required for split audio)
         if any(word.speaker is None for word in words):
@@ -56,28 +61,35 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
 
         # Strip durations and prepare data
         stripped_segments = self._strip_durations(words)
+        print(f"DEBUG: Stripped segments: {stripped_segments[:5]}")  # First 5
 
         # Build LLM prompt
         prompt = self._build_prompt(stripped_segments)
+        print(f"DEBUG: Built prompt (first 500 chars): {prompt[:500]}...")
 
         # Query LLM
         llm_url = kwargs.get('llm_url', 'http://0.0.0.0:8080')
         timeout = kwargs.get('timeout', 300)  # Increased default timeout for LLM generation
         try:
             response_text = self._query_llm(prompt, llm_url, timeout)
+            print(f"DEBUG: LLM response (first 500 chars): {response_text[:500]}...")
         except Exception as e:
-            print(f"LLM query failed: {e}. Falling back to basic turn building.")
+            print(f"DEBUG: LLM query failed: {e}. Falling back to basic turn building.")
             return self._fallback_build_turns(words)
 
         # Parse response
         try:
             parsed_turns = self._parse_response(response_text)
+            print(f"DEBUG: Parsed turns: {parsed_turns}")
         except Exception as e:
-            print(f"Failed to parse LLM response: {e}. Falling back to basic turn building.")
+            print(f"DEBUG: Failed to parse LLM response: {e}. Falling back to basic turn building.")
             return self._fallback_build_turns(words)
 
         # Reconstruct timings
         turns = self._reconstruct_timings(parsed_turns, words)
+        print(f"DEBUG: Reconstructed turns: {len(turns)} turns.")
+        for i, turn in enumerate(turns):
+            print(f"DEBUG: Turn {i}: speaker={turn.speaker}, start={turn.start}, end={turn.end}, text='{turn.text}'")
 
         return turns
 
@@ -194,32 +206,43 @@ Example Output:
         turns = []
         word_index = 0
 
+        print(f"DEBUG: Starting timing reconstruction with {len(parsed_turns)} parsed turns and {len(original_words)} original words.")
+
         for turn_data in parsed_turns:
             speaker = turn_data["speaker"]
             turn_text = turn_data["text"]
+
+            print(f"DEBUG: Processing turn for speaker {speaker}: '{turn_text}'")
 
             # Find the sequence of words that match this turn's text
             matched_words = []
             turn_text_clean = turn_text.replace('"', '').strip()
 
+            print(f"DEBUG: Cleaned turn text: '{turn_text_clean}'")
+
             # Simple approach: find contiguous words from the same speaker that match the text
             while word_index < len(original_words):
                 word = original_words[word_index]
+                print(f"DEBUG: Checking word at index {word_index}: speaker={word.speaker}, text='{word.text}'")
                 if word.speaker == speaker:
                     # Check if this word's text is in the turn text
                     if word.text in turn_text_clean:
                         matched_words.append(word)
+                        print(f"DEBUG: Matched word '{word.text}', remaining text: '{turn_text_clean}'")
                         # Remove the matched text from turn_text_clean
                         turn_text_clean = turn_text_clean.replace(word.text, '', 1).strip()
                         word_index += 1
                         # If turn text is consumed, break
                         if not turn_text_clean:
+                            print("DEBUG: Turn text fully consumed.")
                             break
                     else:
                         # If word doesn't match, move to next
+                        print(f"DEBUG: Word '{word.text}' not in remaining text, skipping.")
                         word_index += 1
                 else:
                     # Different speaker, stop this turn
+                    print(f"DEBUG: Different speaker ({word.speaker}), stopping turn.")
                     break
 
             if matched_words:
@@ -231,10 +254,12 @@ Example Output:
                     end=end,
                     text=turn_text
                 ))
+                print(f"DEBUG: Created turn: start={start}, end={end}")
             else:
                 # Fallback: if no words matched, skip this turn
-                print(f"Warning: Could not match words for turn: {turn_data}")
+                print(f"DEBUG: Warning: Could not match words for turn: {turn_data}")
 
+        print(f"DEBUG: Reconstruction complete, {len(turns)} turns created.")
         return turns
 
     def _fallback_build_turns(self, words: List[WordSegment]) -> List[Turn]:
@@ -247,6 +272,7 @@ Example Output:
         Returns:
             List of Turn objects
         """
+        print("DEBUG: Using fallback turn building (simple speaker grouping).")
         turns = []
         current_speaker = None
         current_text = []
@@ -281,6 +307,7 @@ Example Output:
                 text=" ".join(current_text)
             ))
 
+        print(f"DEBUG: Fallback created {len(turns)} turns.")
         return turns
 
 

@@ -59,12 +59,12 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         if any(word.speaker is None for word in words):
             raise ValueError("All word segments must have speaker assignments for split audio LLM turn builder")
 
-        # Strip durations and prepare data
-        stripped_segments = self._strip_durations(words)
-        print(f"DEBUG: Stripped segments: {stripped_segments[:5]}")  # First 5
+        # Prepare segments for LLM
+        prepared_segments = self._prepare_segments_for_llm(words)
+        print(f"DEBUG: Prepared segments: {prepared_segments[:5]}")  # First 5
 
         # Build LLM prompt
-        prompt = self._build_prompt(stripped_segments)
+        prompt = self._build_prompt(prepared_segments)
         print(f"DEBUG: Built prompt (first 500 chars): {prompt[:500]}...")
 
         # Query LLM
@@ -93,7 +93,7 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
 
         return turns
 
-    def _strip_durations(self, words: List[WordSegment]) -> List[Dict[str, Any]]:
+    def _prepare_segments_for_llm(self, words: List[WordSegment]) -> List[Dict[str, Any]]:
         """
         Prepare segments for LLM, keeping speaker, text, indices, start and end times.
 
@@ -119,14 +119,14 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         Build the prompt for the LLM.
 
         Args:
-            stripped_segments: Segments with speaker, text, index, start, end
+            prepared_segments: Segments with speaker, text, index, start, end
 
         Returns:
             Formatted prompt string
         """
         segments_text = "\n".join([
             f"{i+1}. Speaker {seg['speaker']}: \"{seg['text']}\" (start: {seg['start']:.2f}, end: {seg['end']:.2f})"
-            for i, seg in enumerate(stripped_segments)
+            for i, seg in enumerate(prepared_segments)
         ])
 
         prompt = f"""Segments:

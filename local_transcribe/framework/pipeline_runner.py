@@ -27,7 +27,6 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
         # Transcriber has built-in alignment
         segments = transcriber_provider.transcribe_with_alignment(
             audio_path,
-            role=role,
             device=device,
             **kwargs
         )
@@ -205,7 +204,7 @@ def run_pipeline(args, api, root):
                     transcriber_provider,
                     aligner_provider,
                     str(std_audio),
-                    role=None,
+                    None,
                     intermediate_dir=paths.get("intermediate"),
                     verbose=args.verbose,
                     base_name="",
@@ -327,7 +326,7 @@ def run_pipeline(args, api, root):
                     transcriber_provider,
                     aligner_provider,
                     str(std_audio),
-                    role=speaker_name,
+                    speaker_name,
                     intermediate_dir=paths.get("intermediate"),
                     verbose=args.verbose,
                     base_name=f"{speaker_name.lower()}_",

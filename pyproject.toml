@@ -17,6 +17,7 @@ dependencies = [
     "pyannote-audio>=4.0.1",
     "pydub>=0.25.1",
     "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
     "rich>=14.2.0",
     "soundfile>=0.13.1",
     "textgrid>=1.5",

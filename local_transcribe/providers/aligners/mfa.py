@@ -237,7 +237,51 @@ class MFAAlignerProvider(AlignerProvider):
             print(f"[MFA] ERROR: Failed to parse TextGrid: {e}")
             raise
 
+        # Replace <unk> with original words using context
+        self._replace_unk_with_original(segments, original_transcript)
+
         return segments
+
+    def _replace_unk_with_original(self, segments: List[WordSegment], original_transcript: str) -> None:
+        """Replace <unk> tokens in aligned segments with words from the original transcript using two-pointer alignment."""
+        print(f"[MFA UNK REPLACE] Starting <unk> replacement")
+        
+        aligned_texts = [seg.text for seg in segments]
+        original_words = original_transcript.split()
+        
+        print(f"[MFA UNK REPLACE] Aligned texts ({len(aligned_texts)} words): {' '.join(aligned_texts[:10])} ... {' '.join(aligned_texts[-10:])}" if len(aligned_texts) > 20 else f"[MFA UNK REPLACE] Aligned texts: {' '.join(aligned_texts)}")
+        print(f"[MFA UNK REPLACE] Original words ({len(original_words)} words): {' '.join(original_words[:10])} ... {' '.join(original_words[-10:])}" if len(original_words) > 20 else f"[MFA UNK REPLACE] Original words: {' '.join(original_words)}")
+        
+        ptr = 0
+        for i, seg in enumerate(segments):
+            if seg.text == "<unk>":
+                # Debug: show context
+                start_idx = max(0, i - 5)
+                end_idx = min(len(aligned_texts), i + 6)
+                aligned_context = aligned_texts[start_idx:end_idx]
+                
+                orig_start = max(0, ptr - 5)
+                orig_end = min(len(original_words), ptr + 6)
+                original_context = original_words[orig_start:orig_end]
+                
+                print(f"[MFA UNK REPLACE] Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
+                
+                if ptr < len(original_words):
+                    replacement = original_words[ptr]
+                    seg.text = replacement
+                    print(f"[MFA UNK REPLACE] Replaced with: '{replacement}'")
+                    ptr += 1
+                else:
+                    print(f"[MFA UNK REPLACE] No more original words available, leaving as <unk>")
+            else:
+                if ptr < len(original_words) and seg.text.lower() == original_words[ptr].lower():
+                    print(f"[MFA UNK REPLACE] Matched '{seg.text}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
+                    ptr += 1
+                else:
+                    print(f"[MFA UNK REPLACE] No match for '{seg.text}' at ptr {ptr}, not advancing ptr")
+        
+        final_texts = [seg.text for seg in segments]
+        print(f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts[:10])} ... {' '.join(final_texts[-10:])}" if len(final_texts) > 20 else f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts)}")
 
     def _simple_alignment(self, audio_path: str, transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
         """Fallback to simple even-distribution alignment."""

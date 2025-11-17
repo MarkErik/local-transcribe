@@ -393,7 +393,10 @@ class MFAAlignerProvider(AlignerProvider):
                     str(textgrid_file),  # Output TextGrid path
                     "--config_path", str(config_path),
                     "--single_speaker",  # Single speaker mode
-                    "--quiet",  # Suppress verbose output
+                    "--clean",
+                    "--final_clean",
+                    "--verbose",
+                    "--debug",
                 ]
 
                 print(f"[MFA] Running command: {' '.join(cmd)}")

@@ -104,7 +104,7 @@ class VideoWriter(OutputWriter):
         turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
         
         # Import SRT writer to generate subtitles first
-        from .str_writer import write_srt
+        from local_transcribe.providers.file_writers.str_writer import write_srt
         
         # Create temporary SRT file
         srt_path = Path(output_path).with_suffix('.srt')

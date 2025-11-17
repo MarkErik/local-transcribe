@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pathlib import Path
 from local_transcribe.lib.logging_config import get_logger, OutputError, ErrorContext, error_context
+from local_transcribe.framework.plugin_interfaces import WordSegment
 
 
 def _fmt_ts(t: float) -> str:
@@ -125,7 +126,7 @@ class SRTWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".srt"]
 
-    def write(self, turns: List[Turn], output_path: str) -> None:
+    def write(self, turns: List[Turn], output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
         # Convert Turn to dict for compatibility
         turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
         write_srt(turn_dicts, output_path)

@@ -26,7 +26,7 @@ class OutputManager:
     
     def write_selected_outputs(self, transcript: List[Any], paths: Dict[str, pathlib.Path],
                              selected_formats: List[str], audio_config: Optional[Union[pathlib.Path, Dict[str, str], list[pathlib.Path]]] = None,
-                             generate_video: bool = True) -> None:
+                             generate_video: bool = True, word_segments: Optional[List] = None) -> None:
         """
         Write selected outputs for merged transcript.
         
@@ -39,45 +39,46 @@ class OutputManager:
                 - Dict mapping speaker names to audio paths for split_audio mode
                 - List of audio paths (legacy format)
             generate_video: Whether to generate video output (default: True)
+            word_segments: Optional list of word segments for detailed timing in outputs
         """
         print(f"[*] Writing output files...")
         print(f"[i] Selected formats: {selected_formats}")
         print(f"[i] Generate video: {generate_video}")
         
         # Write text-based outputs
-        self._write_text_outputs(transcript, paths["merged"], selected_formats)
+        self._write_text_outputs(transcript, paths["merged"], selected_formats, word_segments)
         
         # Write video output (includes SRT generation internally)
         if 'video' in selected_formats and generate_video:
             print(f"[i] Video format detected, attempting to generate...")
-            self._write_video_output(transcript, paths["merged"], audio_config)
+            self._write_video_output(transcript, paths["merged"], audio_config, word_segments)
         else:
             print(f"[i] Video skipped - format not in {selected_formats} or generate_video={generate_video}")
         
         # Print completion message
         print("[✓] Output files written successfully.")
     
-    def _write_text_outputs(self, transcript: List[Any], merged_dir: pathlib.Path, selected_formats: List[str]) -> None:
+    def _write_text_outputs(self, transcript: List[Any], merged_dir: pathlib.Path, selected_formats: List[str], word_segments: Optional[List] = None) -> None:
         """Write text-based output formats."""
         if 'timestamped-txt' in selected_formats:
             timestamped_writer = self._registry.get_output_writer("timestamped-txt")
-            timestamped_writer.write(transcript, merged_dir / "transcript.timestamped.txt")
+            timestamped_writer.write(transcript, merged_dir / "transcript.timestamped.txt", word_segments=word_segments)
 
         if 'plain-txt' in selected_formats:
             plain_writer = self._registry.get_output_writer("plain-txt")
-            plain_writer.write(transcript, merged_dir / "transcript.txt")
+            plain_writer.write(transcript, merged_dir / "transcript.txt", word_segments=word_segments)
 
         if 'csv' in selected_formats:
             csv_writer = self._registry.get_output_writer("csv")
-            csv_writer.write(transcript, merged_dir / "transcript.csv")
+            csv_writer.write(transcript, merged_dir / "transcript.csv", word_segments=word_segments)
 
         if 'markdown' in selected_formats:
             markdown_writer = self._registry.get_output_writer("markdown")
-            markdown_writer.write(transcript, merged_dir / "transcript.md")
+            markdown_writer.write(transcript, merged_dir / "transcript.md", word_segments=word_segments)
 
         if 'turns-json' in selected_formats:
             json_turns_writer = self._registry.get_output_writer("turns-json")
-            json_turns_writer.write(transcript, merged_dir / "transcript.turns.json")
+            json_turns_writer.write(transcript, merged_dir / "transcript.turns.json", word_segments=word_segments)
             print(f"[i] Final transcript JSON saved to: transcript.turns.json")
     
     def _write_subtitle_outputs(self, transcript: List[Any], merged_dir: pathlib.Path,
@@ -88,7 +89,8 @@ class OutputManager:
         pass
     
     def _write_video_output(self, transcript: List[Any], merged_dir: pathlib.Path,
-                           audio_config: Optional[Union[pathlib.Path, Dict[str, str], list[pathlib.Path]]] = None) -> None:
+                           audio_config: Optional[Union[pathlib.Path, Dict[str, str], list[pathlib.Path]]] = None,
+                           word_segments: Optional[List] = None) -> None:
         """Write video output with subtitles."""
         print(f"[*] Rendering video with subtitles...")
         try:
@@ -111,7 +113,7 @@ class OutputManager:
                 print(f"[i] Number of audio tracks: {len(audio_config)}")
             
             # Pass audio configuration as kwargs to the video writer
-            video_writer.write(transcript, str(video_path), audio_config=audio_config)
+            video_writer.write(transcript, str(video_path), word_segments=word_segments, audio_config=audio_config)
             print(f"[✓] Video rendered successfully: {video_path.name}")
         except Exception as e:
             print(f"[!] Warning: Video rendering failed: {e}")

@@ -2,8 +2,8 @@
 from __future__ import annotations
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Union
-from local_transcribe.framework.plugin_interfaces import OutputWriter, Turn
+from typing import List, Dict, Union, Optional
+from local_transcribe.framework.plugin_interfaces import OutputWriter, Turn, WordSegment
 from local_transcribe.framework import registry
 
 
@@ -77,6 +77,73 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Un
     subprocess.run(cmd, check=True)
 
 
+def _group_words_into_cues(words: List[WordSegment], max_words_per_cue: int = 3) -> List[Dict]:
+    """
+    Group word segments into subtitle cues.
+    
+    Args:
+        words: List of WordSegment objects
+        max_words_per_cue: Maximum words per subtitle cue
+        
+    Returns:
+        List of cue dictionaries with speaker, start, end, text
+    """
+    cues = []
+    current_cue_words = []
+    
+    for word in words:
+        # If speaker changes, finalize current cue
+        if current_cue_words and word.speaker != current_cue_words[0].speaker:
+            # Create cue for previous speaker
+            cue_text = " ".join(w.text for w in current_cue_words)
+            cue_start = current_cue_words[0].start
+            cue_end = current_cue_words[-1].end
+            cue_speaker = current_cue_words[0].speaker
+            
+            cues.append({
+                "speaker": cue_speaker,
+                "start": cue_start,
+                "end": cue_end,
+                "text": cue_text
+            })
+            current_cue_words = []
+        
+        current_cue_words.append(word)
+        
+        # Check if we should end the cue
+        if len(current_cue_words) >= max_words_per_cue:
+            # Create cue
+            cue_text = " ".join(w.text for w in current_cue_words)
+            cue_start = current_cue_words[0].start
+            cue_end = current_cue_words[-1].end
+            cue_speaker = current_cue_words[0].speaker
+            
+            cues.append({
+                "speaker": cue_speaker,
+                "start": cue_start,
+                "end": cue_end,
+                "text": cue_text
+            })
+            
+            current_cue_words = []
+    
+    # Handle remaining words
+    if current_cue_words:
+        cue_text = " ".join(w.text for w in current_cue_words)
+        cue_start = current_cue_words[0].start
+        cue_end = current_cue_words[-1].end
+        cue_speaker = current_cue_words[0].speaker
+        
+        cues.append({
+            "speaker": cue_speaker,
+            "start": cue_start,
+            "end": cue_end,
+            "text": cue_text
+        })
+    
+    return cues
+
+
 class VideoWriter(OutputWriter):
     """Output writer for MP4 video with burned-in subtitles."""
     
@@ -92,23 +159,29 @@ class VideoWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".mp4"]
     
-    def write(self, turns: List[Turn], output_path: str, **kwargs) -> None:
+    def write(self, turns: List[Turn], output_path: str, word_segments: Optional[List[WordSegment]] = None, **kwargs) -> None:
         """Write MP4 video with subtitles.
         
         Args:
             turns: List of conversation turns
             output_path: Output MP4 file path
+            word_segments: Optional word segments for detailed subtitle timing
             **kwargs: Additional arguments including 'audio_config'
         """
-        # Convert Turn to dict for compatibility with SRT writer
-        turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
-        
-        # Import SRT writer to generate subtitles first
+        # Import SRT writer to generate subtitles
         from local_transcribe.providers.file_writers.str_writer import write_srt
         
         # Create temporary SRT file
         srt_path = Path(output_path).with_suffix('.srt')
-        write_srt(turn_dicts, srt_path)
+        
+        if word_segments:
+            # Generate cues from word segments
+            cues = _group_words_into_cues(word_segments)
+            write_srt(cues, srt_path)
+        else:
+            # Fallback to turn-based subtitles
+            turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
+            write_srt(turn_dicts, srt_path)
         
         try:
             # Get audio configuration from kwargs

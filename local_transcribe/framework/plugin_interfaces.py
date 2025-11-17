@@ -479,6 +479,7 @@ class OutputWriter(ABC):
         self,
         turns: List[Turn],
         output_path: str,
+        word_segments: Optional[List[WordSegment]] = None,
         **kwargs
     ) -> None:
         """
@@ -487,6 +488,7 @@ class OutputWriter(ABC):
         Args:
             turns: List of conversation turns to write
             output_path: Path where to write the output file
+            word_segments: Optional list of word segments for detailed timing
             **kwargs: Writer-specific configuration options
         """
         pass

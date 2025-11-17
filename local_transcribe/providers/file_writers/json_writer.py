@@ -124,7 +124,7 @@ class TurnsJsonWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".json"]
 
-    def write(self, turns: List[Turn], output_path: str) -> None:
+    def write(self, turns: List[Turn], output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
         # Convert Turn to dict for compatibility
         turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
         write_turns_json(turn_dicts, output_path)

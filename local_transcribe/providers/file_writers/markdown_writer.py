@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pathlib import Path
+from local_transcribe.framework.plugin_interfaces import OutputWriter, Turn, registry, WordSegment
 
 
 def write_conversation_markdown(turns: List[Dict], path: str | Path) -> None:
-    """
-    Write a two-column markdown table with Interviewer and Participant columns.
-    Consecutive turns from the same speaker are merged into one cell, with the other column empty.
-    
-    Args:
-        turns: List of turn dictionaries with 'speaker' and 'text' keys
-        path: Output file path for the markdown file
-    """
-    path = Path(path)
     
     # Group consecutive turns by speaker (same logic as CSV writer)
     grouped_turns = []
@@ -96,7 +88,7 @@ class MarkdownWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".md"]
 
-    def write(self, turns: List[Turn], output_path: str) -> None:
+    def write(self, turns: List[Turn], output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
         # Convert Turn to dict for compatibility
         turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
         write_conversation_markdown(turn_dicts, output_path)

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Optional
 from pathlib import Path
+from local_transcribe.framework.plugin_interfaces import WordSegment
 
 
 def _fmt_ts(t: float) -> str:
@@ -111,7 +112,7 @@ class TimestampedTextWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".txt"]
 
-    def write(self, turns: List[Turn], output_path: str) -> None:
+    def write(self, turns: List[Turn], output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
         # Convert Turn to dict for compatibility
         turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
         write_timestamped_txt(turn_dicts, output_path)
@@ -130,7 +131,7 @@ class PlainTextWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".txt"]
 
-    def write(self, turns: List[Turn], output_path: str) -> None:
+    def write(self, turns: List[Turn], output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
         # Convert Turn to dict for compatibility
         turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
         write_plain_txt(turn_dicts, output_path)

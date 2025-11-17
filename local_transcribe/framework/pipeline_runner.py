@@ -254,7 +254,7 @@ def run_pipeline(args, api, root):
                 # For combined_audio mode, pass the single standardized audio file
                 audio_config = std_audio if mode == "combined_audio" else None
                 print(f"[i] Writing raw outputs with formats: {args.selected_outputs}")
-                output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, audio_config, generate_video=True)
+                output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, audio_config, generate_video=True, word_segments=words_with_speakers)
 
             # 5) Prepare transcript for LLM processing
             print("[*] Preparing transcript for LLM processing...")
@@ -371,7 +371,8 @@ def run_pipeline(args, api, root):
                 {**paths, "merged": raw_dir},
                 args.selected_outputs,
                 audio_config,
-                generate_video=True
+                generate_video=True,
+                word_segments=all_words
             )
 
             # 5) Prepare transcript for LLM processing

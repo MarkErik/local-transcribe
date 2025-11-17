@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pathlib import Path
 import csv
+from local_transcribe.framework.plugin_interfaces import OutputWriter, Turn, registry, WordSegment
 
 
 def write_conversation_csv(turns: List[Dict], path: str | Path) -> None:
-    """
-    Write a two-column CSV with Interviewer and Participant columns.
-    Consecutive turns from the same speaker are merged into one row, with the other column empty.
-    
-    Args:
-        turns: List of turn dictionaries with 'speaker' and 'text' keys
-        path: Output file path for the CSV
-    """
-    path = Path(path)
     
     # Group consecutive turns by speaker
     grouped_turns = []
@@ -87,7 +79,7 @@ class CSVWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".csv"]
 
-    def write(self, turns: List[Turn], output_path: str) -> None:
+    def write(self, turns: List[Turn], output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
         # Convert Turn to dict for compatibility
         turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
         write_conversation_csv(turn_dicts, output_path)

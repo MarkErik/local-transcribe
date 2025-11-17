@@ -136,6 +136,8 @@ class MFAAlignerProvider(AlignerProvider):
                 lines = f.readlines()
             
             print(f"[MFA] TextGrid has {len(lines)} lines")
+            if len(lines) < 10:
+                print(f"[MFA] TextGrid content (first 10 lines): {lines}")
             
             # Build a mapping of normalized words to original words
             original_words = original_transcript.split()
@@ -255,6 +257,8 @@ class MFAAlignerProvider(AlignerProvider):
         word_duration = duration / len(words)
 
         print(f"[MFA] Simple alignment: Audio duration={duration:.2f}s, {len(words)} words, word_duration={word_duration:.3f}s")
+        print(f"[MFA] First 5 words: {words[:5]}")
+        print(f"[MFA] Last 5 words: {words[-5:]}")
 
         segments = []
         current_time = 0.0
@@ -325,6 +329,18 @@ class MFAAlignerProvider(AlignerProvider):
             # but let's copy it to ensure proper format
             import shutil
             shutil.copy(audio_path, audio_file)
+            print(f"[MFA] Audio file copied to: {audio_file} (size: {audio_file.stat().st_size} bytes)")
+            
+            # Get audio duration for debugging
+            import librosa
+            audio_duration = librosa.get_duration(filename=str(audio_file))
+            print(f"[MFA] Audio duration: {audio_duration:.2f} seconds")
+            print(f"[MFA] Audio file copied to: {audio_file} (size: {audio_file.stat().st_size} bytes)")
+            
+            # Get audio duration for debugging
+            import librosa
+            audio_duration = librosa.get_duration(filename=str(audio_file))
+            print(f"[MFA] Audio duration: {audio_duration:.2f} seconds")
 
             # Create matching transcript file (.lab extension)
             # MFA needs text without punctuation, so normalize it
@@ -334,10 +350,12 @@ class MFAAlignerProvider(AlignerProvider):
             )
             
             print(f"[MFA] Normalized transcript: {normalized_transcript[:200]}..." if len(normalized_transcript) > 200 else f"[MFA] Normalized transcript: {normalized_transcript}")
+            print(f"[MFA] Transcript word count: {len(normalized_transcript.split())}")
             print(f"[MFA] Temp directory: {temp_path}")
             
             transcript_file = audio_dir / f"{audio_name.rsplit('.', 1)[0]}.lab"
             transcript_file.write_text(normalized_transcript, encoding='utf-8')
+            print(f"[MFA] Transcript file written: {transcript_file} (size: {transcript_file.stat().st_size} bytes)")
 
             # Setup output directory for alignments
             output_dir = temp_path / "output"
@@ -372,10 +390,7 @@ class MFAAlignerProvider(AlignerProvider):
                     "english_us_arpa",  # Acoustic model
                     str(textgrid_file),  # Output TextGrid path
                     "--single_speaker",  # Single speaker mode
-                    #"--beam", "15",  # Increase beam size for better alignment (higher = more tolerant)
-                    #"--retry_beam", "60",
-                    #"--lattice_beam","15",
-                    #"--quiet",  # Suppress verbose output
+                    "--quiet",  # Suppress verbose output
                 ]
 
                 print(f"[MFA] Running command: {' '.join(cmd)}")
@@ -392,12 +407,17 @@ class MFAAlignerProvider(AlignerProvider):
                 )
 
                 print(f"[MFA] Command completed successfully. Exit code: {result.returncode}")
-                print(f"[MFA] stdout: {result.stdout[:500]}...")
-                print(f"[MFA] stderr: {result.stderr[:500]}...")
+                print(f"[MFA] stdout length: {len(result.stdout)} chars")
+                print(f"[MFA] stderr length: {len(result.stderr)} chars")
+                if result.stdout:
+                    print(f"[MFA] stdout: {result.stdout}")
+                if result.stderr:
+                    print(f"[MFA] stderr: {result.stderr}")
 
                 # Parse TextGrid to extract word timestamps
                 if textgrid_file.exists():
                     print(f"[MFA] TextGrid file exists at {textgrid_file}, parsing...")
+                    print(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
                     segments = self._parse_textgrid(textgrid_file, transcript, speaker=speaker)
                     print(f"[MFA] Successfully parsed {len(segments)} word segments from TextGrid")
                     return segments
@@ -409,8 +429,15 @@ class MFAAlignerProvider(AlignerProvider):
             except subprocess.CalledProcessError as e:
                 print(f"[MFA] ERROR: MFA alignment failed with exit code {e.returncode}")
                 print(f"[MFA] Command: {' '.join(cmd)}")
-                print(f"[MFA] stdout: {e.stdout[:1000]}")
-                print(f"[MFA] stderr: {e.stderr[:1000]}")
+                print(f"[MFA] stdout length: {len(e.stdout)} chars")
+                print(f"[MFA] stderr length: {len(e.stderr)} chars")
+                if e.stdout:
+                    print(f"[MFA] stdout: {e.stdout}")
+                if e.stderr:
+                    print(f"[MFA] stderr: {e.stderr}")
+                print(f"[MFA] Checking if TextGrid was created despite error: {textgrid_file.exists()}")
+                if textgrid_file.exists():
+                    print(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
                 print(f"[MFA] Falling back to simple alignment")
                 return self._simple_alignment(audio_path, transcript, speaker=speaker)
             except FileNotFoundError:

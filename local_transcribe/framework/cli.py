@@ -20,6 +20,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--transcript-cleanup-provider", help="Transcript cleanup provider to use for LLM-based transcript cleaning")
     p.add_argument("--transcript-cleanup-url", help="URL for remote transcript cleanup provider (e.g., http://ip:port for Llama.cpp server)")
     p.add_argument("--turn-builder-provider", help="Turn builder provider to use (for grouping transcribed words into turns)")
+    p.add_argument("--llm-stitcher-url", help="URL for LLM stitcher provider (e.g., http://ip:port for LLM server)")
+    p.add_argument("--llm-turn-builder-url", help="URL for LLM turn builder provider (e.g., http://ip:port for LLM server)")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("-i", "--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
@@ -249,9 +251,10 @@ def interactive_prompt(args, api):
                     args.output_mode = 'chunked'
                     args.stitcher = 'llm_stitcher'
                     # Prompt for LLM URL
-                    llm_url = input("LLM server URL [0.0.0.0:8080]: ").strip()
+                    default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
+                    llm_url = input(f"LLM server URL [{default_url}]: ").strip()
                     if not llm_url:
-                        llm_url = "http://0.0.0.0:8080"
+                        llm_url = default_url
                     else:
                         # Add http:// if not present
                         if not llm_url.startswith(('http://', 'https://')):
@@ -312,9 +315,10 @@ def interactive_prompt(args, api):
 
             # If LLM turn builder selected, prompt for URL
             if hasattr(args, 'turn_builder_provider') and args.turn_builder_provider == "split_audio_llm":
-                llm_url = input("LLM server URL for turn building [http://0.0.0.0:8080]: ").strip()
+                default_url = getattr(args, 'llm_turn_builder_url', 'http://0.0.0.0:8080')
+                llm_url = input(f"LLM server URL for turn building [{default_url}]: ").strip()
                 if not llm_url:
-                    llm_url = "http://0.0.0.0:8080"
+                    llm_url = default_url
                 else:
                     # Add http:// if not present
                     if not llm_url.startswith(('http://', 'https://')):
@@ -368,11 +372,12 @@ def interactive_prompt(args, api):
 
                     # If remote provider, ask for URL
                     if args.transcript_cleanup_provider == "llama_cpp_remote":
-                        url = input("Enter Llama.cpp server URL (e.g., http://192.168.1.100:8080): ").strip()
+                        default_url = getattr(args, 'transcript_cleanup_url', 'http://localhost:8080')
+                        url = input(f"Enter Llama.cpp server URL (e.g., http://192.168.1.100:8080) [{default_url}]: ").strip()
                         if url:
                             args.transcript_cleanup_url = url
                         else:
-                            args.transcript_cleanup_url = "http://localhost:8080"
+                            args.transcript_cleanup_url = default_url
                     break
                 else:
                     print("Invalid choice. Please enter a number from the list.")

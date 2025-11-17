@@ -249,6 +249,8 @@ class MFAAlignerProvider(AlignerProvider):
         aligned_texts = [seg.text for seg in segments]
         original_words = original_transcript.split()
         
+        print(f"[MFA UNK REPLACE] Original transcript word count: {len(original_words)}")
+        print(f"[MFA UNK REPLACE] MFA aligned word count before replacement: {len(aligned_texts)}")
         print(f"[MFA UNK REPLACE] Aligned texts ({len(aligned_texts)} words): {' '.join(aligned_texts[:10])} ... {' '.join(aligned_texts[-10:])}" if len(aligned_texts) > 20 else f"[MFA UNK REPLACE] Aligned texts: {' '.join(aligned_texts)}")
         print(f"[MFA UNK REPLACE] Original words ({len(original_words)} words): {' '.join(original_words[:10])} ... {' '.join(original_words[-10:])}" if len(original_words) > 20 else f"[MFA UNK REPLACE] Original words: {' '.join(original_words)}")
         
@@ -281,6 +283,7 @@ class MFAAlignerProvider(AlignerProvider):
                     print(f"[MFA UNK REPLACE] No match for '{seg.text}' at ptr {ptr}, not advancing ptr")
         
         final_texts = [seg.text for seg in segments]
+        print(f"[MFA UNK REPLACE] MFA aligned word count after replacement: {len(final_texts)}")
         print(f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts[:10])} ... {' '.join(final_texts[-10:])}" if len(final_texts) > 20 else f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts)}")
 
     def _simple_alignment(self, audio_path: str, transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:

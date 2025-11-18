@@ -72,6 +72,9 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
     # Get device from global config to pass explicitly
     device = get_system_capability()
     
+    # Add verbose back to kwargs so it's passed to the transcriber provider
+    kwargs['verbose'] = verbose
+    
     # Transcribe without alignment
     transcript = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
     
@@ -265,7 +268,7 @@ def run_pipeline(args, api, root):
             kwargs = vars(args).copy()
             # Remove parameters that are already explicit arguments
             kwargs.pop('transcriber_provider', None)
-            kwargs.pop('verbose', None)
+            # Note: verbose is kept in kwargs so only_transcribe can pass it to the transcriber
             kwargs.pop('audio_files', None)
             kwargs.pop('outdir', None)
             kwargs.pop('interactive', None)

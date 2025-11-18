@@ -215,6 +215,8 @@ def run_pipeline(args, api, root):
             std_audio = standardize_audio(participant_path, outdir, tracker, api)
 
             # 2) Transcribe only
+            kwargs = vars(args).copy()
+            kwargs.pop('transcriber_provider', None)  # Remove to avoid duplicate
             transcript = only_transcribe(
                 transcriber_provider,
                 str(std_audio),
@@ -222,8 +224,7 @@ def run_pipeline(args, api, root):
                 paths["intermediate"] if args.verbose else None,
                 args.verbose,
                 "participant_",
-                registry=api["registry"],
-                **vars(args)
+                **kwargs
             )
 
             # 3) Process transcript into words and save as CSV

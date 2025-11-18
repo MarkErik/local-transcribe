@@ -177,6 +177,31 @@ def interactive_prompt(args, api):
                     provider = registry.get_transcriber_provider(selected_provider)
                     display_name = getattr(provider, 'short_name', provider.description)
                     print(f"✓ Selected: {display_name}")
+                    
+                    # Model selection if provider has multiple models
+                    available_models = provider.get_available_models()
+                    if len(available_models) > 1:
+                        print(f"\nAvailable models for {display_name}:")
+                        for i, model in enumerate(available_models, 1):
+                            print(f"  {i}. {model}")
+                        
+                        while True:
+                            try:
+                                model_choice = int(input(f"\nSelect model (number) [Default: 1]: ").strip())
+                                if not model_choice:
+                                    model_choice = 1
+                                if 1 <= model_choice <= len(available_models):
+                                    args.transcriber_model = available_models[model_choice - 1]
+                                    print(f"✓ Selected model: {args.transcriber_model}")
+                                    break
+                                else:
+                                    print("Error: Please enter a number from the list.")
+                            except ValueError:
+                                print("Error: Please enter a valid number.")
+                    elif len(available_models) == 1:
+                        args.transcriber_model = available_models[0]
+                        print(f"✓ Using default model: {args.transcriber_model}")
+                    
                     break
                 else:
                     print("Error: Please enter a number from the list.")

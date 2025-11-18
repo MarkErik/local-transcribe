@@ -75,13 +75,45 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
     # Transcribe without alignment
     transcript = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
     
-    # Verbose: Save raw transcript
+    # Handle chunked output (list of dicts) vs simple string output
+    if isinstance(transcript, list):
+        # Chunked output - need to stitch
+        if verbose:
+            print(f"[i] Received chunked output with {len(transcript)} chunks")
+        
+        # Check stitching method from kwargs
+        stitching_method = kwargs.get('stitching_method', 'builtin')
+        
+        if stitching_method == 'llm':
+            # Use LLM-based stitching
+            from local_transcribe.processing.llm_stitcher import stitch_chunks
+            if verbose:
+                print(f"[i] Stitching chunks using LLM method")
+            transcript_text = stitch_chunks(transcript, **kwargs)
+        else:
+            # Use builtin stitching (simple concatenation of chunk words)
+            if verbose:
+                print(f"[i] Stitching chunks using builtin method")
+            chunk_texts = [" ".join(chunk.get("words", [])) for chunk in transcript]
+            transcript_text = " ".join(chunk_texts)
+        
+        # Verbose: Save chunked data
+        if verbose and intermediate_dir:
+            import json
+            with open(intermediate_dir / "transcription" / f"{base_name}raw_chunks.json", "w", encoding="utf-8") as f:
+                json.dump(transcript, f, indent=2, ensure_ascii=False)
+            print(f"[i] Verbose: Raw chunks saved to Intermediate_Outputs/transcription/{base_name}raw_chunks.json")
+    else:
+        # Simple string output
+        transcript_text = transcript
+    
+    # Verbose: Save final stitched transcript
     if verbose and intermediate_dir:
         with open(intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt", "w", encoding="utf-8") as f:
-            f.write(transcript)
+            f.write(transcript_text)
         print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
     
-    return transcript
+    return transcript_text
 
 def run_pipeline(args, api, root):
     from local_transcribe.lib.environment import ensure_file, ensure_outdir

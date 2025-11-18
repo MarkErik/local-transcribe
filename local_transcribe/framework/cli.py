@@ -399,7 +399,7 @@ def interactive_prompt(args, api):
                 print(f"✓ Selected: {args.turn_builder_provider} [Default]")
 
             # If LLM turn builder selected, prompt for URL
-            if hasattr(args, 'turn_builder_provider') and args.turn_builder_provider == "split_audio_llm":
+            if hasattr(args, 'turn_builder_provider') and args.turn_builder_provider in ["split_audio_llm", "split_audio_llm_turn_builder_improved"]:
                 default_url = getattr(args, 'llm_turn_builder_url', 'http://0.0.0.0:8080')
                 llm_url = input(f"LLM server URL for turn building [Default: {default_url}]: ").strip()
                 if not llm_url:

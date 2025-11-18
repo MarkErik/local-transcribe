@@ -16,7 +16,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--transcriber-model", help="Transcriber model to use (if provider supports multiple models) [Default: provider-specific]")
     p.add_argument("--aligner-provider", help="Aligner provider to use (required if transcriber doesn't have built-in alignment) [Default: auto-selected if needed]")
     p.add_argument("--diarization-provider", help="Diarization provider to use (required for single audio files with multiple speakers) [Default: auto-selected if needed]")
-    p.add_argument("--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization) [Default: 2]")
+    p.add_argument("-n","--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization) [Default: 2]")
     p.add_argument("--transcript-cleanup-provider", help="Transcript cleanup provider to use for LLM-based transcript cleaning [Default: none]")
     p.add_argument("--transcript-cleanup-url", default="http://localhost:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for Llama.cpp server) [Default: http://localhost:8080]")
     p.add_argument("--turn-builder-provider", help="Turn builder provider to use (for grouping transcribed words into turns) [Default: auto-selected based on audio mode]")
@@ -26,7 +26,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("-i", "--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
     p.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging output.")
-    p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
+    p.add_argument("-l","--list-plugins", action="store_true", help="List available plugins and exit.")
     p.add_argument("--show-defaults", action="store_true", help="Show all default values and exit.")
     p.add_argument("-s", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")
 

@@ -41,7 +41,7 @@ def validate_system_capability(capability: str) -> str:
     if capability in available:
         return capability
     else:
-        print(f"WARNING: System capability '{capability}' is not available on this system. Available: {available}. Defaulting to 'cpu'.")
+        print(f"Warning: System capability '{capability}' is not available on this system. Available: {available}. Defaulting to 'cpu'.")
         return "cpu"
 def repo_root_from_here() -> pathlib.Path:
     # Resolve repo root as the directory containing this file
@@ -57,19 +57,19 @@ def set_offline_env(models_dir: pathlib.Path) -> None:
 # ---------- simple checks ----------
 def ensure_models_exist(models_dir: pathlib.Path) -> None:
     if not models_dir.exists():
-        print("WARNING: models/ directory not found. Models will be downloaded automatically on first run.")
+        print("Warning: models/ directory not found. Models will be downloaded automatically on first run.")
         models_dir.mkdir(parents=True, exist_ok=True)
     # Check for new provider model directories
     transcriber_dir = models_dir / "transcribers"
     aligner_dir = models_dir / "aligners"
     if not (transcriber_dir.exists() or aligner_dir.exists()):
-        print("WARNING: Provider models not found in ./models/. Models will be downloaded automatically on first run.")
+        print("Warning: Provider models not found in ./models/. Models will be downloaded automatically on first run.")
     # We won't strictly validate HF cache layout; downloader guarantees presence.
 
 def ensure_file(path: str, label: str) -> pathlib.Path:
     p = pathlib.Path(path).expanduser().resolve()
     if not p.exists():
-        sys.exit(f"ERROR: {label} file not found: {p}")
+        sys.exit(f"Error: {label} file not found: {p}")
     return p
 
 def ensure_outdir(path: str) -> pathlib.Path:

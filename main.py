@@ -28,13 +28,19 @@ def main(argv: Optional[list[str]] = None) -> int:
         # Default to CPU if not specified (will be overridden in interactive mode)
         set_system_capability("cpu")
 
+    # Handle show-defaults flag (doesn't require other args)
+    if args.show_defaults:
+        from local_transcribe.framework.cli import show_defaults
+        show_defaults()
+        return 0
+
     # Early validation for required args
     if not args.list_plugins:
         if not args.outdir:
-            print("ERROR: -o/--outdir is required")
+            print("Error: -o/--outdir is required")
             return 1
         if not hasattr(args, 'audio_files') or not args.audio_files:
-            print("ERROR: Must provide --audio-files (-a)")
+            print("Error: Must provide --audio-files (-a)")
             return 1
 
     root = repo_root_from_here()

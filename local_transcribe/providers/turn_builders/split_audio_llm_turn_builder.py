@@ -592,14 +592,14 @@ Example Output:
 
         return prompt
 
-    def _query_llm(self, prompt: str, url: str, timeout: int) -> str:
+    def _query_llm(self, prompt: str, url: str, timeout: Optional[int]) -> str:
         """
         Query the LLM with the prompt.
 
         Args:
             prompt: The prompt to send
             url: LLM server URL
-            timeout: Request timeout
+            timeout: Request timeout in seconds (None for no timeout)
 
         Returns:
             LLM response text

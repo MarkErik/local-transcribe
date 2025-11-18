@@ -129,7 +129,10 @@ def run_pipeline(args, api, root):
 
     # Set default outputs for non-interactive
     if not hasattr(args, 'selected_outputs') or not args.selected_outputs:
-        if args.only_final_transcript:
+        if mode == "participant_audio_only":
+            # Participant audio only mode uses custom CSV output
+            args.selected_outputs = ['csv']
+        elif args.only_final_transcript:
             args.selected_outputs = ['timestamped-txt']
         else:
             # Include JSON outputs for debugging alignment
@@ -144,6 +147,18 @@ def run_pipeline(args, api, root):
         except Exception as e:
             print(f"ERROR: {e}")
             return 1
+
+    # Early validation for participant_audio_only mode
+    if mode == "participant_audio_only" and hasattr(args, 'transcriber_provider') and args.transcriber_provider:
+        try:
+            temp_provider = api["registry"].get_transcriber_provider(args.transcriber_provider)
+            if temp_provider.has_builtin_alignment:
+                print(f"ERROR: Provider '{args.transcriber_provider}' has built-in alignment and is not allowed in participant-audio-only mode.")
+                print("       Use granite or openai_whisper for this mode.")
+                print("Use --list-plugins to see available options.")
+                return 1
+        except ValueError:
+            pass  # Will be caught in provider setup below
 
     # Setup providers using ProviderSetup class
     try:
@@ -248,6 +263,15 @@ def run_pipeline(args, api, root):
                     writer.writerow([i, word])
             
             print(f"[✓] Participant transcript saved to {csv_path}")
+            print(f"[i] Artifacts written to: {paths['root']}")
+            
+            # Print performance summary
+            tracker.print_summary()
+            
+            # Clean up temporary audio files
+            cleanup_temp_audio(outdir)
+            print("[✓] Temporary audio files cleaned up.")
+            
             tracker.complete()
             return 0
 

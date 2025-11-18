@@ -691,14 +691,39 @@ Example Output:
         Returns:
             List of dicts with speaker and text
         """
-        # Try to extract JSON from the response
-        json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(0)
-            turns = json.loads(json_str)
-        else:
-            # Fallback: try parsing the entire response as JSON
-            turns = json.loads(response_text)
+        # Try multiple strategies to extract JSON from the response
+        turns = None
+        
+        # Strategy 1: Try parsing the entire response as JSON first (cleanest)
+        try:
+            turns = json.loads(response_text.strip())
+        except json.JSONDecodeError:
+            pass
+        
+        # Strategy 2: Look for JSON array with non-greedy matching
+        if turns is None:
+            # Use non-greedy match and look for complete array structure
+            json_match = re.search(r'\[\s*\{.*?\}\s*\]', response_text, re.DOTALL)
+            if json_match:
+                try:
+                    turns = json.loads(json_match.group(0))
+                except json.JSONDecodeError:
+                    pass
+        
+        # Strategy 3: Find the first '[' and last ']' (fallback for greedy match)
+        if turns is None:
+            first_bracket = response_text.find('[')
+            last_bracket = response_text.rfind(']')
+            if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
+                try:
+                    json_str = response_text[first_bracket:last_bracket + 1]
+                    turns = json.loads(json_str)
+                except json.JSONDecodeError:
+                    pass
+        
+        # If all strategies failed, raise an error
+        if turns is None:
+            raise ValueError(f"Could not extract valid JSON array from LLM response. Response preview: {response_text[:200]}...")
 
         # Validate structure
         if not isinstance(turns, list):

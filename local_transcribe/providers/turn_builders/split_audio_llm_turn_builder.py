@@ -447,6 +447,7 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
             else:
                 # Continue current turn
                 current_text.append(word.text)
+                # Update end time to the maximum of current end and this word's end
                 current_end = max(current_end, word.end)
         
         # Flush last turn

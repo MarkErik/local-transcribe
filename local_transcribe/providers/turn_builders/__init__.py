@@ -7,4 +7,5 @@ Turn builder providers.
 from . import multi_speaker_turn_builder
 from . import split_audio_turn_builder
 from . import split_audio_llm_turn_builder
+from . import split_audio_llm_turn_builder_improved
 from . import split_audio_turn_builder_improved

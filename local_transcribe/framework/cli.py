@@ -468,6 +468,9 @@ def interactive_prompt(args, api):
                         default_url = getattr(args, 'transcript_cleanup_url', 'http://localhost:8080')
                         url = input(f"Enter Llama.cpp server URL (e.g., http://192.168.1.100:8080) [Default: {default_url}]: ").strip()
                         if url:
+                            # Add http:// if not present
+                            if not url.startswith(('http://', 'https://')):
+                                url = f"http://{url}"
                             args.transcript_cleanup_url = url
                             is_default = False
                         else:

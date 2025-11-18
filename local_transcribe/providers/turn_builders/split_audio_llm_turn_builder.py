@@ -440,11 +440,8 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         if len(processed_chunks) == 1:
             return processed_chunks[0]['turns']
         
-        merged_turns = []
-        
-        # Add all turns from the first chunk (non-overlapping portion)
-        first_chunk = processed_chunks[0]
-        merged_turns.extend(first_chunk['turns'])
+        # Start with all turns from the first chunk
+        merged_turns = list(processed_chunks[0]['turns'])
         
         # Process subsequent chunks with overlap verification
         for i in range(1, len(processed_chunks)):
@@ -465,11 +462,10 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
                     original_words
                 )
                 
-                # Remove overlapping turns from previous chunk and add verified ones
-                # For simplicity, we'll remove all turns that contain overlap words
-                # and replace them with the verified turns
-                filtered_prev_turns = []
-                for turn in prev_chunk['turns']:
+                # Remove overlapping turns from the END of merged_turns that came from prev_chunk
+                # We need to identify which turns in merged_turns are from the overlap region
+                turns_to_remove = []
+                for j, turn in enumerate(merged_turns):
                     should_remove = False
                     for overlap_turn in overlap_info['prev_overlap_turns']:
                         if (turn.speaker == overlap_turn.speaker and
@@ -477,11 +473,15 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
                             should_remove = True
                             break
                     
-                    if not should_remove:
-                        filtered_prev_turns.append(turn)
+                    if should_remove:
+                        turns_to_remove.append(j)
                 
-                # Rebuild merged turns up to this point
-                merged_turns = filtered_prev_turns + verified_overlap_turns
+                # Remove in reverse order to maintain indices
+                for j in reversed(turns_to_remove):
+                    merged_turns.pop(j)
+                
+                # Add verified overlap turns
+                merged_turns.extend(verified_overlap_turns)
                 
                 # Add non-overlapping turns from current chunk
                 for turn in curr_chunk['turns']:

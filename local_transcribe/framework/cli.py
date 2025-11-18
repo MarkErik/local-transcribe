@@ -105,13 +105,13 @@ def interactive_prompt(args, api):
     # Determine preferred default: MPS > CUDA > CPU
     if "mps" in available_capabilities:
         default_capability = "mps"
-        default_index = 1  # MPS will be shown as option 1
     elif "cuda" in available_capabilities:
         default_capability = "cuda"
-        default_index = 1  # CUDA will be shown as option 1
     else:
         default_capability = "cpu"
-        default_index = 1  # CPU will be shown as option 1
+    
+    # Find the index of the default capability
+    default_index = available_capabilities.index(default_capability) + 1
     
     if len(available_capabilities) > 1:
         print("Available System Capabilities:")
@@ -307,8 +307,8 @@ def interactive_prompt(args, api):
 
             # Stitching method choice
             print(f"\nStitching Options:")
-            print(f"  - Built-in: Fast, uses overlap detection to merge chunks [Default]")
-            print(f"  - LLM: Slower, uses AI to intelligently merge chunks (requires LLM server)")
+            print(f"  1. Built-in: Fast, uses overlap detection to merge chunks [Default]")
+            print(f"  2. LLM: Slower, uses AI to intelligently merge chunks (requires LLM server)")
             
             while True:
                 choice = input(f"\nSelect stitching method (number) [Default: 1]: ").strip()
@@ -375,7 +375,10 @@ def interactive_prompt(args, api):
                             continue
                     
                     if 1 <= choice <= len(all_turn_builders):
-                        args.turn_builder_provider = list(all_turn_builders.keys())[choice - 1]
+                        selected_key = list(all_turn_builders.keys())[choice - 1]
+                        args.turn_builder_provider = selected_key
+                        selected_provider = all_turn_builders[selected_key]
+                        display_name = getattr(selected_provider, 'short_name', selected_provider.description)
                         is_default = choice == 1
                         default_marker = " [Default]" if is_default else ""
                         print(f"✓ Selected: {display_name}{default_marker}")

@@ -126,7 +126,7 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         """
         segments_text = "\n".join([
             f"{i+1}. Speaker {seg['speaker']}: \"{seg['text']}\" (start: {seg['start']:.2f}, end: {seg['end']:.2f})"
-            for i, seg in enumerate(stripped_segments)
+            for i, seg in enumerate(prepared_segments)
         ])
 
         prompt = f"""Segments:

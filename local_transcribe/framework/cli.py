@@ -323,12 +323,15 @@ def interactive_prompt(args, api):
                     llm_url = input(f"LLM server URL [Default: {default_url}]: ").strip()
                     if not llm_url:
                         llm_url = default_url
+                        is_default = True
                     else:
                         # Add http:// if not present
                         if not llm_url.startswith(('http://', 'https://')):
                             llm_url = f"http://{llm_url}"
+                        is_default = False
                     args.llm_stitcher_url = llm_url
-                    print(f"✓ Selected: LLM stitching with URL: {llm_url}")
+                    default_marker = " [Default]" if is_default else ""
+                    print(f"✓ Selected: LLM stitching with URL: {llm_url}{default_marker}")
                     break
                 else:
                     print("Error: Please enter 1 or 2.")

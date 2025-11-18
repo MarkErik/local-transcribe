@@ -533,8 +533,36 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
                     if not is_in_overlap:
                         merged_turns.append(turn)
             else:
-                # No overlap, just add all turns from current chunk
-                merged_turns.extend(curr_chunk['turns'])
+                # No overlap between chunks - check if we should merge boundary turns
+                # If last turn of merged and first turn of current chunk are from same speaker
+                # and have continuous/close timing, merge them
+                if merged_turns and curr_chunk['turns']:
+                    last_merged_turn = merged_turns[-1]
+                    first_curr_turn = curr_chunk['turns'][0]
+                    
+                    # Check if turns should be merged (same speaker, close timing)
+                    time_gap = first_curr_turn.start - last_merged_turn.end
+                    max_merge_gap = 2.0  # Maximum 2 second gap for merging
+                    
+                    if (last_merged_turn.speaker == first_curr_turn.speaker and 
+                        time_gap <= max_merge_gap and time_gap >= 0):
+                        # Merge the turns
+                        print(f"DEBUG: Merging boundary turns (same speaker, gap: {time_gap:.2f}s)")
+                        merged_text = last_merged_turn.text + " " + first_curr_turn.text
+                        merged_turns[-1] = Turn(
+                            speaker=last_merged_turn.speaker,
+                            start=last_merged_turn.start,
+                            end=first_curr_turn.end,
+                            text=merged_text
+                        )
+                        # Add remaining turns from current chunk (skip first since it was merged)
+                        merged_turns.extend(curr_chunk['turns'][1:])
+                    else:
+                        # Don't merge, just add all turns from current chunk
+                        merged_turns.extend(curr_chunk['turns'])
+                else:
+                    # No turns to merge, just add all turns from current chunk
+                    merged_turns.extend(curr_chunk['turns'])
         
         return merged_turns
 

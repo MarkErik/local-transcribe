@@ -666,34 +666,56 @@ Example Output:
 
             # Find the sequence of words that match this turn's text
             matched_words = []
-            turn_text_clean = turn_text.replace('"', '').strip()
+            
+            # Tokenize the turn text into expected words (split by whitespace and remove punctuation)
+            # This creates a more robust matching approach
+            turn_words = turn_text.replace('"', '').strip().split()
+            turn_word_index = 0
 
-            print(f"DEBUG: Cleaned turn text: '{turn_text_clean}'")
+            print(f"DEBUG: Turn expects {len(turn_words)} words")
 
-            # Simple approach: find contiguous words from the same speaker that match the text
-            while word_index < len(original_words):
+            # Match words sequentially - words must appear in order
+            start_word_index = word_index
+            while word_index < len(original_words) and turn_word_index < len(turn_words):
                 word = original_words[word_index]
-                print(f"DEBUG: Checking word at index {word_index}: speaker={word.speaker}, text='{word.text}'")
+                expected_word = turn_words[turn_word_index]
+                
+                print(f"DEBUG: Checking word at index {word_index}: speaker={word.speaker}, text='{word.text}', expected='{expected_word}'")
+                
                 if word.speaker == speaker:
-                    # Check if this word's text is in the turn text
-                    if word.text in turn_text_clean:
+                    # Normalize both words for comparison (case-insensitive, remove punctuation)
+                    word_normalized = word.text.lower().strip('.,!?;:"\'-')
+                    expected_normalized = expected_word.lower().strip('.,!?;:"\'-')
+                    
+                    if word_normalized == expected_normalized:
+                        # Exact match found
                         matched_words.append(word)
-                        print(f"DEBUG: Matched word '{word.text}', remaining text: '{turn_text_clean}'")
-                        # Remove the matched text from turn_text_clean
-                        turn_text_clean = turn_text_clean.replace(word.text, '', 1).strip()
+                        turn_word_index += 1
                         word_index += 1
-                        # If turn text is consumed, break
-                        if not turn_text_clean:
-                            print("DEBUG: Turn text fully consumed.")
-                            break
+                        print(f"DEBUG: Matched word '{word.text}'")
                     else:
-                        # If word doesn't match, move to next
-                        print(f"DEBUG: Word '{word.text}' not in remaining text, skipping.")
+                        # Word doesn't match - this might indicate LLM modified the text
+                        # Try to skip this original word and continue
+                        print(f"DEBUG: Word mismatch: got '{word.text}', expected '{expected_word}', skipping original word")
                         word_index += 1
                 else:
-                    # Different speaker, stop this turn
+                    # Different speaker encountered
                     print(f"DEBUG: Different speaker ({word.speaker}), stopping turn.")
                     break
+
+            # If we didn't match all expected words, fall back to speaker-based grouping
+            if turn_word_index < len(turn_words):
+                print(f"DEBUG: Warning: Only matched {turn_word_index}/{len(turn_words)} words for turn")
+                # Reset and use simpler approach: collect all consecutive words from this speaker
+                word_index = start_word_index
+                matched_words = []
+                while word_index < len(original_words):
+                    word = original_words[word_index]
+                    if word.speaker == speaker:
+                        matched_words.append(word)
+                        word_index += 1
+                    else:
+                        break
 
             if matched_words:
                 start = min(word.start for word in matched_words)

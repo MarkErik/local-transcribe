@@ -131,6 +131,13 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         overlap_ratio = kwargs.get('overlap_ratio', self.DEFAULT_OVERLAP_RATIO)
         use_ground_truth = kwargs.get('use_ground_truth', self.DEFAULT_USE_GROUND_TRUTH)
         
+        # Validate configuration parameters
+        if not isinstance(chunk_size, int) or chunk_size < 1:
+            raise ValueError(f"chunk_size must be a positive integer, got: {chunk_size}")
+        
+        if not isinstance(overlap_ratio, (int, float)) or not (0.0 <= overlap_ratio < 1.0):
+            raise ValueError(f"overlap_ratio must be a number between 0.0 and 1.0 (exclusive), got: {overlap_ratio}")
+        
         print(f"DEBUG: Starting ground truth-aware turn building with {len(words)} words")
         print(f"DEBUG: Configuration - chunk_size={chunk_size}, overlap_ratio={overlap_ratio}, use_ground_truth={use_ground_truth}")
         

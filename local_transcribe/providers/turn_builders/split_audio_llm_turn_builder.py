@@ -68,9 +68,11 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
             raise ValueError("All word segments must have speaker assignments for split audio LLM turn builder")
 
         # Check if we should use chunking for long transcripts
+        # Use internal flag to prevent recursion
         use_chunking = kwargs.get('use_chunking', True)
+        is_recursive_call = kwargs.get('_is_recursive_call', False)
         
-        if use_chunking and len(words) > self.SMALL_TRANSCRIPT_THRESHOLD:
+        if use_chunking and not is_recursive_call and len(words) > self.SMALL_TRANSCRIPT_THRESHOLD:
             print(f"DEBUG: Transcript is long ({len(words)} words), using ground truth-aware chunking")
             try:
                 return self.build_turns_ground_truth_aware(words, **kwargs)
@@ -134,9 +136,12 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         print(f"DEBUG: Configuration - chunk_size={chunk_size}, overlap_ratio={overlap_ratio}, use_ground_truth={use_ground_truth}")
         
         # For small transcripts, use direct processing without chunking
+        # Add _is_recursive_call flag to prevent infinite recursion
         if len(words) <= self.SMALL_TRANSCRIPT_THRESHOLD:
             print(f"DEBUG: Transcript is small ({len(words)} words), using direct processing")
-            return self.build_turns(words, **kwargs)
+            kwargs_copy = dict(kwargs)
+            kwargs_copy['_is_recursive_call'] = True
+            return self.build_turns(words, **kwargs_copy)
         
         # Calculate overlap size based on ratio
         overlap_size = max(1, int(chunk_size * overlap_ratio))
@@ -152,8 +157,10 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
             print(f"DEBUG: Processing chunk {i+1}/{len(chunks_with_indices)} with {len(chunk_words)} words")
             
             try:
-                # Use existing build_turns method for this chunk
-                chunk_turns = self.build_turns(chunk_words, **kwargs)
+                # Use existing build_turns method for this chunk with recursion flag
+                kwargs_copy = dict(kwargs)
+                kwargs_copy['_is_recursive_call'] = True
+                chunk_turns = self.build_turns(chunk_words, **kwargs_copy)
                 processed_chunks.append({
                     'turns': chunk_turns,
                     'original_indices': original_indices,

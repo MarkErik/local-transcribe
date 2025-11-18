@@ -304,7 +304,7 @@ def run_pipeline(args, api, root):
             cleanup_temp_audio(outdir)
             print("[✓] Temporary audio files cleaned up.")
             
-            tracker.complete()
+            tracker.stop()
             return 0
 
         elif mode == "combined_audio":

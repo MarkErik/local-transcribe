@@ -435,6 +435,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             if 'speech' in locals():
                 del speech
             if 'inputs' in locals():
+                # Delete individual tensors from inputs dict
                 for key in list(inputs.keys()):
                     del inputs[key]
                 del inputs

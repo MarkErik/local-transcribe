@@ -692,6 +692,9 @@ Example Output:
 
             # Match words sequentially - words must appear in order
             start_word_index = word_index
+            skipped_words = 0
+            max_skips = 5  # Allow skipping up to 5 words before falling back
+            
             while word_index < len(original_words) and turn_word_index < len(turn_words):
                 word = original_words[word_index]
                 expected_word = turn_words[turn_word_index]
@@ -708,12 +711,18 @@ Example Output:
                         matched_words.append(word)
                         turn_word_index += 1
                         word_index += 1
+                        skipped_words = 0  # Reset skip counter on successful match
                         print(f"DEBUG: Matched word '{word.text}'")
                     else:
-                        # Word doesn't match - this might indicate LLM modified the text
-                        # Try to skip this original word and continue
-                        print(f"DEBUG: Word mismatch: got '{word.text}', expected '{expected_word}', skipping original word")
-                        word_index += 1
+                        # Word doesn't match - try skipping if under threshold
+                        if skipped_words < max_skips:
+                            print(f"DEBUG: Word mismatch: got '{word.text}', expected '{expected_word}', skipping (skip {skipped_words + 1}/{max_skips})")
+                            word_index += 1
+                            skipped_words += 1
+                        else:
+                            # Too many skips, stop trying to match this turn
+                            print(f"DEBUG: Exceeded max skips ({max_skips}), stopping word-by-word matching")
+                            break
                 else:
                     # Different speaker encountered
                     print(f"DEBUG: Different speaker ({word.speaker}), stopping turn.")

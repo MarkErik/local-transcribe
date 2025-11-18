@@ -202,6 +202,43 @@ def interactive_prompt(args, api):
                         args.transcriber_model = available_models[0]
                         print(f"✓ Using default model: {args.transcriber_model}")
                     
+                    # Granite-specific options
+                    if selected_provider == "granite":
+                        # Chunking option
+                        print("\nGranite Chunking Options:")
+                        print("  1. Enabled (faster, processes audio in chunks) [Default]")
+                        print("  2. Disabled (process entire audio at once)")
+                        while True:
+                            chunking_input = input("\nSelect chunking option (number) [Default: 1]: ").strip()
+                            if not chunking_input or chunking_input == "1":
+                                args.output_mode = "chunked"
+                                print("✓ Selected: Chunking enabled")
+                                break
+                            elif chunking_input == "2":
+                                args.output_mode = "stitched"
+                                print("✓ Selected: Chunking disabled")
+                                break
+                            else:
+                                print("Error: Please enter 1 or 2.")
+                        
+                        # Stitching option (only if chunking is enabled)
+                        if args.output_mode == "chunked":
+                            print("\nGranite Stitching Options:")
+                            print("  1. Built-in (use Granite's internal stitching) [Default]")
+                            print("  2. LLM-based (use external LLM server for stitching)")
+                            while True:
+                                stitch_input = input("\nSelect stitching option (number) [Default: 1]: ").strip()
+                                if not stitch_input or stitch_input == "1":
+                                    args.stitching_method = "builtin"
+                                    print("✓ Selected: Built-in stitching")
+                                    break
+                                elif stitch_input == "2":
+                                    args.stitching_method = "llm"
+                                    print("✓ Selected: LLM-based stitching")
+                                    break
+                                else:
+                                    print("Error: Please enter 1 or 2.")
+                    
                     break
                 else:
                     print("Error: Please enter a number from the list.")

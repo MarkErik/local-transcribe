@@ -65,9 +65,9 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
     """Transcribe audio and return transcript text only (no alignment)."""
     from local_transcribe.lib.config import get_system_capability
     
-    # Add verbose and role to kwargs so they're passed to providers
-    kwargs['verbose'] = verbose
-    kwargs['role'] = role
+    # Remove verbose and role from kwargs to avoid duplicates (they're explicit params)
+    kwargs.pop('verbose', None)
+    kwargs.pop('role', None)
     
     # Get device from global config to pass explicitly
     device = get_system_capability()

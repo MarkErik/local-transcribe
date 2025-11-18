@@ -75,8 +75,17 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
             print(f"DEBUG: Transcript is long ({len(words)} words), using ground truth-aware chunking")
             try:
                 return self.build_turns_ground_truth_aware(words, **kwargs)
+            except (ValueError, TypeError) as e:
+                # Configuration or data validation errors - safe to fall back
+                print(f"DEBUG: Chunking failed due to configuration/validation error: {e}. Falling back to direct processing.")
+            except (ConnectionError, requests.exceptions.RequestException) as e:
+                # Network/LLM server errors - re-raise as these are infrastructure issues
+                print(f"ERROR: LLM server communication failed: {e}")
+                raise
             except Exception as e:
-                print(f"DEBUG: Chunking failed: {e}. Falling back to direct processing.")
+                # Unexpected errors - log and re-raise for visibility
+                print(f"ERROR: Unexpected error in chunking: {e}")
+                raise
         
         # Direct processing for small transcripts or when chunking is disabled
         print("DEBUG: Using direct LLM processing")
@@ -95,16 +104,22 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         try:
             response_text = self._query_llm(prompt, llm_url, timeout)
             print(f"DEBUG: LLM response (first 500 chars): {response_text[:500]}...")
+        except (ConnectionError, requests.exceptions.RequestException) as e:
+            print(f"ERROR: LLM query failed due to network/server error: {e}. Falling back to basic turn building.")
+            return self._fallback_build_turns(words)
         except Exception as e:
-            print(f"DEBUG: LLM query failed: {e}. Falling back to basic turn building.")
+            print(f"ERROR: Unexpected error querying LLM: {e}. Falling back to basic turn building.")
             return self._fallback_build_turns(words)
 
         # Parse response
         try:
             parsed_turns = self._parse_response(response_text, words)
             print(f"DEBUG: Parsed turns: {parsed_turns}")
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"DEBUG: Failed to parse LLM response (invalid JSON or structure): {e}. Falling back to basic turn building.")
+            return self._fallback_build_turns(words)
         except Exception as e:
-            print(f"DEBUG: Failed to parse LLM response: {e}. Falling back to basic turn building.")
+            print(f"ERROR: Unexpected error parsing LLM response: {e}. Falling back to basic turn building.")
             return self._fallback_build_turns(words)
 
         # Reconstruct timings

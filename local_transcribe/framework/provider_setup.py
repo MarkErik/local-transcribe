@@ -24,8 +24,11 @@ class ProviderSetup:
         """
         providers = {}
         
+        # Check for participant_audio_only mode
+        if mode == "participant_audio_only":
+            providers.update(self._setup_participant_audio_only_providers())
         # Check if using unified processing mode
-        if hasattr(self.args, 'processing_mode') and self.args.processing_mode == "unified":
+        elif hasattr(self.args, 'processing_mode') and self.args.processing_mode == "unified":
             providers.update(self._setup_unified_provider())
         else:
             providers.update(self._setup_separate_processing_providers(mode))
@@ -49,6 +52,16 @@ class ProviderSetup:
             
         except ValueError as e:
             raise ValueError(f"Unified provider setup failed: {e}")
+    
+    def _setup_participant_audio_only_providers(self) -> Dict[str, Any]:
+        """Setup providers for participant_audio_only mode (only pure transcribers)."""
+        providers = {}
+        
+        # Setup transcriber (only those with has_builtin_alignment = False)
+        transcriber_provider = self._setup_pure_transcriber_provider()
+        providers['transcriber'] = transcriber_provider
+        
+        return providers
     
     def _setup_separate_processing_providers(self, mode: str) -> Dict[str, Any]:
         """Setup providers for separate processing mode."""
@@ -88,6 +101,25 @@ class ProviderSetup:
             
         except ValueError as e:
             raise ValueError(f"Transcriber provider setup failed: {e}")
+    
+    def _setup_pure_transcriber_provider(self) -> Any:
+        """Setup pure transcriber provider (has_builtin_alignment = False)."""
+        try:
+            transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
+            
+            # Validate that it's a pure transcriber
+            if transcriber_provider.has_builtin_alignment:
+                raise ValueError(f"Provider '{self.args.transcriber_provider}' has built-in alignment and is not allowed in participant-audio-only mode. Use granite or openai_whisper.")
+            
+            # Set default model if not specified
+            if not hasattr(self.args, 'transcriber_model') or self.args.transcriber_model is None:
+                available_models = transcriber_provider.get_available_models()
+                self.args.transcriber_model = available_models[0] if available_models else None
+            
+            return transcriber_provider
+            
+        except ValueError as e:
+            raise ValueError(f"Pure transcriber provider setup failed: {e}")
     
     def _setup_aligner_provider(self) -> Any:
         """Setup aligner provider."""
@@ -148,6 +180,15 @@ class ProviderSetup:
             Dictionary of providers that require models to be downloaded
         """
         providers = {}
+        
+        # Check for participant_audio_only mode
+        if hasattr(self.args, 'participant_audio_only') and self.args.participant_audio_only:
+            try:
+                transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
+                providers['transcriber'] = transcriber_provider
+            except ValueError:
+                pass
+            return providers
         
         if hasattr(self.args, 'processing_mode') and self.args.processing_mode == "unified":
             # For unified mode, we only need the unified provider

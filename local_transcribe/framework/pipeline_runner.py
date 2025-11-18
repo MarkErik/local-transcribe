@@ -61,35 +61,64 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/alignment/{base_name}word_segments.json")
     return segments
 
+def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=None, verbose=False, base_name="", **kwargs):
+    """Transcribe audio and return transcript text only (no alignment)."""
+    from local_transcribe.lib.config import get_system_capability
+    
+    # Add verbose and role to kwargs so they're passed to providers
+    kwargs['verbose'] = verbose
+    kwargs['role'] = role
+    
+    # Get device from global config to pass explicitly
+    device = get_system_capability()
+    
+    # Transcribe without alignment
+    transcript = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
+    
+    # Verbose: Save raw transcript
+    if verbose and intermediate_dir:
+        with open(intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt", "w", encoding="utf-8") as f:
+            f.write(transcript)
+        print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
+    
+    return transcript
+
 def run_pipeline(args, api, root):
     from local_transcribe.lib.environment import ensure_file, ensure_outdir
 
     models_dir = root / "models"
 
     # Determine mode and speaker mapping
-    num_files = len(args.audio_files)
-    if num_files == 1:
-        mode = "combined_audio"
-        speaker_files = {"combined_audio": str(root / args.audio_files[0])}  # Single file with multiple speakers
+    if hasattr(args, 'participant_audio_only') and args.participant_audio_only:
+        if len(args.audio_files) != 1:
+            print("ERROR: Participant audio only mode requires exactly one audio file.")
+            return 1
+        mode = "participant_audio_only"
+        speaker_files = {"participant": str(root / args.audio_files[0])}
     else:
-        mode = "split_audio"
-        speaker_files = {}
-        
-        if num_files == 2:
-            # Auto-assign: first file = interviewer, second = participant
-            speaker_files["Interviewer"] = str(root / args.audio_files[0])
-            speaker_files["Participant"] = str(root / args.audio_files[1])
+        num_files = len(args.audio_files)
+        if num_files == 1:
+            mode = "combined_audio"
+            speaker_files = {"combined_audio": str(root / args.audio_files[0])}  # Single file with multiple speakers
         else:
-            # 3+ files: prompt for speaker names
-            print(f"You provided {num_files} audio files. Please assign a speaker name to each:")
-            for i, audio_file in enumerate(args.audio_files):
-                while True:
-                    speaker_name = input(f"Speaker name for '{audio_file}': ").strip()
-                    if speaker_name:
-                        speaker_files[speaker_name] = str(root / audio_file)
-                        break
-                    else:
-                        print("Speaker name cannot be empty.")
+            mode = "split_audio"
+            speaker_files = {}
+            
+            if num_files == 2:
+                # Auto-assign: first file = interviewer, second = participant
+                speaker_files["Interviewer"] = str(root / args.audio_files[0])
+                speaker_files["Participant"] = str(root / args.audio_files[1])
+            else:
+                # 3+ files: prompt for speaker names
+                print(f"You provided {num_files} audio files. Please assign a speaker name to each:")
+                for i, audio_file in enumerate(args.audio_files):
+                    while True:
+                        speaker_name = input(f"Speaker name for '{audio_file}': ").strip()
+                        if speaker_name:
+                            speaker_files[speaker_name] = str(root / audio_file)
+                            break
+                        else:
+                            print("Speaker name cannot be empty.")
 
     # Set default num_speakers if not provided
     if not hasattr(args, 'num_speakers') or args.num_speakers is None:
@@ -176,7 +205,39 @@ def run_pipeline(args, api, root):
             print(f"[*] Mode: {mode} | System: {args.system.upper()} | {provider_str} | Turn Builder: {turn_builder_provider.name} | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
-        if mode == "combined_audio":
+        if mode == "participant_audio_only":
+            participant_path = ensure_file(speaker_files["participant"], "Participant Audio")
+
+            # 1) Standardize
+            std_audio = standardize_audio(participant_path, outdir, tracker, api)
+
+            # 2) Transcribe only
+            transcript = only_transcribe(
+                transcriber_provider,
+                str(std_audio),
+                "participant",
+                paths["intermediate"] if args.verbose else None,
+                args.verbose,
+                "participant_",
+                registry=api["registry"],
+                **vars(args)
+            )
+
+            # 3) Process transcript into words and save as CSV
+            import csv
+            words = transcript.split()
+            csv_path = outdir / "participant_transcript.csv"
+            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['Line', 'Word'])
+                for i, word in enumerate(words, 1):
+                    writer.writerow([i, word])
+            
+            print(f"[✓] Participant transcript saved to {csv_path}")
+            tracker.complete()
+            return 0
+
+        elif mode == "combined_audio":
             mixed_path = ensure_file(speaker_files["combined_audio"], "Combined Audio")
 
             # 1) Standardize

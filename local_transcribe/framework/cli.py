@@ -29,6 +29,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("-l","--list-plugins", action="store_true", help="List available plugins and exit.")
     p.add_argument("--show-defaults", action="store_true", help="Show all default values and exit.")
     p.add_argument("-s", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")
+    p.add_argument("-p", "--participant-audio-only", action="store_true", help="Process a single participant audio file for transcription only, output as CSV.")
 
     args = p.parse_args(argv)
 
@@ -52,6 +53,7 @@ def show_defaults():
     print("  - Number of Speakers: 2")
     print("  - Output Formats: All available formats")
     print("  - Processing Mode: Unified for single audio, Separate for multiple audio")
+    print("  - Participant Audio Only: Disabled (use -p to enable)")
     print("  - Chunking (Granite): Enabled")
     print("  - Stitching Method (Granite): Built-in")
     
@@ -98,6 +100,90 @@ def interactive_prompt(args, api):
     registry = api["registry"]
     print("\n=== Interactive Mode ===")
     print("Select your processing options:\n")
+
+    # Check for participant-audio-only mode
+    if hasattr(args, 'participant_audio_only') and args.participant_audio_only:
+        print("Mode: Participant Audio Only (transcription only, CSV output)")
+        # Only prompt for system capability and transcriber provider
+        # System capability selection
+        available_capabilities = get_available_system_capabilities()
+        
+        # Determine preferred default: MPS > CUDA > CPU
+        if "mps" in available_capabilities:
+            default_capability = "mps"
+        elif "cuda" in available_capabilities:
+            default_capability = "cuda"
+        else:
+            default_capability = "cpu"
+        
+        # Find the index of the default capability
+        default_index = available_capabilities.index(default_capability) + 1
+        
+        if len(available_capabilities) > 1:
+            print("Available System Capabilities:")
+            for i, cap in enumerate(available_capabilities, 1):
+                marker = " [Default]" if cap == default_capability else ""
+                print(f"  {i}. {cap.upper()}{marker}")
+            
+            while True:
+                try:
+                    choice_input = input(f"\nSelect system capability (number) [Default: {default_index}]: ").strip()
+                    
+                    # If user presses Enter, default to the preferred capability
+                    if not choice_input:
+                        args.system = default_capability
+                        print(f"✓ Selected: {args.system.upper()} [Default]")
+                        break
+                    else:
+                        choice = int(choice_input)
+                        if 1 <= choice <= len(available_capabilities):
+                            args.system = available_capabilities[choice - 1]
+                            is_default = args.system == default_capability
+                            default_marker = " [Default]" if is_default else ""
+                            print(f"✓ Selected: {args.system.upper()}{default_marker}")
+                            break
+                        else:
+                            print("Error: Please enter a number from the list.")
+                except ValueError:
+                    print("Error: Please enter a valid number.")
+        else:
+            args.system = available_capabilities[0]  # Only CPU available
+            print(f"✓ Selected: {args.system.upper()} [Default]")
+
+        # Select transcriber provider (only pure ones)
+        transcriber_providers = registry.list_transcriber_providers()
+        eligible_providers = {}
+        for name, desc in transcriber_providers.items():
+            provider = registry.get_transcriber_provider(name)
+            if not provider.has_builtin_alignment:
+                eligible_providers[name] = desc
+        
+        if not eligible_providers:
+            print("Error: No pure transcriber providers available.")
+            return args
+        
+        print("\nAvailable Pure Transcriber Providers:")
+        for i, (name, desc) in enumerate(eligible_providers.items(), 1):
+            provider = registry.get_transcriber_provider(name)
+            display_name = getattr(provider, 'short_name', provider.description)
+            print(f"  {i}. {display_name}")
+        
+        while True:
+            try:
+                choice = int(input("\nSelect transcriber provider (number): ").strip())
+                if 1 <= choice <= len(eligible_providers):
+                    selected_provider = list(eligible_providers.keys())[choice - 1]
+                    args.transcriber_provider = selected_provider
+                    provider = registry.get_transcriber_provider(selected_provider)
+                    display_name = getattr(provider, 'short_name', provider.description)
+                    print(f"✓ Selected: {display_name}")
+                    break
+                else:
+                    print("Error: Please enter a number from the list.")
+            except ValueError:
+                print("Error: Please enter a valid number.")
+        
+        return args
 
     # System capability selection
     available_capabilities = get_available_system_capabilities()

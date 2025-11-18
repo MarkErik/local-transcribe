@@ -5,7 +5,8 @@ Split audio LLM turn builder provider that uses an LLM to intelligently merge sp
 
 import json
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
+import math
 
 import requests
 
@@ -18,6 +19,13 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
     includes start and end times for better context, and uses an LLM to intelligently merge
     text into coherent turns.
     """
+    
+    # Configuration parameters for chunking
+    DEFAULT_CHUNK_SIZE = 100  # Number of words per LLM processing chunk
+    DEFAULT_OVERLAP_RATIO = 0.2  # Fraction of overlap between adjacent chunks
+    DEFAULT_USE_GROUND_TRUTH = True  # Enable ground truth verification mode
+    DEFAULT_SIMILARITY_THRESHOLD = 0.7  # Jaccard similarity threshold for discrepancy detection
+    SMALL_TRANSCRIPT_THRESHOLD = 500  # Words below this use direct processing without chunking
 
     @property
     def name(self) -> str:
@@ -59,6 +67,19 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         if any(word.speaker is None for word in words):
             raise ValueError("All word segments must have speaker assignments for split audio LLM turn builder")
 
+        # Check if we should use chunking for long transcripts
+        use_chunking = kwargs.get('use_chunking', True)
+        
+        if use_chunking and len(words) > self.SMALL_TRANSCRIPT_THRESHOLD:
+            print(f"DEBUG: Transcript is long ({len(words)} words), using ground truth-aware chunking")
+            try:
+                return self.build_turns_ground_truth_aware(words, **kwargs)
+            except Exception as e:
+                print(f"DEBUG: Chunking failed: {e}. Falling back to direct processing.")
+        
+        # Direct processing for small transcripts or when chunking is disabled
+        print("DEBUG: Using direct LLM processing")
+        
         # Prepare segments for LLM
         prepared_segments = self._prepare_segments_for_llm(words)
         print(f"DEBUG: Prepared segments: {prepared_segments[:5]}")  # First 5
@@ -92,6 +113,433 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
             print(f"DEBUG: Turn {i}: speaker={turn.speaker}, start={turn.start}, end={turn.end}, text='{turn.text}'")
 
         return turns
+
+    def build_turns_ground_truth_aware(self, words: List[WordSegment], **kwargs) -> List[Turn]:
+        """
+        Complete implementation of ground truth-aware turn building with chunking.
+        
+        Args:
+            words: Original word segments (ground truth)
+            **kwargs: Configuration options including chunk_size, overlap_ratio
+            
+        Returns:
+            List of Turn objects maintaining ground truth accuracy
+        """
+        # Get configuration parameters
+        chunk_size = kwargs.get('chunk_size', self.DEFAULT_CHUNK_SIZE)
+        overlap_ratio = kwargs.get('overlap_ratio', self.DEFAULT_OVERLAP_RATIO)
+        use_ground_truth = kwargs.get('use_ground_truth', self.DEFAULT_USE_GROUND_TRUTH)
+        
+        print(f"DEBUG: Starting ground truth-aware turn building with {len(words)} words")
+        print(f"DEBUG: Configuration - chunk_size={chunk_size}, overlap_ratio={overlap_ratio}, use_ground_truth={use_ground_truth}")
+        
+        # For small transcripts, use direct processing without chunking
+        if len(words) <= self.SMALL_TRANSCRIPT_THRESHOLD:
+            print(f"DEBUG: Transcript is small ({len(words)} words), using direct processing")
+            return self.build_turns(words, **kwargs)
+        
+        # Calculate overlap size based on ratio
+        overlap_size = max(1, int(chunk_size * overlap_ratio))
+        print(f"DEBUG: Using chunk_size={chunk_size}, overlap_size={overlap_size}")
+        
+        # Create overlapping chunks
+        chunks_with_indices = self._create_overlapping_chunks(words, chunk_size, overlap_size)
+        print(f"DEBUG: Created {len(chunks_with_indices)} chunks")
+        
+        # Process each chunk with LLM
+        processed_chunks = []
+        for i, (chunk_words, original_indices) in enumerate(chunks_with_indices):
+            print(f"DEBUG: Processing chunk {i+1}/{len(chunks_with_indices)} with {len(chunk_words)} words")
+            
+            try:
+                # Use existing build_turns method for this chunk
+                chunk_turns = self.build_turns(chunk_words, **kwargs)
+                processed_chunks.append({
+                    'turns': chunk_turns,
+                    'original_indices': original_indices,
+                    'chunk_words': chunk_words
+                })
+                print(f"DEBUG: Chunk {i+1} processed successfully, got {len(chunk_turns)} turns")
+            except Exception as e:
+                print(f"DEBUG: Failed to process chunk {i+1}: {e}. Using ground truth fallback.")
+                # Fallback to ground truth reconstruction
+                fallback_turns = self._group_ground_truth_by_speaker(original_indices, words)
+                processed_chunks.append({
+                    'turns': fallback_turns,
+                    'original_indices': original_indices,
+                    'chunk_words': chunk_words
+                })
+        
+        # Merge chunks with ground truth verification
+        if use_ground_truth and len(processed_chunks) > 1:
+            print("DEBUG: Merging chunks with ground truth verification")
+            final_turns = self._merge_chunks_with_ground_truth(processed_chunks, words)
+        else:
+            print("DEBUG: Merging chunks without ground truth verification")
+            final_turns = self._merge_chunks_simple(processed_chunks)
+        
+        print(f"DEBUG: Final result: {len(final_turns)} turns")
+        return final_turns
+
+    def _create_overlapping_chunks(self, words: List[WordSegment], chunk_size: int, overlap_size: int) -> List[Tuple[List[WordSegment], List[int]]]:
+        """
+        Create overlapping chunks while tracking original word indices.
+        
+        Args:
+            words: Original word segments
+            chunk_size: Number of words per chunk
+            overlap_size: Number of overlapping words between chunks
+            
+        Returns:
+            List of (chunk_words, original_indices) tuples
+        """
+        chunks = []
+        total_words = len(words)
+        
+        if total_words <= chunk_size:
+            # No need to chunk, return the entire transcript
+            return [(words, list(range(total_words)))]
+        
+        # Calculate step size (non-overlapping portion)
+        step_size = chunk_size - overlap_size
+        
+        # Create chunks with overlap
+        for start_idx in range(0, total_words, step_size):
+            end_idx = min(start_idx + chunk_size, total_words)
+            
+            # Get the words for this chunk
+            chunk_words = words[start_idx:end_idx]
+            original_indices = list(range(start_idx, end_idx))
+            
+            chunks.append((chunk_words, original_indices))
+            
+            # If we've reached the end, stop
+            if end_idx >= total_words:
+                break
+        
+        print(f"DEBUG: Created {len(chunks)} chunks with sizes: {[len(chunk[0]) for chunk in chunks]}")
+        return chunks
+
+    def _find_overlap_region(self, prev_chunk: dict, curr_chunk: dict, original_words: List[WordSegment]) -> Dict[str, Any]:
+        """
+        Find the overlap region between two chunks using original word indices.
+        
+        Args:
+            prev_chunk: Previous chunk data with turns and original_indices
+            curr_chunk: Current chunk data with turns and original_indices
+            original_words: Original word segments
+            
+        Returns:
+            Dictionary with overlap information including word indices and corresponding turns
+        """
+        prev_indices = set(prev_chunk['original_indices'])
+        curr_indices = set(curr_chunk['original_indices'])
+        
+        # Find overlapping word indices
+        overlap_indices = sorted(list(prev_indices.intersection(curr_indices)))
+        
+        if not overlap_indices:
+            return {
+                'has_overlap': False,
+                'overlap_word_indices': [],
+                'prev_overlap_turns': [],
+                'curr_overlap_turns': []
+            }
+        
+        # Find turns in previous chunk that correspond to overlap region
+        prev_overlap_turns = []
+        for turn in prev_chunk['turns']:
+            # Check if this turn contains any of the overlap words
+            turn_words_in_overlap = False
+            for word_idx in overlap_indices:
+                if (word_idx >= prev_chunk['original_indices'][0] and
+                    word_idx <= prev_chunk['original_indices'][-1]):
+                    # This word is in the previous chunk, check if it's part of this turn
+                    # For simplicity, we'll assume the turn contains the word if the word's text
+                    # appears in the turn's text (this is a heuristic)
+                    original_word = original_words[word_idx]
+                    if original_word.text in turn.text:
+                        turn_words_in_overlap = True
+                        break
+            
+            if turn_words_in_overlap:
+                prev_overlap_turns.append(turn)
+        
+        # Find turns in current chunk that correspond to overlap region
+        curr_overlap_turns = []
+        for turn in curr_chunk['turns']:
+            # Check if this turn contains any of the overlap words
+            turn_words_in_overlap = False
+            for word_idx in overlap_indices:
+                if (word_idx >= curr_chunk['original_indices'][0] and
+                    word_idx <= curr_chunk['original_indices'][-1]):
+                    # This word is in the current chunk, check if it's part of this turn
+                    original_word = original_words[word_idx]
+                    if original_word.text in turn.text:
+                        turn_words_in_overlap = True
+                        break
+            
+            if turn_words_in_overlap:
+                curr_overlap_turns.append(turn)
+        
+        return {
+            'has_overlap': True,
+            'overlap_word_indices': overlap_indices,
+            'prev_overlap_turns': prev_overlap_turns,
+            'curr_overlap_turns': curr_overlap_turns
+        }
+
+    def _verify_overlap_with_ground_truth(self,
+                                         prev_chunk_overlap_turns: List[Turn],
+                                         curr_chunk_overlap_turns: List[Turn],
+                                         overlap_word_indices: List[int],
+                                         original_words: List[WordSegment]) -> List[Turn]:
+        """
+        Verify overlap region against ground truth and resolve discrepancies.
+        
+        Args:
+            prev_chunk_overlap_turns: Turns from previous chunk in overlap region
+            curr_chunk_overlap_turns: Turns from current chunk in overlap region
+            overlap_word_indices: Original word indices in the overlap region
+            original_words: Original word segments (ground truth)
+            
+        Returns:
+            List of verified turns for the overlap region
+        """
+        # Reconstruct ground truth turns from original words
+        ground_truth_turns = self._group_ground_truth_by_speaker(overlap_word_indices, original_words)
+        
+        print(f"DEBUG: Ground truth verification - {len(ground_truth_turns)} GT turns, "
+              f"{len(prev_chunk_overlap_turns)} prev chunk turns, {len(curr_chunk_overlap_turns)} curr chunk turns")
+        
+        # If we have ground truth turns, prefer them over LLM output
+        if ground_truth_turns:
+            return ground_truth_turns
+        
+        # Fallback: merge the two sets of turns, preferring current chunk when there's conflict
+        merged_turns = []
+        
+        # Add non-overlapping turns from previous chunk
+        for turn in prev_chunk_overlap_turns:
+            # Check if this turn overlaps with any current chunk turn
+            has_conflict = False
+            for curr_turn in curr_chunk_overlap_turns:
+                if (turn.speaker == curr_turn.speaker and
+                    self._calculate_text_similarity(turn.text, curr_turn.text) > self.DEFAULT_SIMILARITY_THRESHOLD):
+                    has_conflict = True
+                    break
+            
+            if not has_conflict:
+                merged_turns.append(turn)
+        
+        # Add all turns from current chunk (they take precedence)
+        merged_turns.extend(curr_chunk_overlap_turns)
+        
+        return merged_turns
+
+    def _calculate_text_similarity(self, text1: str, text2: str) -> float:
+        """
+        Calculate Jaccard similarity between two texts.
+        
+        Args:
+            text1: First text
+            text2: Second text
+            
+        Returns:
+            Similarity score between 0 and 1
+        """
+        # Tokenize texts into word sets
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+        
+        # Calculate Jaccard similarity
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        
+        if not union:
+            return 0.0
+        
+        return len(intersection) / len(union)
+
+    def _group_ground_truth_by_speaker(self, word_indices: List[int], original_words: List[WordSegment]) -> List[Turn]:
+        """
+        Group ground truth words into turns by speaker.
+        
+        Creates turns directly from the original transcript text,
+        ensuring 100% accuracy to the source material.
+        
+        Args:
+            word_indices: Indices of words to group
+            original_words: Original word segments
+            
+        Returns:
+            List of Turn objects created from ground truth
+        """
+        if not word_indices:
+            return []
+        
+        turns = []
+        current_speaker = None
+        current_text = []
+        current_start = None
+        current_end = None
+        
+        for idx in word_indices:
+            if idx >= len(original_words):
+                print(f"DEBUG: Warning: Word index {idx} out of range, skipping")
+                continue
+                
+            word = original_words[idx]
+            
+            if word.speaker != current_speaker:
+                # Flush previous turn
+                if current_text:
+                    turns.append(Turn(
+                        speaker=current_speaker,
+                        start=current_start,
+                        end=current_end,
+                        text=" ".join(current_text)
+                    ))
+                
+                # Start new turn
+                current_speaker = word.speaker
+                current_text = [word.text]
+                current_start = word.start
+                current_end = word.end
+            else:
+                # Continue current turn
+                current_text.append(word.text)
+                current_end = max(current_end, word.end)
+        
+        # Flush last turn
+        if current_text:
+            turns.append(Turn(
+                speaker=current_speaker,
+                start=current_start,
+                end=current_end,
+                text=" ".join(current_text)
+            ))
+        
+        print(f"DEBUG: Ground truth grouping created {len(turns)} turns from {len(word_indices)} words")
+        return turns
+
+    def _merge_chunks_with_ground_truth(self, processed_chunks: List[dict], original_words: List[WordSegment]) -> List[Turn]:
+        """
+        Merge processed chunks with ground truth verification in overlap regions.
+        
+        Args:
+            processed_chunks: List of processed chunk data
+            original_words: Original word segments
+            
+        Returns:
+            Merged list of Turn objects
+        """
+        if not processed_chunks:
+            return []
+        
+        if len(processed_chunks) == 1:
+            return processed_chunks[0]['turns']
+        
+        merged_turns = []
+        
+        # Add all turns from the first chunk (non-overlapping portion)
+        first_chunk = processed_chunks[0]
+        merged_turns.extend(first_chunk['turns'])
+        
+        # Process subsequent chunks with overlap verification
+        for i in range(1, len(processed_chunks)):
+            prev_chunk = processed_chunks[i-1]
+            curr_chunk = processed_chunks[i]
+            
+            # Find overlap region
+            overlap_info = self._find_overlap_region(prev_chunk, curr_chunk, original_words)
+            
+            if overlap_info['has_overlap']:
+                print(f"DEBUG: Processing overlap between chunks {i} and {i+1}")
+                
+                # Verify overlap with ground truth
+                verified_overlap_turns = self._verify_overlap_with_ground_truth(
+                    overlap_info['prev_overlap_turns'],
+                    overlap_info['curr_overlap_turns'],
+                    overlap_info['overlap_word_indices'],
+                    original_words
+                )
+                
+                # Remove overlapping turns from previous chunk and add verified ones
+                # For simplicity, we'll remove all turns that contain overlap words
+                # and replace them with the verified turns
+                filtered_prev_turns = []
+                for turn in prev_chunk['turns']:
+                    should_remove = False
+                    for overlap_turn in overlap_info['prev_overlap_turns']:
+                        if (turn.speaker == overlap_turn.speaker and
+                            self._calculate_text_similarity(turn.text, overlap_turn.text) > 0.5):
+                            should_remove = True
+                            break
+                    
+                    if not should_remove:
+                        filtered_prev_turns.append(turn)
+                
+                # Rebuild merged turns up to this point
+                merged_turns = filtered_prev_turns + verified_overlap_turns
+                
+                # Add non-overlapping turns from current chunk
+                for turn in curr_chunk['turns']:
+                    is_in_overlap = False
+                    for overlap_turn in overlap_info['curr_overlap_turns']:
+                        if (turn.speaker == overlap_turn.speaker and
+                            self._calculate_text_similarity(turn.text, overlap_turn.text) > 0.5):
+                            is_in_overlap = True
+                            break
+                    
+                    if not is_in_overlap:
+                        merged_turns.append(turn)
+            else:
+                # No overlap, just add all turns from current chunk
+                merged_turns.extend(curr_chunk['turns'])
+        
+        return merged_turns
+
+    def _merge_chunks_simple(self, processed_chunks: List[dict]) -> List[Turn]:
+        """
+        Simple merging of chunks without ground truth verification.
+        
+        Args:
+            processed_chunks: List of processed chunk data
+            
+        Returns:
+            Merged list of Turn objects
+        """
+        if not processed_chunks:
+            return []
+        
+        if len(processed_chunks) == 1:
+            return processed_chunks[0]['turns']
+        
+        merged_turns = []
+        
+        # Add all turns from the first chunk
+        merged_turns.extend(processed_chunks[0]['turns'])
+        
+        # For subsequent chunks, add only non-overlapping turns
+        for i in range(1, len(processed_chunks)):
+            curr_chunk = processed_chunks[i]
+            
+            # Simple heuristic: skip turns that are too similar to the last added turn
+            for turn in curr_chunk['turns']:
+                should_add = True
+                
+                if merged_turns:
+                    last_turn = merged_turns[-1]
+                    # If same speaker and high text similarity, might be overlap
+                    if (last_turn.speaker == turn.speaker and
+                        self._calculate_text_similarity(last_turn.text, turn.text) > 0.8):
+                        should_add = False
+                
+                if should_add:
+                    merged_turns.append(turn)
+        
+        return merged_turns
 
     def _prepare_segments_for_llm(self, words: List[WordSegment]) -> List[Dict[str, Any]]:
         """

@@ -813,10 +813,17 @@ Example Output:
                 ))
                 print(f"DEBUG: Created turn: start={start}, end={end}")
             else:
-                # Fallback: if no words matched, skip this turn
-                print(f"DEBUG: Warning: Could not match words for turn: {turn_data}")
+                # Could not match words - this indicates a serious problem
+                print(f"WARNING: Could not match any words for turn: speaker={speaker}, text='{turn_text}'")
+                print(f"WARNING: This turn will be LOST. Consider using fallback turn builder.")
+                # Could raise an exception here, but we'll continue to process remaining turns
+                # to avoid losing all data due to one problematic turn
 
-        print(f"DEBUG: Reconstruction complete, {len(turns)} turns created.")
+        print(f"DEBUG: Reconstruction complete, {len(turns)} turns created from {len(parsed_turns)} parsed turns.")
+        if len(turns) < len(parsed_turns):
+            lost_turns = len(parsed_turns) - len(turns)
+            print(f"WARNING: Lost {lost_turns} turn(s) during reconstruction due to word matching failures")
+        
         return turns
 
     def _fallback_build_turns(self, words: List[WordSegment]) -> List[Turn]:

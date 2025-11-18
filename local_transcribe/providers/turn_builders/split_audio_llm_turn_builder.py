@@ -102,7 +102,7 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
 
         # Parse response
         try:
-            parsed_turns = self._parse_response(response_text)
+            parsed_turns = self._parse_response(response_text, words)
             print(f"DEBUG: Parsed turns: {parsed_turns}")
         except Exception as e:
             print(f"DEBUG: Failed to parse LLM response: {e}. Falling back to basic turn building.")
@@ -620,12 +620,13 @@ Example Output:
         result = response.json()
         return result["choices"][0]["message"]["content"]
 
-    def _parse_response(self, response_text: str) -> List[Dict[str, str]]:
+    def _parse_response(self, response_text: str, original_words: List[WordSegment]) -> List[Dict[str, str]]:
         """
         Parse the LLM response into a list of turns.
 
         Args:
             response_text: Raw LLM response
+            original_words: Original word segments (used to validate speaker IDs)
 
         Returns:
             List of dicts with speaker and text
@@ -643,9 +644,17 @@ Example Output:
         if not isinstance(turns, list):
             raise ValueError("LLM response must be a JSON list")
 
+        # Get valid speaker IDs from original words
+        valid_speakers = set(word.speaker for word in original_words if word.speaker is not None)
+        
         for turn in turns:
             if not isinstance(turn, dict) or "speaker" not in turn or "text" not in turn:
                 raise ValueError("Each turn must have 'speaker' and 'text' fields")
+            
+            # Validate speaker ID exists in original data
+            if turn["speaker"] not in valid_speakers:
+                raise ValueError(f"Invalid speaker ID '{turn['speaker']}' not found in original data. "
+                               f"Valid speakers: {valid_speakers}")
 
         return turns
 

@@ -281,26 +281,30 @@ def run_pipeline(args, api, root):
                 print("[i] Continuing with original transcript...")
 
             # 6) Optional transcript LLM-based cleanup
-            transcript_cleanup_done = False
             if transcript_cleanup_provider:
                 print(f"[*] Cleaning up transcript with {args.transcript_cleanup_provider}...")
-                for turn in transcript:
-                    original_text = turn.text
-                    turn.text = transcript_cleanup_provider.transcript_cleanup_segment(original_text)
-                    if turn.text != original_text:
-                        print(f"  Cleaned: '{original_text[:50]}...' -> '{turn.text[:50]}...'")
-                print("[✓] Transcript cleanup complete.")
-                transcript_cleanup_done = True
-
-            # Write processed outputs if transcript cleanup was done (NO VIDEO generation)
-            if transcript_cleanup_done:
+                print(f"    Processing {len(prep_result['segments'])} segments (max {getattr(args, 'max_words_per_segment', 500)} words each)")
+                
+                # Process each segment through LLM
+                cleaned_segments = []
+                for idx, segment in enumerate(prep_result['segments']):
+                    if args.verbose:
+                        print(f"    [{idx+1}/{len(prep_result['segments'])}] Processing: {segment[:60]}...")
+                    cleaned = transcript_cleanup_provider.transcript_cleanup_segment(segment)
+                    cleaned_segments.append(cleaned)
+                    if args.verbose:
+                        print(f"    [{idx+1}/{len(prep_result['segments'])}] Cleaned: {cleaned[:60]}...")
+                
+                # Write cleaned transcript to processed directory
                 processed_dir = paths["root"] / "Transcript_Processed"
                 processed_dir.mkdir(parents=True, exist_ok=True)
-                print(f"[*] Writing processed outputs to {processed_dir}...")
-                output_manager = OutputManager.get_instance(api["registry"])
-                # For combined_audio mode, pass the single standardized audio file
-                audio_config = std_audio if mode == "combined_audio" else None
-                output_manager.write_selected_outputs(transcript, {**paths, "merged": processed_dir}, args.selected_outputs, audio_config, generate_video=False)
+                
+                # Write as plain text (no timestamps needed for cleaned transcript)
+                cleaned_text_file = processed_dir / "transcript_cleaned.txt"
+                cleaned_text_file.write_text('\n\n'.join(cleaned_segments) + '\n', encoding='utf-8')
+                
+                print(f"[✓] Transcript cleanup complete: {cleaned_text_file}")
+                print("[i] Raw transcript with timestamps available in Transcript_Raw/")
             else:
                 print("[i] No transcript cleanup selected, raw outputs already written.")
 
@@ -400,34 +404,30 @@ def run_pipeline(args, api, root):
                 print("[i] Continuing with original transcript...")
 
             # 6) Optional LLM-based transcript cleanup
-            transcript_cleanup_done = False
             if transcript_cleanup_provider:
                 print(f"[*] Cleaning up transcript with {args.transcript_cleanup_provider}...")
-                for turn in transcript:
-                    original_text = turn.text
-                    turn.text = transcript_cleanup_provider.transcript_cleanup_segment(original_text)
-                    if turn.text != original_text:
-                        print(f"  Cleaned: '{original_text[:50]}...' -> '{turn.text[:50]}...'")
-                print("[✓] Transcript cleanup complete.")
-                transcript_cleanup_done = True
-
-            # Write processed outputs if transcript cleanup was done (NO VIDEO generation)
-            if transcript_cleanup_done:
+                print(f"    Processing {len(prep_result['segments'])} segments (max {getattr(args, 'max_words_per_segment', 500)} words each)")
+                
+                # Process each segment through LLM
+                cleaned_segments = []
+                for idx, segment in enumerate(prep_result['segments']):
+                    if args.verbose:
+                        print(f"    [{idx+1}/{len(prep_result['segments'])}] Processing: {segment[:60]}...")
+                    cleaned = transcript_cleanup_provider.transcript_cleanup_segment(segment)
+                    cleaned_segments.append(cleaned)
+                    if args.verbose:
+                        print(f"    [{idx+1}/{len(prep_result['segments'])}] Cleaned: {cleaned[:60]}...")
+                
+                # Write cleaned transcript to processed directory
                 processed_dir = paths["root"] / "Transcript_Processed"
                 processed_dir.mkdir(parents=True, exist_ok=True)
-                print(f"[*] Writing processed outputs to {processed_dir}...")
-                output_manager = OutputManager.get_instance(api["registry"])
                 
-                # For split audio mode, pass the speaker_files dictionary for video generation
-                audio_config = speaker_files if mode == "split_audio" else None
+                # Write as plain text (no timestamps needed for cleaned transcript)
+                cleaned_text_file = processed_dir / "transcript_cleaned.txt"
+                cleaned_text_file.write_text('\n\n'.join(cleaned_segments) + '\n', encoding='utf-8')
                 
-                output_manager.write_selected_outputs(
-                    transcript,
-                    {**paths, "merged": processed_dir},
-                    args.selected_outputs,
-                    audio_config,
-                    generate_video=False
-                )
+                print(f"[✓] Transcript cleanup complete: {cleaned_text_file}")
+                print("[i] Raw transcript with timestamps available in Transcript_Raw/")
             else:
                 print("[i] No transcript cleanup selected, raw outputs already written.")
 

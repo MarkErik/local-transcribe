@@ -278,15 +278,19 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         prev_overlap_turns = []
         for turn in prev_chunk['turns']:
             # Check if this turn contains any of the overlap words
+            # Use word boundary matching to avoid false substring matches
             turn_words_in_overlap = False
             for word_idx in overlap_indices:
                 if (word_idx >= prev_chunk['original_indices'][0] and
                     word_idx <= prev_chunk['original_indices'][-1]):
-                    # This word is in the previous chunk, check if it's part of this turn
-                    # For simplicity, we'll assume the turn contains the word if the word's text
-                    # appears in the turn's text (this is a heuristic)
+                    # Check if this word is part of the turn using word boundary matching
                     original_word = original_words[word_idx]
-                    if original_word.text in turn.text:
+                    # Split turn text into words and check for exact word match
+                    turn_word_list = turn.text.split()
+                    if original_word.text in turn_word_list or any(
+                        original_word.text.strip('.,!?;:"\'-') == tw.strip('.,!?;:"\'-') 
+                        for tw in turn_word_list
+                    ):
                         turn_words_in_overlap = True
                         break
             
@@ -297,13 +301,19 @@ class SplitAudioLlmTurnBuilderProvider(TurnBuilderProvider):
         curr_overlap_turns = []
         for turn in curr_chunk['turns']:
             # Check if this turn contains any of the overlap words
+            # Use word boundary matching to avoid false substring matches
             turn_words_in_overlap = False
             for word_idx in overlap_indices:
                 if (word_idx >= curr_chunk['original_indices'][0] and
                     word_idx <= curr_chunk['original_indices'][-1]):
-                    # This word is in the current chunk, check if it's part of this turn
+                    # Check if this word is part of the turn using word boundary matching
                     original_word = original_words[word_idx]
-                    if original_word.text in turn.text:
+                    # Split turn text into words and check for exact word match
+                    turn_word_list = turn.text.split()
+                    if original_word.text in turn_word_list or any(
+                        original_word.text.strip('.,!?;:"\'-') == tw.strip('.,!?;:"\'-') 
+                        for tw in turn_word_list
+                    ):
                         turn_words_in_overlap = True
                         break
             

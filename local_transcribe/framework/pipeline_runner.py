@@ -216,7 +216,17 @@ def run_pipeline(args, api, root):
 
             # 2) Transcribe only
             kwargs = vars(args).copy()
-            kwargs.pop('transcriber_provider', None)  # Remove to avoid duplicate
+            # Remove parameters that are already explicit arguments
+            kwargs.pop('transcriber_provider', None)
+            kwargs.pop('verbose', None)
+            kwargs.pop('audio_files', None)
+            kwargs.pop('outdir', None)
+            kwargs.pop('interactive', None)
+            kwargs.pop('list_plugins', None)
+            kwargs.pop('show_defaults', None)
+            kwargs.pop('system', None)
+            kwargs.pop('participant_audio_only', None)
+            
             transcript = only_transcribe(
                 transcriber_provider,
                 str(std_audio),

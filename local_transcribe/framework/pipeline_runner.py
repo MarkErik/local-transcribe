@@ -344,7 +344,6 @@ def run_pipeline(args, api, root):
                     base_name="",
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
-                    disable_chunking=getattr(args, 'disable_chunking', False),
                     output_mode=getattr(args, 'output_mode', 'stitched'),
                     llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                 )
@@ -470,7 +469,6 @@ def run_pipeline(args, api, root):
                     base_name=f"{speaker_name.lower()}_",
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
-                    disable_chunking=getattr(args, 'disable_chunking', False),
                     output_mode=getattr(args, 'output_mode', 'stitched'),
                     llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                 )

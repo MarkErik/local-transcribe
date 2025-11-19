@@ -54,8 +54,8 @@ def show_defaults():
     print("  - Output Formats: All available formats")
     print("  - Processing Mode: Unified for single audio, Separate for multiple audio")
     print("  - Participant Audio Only: Disabled (use -p to enable)")
-    print("  - Chunking (Granite): Enabled")
-    print("  - Stitching Method (Granite): Built-in")
+    print("  - Chunking (Granite): Always enabled")
+    print("  - Stitching Method (Granite): Built-in (default), with LLM option available")
     
     print("\nURLs:")
     print("  - LLM Stitcher URL: http://0.0.0.0:8080")
@@ -204,53 +204,38 @@ def interactive_prompt(args, api):
                     
                     # Granite-specific options
                     if selected_provider == "granite":
-                        # Chunking option
-                        print("\nGranite Chunking Options:")
-                        print("  1. Enabled (faster, processes audio in chunks) [Default]")
-                        print("  2. Disabled (process entire audio at once)")
+                        # Always use chunking, but ask for stitcher method
+                        print("\nGranite Stitching Options:")
+                        print("  1. Built-in (use Granite's internal stitching) [Default]")
+                        print("  2. LLM-based (use external LLM server for stitching)")
+                        
                         while True:
-                            chunking_input = input("\nSelect chunking option (number) [Default: 1]: ").strip()
-                            if not chunking_input or chunking_input == "1":
-                                args.output_mode = "chunked"
-                                print("✓ Selected: Chunking enabled")
-                                break
-                            elif chunking_input == "2":
+                            stitch_input = input("\nSelect stitching option (number) [Default: 1]: ").strip()
+                            if not stitch_input or stitch_input == "1":
+                                args.stitching_method = "builtin"
                                 args.output_mode = "stitched"
-                                print("✓ Selected: Chunking disabled")
+                                print("✓ Selected: Built-in stitching")
+                                break
+                            elif stitch_input == "2":
+                                args.stitching_method = "llm"
+                                args.output_mode = "chunked"  # Using chunked mode for LLM stitching
+                                # Prompt for LLM server URL
+                                default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
+                                llm_url = input(f"\nLLM server URL [Default: {default_url}]: ").strip()
+                                if not llm_url:
+                                    args.llm_stitcher_url = default_url
+                                    is_default = True
+                                else:
+                                    # Add http:// if not present
+                                    if not llm_url.startswith(('http://', 'https://')):
+                                        llm_url = f"http://{llm_url}"
+                                    args.llm_stitcher_url = llm_url
+                                    is_default = False
+                                default_marker = " [Default]" if is_default else ""
+                                print(f"✓ Selected: LLM-based stitching with URL: {args.llm_stitcher_url}{default_marker}")
                                 break
                             else:
                                 print("Error: Please enter 1 or 2.")
-                        
-                        # Stitching option (only if chunking is enabled)
-                        if args.output_mode == "chunked":
-                            print("\nGranite Stitching Options:")
-                            print("  1. Built-in (use Granite's internal stitching) [Default]")
-                            print("  2. LLM-based (use external LLM server for stitching)")
-                            while True:
-                                stitch_input = input("\nSelect stitching option (number) [Default: 1]: ").strip()
-                                if not stitch_input or stitch_input == "1":
-                                    args.stitching_method = "builtin"
-                                    print("✓ Selected: Built-in stitching")
-                                    break
-                                elif stitch_input == "2":
-                                    args.stitching_method = "llm"
-                                    # Prompt for LLM server URL
-                                    default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
-                                    llm_url = input(f"\nLLM server URL [Default: {default_url}]: ").strip()
-                                    if not llm_url:
-                                        args.llm_stitcher_url = default_url
-                                        is_default = True
-                                    else:
-                                        # Add http:// if not present
-                                        if not llm_url.startswith(('http://', 'https://')):
-                                            llm_url = f"http://{llm_url}"
-                                        args.llm_stitcher_url = llm_url
-                                        is_default = False
-                                    default_marker = " [Default]" if is_default else ""
-                                    print(f"✓ Selected: LLM-based stitching with URL: {args.llm_stitcher_url}{default_marker}")
-                                    break
-                                else:
-                                    print("Error: Please enter 1 or 2.")
                     
                     break
                 else:
@@ -448,26 +433,8 @@ def interactive_prompt(args, api):
 
         # Granite-specific options
         if args.transcriber_provider == "granite":
-            print(f"\nGranite Chunking Options:")
-            print(f"  Chunking processes long audio in segments to manage memory.")
-            print(f"  - ON: Stable memory usage, slight quality reduction at boundaries [Default]")
-            print(f"  - OFF: Maximum quality, higher memory usage (may crash on long audio)")
-            
-            while True:
-                choice = input(f"\nEnable chunking? (y/n) [Default: y]: ").strip().lower()
-                if choice in ['y', 'yes', '']:
-                    args.disable_chunking = False
-                    print("✓ Selected: Chunking enabled [Default] (recommended for stability)")
-                    break
-                elif choice in ['n', 'no']:
-                    args.disable_chunking = True
-                    print("✓ Selected: Chunking disabled (maximum quality, monitor memory)")
-                    break
-                else:
-                    print("Error: Please enter 'y' or 'n'.")
-
-            # Stitching method choice
-            print(f"\nStitching Options:")
+            # Always use chunking, but ask for stitcher method
+            print(f"\nGranite Stitching Options:")
             print(f"  1. Built-in: Fast, uses overlap detection to merge chunks [Default]")
             print(f"  2. LLM: Slower, uses AI to intelligently merge chunks (requires LLM server)")
             
@@ -475,10 +442,12 @@ def interactive_prompt(args, api):
                 choice = input(f"\nSelect stitching method (number) [Default: 1]: ").strip()
                 if choice in ['1', '']:
                     args.output_mode = 'stitched'
+                    args.stitching_method = "builtin"
                     print("✓ Selected: Built-in stitching [Default]")
                     break
                 elif choice == '2':
                     args.output_mode = 'chunked'
+                    args.stitching_method = "llm"
                     # Prompt for LLM URL
                     default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                     llm_url = input(f"LLM server URL [Default: {default_url}]: ").strip()

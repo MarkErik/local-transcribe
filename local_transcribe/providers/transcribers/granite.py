@@ -207,26 +207,11 @@ class GraniteTranscriberProvider(TranscriberProvider):
         # Calculate audio duration in seconds
         duration = len(wav) / sr
         
-        # Check if user wants to disable chunking for quality
-        disable_chunking = kwargs.get('disable_chunking', False)
+        if kwargs.get('verbose', False):
+            print(f"[i] Audio duration: {duration:.1f}s - processing in chunks to manage memory")
         
-        # For audio longer than 1.5 minutes, process in chunks to avoid memory issues
-        max_chunk_duration = 90.0  # seconds (1.5 minutes)
-        
-        if duration > max_chunk_duration and not disable_chunking:
-            if kwargs.get('verbose', False):
-                print(f"[i] Audio duration: {duration:.1f}s - processing in chunks to manage memory")
-            return self._transcribe_chunked(wav, sr, **kwargs)
-        else:
-            if duration > max_chunk_duration and disable_chunking and kwargs.get('verbose', False):
-                print(f"[i] Audio duration: {duration:.1f}s - processing without chunking (higher memory usage)")
-            if output_mode == 'chunked':
-                # For single chunk, return as list with one chunk
-                chunk_text = self._transcribe_single(wav, **kwargs)
-                words = chunk_text.split()
-                return [{"chunk_id": 1, "words": words}]
-            else:
-                return self._transcribe_single(wav, **kwargs)
+        # Always process in chunks
+        return self._transcribe_chunked(wav, sr, output_mode=output_mode, **kwargs)
 
     def _transcribe_single(self, wav, **kwargs) -> str:
         """Transcribe a single audio segment."""

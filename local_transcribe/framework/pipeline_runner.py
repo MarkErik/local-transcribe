@@ -88,10 +88,16 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
         stitching_method = kwargs.get('stitching_method', 'builtin')
         
         if stitching_method == 'llm':
-            # Use intelligent chunk merging
+            # Use external LLM server for stitching
+            from local_transcribe.processing.llm_chunk_stitcher import stitch_chunks
+            if verbose:
+                print(f"[i] Merging chunks using external LLM server")
+            transcript_text = stitch_chunks(transcript, **kwargs)
+        elif stitching_method == 'local':
+            # Use intelligent local chunk merging
             from local_transcribe.processing.local_chunk_stitcher import merge_chunks
             if verbose:
-                print(f"[i] Merging chunks using intelligent overlap detection")
+                print(f"[i] Merging chunks using intelligent local overlap detection")
             transcript_text = merge_chunks(transcript, **kwargs)
         else:
             # Use builtin stitching (simple concatenation of chunk words)

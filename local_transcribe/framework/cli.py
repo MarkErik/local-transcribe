@@ -21,6 +21,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--transcript-cleanup-url", default="http://localhost:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for Llama.cpp server) [Default: http://localhost:8080]")
     p.add_argument("--turn-builder-provider", help="Turn builder provider to use (for grouping transcribed words into turns) [Default: auto-selected based on audio mode]")
     p.add_argument("--llm-stitcher-url", default="http://0.0.0.0:8080", help="URL for LLM stitcher provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
+    p.add_argument("--stitching-method", choices=["builtin", "local", "llm"], default="builtin", help="Method for stitching transcript chunks [Default: builtin]. builtin=Granite's internal stitching, local=intelligent local overlap detection, llm=external LLM server stitching")
     p.add_argument("--llm-turn-builder-url", default="http://0.0.0.0:8080", help="URL for LLM turn builder provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
@@ -55,7 +56,7 @@ def show_defaults():
     print("  - Processing Mode: Unified for single audio, Separate for multiple audio")
     print("  - Participant Audio Only: Disabled (use -p to enable)")
     print("  - Chunking (Granite): Always enabled")
-    print("  - Stitching Method (Granite): Built-in (default), with LLM option available")
+    print("  - Stitching Method (Granite): builtin (default), local, or llm available")
     
     print("\nURLs:")
     print("  - LLM Stitcher URL: http://0.0.0.0:8080")
@@ -206,8 +207,9 @@ def interactive_prompt(args, api):
                     if selected_provider == "granite":
                         # Always use chunking, but ask for stitcher method
                         print("\nGranite Stitching Options:")
-                        print("  1. Built-in (use Granite's internal stitching) [Default]")
-                        print("  2. LLM-based (use external LLM server for stitching)")
+                        print("  1. Built-in (use Granite's internal fuzzy overlap detection) [Default]")
+                        print("  2. Local (use intelligent local overlap detection)")
+                        print("  3. LLM-based (use external LLM server for stitching)")
                         
                         while True:
                             stitch_input = input("\nSelect stitching option (number) [Default: 1]: ").strip()
@@ -217,6 +219,11 @@ def interactive_prompt(args, api):
                                 print("✓ Selected: Built-in stitching")
                                 break
                             elif stitch_input == "2":
+                                args.stitching_method = "local"
+                                args.output_mode = "chunked"
+                                print("✓ Selected: Local intelligent stitching")
+                                break
+                            elif stitch_input == "3":
                                 args.stitching_method = "llm"
                                 args.output_mode = "chunked"  # Using chunked mode for LLM stitching
                                 # Prompt for LLM server URL
@@ -235,7 +242,7 @@ def interactive_prompt(args, api):
                                 print(f"✓ Selected: LLM-based stitching with URL: {args.llm_stitcher_url}{default_marker}")
                                 break
                             else:
-                                print("Error: Please enter 1 or 2.")
+                                print("Error: Please enter 1, 2, or 3.")
                     
                     break
                 else:
@@ -435,8 +442,9 @@ def interactive_prompt(args, api):
         if args.transcriber_provider == "granite":
             # Always use chunking, but ask for stitcher method
             print(f"\nGranite Stitching Options:")
-            print(f"  1. Built-in: Fast, uses overlap detection to merge chunks [Default]")
-            print(f"  2. LLM: Slower, uses AI to intelligently merge chunks (requires LLM server)")
+            print(f"  1. Built-in: Fast, uses Granite's internal fuzzy overlap detection [Default]")
+            print(f"  2. Local: Intelligent local overlap detection (slower but more accurate)")
+            print(f"  3. LLM: External AI server for intelligent chunk merging (requires LLM server)")
             
             while True:
                 choice = input(f"\nSelect stitching method (number) [Default: 1]: ").strip()
@@ -446,6 +454,11 @@ def interactive_prompt(args, api):
                     print("✓ Selected: Built-in stitching [Default]")
                     break
                 elif choice == '2':
+                    args.output_mode = 'chunked'
+                    args.stitching_method = "local"
+                    print("✓ Selected: Local intelligent stitching")
+                    break
+                elif choice == '3':
                     args.output_mode = 'chunked'
                     args.stitching_method = "llm"
                     # Prompt for LLM URL
@@ -464,7 +477,7 @@ def interactive_prompt(args, api):
                     print(f"✓ Selected: LLM stitching with URL: {llm_url}{default_marker}")
                     break
                 else:
-                    print("Error: Please enter 1 or 2.")
+                    print("Error: Please enter 1, 2, or 3.")
 
         # Check if aligner is needed
         if not transcriber_provider.has_builtin_alignment:

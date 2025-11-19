@@ -42,7 +42,7 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
         
         if output_mode == 'chunked':
             # Chunked output: merge overlapping chunks
-            from local_transcribe.processing.chunk_merger import merge_chunks
+            from local_transcribe.processing.local_chunk_stitcher import merge_chunks
             transcript = merge_chunks(transcript_result, **kwargs)
         else:
             transcript = transcript_result
@@ -89,7 +89,7 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
         
         if stitching_method == 'llm':
             # Use intelligent chunk merging
-            from local_transcribe.processing.chunk_merger import merge_chunks
+            from local_transcribe.processing.local_chunk_stitcher import merge_chunks
             if verbose:
                 print(f"[i] Merging chunks using intelligent overlap detection")
             transcript_text = merge_chunks(transcript, **kwargs)

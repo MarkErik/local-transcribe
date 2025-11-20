@@ -35,11 +35,15 @@ def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> str:
         if verbose:
             print(f"[LLMStitcher] Adding chunk {i + 1} of {len(chunks)} to stitched text")
         stitched_words = stitched.split()
+        prefix = ""
+        if not use_accumulated and len(stitched_words) > overlap_window:
+            prefix = " ".join(stitched_words[:-overlap_window]) + " "
         if not use_accumulated:
             chunk1_words = stitched_words[-overlap_window:] if len(stitched_words) > overlap_window else stitched_words
         else:
             chunk1_words = stitched_words
         stitched = _stitch_two_chunks({"chunk_id": 0, "words": chunk1_words}, chunks[i], url=url, verbose=verbose, **kwargs)
+        stitched = prefix + stitched
 
     if verbose:
         word_count = len(stitched.split())

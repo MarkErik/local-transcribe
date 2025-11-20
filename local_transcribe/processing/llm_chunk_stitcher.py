@@ -16,6 +16,9 @@ def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> str:
         url = f'http://{url}'
     
     verbose = kwargs.get('verbose', False)
+    # Internal settings for stitching optimization
+    use_accumulated = False
+    overlap_window = 100
     kwargs.pop('verbose', None)  # Remove to avoid duplication in function calls
     
     if not chunks:
@@ -31,7 +34,12 @@ def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> str:
     for i in range(2, len(chunks)):
         if verbose:
             print(f"[LLMStitcher] Adding chunk {i + 1} of {len(chunks)} to stitched text")
-        stitched = _stitch_two_chunks({"chunk_id": 0, "words": stitched.split()}, chunks[i], url=url, verbose=verbose, **kwargs)
+        stitched_words = stitched.split()
+        if not use_accumulated:
+            chunk1_words = stitched_words[-overlap_window:] if len(stitched_words) > overlap_window else stitched_words
+        else:
+            chunk1_words = stitched_words
+        stitched = _stitch_two_chunks({"chunk_id": 0, "words": chunk1_words}, chunks[i], url=url, verbose=verbose, **kwargs)
 
     if verbose:
         word_count = len(stitched.split())
@@ -63,7 +71,7 @@ def _stitch_two_chunks(chunk1: Dict[str, Any], chunk2: Optional[Dict[str, Any]],
         "Do not add any new words, summarize, or alter the existing content."
         "Only merge the given chunks to resolve overlaps."
         "Return the merged text as a single string."
-        "Respond with only the merged text, no explanations or additional content."
+        "Respond with only the merged text, no explanations, or additional content."
     )
 
     user_content = f"First chunk: {words1}\n\nSecond chunk: {words2}\n\nMerged:"

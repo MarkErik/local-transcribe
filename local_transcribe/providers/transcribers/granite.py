@@ -215,7 +215,9 @@ class GraniteTranscriberProvider(TranscriberProvider):
         if duration < self.chunk_length_seconds:
             raise ValueError(f"Audio duration ({duration:.1f}s) is shorter than the minimum required chunk length ({self.chunk_length_seconds}s). Please provide audio longer than {self.chunk_length_seconds}s for transcription.")
         
-        num_chunks = math.ceil(duration / self.chunk_length_seconds)
+        # Calculate number of chunks accounting for overlap
+        effective_chunk_length = self.chunk_length_seconds - self.overlap_seconds
+        num_chunks = math.ceil(duration / effective_chunk_length) if effective_chunk_length > 0 else 1
         
         if kwargs.get('verbose', False):
             print(f"[i] Audio duration: {duration:.1f}s - processing in {num_chunks} chunks to manage memory")
@@ -427,11 +429,15 @@ class GraniteTranscriberProvider(TranscriberProvider):
                     prev_chunk_text = original_chunk_text
             
             prev_chunk_wav = chunk_wav
+
+            # Optimization: If this chunk reached the end of the file, we are done.
+            # Any subsequent chunk would just be a subset of this one (due to overlap).
+            if chunk_end == total_samples:
+                break
+            
             
             # Move to next chunk: advance by chunk size minus overlap
             chunk_start = chunk_start + chunk_samples - overlap_samples
-            if chunk_start >= total_samples:
-                break
         
         if output_format == 'chunked':
             return chunks

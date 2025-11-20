@@ -29,8 +29,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging output.")
     p.add_argument("-l","--list-plugins", action="store_true", help="List available plugins and exit.")
     p.add_argument("--show-defaults", action="store_true", help="Show all default values and exit.")
-    p.add_argument("-s", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")
-    p.add_argument("-p", "--single-speaker-audio", action="store_true", help="Process a single speaker audio file for transcription only, output as CSV.")
+    p.add_argument("-x", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")
+    p.add_argument("-s", "--single-speaker-audio", action="store_true", help="Process a single speaker audio file for transcription only, output as CSV.")
 
     args = p.parse_args(argv)
 

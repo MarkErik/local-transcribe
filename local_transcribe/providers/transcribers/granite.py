@@ -31,6 +31,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
         self.processor = None
         self.model = None
         self.chunk_length_seconds = 30.0  # Configurable chunk length in seconds
+        self.overlap_seconds = 3.0  # Configurable overlap between chunks in seconds
+        self.min_chunk_seconds = 6.0  # Configurable minimum chunk length in seconds
 
     @property
     def device(self):
@@ -349,8 +351,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
         verbose = kwargs.get('verbose', False)
 
         chunk_samples = int(self.chunk_length_seconds * sr)
-        overlap_samples = int(3.0 * sr)  # 3 second overlap to avoid cutting words
-        min_chunk_samples = int(6.0 * sr)        
+        overlap_samples = int(self.overlap_seconds * sr)  # Configurable overlap to avoid cutting words
+        min_chunk_samples = int(self.min_chunk_seconds * sr)
 
         chunks = []
         total_samples = len(wav)
@@ -398,7 +400,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 else:
                     # For stitched mode, handle overlap trimming
                     if chunk_num > 1 and prev_chunk_text:
-                        # Get last ~15 words from previous chunk (3 seconds at ~2-3 words/sec = 6-9 words + buffer)
+                        # Get last ~15 words from previous chunk (overlap_seconds at ~2-3 words/sec = 6-9 words + buffer)
                         prev_words = prev_chunk_text.split()[-15:]
                         curr_words = chunk_text.split()
                         

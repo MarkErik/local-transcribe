@@ -194,9 +194,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
                     print(f"DEBUG: Cache directory contents: {list(cache_dir.iterdir())}")
                 raise e
 
-    def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> Union[str, List[Dict[str, Any]]]:
+    def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
         """Transcribe audio using Granite model."""
-        output_format = kwargs.pop('output_format', 'stitched')
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')  # Default to 8b
         if transcriber_model not in self.model_mapping:
             print(f"Warning: Unknown model {transcriber_model}, defaulting to granite-8b")
@@ -222,8 +221,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
         if kwargs.get('verbose', False):
             print(f"[i] Audio duration: {duration:.1f}s - processing in {num_chunks} chunks to manage memory")
         
-        # Always process in chunks
-        return self._transcribe_chunked(wav, sr, output_format=output_format, **kwargs)
+        # Always process in chunks and return chunked output
+        return self._transcribe_chunked(wav, sr, **kwargs)
 
     def _transcribe_single_chunk(self, wav, **kwargs) -> str:
         """Transcribe a single audio chunk."""
@@ -304,51 +303,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
             
             clear_device_cache()
 
-    def _fuzzy_word_match(self, word1: str, word2: str, threshold: float = 0.8) -> bool:
-        """Check if two words are similar enough using fuzzy matching."""
-        # Handle exact matches first
-        if word1 == word2:
-            return True
-        
-        # Handle filler words - ignore them in matching BUT preserve them in final transcript
-        filler_words = {'like', 'um', 'uh', 'ah', 'er', 'you know', 'i mean'}
-        if word1.lower() in filler_words or word2.lower() in filler_words:
-            return True
-        
-        # Use sequence similarity for partial word matches
-        similarity = SequenceMatcher(None, word1.lower(), word2.lower()).ratio()
-        return similarity >= threshold
 
-    def _find_fuzzy_overlap(self, prev_words: List[str], curr_words: List[str], verbose: bool = False) -> int:
-        """Find overlapping words using fuzzy matching."""
-        max_possible = min(len(prev_words), len(curr_words))
-        best_overlap = 0
-        
-        # Try exact matching first
-        for i in range(1, max_possible + 1):
-            if prev_words[-i:] == curr_words[:i]:
-                best_overlap = i
-        
-        if best_overlap > 0:
-            return best_overlap
-        
-        # If no exact match, try fuzzy matching
-        for overlap_length in range(max_possible, 0, -1):
-            match_count = 0
-            required_matches = max(1, int(overlap_length * 0.7))  # Require 70% of words to match
-            
-            for j in range(overlap_length):
-                if self._fuzzy_word_match(prev_words[-(overlap_length-j)], curr_words[j]):
-                    match_count += 1
-            
-            if match_count >= required_matches:
-                if verbose:
-                    print(f"[i] Fuzzy match found: {match_count}/{overlap_length} words matched")
-                return overlap_length
-        
-        return 0
-
-    def _transcribe_chunked(self, wav, sr, output_format='stitched', **kwargs) -> Union[str, List[Dict[str, Any]]]:
+    def _transcribe_chunked(self, wav, sr, **kwargs) -> List[Dict[str, Any]]:
         """Transcribe audio in chunks to manage memory for long files."""
         verbose = kwargs.get('verbose', False)
 
@@ -361,7 +317,6 @@ class GraniteTranscriberProvider(TranscriberProvider):
         total_chunks = math.ceil(total_samples / (chunk_samples - overlap_samples))
         chunk_start = 0
         chunk_num = 0
-        prev_chunk_text = ""
         prev_chunk_wav = None
         
         while chunk_start < total_samples:
@@ -383,50 +338,13 @@ class GraniteTranscriberProvider(TranscriberProvider):
                     
                     chunk_text = self._transcribe_single_chunk(merged_wav, **kwargs)
                     # Update the last chunk in results
-                    if output_format == 'chunked':
-                        # Preserve the ID of the chunk we are extending
-                        existing_id = chunks[-1]["chunk_id"]
-                        chunks[-1] = {"chunk_id": existing_id, "words": chunk_text.split()}
-                    else:
-                        chunks[-1] = chunk_text
-                    prev_chunk_text = chunk_text
+                    existing_id = chunks[-1]["chunk_id"]
+                    chunks[-1] = {"chunk_id": existing_id, "words": chunk_text.split()}
             else:
                 # Normal chunk processing
                 chunk_text = self._transcribe_single_chunk(chunk_wav, **kwargs)
-                original_chunk_text = chunk_text  # Save original before trimming
-                
-                if output_format == 'chunked':
-                    # For chunked mode, collect words without trimming overlap
-                    words = chunk_text.split()
-                    chunks.append({"chunk_id": chunk_num, "words": words})
-                else:
-                    # For stitched mode, handle overlap trimming
-                    if chunk_num > 1 and prev_chunk_text:
-                        # Get last ~15 words from previous chunk (overlap_seconds at ~2-3 words/sec = 6-9 words + buffer)
-                        prev_words = prev_chunk_text.split()[-15:]
-                        curr_words = chunk_text.split()
-                        
-                        if verbose:
-                            print(f"[i] Chunk {chunk_num-1} end (last 15 words): {' '.join(prev_words)}")
-                            print(f"[i] Chunk {chunk_num} start (first 15 words): {' '.join(curr_words[:15])}")
-                        
-                        # Try exact matching first, then fuzzy matching
-                        overlap_length = self._find_fuzzy_overlap(prev_words, curr_words, verbose)
-                        
-                        # Remove the overlapping portion from current chunk
-                        if overlap_length > 0:
-                            removed_text = " ".join(curr_words[:overlap_length])
-                            chunk_text = " ".join(curr_words[overlap_length:])
-                            if verbose:
-                                print(f"[i] Found {overlap_length} overlapping words: '{removed_text}'")
-                                print(f"[i] Removed {overlap_length} overlapping words at chunk boundary")
-                        else:
-                            if verbose:
-                                print(f"[i] No overlapping words found between chunks")
-                    
-                    chunks.append(chunk_text)
-                    # Store the ORIGINAL untrimmed chunk text for next comparison
-                    prev_chunk_text = original_chunk_text
+                words = chunk_text.split()
+                chunks.append({"chunk_id": chunk_num, "words": words})
             
             prev_chunk_wav = chunk_wav
 
@@ -439,38 +357,25 @@ class GraniteTranscriberProvider(TranscriberProvider):
             # Move to next chunk: advance by chunk size minus overlap
             chunk_start = chunk_start + chunk_samples - overlap_samples
         
-        if output_format == 'chunked':
-            return chunks
-        else:
-            # Combine chunks with spaces
-            full_transcript = " ".join(chunks)
-            
-            if verbose:
-                print(f"[✓] Combined {chunk_num} chunks into final transcript")
-            
-            return full_transcript
+        return chunks
             
     def _clean_transcription_output(self, text: str, verbose: bool = False) -> str:
         """
-        Clean the transcription output by removing dialogue markers and quotation marks.
+        Clean the transcription output for a single chunk by removing dialogue markers and quotation marks.
         
         Args:
-            text: Raw transcription output from the model
+            text: Raw transcription output from the model for a single chunk
             verbose: If True, print how many labels were removed
             
         Returns:
-            Cleaned transcription text
+            Cleaned transcription text for a single chunk
         """
-        # Patterns for labels to remove
-        label_patterns = [
-            r'\bUser:\s*',
-            r'\bAI Assistant:\s*',
-            r'\bAssistant:\s*'
-        ]
-        
         # Count labels before removal if verbose
         if verbose:
-            total_removed = sum(len(re.findall(pat, text, flags=re.IGNORECASE)) for pat in label_patterns)
+            user_count = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
+            assistant_count = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
+            assistant_short_count = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
+            total_removed = user_count + assistant_count + assistant_short_count
         
         # Remove "User:" and "AI Assistant:" labels (case insensitive)
         text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
@@ -487,7 +392,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         # Print count if verbose
         if verbose and total_removed > 0:
-            print(f"Removed {total_removed} labels from transcript.")
+            print(f"Removed {total_removed} labels from chunk transcript.")
         
         return text
 

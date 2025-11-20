@@ -346,19 +346,18 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
     def _transcribe_chunked(self, wav, sr, output_format='stitched', **kwargs) -> Union[str, List[Dict[str, Any]]]:
         """Transcribe audio in chunks to manage memory for long files."""
+        verbose = kwargs.get('verbose', False)
+
         chunk_samples = int(self.chunk_length_seconds * sr)
         overlap_samples = int(3.0 * sr)  # 3 second overlap to avoid cutting words
-        
+        min_chunk_samples = int(6.0 * sr)        
+
         chunks = []
         total_samples = len(wav)
         total_chunks = math.ceil(total_samples / (chunk_samples - overlap_samples))
         chunk_start = 0
         chunk_num = 0
         prev_chunk_text = ""
-        
-        verbose = kwargs.get('verbose', False)
-        
-        min_chunk_samples = int(5.0 * sr)
         prev_chunk_wav = None
         
         while chunk_start < total_samples:

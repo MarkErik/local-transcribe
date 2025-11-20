@@ -7,16 +7,20 @@ build/
 dist/
 wheels/
 *.egg-info
+uv.lock
 
+# Virtual Environments
 .venv/
 .mfa_env/
 
-uv.lock
-
+# Some directories
 data/
-
 models/
-
 test/
 
+# Input and Output Data
+*.m4a
 *.mp4
+*.json
+*.csv
+*.txt

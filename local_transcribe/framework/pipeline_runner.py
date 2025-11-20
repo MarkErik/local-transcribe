@@ -37,15 +37,11 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/transcription_alignment/{base_name}word_segments.json")
     else:
         # Use transcriber + aligner composition
-        output_format = kwargs.get('output_format', 'stitched')
         transcript_result = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
         
-        if output_format == 'chunked':
-            # Chunked output: merge overlapping chunks
-            from local_transcribe.processing.local_chunk_stitcher import merge_chunks
-            transcript = merge_chunks(transcript_result, **kwargs)
-        else:
-            transcript = transcript_result
+        # Always use local chunk stitcher for merging chunks
+        from local_transcribe.processing.local_chunk_stitcher import merge_chunks
+        transcript = merge_chunks(transcript_result, **kwargs)
         
         # Verbose: Save raw transcript
         if verbose and intermediate_dir:
@@ -84,8 +80,8 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
         if verbose:
             print(f"[i] Received chunked output with {len(transcript)} chunks")
         
-        # Check stitching method from kwargs
-        stitching_method = kwargs.get('stitching_method', 'builtin')
+        # Always use local chunk stitcher by default, with fallback to LLM if specified
+        stitching_method = kwargs.get('stitching_method', 'local')
         
         if stitching_method == 'llm':
             # Use external LLM server for stitching
@@ -93,18 +89,12 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
             if verbose:
                 print(f"[i] Merging chunks using external LLM server")
             transcript_text = stitch_chunks(transcript, **kwargs)
-        elif stitching_method == 'local':
-            # Use intelligent local chunk merging
+        else:
+            # Use intelligent local chunk merging (default)
             from local_transcribe.processing.local_chunk_stitcher import merge_chunks
             if verbose:
                 print(f"[i] Merging chunks using intelligent local overlap detection")
             transcript_text = merge_chunks(transcript, **kwargs)
-        else:
-            # Use builtin stitching (simple concatenation of chunk words)
-            if verbose:
-                print(f"[i] Stitching chunks using builtin method")
-            chunk_texts = [" ".join(chunk.get("words", [])) for chunk in transcript]
-            transcript_text = " ".join(chunk_texts)
         
         # Verbose: Save chunked data
         if verbose and intermediate_dir:

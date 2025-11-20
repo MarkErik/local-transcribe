@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Chunk merger for intelligently merging overlapping transcript chunks from audio transcription.
+Chunk stitcher for intelligently stitching overlapping transcript chunks from audio transcription.
 
-This module provides functionality to merge overlapping chunks from transcriber output,
+This module provides functionality to stitch overlapping chunks from transcriber output,
 handling cases where words may be cut off at chunk boundaries (e.g. "generational" -> "rational")
 and dealing with slight differences in similar-sounding words.
 """
@@ -11,14 +11,14 @@ from typing import List, Dict, Any, Tuple, Optional
 from difflib import SequenceMatcher
 
 
-class ChunkMerger:
+class ChunkStitcher:
     """
-    A class for merging overlapping transcript chunks with intelligent overlap detection.
+    A class for stitching overlapping transcript chunks with intelligent overlap detection.
     """
     
     def __init__(self, min_overlap_ratio: float = 0.6, similarity_threshold: float = 0.7, verbose: bool = False):
         """
-        Initialize the chunk merger with configurable thresholds.
+        Initialize the chunk stitcher with configurable thresholds.
         
         Args:
             min_overlap_ratio: Minimum ratio of overlapping words to consider a valid overlap
@@ -29,15 +29,15 @@ class ChunkMerger:
         self.similarity_threshold = similarity_threshold
         self.verbose = verbose
     
-    def merge_chunks(self, chunks: List[Dict[str, Any]]) -> str:
+    def stitch_chunks(self, chunks: List[Dict[str, Any]]) -> str:
         """
-        Merge a list of transcript chunks into a single transcript.
+        Stitch a list of transcript chunks into a single transcript.
         
         Args:
             chunks: List of chunk dictionaries with 'chunk_id' and 'words' keys
             
         Returns:
-            Merged transcript as a string
+            Stitched transcript as a string
         """
         if not chunks:
             return ""
@@ -46,33 +46,33 @@ class ChunkMerger:
             return " ".join(chunks[0]["words"])
         
         # Start with the first chunk
-        merged_words = chunks[0]["words"].copy()
+        stitched_words = chunks[0]["words"].copy()
         
         if self.verbose:
-            print(f"[ChunkMerger] Processing {len(chunks)} chunks")
+            print(f"[ChunkStitcher] Processing {len(chunks)} chunks")
         
-        # Iteratively merge each subsequent chunk
+        # Iteratively stitch each subsequent chunk
         for i in range(1, len(chunks)):
             if self.verbose:
-                print(f"[ChunkMerger] Processing chunk {i + 1} of {len(chunks)}")
+                print(f"[ChunkStitcher] Processing chunk {i + 1} of {len(chunks)}")
             current_chunk_words = chunks[i]["words"]
-            merged_words = self._merge_two_chunks(merged_words, current_chunk_words)
+            stitched_words = self._stitch_two_chunks(stitched_words, current_chunk_words)
         
         if self.verbose:
-            print(f"[ChunkMerger] Merge complete: {len(merged_words)} words total")
+            print(f"[ChunkStitcher] Stitch complete: {len(stitched_words)} words total")
         
-        return " ".join(merged_words)
+        return " ".join(stitched_words)
     
-    def _merge_two_chunks(self, chunk1: List[str], chunk2: List[str]) -> List[str]:
+    def _stitch_two_chunks(self, chunk1: List[str], chunk2: List[str]) -> List[str]:
         """
-        Merge two chunks, handling overlaps intelligently.
+        Stitch two chunks, handling overlaps intelligently.
         
         Args:
             chunk1: First chunk's word list
             chunk2: Second chunk's word list
             
         Returns:
-            Merged word list
+            Stitched word list
         """
         # Find the overlap region
         overlap_start, overlap_length = self._find_overlap(chunk1, chunk2)
@@ -80,12 +80,12 @@ class ChunkMerger:
         if overlap_length == 0:
             # No overlap found, simply concatenate
             if self.verbose:
-                print(f"[ChunkMerger] No overlap detected between chunks; concatenating directly")
+                print(f"[ChunkStitcher] No overlap detected between chunks; concatenating directly")
             return chunk1 + chunk2
         
         if self.verbose:
             overlapping_words = chunk1[overlap_start:overlap_start + overlap_length]
-            print(f"[ChunkMerger] Overlap found: start={overlap_start}, length={overlap_length}, words={overlapping_words}")
+            print(f"[ChunkStitcher] Overlap found: start={overlap_start}, length={overlap_length}, words={overlapping_words}")
         
         # Handle the overlap
         if overlap_length == len(chunk2):
@@ -160,7 +160,7 @@ class ChunkMerger:
         # Require at least min_overlap_ratio of words to be similar
         is_match = matches / len(words1) >= self.min_overlap_ratio
         if is_match and fuzzy_pairs and self.verbose:
-            print(f"[ChunkMerger] Fuzzy matches in overlap: {', '.join(fuzzy_pairs)}")
+            print(f"[ChunkStitcher] Fuzzy matches in overlap: {', '.join(fuzzy_pairs)}")
         
         return is_match
     
@@ -209,7 +209,7 @@ class ChunkMerger:
         if self._is_partial_word_match(last_word_chunk1, first_word_chunk2):
             # Replace the partial word in chunk1 with the complete word from chunk2
             if self.verbose:
-                print(f"[ChunkMerger] Partial word overlap: replacing '{last_word_chunk1}' with '{first_word_chunk2}'")
+                print(f"[ChunkStitcher] Partial word overlap: replacing '{last_word_chunk1}' with '{first_word_chunk2}'")
             return len(chunk1) - 1, 1
         
         # Check for two-word partial matches
@@ -220,7 +220,7 @@ class ChunkMerger:
             if (self._is_partial_word_match(last_two_chunk1[0], first_two_chunk2[0]) and
                 self._words_similar(last_two_chunk1[1], first_two_chunk2[1])):
                 if self.verbose:
-                    print(f"[ChunkMerger] Partial word overlap: replacing '{last_two_chunk1}' with '{first_two_chunk2}'")
+                    print(f"[ChunkStitcher] Partial word overlap: replacing '{last_two_chunk1}' with '{first_two_chunk2}'")
                 return len(chunk1) - 2, 2
         
         return None
@@ -260,20 +260,20 @@ class ChunkMerger:
         return False
 
 
-def merge_chunks(chunks: List[Dict[str, Any]], **kwargs) -> str:
+def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> str:
     """
-    Convenience function to merge transcript chunks.
+    Convenience function to stitch transcript chunks.
     
     Args:
         chunks: List of chunk dictionaries with 'chunk_id' and 'words' keys
         **kwargs: Additional arguments (min_overlap_ratio, similarity_threshold, verbose)
         
     Returns:
-        Merged transcript as a string
+        Stitched transcript as a string
     """
-    merger = ChunkMerger(
+    stitcher = ChunkStitcher(
         min_overlap_ratio=kwargs.get('min_overlap_ratio', 0.6),
         similarity_threshold=kwargs.get('similarity_threshold', 0.7),
         verbose=kwargs.get('verbose', False)
     )
-    return merger.merge_chunks(chunks)
+    return stitcher.stitch_chunks(chunks)

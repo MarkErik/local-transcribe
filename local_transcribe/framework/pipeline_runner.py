@@ -39,9 +39,9 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
         # Use transcriber + aligner composition
         transcript_result = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
         
-        # Always use local chunk stitcher for merging chunks
-        from local_transcribe.processing.local_chunk_stitcher import merge_chunks
-        transcript = merge_chunks(transcript_result, **kwargs)
+        # Always use local chunk stitcher for stitching chunks
+        from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
+        transcript = stitch_chunks(transcript_result, **kwargs)
         
         # Verbose: Save raw transcript
         if verbose and intermediate_dir:
@@ -87,14 +87,14 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
             # Use external LLM server for stitching
             from local_transcribe.processing.llm_chunk_stitcher import stitch_chunks
             if verbose:
-                print(f"[i] Merging chunks using external LLM server")
+                print(f"[i] Stitching chunks using external LLM server")
             transcript_text = stitch_chunks(transcript, **kwargs)
         else:
-            # Use intelligent local chunk merging (default)
-            from local_transcribe.processing.local_chunk_stitcher import merge_chunks
+            # Use intelligent local chunk stitching (default)
+            from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
             if verbose:
-                print(f"[i] Merging chunks using intelligent local overlap detection")
-            transcript_text = merge_chunks(transcript, **kwargs)
+                print(f"[i] Stitching chunks using intelligent local overlap detection")
+            transcript_text = stitch_chunks(transcript, **kwargs)
         
         # Verbose: Save chunked data
         if verbose and intermediate_dir:

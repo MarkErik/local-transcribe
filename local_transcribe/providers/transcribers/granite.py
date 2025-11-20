@@ -30,6 +30,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         self.selected_model = None  # Will be set during transcription
         self.processor = None
         self.model = None
+        self.chunk_length_seconds = 30.0  # Configurable chunk length in seconds
 
     @property
     def device(self):
@@ -207,7 +208,12 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         # Calculate audio duration in seconds
         duration = len(wav) / sr
-        num_chunks = math.ceil(duration / 30.0)
+        
+        # Validate audio length - must be at least as long as chunk length
+        if duration < self.chunk_length_seconds:
+            raise ValueError(f"Audio duration ({duration:.1f}s) is shorter than the minimum required chunk length ({self.chunk_length_seconds}s). Please provide audio longer than {self.chunk_length_seconds}s for transcription.")
+        
+        num_chunks = math.ceil(duration / self.chunk_length_seconds)
         
         if kwargs.get('verbose', False):
             print(f"[i] Audio duration: {duration:.1f}s - processing in {num_chunks} chunks to manage memory")
@@ -340,8 +346,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
     def _transcribe_chunked(self, wav, sr, output_mode='stitched', **kwargs) -> Union[str, List[Dict[str, Any]]]:
         """Transcribe audio in chunks to manage memory for long files."""
-        chunk_duration = 30.0  # seconds (0.5 minutes)
-        chunk_samples = int(chunk_duration * sr)
+        chunk_samples = int(self.chunk_length_seconds * sr)
         overlap_samples = int(3.0 * sr)  # 3 second overlap to avoid cutting words
         
         chunks = []

@@ -353,6 +353,9 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         verbose = kwargs.get('verbose', False)
         
+        min_chunk_samples = int(5.0 * sr)
+        prev_chunk_wav = None
+        
         while start < total_samples:
             chunk_num += 1
             end = min(start + chunk_samples, total_samples)
@@ -362,42 +365,69 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 chunk_duration_sec = len(chunk_wav) / sr
                 print(f"[i] Processing chunk {chunk_num} of {total_chunks} ({chunk_duration_sec:.1f}s)...")
             
-            # Transcribe chunk
-            chunk_text = self._transcribe_single(chunk_wav, **kwargs)
-            original_chunk_text = chunk_text  # Save original before trimming
-            
-            if output_mode == 'chunked':
-                # For chunked mode, collect words without trimming overlap
-                words = chunk_text.split()
-                chunks.append({"chunk_id": chunk_num, "words": words})
-            else:
-                # For stitched mode, handle overlap trimming
-                if chunk_num > 1 and prev_chunk_text:
-                    # Get last ~15 words from previous chunk (3 seconds at ~2-3 words/sec = 6-9 words + buffer)
-                    prev_words = prev_chunk_text.split()[-15:]
-                    curr_words = chunk_text.split()
-                    
-                    if verbose:
-                        print(f"[i] Chunk {chunk_num-1} end (last 15 words): {' '.join(prev_words)}")
-                        print(f"[i] Chunk {chunk_num} start (first 15 words): {' '.join(curr_words[:15])}")
-                    
-                    # Try exact matching first, then fuzzy matching
-                    overlap_length = self._find_fuzzy_overlap(prev_words, curr_words, verbose)
-                    
-                    # Remove the overlapping portion from current chunk
-                    if overlap_length > 0:
-                        removed_text = " ".join(curr_words[:overlap_length])
-                        chunk_text = " ".join(curr_words[overlap_length:])
-                        if verbose:
-                            print(f"[i] Found {overlap_length} overlapping words: '{removed_text}'")
-                            print(f"[i] Removed {overlap_length} overlapping words at chunk boundary")
+            if len(chunk_wav) < min_chunk_samples:
+                if prev_chunk_wav is not None:
+                    # Merge with previous chunk
+                    merged_tensor = torch.cat([torch.from_numpy(prev_chunk_wav), torch.from_numpy(chunk_wav)])
+                    merged_wav = merged_tensor.numpy()
+                    chunk_text = self._transcribe_single(merged_wav, **kwargs)
+                    # Update the last chunk in results
+                    if output_mode == 'chunked':
+                        chunks[-1] = {"chunk_id": chunk_num, "words": chunk_text.split()}
                     else:
-                        if verbose:
-                            print(f"[i] No overlapping words found between chunks")
+                        chunks[-1] = chunk_text
+                    prev_chunk_text = chunk_text
+                else:
+                    # First chunk is short: pad with silence
+                    pad_length = min_chunk_samples - len(chunk_wav)
+                    padded_tensor = torch.nn.functional.pad(torch.from_numpy(chunk_wav), (0, pad_length), 'constant', 0)
+                    padded_wav = padded_tensor.numpy()
+                    chunk_text = self._transcribe_single(padded_wav, **kwargs)
+                    if output_mode == 'chunked':
+                        words = chunk_text.split()
+                        chunks.append({"chunk_id": chunk_num, "words": words})
+                    else:
+                        chunks.append(chunk_text)
+                    prev_chunk_text = chunk_text
+            else:
+                # Normal chunk processing
+                chunk_text = self._transcribe_single(chunk_wav, **kwargs)
+                original_chunk_text = chunk_text  # Save original before trimming
                 
-                chunks.append(chunk_text)
-                # Store the ORIGINAL untrimmed chunk text for next comparison
-                prev_chunk_text = original_chunk_text
+                if output_mode == 'chunked':
+                    # For chunked mode, collect words without trimming overlap
+                    words = chunk_text.split()
+                    chunks.append({"chunk_id": chunk_num, "words": words})
+                else:
+                    # For stitched mode, handle overlap trimming
+                    if chunk_num > 1 and prev_chunk_text:
+                        # Get last ~15 words from previous chunk (3 seconds at ~2-3 words/sec = 6-9 words + buffer)
+                        prev_words = prev_chunk_text.split()[-15:]
+                        curr_words = chunk_text.split()
+                        
+                        if verbose:
+                            print(f"[i] Chunk {chunk_num-1} end (last 15 words): {' '.join(prev_words)}")
+                            print(f"[i] Chunk {chunk_num} start (first 15 words): {' '.join(curr_words[:15])}")
+                        
+                        # Try exact matching first, then fuzzy matching
+                        overlap_length = self._find_fuzzy_overlap(prev_words, curr_words, verbose)
+                        
+                        # Remove the overlapping portion from current chunk
+                        if overlap_length > 0:
+                            removed_text = " ".join(curr_words[:overlap_length])
+                            chunk_text = " ".join(curr_words[overlap_length:])
+                            if verbose:
+                                print(f"[i] Found {overlap_length} overlapping words: '{removed_text}'")
+                                print(f"[i] Removed {overlap_length} overlapping words at chunk boundary")
+                        else:
+                            if verbose:
+                                print(f"[i] No overlapping words found between chunks")
+                    
+                    chunks.append(chunk_text)
+                    # Store the ORIGINAL untrimmed chunk text for next comparison
+                    prev_chunk_text = original_chunk_text
+            
+            prev_chunk_wav = chunk_wav
             
             # Move to next chunk: advance by chunk size minus overlap
             # This ensures we have 2 seconds of overlap, not 28 seconds

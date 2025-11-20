@@ -30,7 +30,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("-l","--list-plugins", action="store_true", help="List available plugins and exit.")
     p.add_argument("--show-defaults", action="store_true", help="Show all default values and exit.")
     p.add_argument("-s", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")
-    p.add_argument("-p", "--participant-audio-only", action="store_true", help="Process a single participant audio file for transcription only, output as CSV.")
+    p.add_argument("-p", "--single-speaker-audio", action="store_true", help="Process a single speaker audio file for transcription only, output as CSV.")
 
     args = p.parse_args(argv)
 
@@ -54,7 +54,7 @@ def show_defaults():
     print("  - Number of Speakers: 2")
     print("  - Output Formats: All available formats")
     print("  - Processing Mode: Unified for single audio, Separate for multiple audio")
-    print("  - Participant Audio Only: Disabled (use -p to enable)")
+    print("  - Single Speaker Audio: Disabled (use -p to enable)")
     print("  - Chunking (Granite): Always enabled")
     print("  - Stitching Method (Granite): builtin (default), local, or llm available")
     
@@ -102,9 +102,9 @@ def interactive_prompt(args, api):
     print("\n=== Interactive Mode ===")
     print("Select your processing options:\n")
 
-    # Check for participant-audio-only mode
-    if hasattr(args, 'participant_audio_only') and args.participant_audio_only:
-        print("Mode: Participant Audio Only (transcription only, CSV output)")
+    # Check for single-speaker-audio mode
+    if hasattr(args, 'single_speaker_audio') and args.single_speaker_audio:
+        print("Mode: Single Speaker Audio (transcription only, CSV output)")
         # Only prompt for system capability and transcriber provider
         # System capability selection
         available_capabilities = get_available_system_capabilities()

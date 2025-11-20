@@ -130,12 +130,12 @@ def run_pipeline(args, api, root):
     models_dir = root / "models"
 
     # Determine mode and speaker mapping
-    if hasattr(args, 'participant_audio_only') and args.participant_audio_only:
+    if hasattr(args, 'single_speaker_audio') and args.single_speaker_audio:
         if len(args.audio_files) != 1:
-            print("ERROR: Participant audio only mode requires exactly one audio file.")
+            print("ERROR: Single speaker audio mode requires exactly one audio file.")
             return 1
-        mode = "participant_audio_only"
-        speaker_files = {"participant": str(root / args.audio_files[0])}
+        mode = "single_speaker_audio"
+        speaker_files = {"speaker": str(root / args.audio_files[0])}
     else:
         num_files = len(args.audio_files)
         if num_files == 1:
@@ -170,8 +170,8 @@ def run_pipeline(args, api, root):
 
     # Set default outputs for non-interactive
     if not hasattr(args, 'selected_outputs') or not args.selected_outputs:
-        if mode == "participant_audio_only":
-            # Participant audio only mode uses custom CSV output
+        if mode == "single_speaker_audio":
+            # Single speaker audio mode uses custom CSV output
             args.selected_outputs = ['csv']
         elif args.only_final_transcript:
             args.selected_outputs = ['timestamped-txt']
@@ -189,12 +189,12 @@ def run_pipeline(args, api, root):
             print(f"ERROR: {e}")
             return 1
 
-    # Early validation for participant_audio_only mode
-    if mode == "participant_audio_only" and hasattr(args, 'transcriber_provider') and args.transcriber_provider:
+    # Early validation for single_speaker_audio mode
+    if mode == "single_speaker_audio" and hasattr(args, 'transcriber_provider') and args.transcriber_provider:
         try:
             temp_provider = api["registry"].get_transcriber_provider(args.transcriber_provider)
             if temp_provider.has_builtin_alignment:
-                print(f"ERROR: Provider '{args.transcriber_provider}' has built-in alignment and is not allowed in participant-audio-only mode.")
+                print(f"ERROR: Provider '{args.transcriber_provider}' has built-in alignment and is not allowed in single-speaker-audio mode.")
                 print("       Use granite or openai_whisper for this mode.")
                 print("Use --list-plugins to see available options.")
                 return 1
@@ -249,7 +249,7 @@ def run_pipeline(args, api, root):
 
         if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
             print(f"[*] Mode: {mode} (combined_audio) | System: {args.system.upper()} | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
-        elif mode == "participant_audio_only":
+        elif mode == "single_speaker_audio":
             print(f"[*] Mode: {mode} | System: {args.system.upper()} | Transcriber: {args.transcriber_provider} | Outputs: CSV")
         else:
             provider_info = []
@@ -264,11 +264,11 @@ def run_pipeline(args, api, root):
             print(f"[*] Mode: {mode} | System: {args.system.upper()} | {provider_str}{turn_builder_str} | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
-        if mode == "participant_audio_only":
-            participant_path = ensure_file(speaker_files["participant"], "Participant Audio")
+        if mode == "single_speaker_audio":
+            speaker_path = ensure_file(speaker_files["speaker"], "Single Speaker Audio")
 
             # 1) Standardize
-            std_audio = standardize_audio(participant_path, outdir, tracker, api)
+            std_audio = standardize_audio(speaker_path, outdir, tracker, api)
 
             # 2) Transcribe only
             kwargs = vars(args).copy()
@@ -281,13 +281,13 @@ def run_pipeline(args, api, root):
             kwargs.pop('list_plugins', None)
             kwargs.pop('show_defaults', None)
             kwargs.pop('system', None)
-            kwargs.pop('participant_audio_only', None)
+            kwargs.pop('single_speaker_audio', None)
             kwargs.pop('verbose', None)
             
             transcript = only_transcribe(
                 transcriber_provider,
                 str(std_audio),
-                "participant",
+                "speaker",
                 paths["intermediate"] if args.verbose else None,
                 args.verbose,
                 "participant_",

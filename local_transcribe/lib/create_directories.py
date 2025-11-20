@@ -41,8 +41,8 @@ def _compute_needed_intermediate_dirs(capabilities: dict) -> set[str]:
     aligner = capabilities.get("aligner", False)
     diarization = capabilities.get("diarization", False)
 
-    if mode == "participant_audio_only":
-        # Participant audio only: just transcription directory
+    if mode == "single_speaker_audio":
+        # Single speaker audio: just transcription directory
         needed.add("transcription")
     elif mode == "combined_audio":
         if unified:

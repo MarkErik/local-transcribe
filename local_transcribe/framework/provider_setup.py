@@ -24,9 +24,9 @@ class ProviderSetup:
         """
         providers = {}
         
-        # Check for participant_audio_only mode
-        if mode == "participant_audio_only":
-            providers.update(self._setup_participant_audio_only_providers())
+        # Check for single_speaker_audio mode
+        if mode == "single_speaker_audio":
+            providers.update(self._setup_single_speaker_audio_providers())
         # Check if using unified processing mode
         elif hasattr(self.args, 'processing_mode') and self.args.processing_mode == "unified":
             providers.update(self._setup_unified_provider())
@@ -53,8 +53,8 @@ class ProviderSetup:
         except ValueError as e:
             raise ValueError(f"Unified provider setup failed: {e}")
     
-    def _setup_participant_audio_only_providers(self) -> Dict[str, Any]:
-        """Setup providers for participant_audio_only mode (only pure transcribers)."""
+    def _setup_single_speaker_audio_providers(self) -> Dict[str, Any]:
+        """Setup providers for single_speaker_audio mode (only pure transcribers)."""
         providers = {}
         
         # Setup transcriber (only those with has_builtin_alignment = False)
@@ -181,8 +181,8 @@ class ProviderSetup:
         """
         providers = {}
         
-        # Check for participant_audio_only mode
-        if hasattr(self.args, 'participant_audio_only') and self.args.participant_audio_only:
+        # Check for single_speaker_audio mode
+        if hasattr(self.args, 'single_speaker_audio') and self.args.single_speaker_audio:
             try:
                 transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
                 providers['transcriber'] = transcriber_provider

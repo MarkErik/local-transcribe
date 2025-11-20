@@ -221,8 +221,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
         # Always process in chunks
         return self._transcribe_chunked(wav, sr, output_mode=output_mode, **kwargs)
 
-    def _transcribe_single(self, wav, **kwargs) -> str:
-        """Transcribe a single audio segment."""
+    def _transcribe_single_chunk(self, wav, **kwargs) -> str:
+        """Transcribe a single audio chunk."""
         try:
             wav_tensor = torch.from_numpy(wav).unsqueeze(0)
 
@@ -375,28 +375,16 @@ class GraniteTranscriberProvider(TranscriberProvider):
                     # Merge with previous chunk
                     merged_tensor = torch.cat([torch.from_numpy(prev_chunk_wav), torch.from_numpy(chunk_wav)])
                     merged_wav = merged_tensor.numpy()
-                    chunk_text = self._transcribe_single(merged_wav, **kwargs)
+                    chunk_text = self._transcribe_single_chunk(merged_wav, **kwargs)
                     # Update the last chunk in results
                     if output_mode == 'chunked':
                         chunks[-1] = {"chunk_id": chunk_num, "words": chunk_text.split()}
                     else:
                         chunks[-1] = chunk_text
                     prev_chunk_text = chunk_text
-                else:
-                    # First chunk is short: pad with silence
-                    pad_length = min_chunk_samples - len(chunk_wav)
-                    padded_tensor = torch.nn.functional.pad(torch.from_numpy(chunk_wav), (0, pad_length), 'constant', 0)
-                    padded_wav = padded_tensor.numpy()
-                    chunk_text = self._transcribe_single(padded_wav, **kwargs)
-                    if output_mode == 'chunked':
-                        words = chunk_text.split()
-                        chunks.append({"chunk_id": chunk_num, "words": words})
-                    else:
-                        chunks.append(chunk_text)
-                    prev_chunk_text = chunk_text
             else:
                 # Normal chunk processing
-                chunk_text = self._transcribe_single(chunk_wav, **kwargs)
+                chunk_text = self._transcribe_single_chunk(chunk_wav, **kwargs)
                 original_chunk_text = chunk_text  # Save original before trimming
                 
                 if output_mode == 'chunked':
@@ -435,9 +423,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
             prev_chunk_wav = chunk_wav
             
             # Move to next chunk: advance by chunk size minus overlap
-            # This ensures we have 2 seconds of overlap, not 28 seconds
-            start = start + chunk_samples - overlap_samples
-            if start >= total_samples:
+            chunk_start = chunk_start + chunk_samples - overlap_samples
+            if chunk_start >= total_samples:
                 break
         
         if output_mode == 'chunked':

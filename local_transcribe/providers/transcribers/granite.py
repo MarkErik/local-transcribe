@@ -346,7 +346,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         chunks = []
         total_samples = len(wav)
-        total_chunks = math.ceil(total_samples / chunk_samples)
+        total_chunks = math.ceil(total_samples / (chunk_samples - overlap_samples))
         start = 0
         chunk_num = 0
         prev_chunk_text = ""

@@ -215,17 +215,17 @@ def interactive_prompt(args, api):
                             stitch_input = input("\nSelect stitching option (number) [Default: 1]: ").strip()
                             if not stitch_input or stitch_input == "1":
                                 args.stitching_method = "builtin"
-                                args.output_mode = "stitched"
+                                args.output_format = "stitched"
                                 print("✓ Selected: Built-in stitching")
                                 break
                             elif stitch_input == "2":
                                 args.stitching_method = "local"
-                                args.output_mode = "chunked"
+                                args.output_format = "chunked"
                                 print("✓ Selected: Local intelligent stitching")
                                 break
                             elif stitch_input == "3":
                                 args.stitching_method = "llm"
-                                args.output_mode = "chunked"  # Using chunked mode for LLM stitching
+                                args.output_format = "chunked"  # Using chunked mode for LLM stitching
                                 # Prompt for LLM server URL
                                 default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                                 llm_url = input(f"\nLLM server URL [Default: {default_url}]: ").strip()
@@ -449,17 +449,17 @@ def interactive_prompt(args, api):
             while True:
                 choice = input(f"\nSelect stitching method (number) [Default: 1]: ").strip()
                 if choice in ['1', '']:
-                    args.output_mode = 'stitched'
+                    args.output_format = 'stitched'
                     args.stitching_method = "builtin"
                     print("✓ Selected: Built-in stitching [Default]")
                     break
                 elif choice == '2':
-                    args.output_mode = 'chunked'
+                    args.output_format = 'chunked'
                     args.stitching_method = "local"
                     print("✓ Selected: Local intelligent stitching")
                     break
                 elif choice == '3':
-                    args.output_mode = 'chunked'
+                    args.output_format = 'chunked'
                     args.stitching_method = "llm"
                     # Prompt for LLM URL
                     default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')

@@ -98,11 +98,11 @@ class TranscriberProvider(ABC):
             audio_path: Path to the audio file
             device: Device to use for processing (cuda/mps/cpu). If None, uses global config.
             **kwargs: Provider-specific configuration options. 
-                     'output_mode' can be 'stitched' (default) for string output or 'chunked' for list of chunks.
+                     'output_format' can be 'stitched' (default) for string output or 'chunked' for list of chunks.
 
         Returns:
-            If output_mode='stitched': Transcript text as a string
-            If output_mode='chunked': List of dicts with 'chunk_id' and 'words' keys
+            If output_format='stitched': Transcript text as a string
+            If output_format='chunked': List of dicts with 'chunk_id' and 'words' keys
         """
         pass
 

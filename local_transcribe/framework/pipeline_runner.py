@@ -37,10 +37,10 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/transcription_alignment/{base_name}word_segments.json")
     else:
         # Use transcriber + aligner composition
-        output_mode = kwargs.get('output_mode', 'stitched')
+        output_format = kwargs.get('output_format', 'stitched')
         transcript_result = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
         
-        if output_mode == 'chunked':
+        if output_format == 'chunked':
             # Chunked output: merge overlapping chunks
             from local_transcribe.processing.local_chunk_stitcher import merge_chunks
             transcript = merge_chunks(transcript_result, **kwargs)
@@ -351,7 +351,7 @@ def run_pipeline(args, api, root):
                     base_name="",
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
-                    output_mode=getattr(args, 'output_mode', 'stitched'),
+                    output_format=getattr(args, 'output_format', 'stitched'),
                     llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                 )
 
@@ -476,7 +476,7 @@ def run_pipeline(args, api, root):
                     base_name=f"{speaker_name.lower()}_",
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
-                    output_mode=getattr(args, 'output_mode', 'stitched'),
+                    output_format=getattr(args, 'output_format', 'stitched'),
                     llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
                 )
                 

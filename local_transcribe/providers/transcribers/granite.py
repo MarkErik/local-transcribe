@@ -194,7 +194,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> Union[str, List[Dict[str, Any]]]:
         """Transcribe audio using Granite model."""
-        output_mode = kwargs.pop('output_mode', 'stitched')
+        output_format = kwargs.pop('output_format', 'stitched')
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')  # Default to 8b
         if transcriber_model not in self.model_mapping:
             print(f"Warning: Unknown model {transcriber_model}, defaulting to granite-8b")
@@ -219,7 +219,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
             print(f"[i] Audio duration: {duration:.1f}s - processing in {num_chunks} chunks to manage memory")
         
         # Always process in chunks
-        return self._transcribe_chunked(wav, sr, output_mode=output_mode, **kwargs)
+        return self._transcribe_chunked(wav, sr, output_format=output_format, **kwargs)
 
     def _transcribe_single_chunk(self, wav, **kwargs) -> str:
         """Transcribe a single audio chunk."""
@@ -344,7 +344,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         return 0
 
-    def _transcribe_chunked(self, wav, sr, output_mode='stitched', **kwargs) -> Union[str, List[Dict[str, Any]]]:
+    def _transcribe_chunked(self, wav, sr, output_format='stitched', **kwargs) -> Union[str, List[Dict[str, Any]]]:
         """Transcribe audio in chunks to manage memory for long files."""
         chunk_samples = int(self.chunk_length_seconds * sr)
         overlap_samples = int(3.0 * sr)  # 3 second overlap to avoid cutting words
@@ -377,7 +377,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
                     merged_wav = merged_tensor.numpy()
                     chunk_text = self._transcribe_single_chunk(merged_wav, **kwargs)
                     # Update the last chunk in results
-                    if output_mode == 'chunked':
+                    if output_format == 'chunked':
                         chunks[-1] = {"chunk_id": chunk_num, "words": chunk_text.split()}
                     else:
                         chunks[-1] = chunk_text
@@ -387,7 +387,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 chunk_text = self._transcribe_single_chunk(chunk_wav, **kwargs)
                 original_chunk_text = chunk_text  # Save original before trimming
                 
-                if output_mode == 'chunked':
+                if output_format == 'chunked':
                     # For chunked mode, collect words without trimming overlap
                     words = chunk_text.split()
                     chunks.append({"chunk_id": chunk_num, "words": words})
@@ -427,7 +427,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
             if chunk_start >= total_samples:
                 break
         
-        if output_mode == 'chunked':
+        if output_format == 'chunked':
             return chunks
         else:
             # Combine chunks with spaces

@@ -8,6 +8,7 @@ import os
 import pathlib
 import re
 import torch
+import math
 import librosa
 from difflib import SequenceMatcher
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
@@ -206,9 +207,10 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         # Calculate audio duration in seconds
         duration = len(wav) / sr
+        num_chunks = math.ceil(duration / 30.0)
         
         if kwargs.get('verbose', False):
-            print(f"[i] Audio duration: {duration:.1f}s - processing in chunks to manage memory")
+            print(f"[i] Audio duration: {duration:.1f}s - processing in {num_chunks} chunks to manage memory")
         
         # Always process in chunks
         return self._transcribe_chunked(wav, sr, output_mode=output_mode, **kwargs)
@@ -344,6 +346,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         chunks = []
         total_samples = len(wav)
+        total_chunks = math.ceil(total_samples / chunk_samples)
         start = 0
         chunk_num = 0
         prev_chunk_text = ""
@@ -357,7 +360,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
             
             if verbose:
                 chunk_duration_sec = len(chunk_wav) / sr
-                print(f"[i] Processing chunk {chunk_num} ({chunk_duration_sec:.1f}s)...")
+                print(f"[i] Processing chunk {chunk_num} of {total_chunks} ({chunk_duration_sec:.1f}s)...")
             
             # Transcribe chunk
             chunk_text = self._transcribe_single(chunk_wav, **kwargs)

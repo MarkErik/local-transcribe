@@ -17,16 +17,18 @@ class ChunkMerger:
     A class for merging overlapping transcript chunks with intelligent overlap detection.
     """
     
-    def __init__(self, min_overlap_ratio: float = 0.6, similarity_threshold: float = 0.7):
+    def __init__(self, min_overlap_ratio: float = 0.6, similarity_threshold: float = 0.7, verbose: bool = False):
         """
         Initialize the chunk merger with configurable thresholds.
         
         Args:
             min_overlap_ratio: Minimum ratio of overlapping words to consider a valid overlap
             similarity_threshold: Threshold for word similarity using SequenceMatcher
+            verbose: Enable verbose output for debugging and progress monitoring
         """
         self.min_overlap_ratio = min_overlap_ratio
         self.similarity_threshold = similarity_threshold
+        self.verbose = verbose
     
     def merge_chunks(self, chunks: List[Dict[str, Any]]) -> str:
         """
@@ -47,10 +49,18 @@ class ChunkMerger:
         # Start with the first chunk
         merged_words = chunks[0]["words"].copy()
         
+        if self.verbose:
+            print(f"[ChunkMerger] Processing {len(chunks)} chunks")
+        
         # Iteratively merge each subsequent chunk
         for i in range(1, len(chunks)):
+            if self.verbose:
+                print(f"[ChunkMerger] Processing chunk {i + 1} of {len(chunks)}")
             current_chunk_words = chunks[i]["words"]
             merged_words = self._merge_two_chunks(merged_words, current_chunk_words)
+        
+        if self.verbose:
+            print(f"[ChunkMerger] Merge complete: {len(merged_words)} words total")
         
         return " ".join(merged_words)
     
@@ -70,7 +80,13 @@ class ChunkMerger:
         
         if overlap_length == 0:
             # No overlap found, simply concatenate
+            if self.verbose:
+                print(f"[ChunkMerger] No overlap detected between chunks; concatenating directly")
             return chunk1 + chunk2
+        
+        if self.verbose:
+            overlapping_words = chunk1[overlap_start:overlap_start + overlap_length]
+            print(f"[ChunkMerger] Overlap found: start={overlap_start}, length={overlap_length}, words={overlapping_words}")
         
         # Handle the overlap
         if overlap_length == len(chunk2):
@@ -134,12 +150,20 @@ class ChunkMerger:
         
         # Check each corresponding word pair
         matches = 0
+        fuzzy_pairs = []
         for w1, w2 in zip(words1, words2):
             if self._words_similar(w1, w2):
                 matches += 1
+                if w1 != w2 and self.verbose:
+                    ratio = SequenceMatcher(None, w1.lower(), w2.lower()).ratio()
+                    fuzzy_pairs.append(f"'{w1}' ~ '{w2}' (ratio={ratio:.2f})")
         
         # Require at least min_overlap_ratio of words to be similar
-        return matches / len(words1) >= self.min_overlap_ratio
+        is_match = matches / len(words1) >= self.min_overlap_ratio
+        if is_match and fuzzy_pairs and self.verbose:
+            print(f"[ChunkMerger] Fuzzy matches in overlap: {', '.join(fuzzy_pairs)}")
+        
+        return is_match
     
     def _words_similar(self, word1: str, word2: str) -> bool:
         """
@@ -185,6 +209,8 @@ class ChunkMerger:
         # Check if one word could be a continuation of the other
         if self._is_partial_word_match(last_word_chunk1, first_word_chunk2):
             # Replace the partial word in chunk1 with the complete word from chunk2
+            if self.verbose:
+                print(f"[ChunkMerger] Partial word overlap: replacing '{last_word_chunk1}' with '{first_word_chunk2}'")
             return len(chunk1) - 1, 1
         
         # Check for two-word partial matches
@@ -194,6 +220,8 @@ class ChunkMerger:
             
             if (self._is_partial_word_match(last_two_chunk1[0], first_two_chunk2[0]) and
                 self._words_similar(last_two_chunk1[1], first_two_chunk2[1])):
+                if self.verbose:
+                    print(f"[ChunkMerger] Partial word overlap: replacing '{last_two_chunk1}' with '{first_two_chunk2}'")
                 return len(chunk1) - 2, 2
         
         return None
@@ -239,13 +267,14 @@ def merge_chunks(chunks: List[Dict[str, Any]], **kwargs) -> str:
     
     Args:
         chunks: List of chunk dictionaries with 'chunk_id' and 'words' keys
-        **kwargs: Additional arguments (min_overlap_ratio, similarity_threshold)
+        **kwargs: Additional arguments (min_overlap_ratio, similarity_threshold, verbose)
         
     Returns:
         Merged transcript as a string
     """
     merger = ChunkMerger(
         min_overlap_ratio=kwargs.get('min_overlap_ratio', 0.6),
-        similarity_threshold=kwargs.get('similarity_threshold', 0.7)
+        similarity_threshold=kwargs.get('similarity_threshold', 0.7),
+        verbose=kwargs.get('verbose', False)
     )
     return merger.merge_chunks(chunks)

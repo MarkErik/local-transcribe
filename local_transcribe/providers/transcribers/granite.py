@@ -372,12 +372,17 @@ class GraniteTranscriberProvider(TranscriberProvider):
             if len(chunk_wav) < min_chunk_samples:
                 if prev_chunk_wav is not None:
                     # Merge with previous chunk
-                    merged_tensor = torch.cat([torch.from_numpy(prev_chunk_wav), torch.from_numpy(chunk_wav)])
+                    # Only append the non-overlapping part of the new chunk to avoid duplication
+                    non_overlapping_part = chunk_wav[overlap_samples:]
+                    merged_tensor = torch.cat([torch.from_numpy(prev_chunk_wav), torch.from_numpy(non_overlapping_part)])
                     merged_wav = merged_tensor.numpy()
+                    
                     chunk_text = self._transcribe_single_chunk(merged_wav, **kwargs)
                     # Update the last chunk in results
                     if output_format == 'chunked':
-                        chunks[-1] = {"chunk_id": chunk_num, "words": chunk_text.split()}
+                        # Preserve the ID of the chunk we are extending
+                        existing_id = chunks[-1]["chunk_id"]
+                        chunks[-1] = {"chunk_id": existing_id, "words": chunk_text.split()}
                     else:
                         chunks[-1] = chunk_text
                     prev_chunk_text = chunk_text

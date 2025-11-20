@@ -10,7 +10,7 @@ and maintaining context.
 
 import re
 import logging
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any
 from local_transcribe.framework.plugin_interfaces import Turn
 
 # Configure logger

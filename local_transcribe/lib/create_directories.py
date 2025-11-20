@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import pathlib
-from datetime import datetime
 
 def ensure_session_dirs(output_dir: str | pathlib.Path, mode: str, speaker_files: dict = None, verbose: bool = False, capabilities: dict = None) -> dict[str, pathlib.Path]:
     """

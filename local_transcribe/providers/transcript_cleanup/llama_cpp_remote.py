@@ -5,7 +5,6 @@ Remote Llama.cpp cleanup provider for transcript processing.
 
 import json
 import requests
-from typing import Optional
 from local_transcribe.framework.plugin_interfaces import TranscriptCleanupProvider, registry
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 import psutil
 import threading
-from typing import Optional, Callable, Any
+from typing import Optional, Any
 from contextlib import contextmanager
 from dataclasses import dataclass
 from rich.progress import Progress, TaskID, BarColumn, TextColumn, TimeRemainingColumn, SpinnerColumn

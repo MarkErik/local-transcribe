@@ -9,7 +9,6 @@ import os
 import pathlib
 import torch
 import torchaudio
-import numpy as np
 import librosa
 from transformers import AutoModelForCTC, AutoTokenizer
 from uroman import Uroman

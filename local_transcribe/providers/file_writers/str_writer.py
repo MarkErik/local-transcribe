@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import List, Dict, Optional
 from pathlib import Path
-from local_transcribe.lib.logging_config import get_logger, OutputError, ErrorContext, error_context
+from local_transcribe.lib.logging_config import get_logger, OutputError, error_context
 from local_transcribe.framework.plugin_interfaces import WordSegment
 
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-import sys
 from typing import Optional
 
 from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist, validate_system_capability

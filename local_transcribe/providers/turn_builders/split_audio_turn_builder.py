@@ -5,7 +5,6 @@ Split audio turn builder provider that creates optimal turns and merges them in 
 
 from typing import List, Dict
 import re
-from collections import defaultdict
 import numpy as np
 
 from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, Turn, registry

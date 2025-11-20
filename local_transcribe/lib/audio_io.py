@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import pathlib
-import tempfile
 import subprocess
 from typing import Optional
-from .logging_config import get_logger, AudioProcessingError, ErrorContext, error_context
+from .logging_config import get_logger, AudioProcessingError, error_context
 try:
     from .progress import get_progress_tracker
     _HAVE_PROGRESS = True

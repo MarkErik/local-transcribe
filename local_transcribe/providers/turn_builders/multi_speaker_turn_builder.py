@@ -3,7 +3,7 @@
 General turn builder provider.
 """
 
-from typing import List, Optional
+from typing import List
 
 from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, Turn, registry
 

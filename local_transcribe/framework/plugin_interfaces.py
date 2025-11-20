@@ -7,7 +7,7 @@ transcription, alignment, diarization, and output writer components.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Union, Protocol
+from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass
 import pathlib
 

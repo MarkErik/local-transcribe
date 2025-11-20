@@ -8,7 +8,6 @@ and managing the HuggingFace environment for offline/online mode switching.
 
 import os
 import sys
-from typing import List, Optional
 from pathlib import Path
 
 

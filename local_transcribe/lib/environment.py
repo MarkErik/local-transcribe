@@ -6,7 +6,7 @@ import os
 import sys
 import pathlib
 import warnings
-from typing import Optional, List
+from typing import List
 from dotenv import load_dotenv
 
 # Aggressively suppress warnings

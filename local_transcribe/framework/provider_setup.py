@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # framework/provider_setup.py - Provider setup and configuration logic
 
-from typing import Dict, Any, Optional, Tuple
-import pathlib
+from typing import Dict, Any
 
 
 class ProviderSetup:

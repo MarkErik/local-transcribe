@@ -8,7 +8,7 @@ an LLM to intelligently group them into natural conversational turns.
 
 import json
 import requests
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Optional, Tuple
 
 from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, Turn, registry
 

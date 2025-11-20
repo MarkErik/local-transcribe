@@ -282,6 +282,7 @@ def run_pipeline(args, api, root):
             kwargs.pop('show_defaults', None)
             kwargs.pop('system', None)
             kwargs.pop('participant_audio_only', None)
+            kwargs.pop('verbose', None)
             
             transcript = only_transcribe(
                 transcriber_provider,

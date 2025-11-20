@@ -192,7 +192,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> Union[str, List[Dict[str, Any]]]:
         """Transcribe audio using Granite model."""
-        output_mode = kwargs.get('output_mode', 'stitched')
+        output_mode = kwargs.pop('output_mode', 'stitched')
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')  # Default to 8b
         if transcriber_model not in self.model_mapping:
             print(f"Warning: Unknown model {transcriber_model}, defaulting to granite-8b")

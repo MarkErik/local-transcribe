@@ -450,22 +450,20 @@ class MFAAlignerProvider(AlignerProvider):
                 print(f"[MFA] Audio file: {audio_file} (exists: {audio_file.exists()})")
                 print(f"[MFA] Transcript file: {transcript_file} (content: {normalized_transcript[:100]}...)")
                 print(f"[MFA] Expected output: {textgrid_file}")
+                print(f"[MFA] Starting MFA subprocess now...")
 
                 result = subprocess.run(
                     cmd,
-                    capture_output=True,
+                    capture_output=False,  # Changed to False to see live output
                     text=True,
                     check=True,
-                    env=env
+                    env=env,
+                    timeout=3600  # 1 hour timeout
                 )
 
+                print(f"[MFA] MFA subprocess completed!")
                 print(f"[MFA] Command completed successfully. Exit code: {result.returncode}")
-                print(f"[MFA] stdout length: {len(result.stdout)} chars")
-                print(f"[MFA] stderr length: {len(result.stderr)} chars")
-                if result.stdout:
-                    print(f"[MFA] stdout: {result.stdout}")
-                if result.stderr:
-                    print(f"[MFA] stderr: {result.stderr}")
+                # Note: stdout/stderr not captured when capture_output=False
 
                 # Parse TextGrid to extract word timestamps
                 if textgrid_file.exists():
@@ -479,15 +477,18 @@ class MFAAlignerProvider(AlignerProvider):
                     print(f"[MFA] Falling back to simple alignment")
                     return self._simple_alignment(audio_path, transcript, speaker=speaker)
 
+            except subprocess.TimeoutExpired:
+                print(f"[MFA] ERROR: MFA alignment timed out after 3600 seconds")
+                print(f"[MFA] Command: {' '.join(cmd)}")
+                print(f"[MFA] Checking if TextGrid was created despite timeout: {textgrid_file.exists()}")
+                if textgrid_file.exists():
+                    print(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
+                print(f"[MFA] Falling back to simple alignment")
+                return self._simple_alignment(audio_path, transcript, speaker=speaker)
             except subprocess.CalledProcessError as e:
                 print(f"[MFA] ERROR: MFA alignment failed with exit code {e.returncode}")
                 print(f"[MFA] Command: {' '.join(cmd)}")
-                print(f"[MFA] stdout length: {len(e.stdout)} chars")
-                print(f"[MFA] stderr length: {len(e.stderr)} chars")
-                if e.stdout:
-                    print(f"[MFA] stdout: {e.stdout}")
-                if e.stderr:
-                    print(f"[MFA] stderr: {e.stderr}")
+                # Note: stdout/stderr not captured when capture_output=False
                 print(f"[MFA] Checking if TextGrid was created despite error: {textgrid_file.exists()}")
                 if textgrid_file.exists():
                     print(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")

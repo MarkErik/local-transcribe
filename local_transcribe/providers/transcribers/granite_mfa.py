@@ -313,9 +313,16 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         
         return text
 
-    def _align_chunk_with_mfa(self, chunk_wav, chunk_transcript: str, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Align a single chunk using MFA and return timestamped words."""
-        print("[Granite MFA] Aligning transcript with MFA")
+    def _align_chunk_with_mfa(self, chunk_wav, chunk_transcript: str, chunk_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Align a single chunk using MFA and return timestamped words.
+        
+        Args:
+            chunk_wav: Audio data for this chunk
+            chunk_transcript: Transcript text for this chunk
+            chunk_start_time: Absolute start time of this chunk in the full audio (seconds)
+            speaker: Speaker identifier
+        """
+        print(f"[Granite MFA] Aligning transcript with MFA (chunk starts at {chunk_start_time:.2f}s)")
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = pathlib.Path(temp_dir)
             audio_dir = temp_path / "audio"
@@ -375,17 +382,24 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 )
 
                 if textgrid_file.exists():
-                    return self._parse_textgrid_to_word_dicts(textgrid_file, chunk_transcript, speaker)
+                    return self._parse_textgrid_to_word_dicts(textgrid_file, chunk_transcript, chunk_start_time, speaker)
                 else:
                     # Fallback to simple distribution
-                    return self._simple_alignment_to_word_dicts(chunk_wav, chunk_transcript, speaker)
+                    return self._simple_alignment_to_word_dicts(chunk_wav, chunk_transcript, chunk_start_time, speaker)
 
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 # Fallback to simple distribution
-                return self._simple_alignment_to_word_dicts(chunk_wav, chunk_transcript, speaker)
+                return self._simple_alignment_to_word_dicts(chunk_wav, chunk_transcript, chunk_start_time, speaker)
 
-    def _parse_textgrid_to_word_dicts(self, textgrid_path: pathlib.Path, original_transcript: str, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Parse MFA TextGrid and return list of word dicts with timestamps."""
+    def _parse_textgrid_to_word_dicts(self, textgrid_path: pathlib.Path, original_transcript: str, chunk_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Parse MFA TextGrid and return list of word dicts with timestamps.
+        
+        Args:
+            textgrid_path: Path to the TextGrid file
+            original_transcript: Original transcript with punctuation/capitalization
+            chunk_start_time: Absolute start time of this chunk in the full audio (seconds)
+            speaker: Speaker identifier
+        """
         word_dicts = []
 
         try:
@@ -456,10 +470,11 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                             else:
                                 original_text = mfa_text
                             
+                            # Adjust timestamps to absolute time in full audio
                             word_dicts.append({
                                 "text": original_text,
-                                "start": start,
-                                "end": end
+                                "start": start + chunk_start_time,
+                                "end": end + chunk_start_time
                             })
                     except (ValueError, IndexError):
                         pass
@@ -468,12 +483,69 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
         except Exception as e:
             print(f"[MFA] Warning: Failed to parse TextGrid: {e}")
-            return self._simple_alignment_to_word_dicts(None, original_transcript, speaker)
+            return self._simple_alignment_to_word_dicts(None, original_transcript, chunk_start_time, speaker)
+
+        # Replace <unk> tokens with words from original transcript
+        self._replace_unk_in_word_dicts(word_dicts, original_transcript)
 
         return word_dicts
 
-    def _simple_alignment_to_word_dicts(self, chunk_wav, transcript: str, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Fallback: simple even distribution of timestamps."""
+    def _replace_unk_in_word_dicts(self, word_dicts: List[Dict[str, Any]], original_transcript: str) -> None:
+        """Replace <unk> tokens in aligned word dicts with words from the original transcript using two-pointer alignment.
+        
+        Args:
+            word_dicts: List of word dictionaries from MFA alignment (modified in place)
+            original_transcript: Original transcript from Granite with all words
+        """
+        print(f"[Granite MFA UNK REPLACE] Starting <unk> replacement")
+        
+        aligned_texts = [wd["text"] for wd in word_dicts]
+        original_words = original_transcript.split()
+        
+        print(f"[Granite MFA UNK REPLACE] Original transcript word count: {len(original_words)}")
+        print(f"[Granite MFA UNK REPLACE] MFA aligned word count before replacement: {len(aligned_texts)}")
+        
+        ptr = 0
+        for i, word_dict in enumerate(word_dicts):
+            if word_dict["text"] == "<unk>":
+                # Debug: show context
+                start_idx = max(0, i - 5)
+                end_idx = min(len(aligned_texts), i + 6)
+                aligned_context = aligned_texts[start_idx:end_idx]
+                
+                orig_start = max(0, ptr - 5)
+                orig_end = min(len(original_words), ptr + 6)
+                original_context = original_words[orig_start:orig_end]
+                
+                print(f"[Granite MFA UNK REPLACE] Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
+                
+                if ptr < len(original_words):
+                    replacement = original_words[ptr]
+                    word_dict["text"] = replacement
+                    aligned_texts[i] = replacement  # Update local copy for debugging
+                    print(f"[Granite MFA UNK REPLACE] Replaced with: '{replacement}'")
+                    ptr += 1
+                else:
+                    print(f"[Granite MFA UNK REPLACE] No more original words available, leaving as <unk>")
+            else:
+                if ptr < len(original_words) and word_dict["text"].lower() == original_words[ptr].lower():
+                    print(f"[Granite MFA UNK REPLACE] Matched '{word_dict['text']}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
+                    ptr += 1
+                else:
+                    print(f"[Granite MFA UNK REPLACE] No match for '{word_dict['text']}' at ptr {ptr}, not advancing ptr")
+        
+        final_texts = [wd["text"] for wd in word_dicts]
+        print(f"[Granite MFA UNK REPLACE] MFA aligned word count after replacement: {len(final_texts)}")
+
+    def _simple_alignment_to_word_dicts(self, chunk_wav, transcript: str, chunk_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Fallback: simple even distribution of timestamps.
+        
+        Args:
+            chunk_wav: Audio data for this chunk (or None)
+            transcript: Transcript text
+            chunk_start_time: Absolute start time of this chunk in the full audio (seconds)
+            speaker: Speaker identifier
+        """
         words = transcript.split()
         if not words:
             return []
@@ -487,7 +559,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         word_duration = duration / len(words)
         
         word_dicts = []
-        current_time = 0.0
+        current_time = chunk_start_time
 
         for word in words:
             word_dicts.append({
@@ -572,7 +644,10 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             chunk_end = min(chunk_start + chunk_samples, total_samples)
             chunk_wav = wav[chunk_start:chunk_end]
             
-            print(f"[Granite MFA] Processing chunk {chunk_num} of {num_chunks}")
+            # Calculate absolute start time of this chunk in the full audio
+            chunk_start_time = chunk_start / sr
+            
+            print(f"[Granite MFA] Processing chunk {chunk_num} of {num_chunks} (starts at {chunk_start_time:.2f}s)")
             
             if verbose:
                 chunk_duration_sec = len(chunk_wav) / sr
@@ -585,26 +660,31 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                     merged_tensor = torch.cat([torch.from_numpy(prev_chunk_wav), torch.from_numpy(non_overlapping_part)])
                     merged_wav = merged_tensor.numpy()
                     
+                    # Use the start time from the previous chunk (which is being extended)
+                    prev_chunk_start_time = chunks_with_timestamps[-1].get("chunk_start_time", chunk_start_time - (len(prev_chunk_wav) / sr))
+                    
                     # Transcribe merged chunk
                     chunk_text = self._transcribe_single_chunk(merged_wav, **kwargs)
                     
-                    # Align merged chunk
-                    timestamped_words = self._align_chunk_with_mfa(merged_wav, chunk_text, role)
+                    # Align merged chunk with absolute timestamps
+                    timestamped_words = self._align_chunk_with_mfa(merged_wav, chunk_text, prev_chunk_start_time, role)
                     
                     # Update last chunk
                     chunks_with_timestamps[-1] = {
                         "chunk_id": chunks_with_timestamps[-1]["chunk_id"],
+                        "chunk_start_time": prev_chunk_start_time,
                         "words": timestamped_words
                     }
             else:
                 # Normal chunk processing
                 chunk_text = self._transcribe_single_chunk(chunk_wav, **kwargs)
                 
-                # Align this chunk
-                timestamped_words = self._align_chunk_with_mfa(chunk_wav, chunk_text, role)
+                # Align this chunk with absolute timestamps
+                timestamped_words = self._align_chunk_with_mfa(chunk_wav, chunk_text, chunk_start_time, role)
                 
                 chunks_with_timestamps.append({
                     "chunk_id": chunk_num,
+                    "chunk_start_time": chunk_start_time,
                     "words": timestamped_words
                 })
             

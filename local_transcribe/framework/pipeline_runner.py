@@ -39,9 +39,30 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
         # Use transcriber + aligner composition
         transcript_result = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
         
-        # Always use local chunk stitcher for stitching chunks
-        from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
-        transcript = stitch_chunks(transcript_result, **kwargs)
+        # Handle chunked output (list of dicts) vs simple string output
+        if isinstance(transcript_result, list):
+            # Chunked output - need to stitch
+            if verbose:
+                print(f"[i] Received chunked output with {len(transcript_result)} chunks")
+            
+            # Choose stitching method
+            stitching_method = kwargs.get('stitching_method', 'local')
+            
+            if stitching_method == 'llm':
+                # Use external LLM server for stitching
+                from local_transcribe.processing.llm_chunk_stitcher import stitch_chunks
+                if verbose:
+                    print(f"[i] Stitching chunks using external LLM server")
+                transcript = stitch_chunks(transcript_result, **kwargs)
+            else:
+                # Use intelligent local chunk stitching (default)
+                from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
+                if verbose:
+                    print(f"[i] Stitching chunks using intelligent local overlap detection")
+                transcript = stitch_chunks(transcript_result, **kwargs)
+        else:
+            # Simple string output - no stitching needed
+            transcript = transcript_result
         
         # Verbose: Save raw transcript
         if verbose and intermediate_dir:
@@ -342,7 +363,8 @@ def run_pipeline(args, api, root):
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
                     output_format=getattr(args, 'output_format', 'stitched'),
-                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
+                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080'),
+                    stitching_method=getattr(args, 'stitching_method', 'local')
                 )
 
                 # 3) Diarize (assign speakers to words)
@@ -467,7 +489,8 @@ def run_pipeline(args, api, root):
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
                     output_format=getattr(args, 'output_format', 'stitched'),
-                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
+                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080'),
+                    stitching_method=getattr(args, 'stitching_method', 'local')
                 )
                 
                 # Add words to the combined list

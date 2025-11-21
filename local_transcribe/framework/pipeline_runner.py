@@ -544,6 +544,10 @@ def run_pipeline(args, api, root):
                     stitching_method=getattr(args, 'stitching_method', 'local')
                 )
                 
+                # Assign speaker to all words
+                for word in words:
+                    word.speaker = speaker_name
+                
                 # Add words to the combined list
                 all_words.extend(words)            # 3) Build and merge turns using the split_audio_turn_builder
             turns_task = tracker.add_task("Building and merging conversation turns", total=100, stage="turns")

@@ -29,7 +29,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         self.selected_model = None  # Will be set during transcription
         self.processor = None
         self.model = None
-        self.chunk_length_seconds = 30.0  # Configurable chunk length in seconds
+        self.chunk_length_seconds = 60.0  # Configurable chunk length in seconds
         self.overlap_seconds = 3.0  # Configurable overlap between chunks in seconds
         self.min_chunk_seconds = 6.0  # Configurable minimum chunk length in seconds
 

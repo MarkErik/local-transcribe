@@ -45,6 +45,13 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             if verbose:
                 print(f"[i] Received chunked output with {len(transcript_result)} chunks")
             
+            # Verbose: Save chunked data
+            if verbose and intermediate_dir:
+                import json
+                with open(intermediate_dir / "transcription" / f"{base_name}raw_chunks.json", "w", encoding="utf-8") as f:
+                    json.dump(transcript_result, f, indent=2, ensure_ascii=False)
+                print(f"[i] Verbose: Raw chunks saved to Intermediate_Outputs/transcription/{base_name}raw_chunks.json")
+            
             # Choose stitching method
             stitching_method = kwargs.get('stitching_method', 'local')
             

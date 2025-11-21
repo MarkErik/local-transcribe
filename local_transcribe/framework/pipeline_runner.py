@@ -30,6 +30,28 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             device=device,
             **kwargs
         )
+        
+        # Check if segments are chunked (for granite_mfa and similar plugins)
+        if isinstance(segments, list) and segments and isinstance(segments[0], dict) and "chunk_id" in segments[0]:
+            # Chunked output with timestamps - need to stitch
+            if verbose:
+                print(f"[i] Received chunked output with timestamps from {transcriber_provider.name}, {len(segments)} chunks")
+            
+            # Verbose: Save chunked data
+            if verbose and intermediate_dir:
+                import json
+                # Chunks already have serializable format (dicts with text/start/end)
+                with open(intermediate_dir / "transcription_alignment" / f"{base_name}raw_chunks_timestamped.json", "w", encoding="utf-8") as f:
+                    json.dump(segments, f, indent=2, ensure_ascii=False)
+                print(f"[i] Verbose: Raw timestamped chunks saved to Intermediate_Outputs/transcription_alignment/{base_name}raw_chunks_timestamped.json")
+            
+            # Use local_chunk_stitcher (which now handles timestamped words)
+            from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
+            if verbose:
+                print(f"[i] Stitching chunks with timestamps using intelligent local overlap detection")
+            segments = stitch_chunks(segments, **kwargs)
+            # Now segments is List[WordSegment]
+        
         # Verbose: Save word segments
         if verbose and intermediate_dir:
             json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
@@ -48,8 +70,19 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             # Verbose: Save chunked data
             if verbose and intermediate_dir:
                 import json
+                # Handle both string words and dict words (timestamped)
+                serializable_chunks = []
+                for chunk in transcript_result:
+                    words = chunk["words"]
+                    if words and isinstance(words[0], dict):
+                        # Already serializable (timestamps included)
+                        serializable_chunks.append(chunk)
+                    else:
+                        # String words (convert to list for JSON)
+                        serializable_chunks.append({"chunk_id": chunk["chunk_id"], "words": list(words)})
+                
                 with open(intermediate_dir / "transcription" / f"{base_name}raw_chunks.json", "w", encoding="utf-8") as f:
-                    json.dump(transcript_result, f, indent=2, ensure_ascii=False)
+                    json.dump(serializable_chunks, f, indent=2, ensure_ascii=False)
                 print(f"[i] Verbose: Raw chunks saved to Intermediate_Outputs/transcription/{base_name}raw_chunks.json")
             
             # Choose stitching method
@@ -127,8 +160,19 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
         # Verbose: Save chunked data
         if verbose and intermediate_dir:
             import json
+            # Handle both string words and dict words
+            serializable_chunks = []
+            for chunk in transcript:
+                words = chunk["words"]
+                if words and isinstance(words[0], dict):
+                    # Already serializable (timestamps included)
+                    serializable_chunks.append(chunk)
+                else:
+                    # String words
+                    serializable_chunks.append({"chunk_id": chunk["chunk_id"], "words": list(words)})
+            
             with open(intermediate_dir / "transcription" / f"{base_name}raw_chunks.json", "w", encoding="utf-8") as f:
-                json.dump(transcript, f, indent=2, ensure_ascii=False)
+                json.dump(serializable_chunks, f, indent=2, ensure_ascii=False)
             print(f"[i] Verbose: Raw chunks saved to Intermediate_Outputs/transcription/{base_name}raw_chunks.json")
     else:
         # Simple string output

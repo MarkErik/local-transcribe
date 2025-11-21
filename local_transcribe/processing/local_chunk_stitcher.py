@@ -5,10 +5,15 @@ Chunk stitcher for intelligently stitching overlapping transcript chunks from au
 This module provides functionality to stitch overlapping chunks from transcriber output,
 handling cases where words may be cut off at chunk boundaries (e.g. "generational" -> "rational")
 and dealing with slight differences in similar-sounding words.
+
+Supports both:
+- Simple string words: chunks with "words" as List[str]
+- Timestamped words: chunks with "words" as List[Dict] where each dict has "text", "start", "end"
 """
 
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Union
 from difflib import SequenceMatcher
+from local_transcribe.framework.plugin_interfaces import WordSegment
 
 
 class ChunkStitcher:
@@ -29,12 +34,40 @@ class ChunkStitcher:
         self.similarity_threshold = similarity_threshold
         self.verbose = verbose
     
-    def stitch_chunks(self, chunks: List[Dict[str, Any]]) -> str:
+    def stitch_chunks(self, chunks: List[Dict[str, Any]]) -> Union[str, List[WordSegment]]:
         """
         Stitch a list of transcript chunks into a single transcript.
         
         Args:
             chunks: List of chunk dictionaries with 'chunk_id' and 'words' keys
+                   Words can be either List[str] or List[Dict] with timestamps
+            
+        Returns:
+            If words are strings: Stitched transcript as a string
+            If words have timestamps: List[WordSegment] with preserved timestamps
+        """
+        if not chunks:
+            return ""
+        
+        # Detect format: check if words have timestamps
+        has_timestamps = (
+            chunks[0]["words"] and 
+            isinstance(chunks[0]["words"][0], dict) and
+            "text" in chunks[0]["words"][0] and
+            "start" in chunks[0]["words"][0]
+        )
+        
+        if has_timestamps:
+            return self._stitch_chunks_with_timestamps(chunks)
+        else:
+            return self._stitch_chunks_simple(chunks)
+    
+    def _stitch_chunks_simple(self, chunks: List[Dict[str, Any]]) -> str:
+        """
+        Stitch chunks with simple string words (existing behavior).
+        
+        Args:
+            chunks: List of chunk dictionaries with 'words' as List[str]
             
         Returns:
             Stitched transcript as a string
@@ -49,7 +82,7 @@ class ChunkStitcher:
         stitched_words = chunks[0]["words"].copy()
         
         if self.verbose:
-            print(f"[ChunkStitcher] Processing {len(chunks)} chunks")
+            print(f"[ChunkStitcher] Processing {len(chunks)} chunks (string words)")
         
         # Iteratively stitch each subsequent chunk
         for i in range(1, len(chunks)):
@@ -62,6 +95,49 @@ class ChunkStitcher:
             print(f"[ChunkStitcher] Stitch complete: {len(stitched_words)} words total")
         
         return " ".join(stitched_words)
+    
+    def _stitch_chunks_with_timestamps(self, chunks: List[Dict[str, Any]]) -> List[WordSegment]:
+        """
+        Stitch chunks with timestamped words, preserving timing information.
+        
+        Args:
+            chunks: List of chunk dictionaries with 'words' as List[Dict]
+                   Each dict has "text", "start", "end"
+            
+        Returns:
+            List[WordSegment] with preserved timestamps
+        """
+        if not chunks:
+            return []
+        
+        if len(chunks) == 1:
+            # Convert to WordSegments
+            return [
+                WordSegment(text=w["text"], start=w["start"], end=w["end"], speaker=w.get("speaker"))
+                for w in chunks[0]["words"]
+            ]
+        
+        # Start with the first chunk
+        stitched_words = chunks[0]["words"].copy()
+        
+        if self.verbose:
+            print(f"[ChunkStitcher] Processing {len(chunks)} chunks (timestamped words)")
+        
+        # Iteratively stitch each subsequent chunk
+        for i in range(1, len(chunks)):
+            if self.verbose:
+                print(f"[ChunkStitcher] Processing chunk {i + 1} of {len(chunks)}")
+            current_chunk_words = chunks[i]["words"]
+            stitched_words = self._stitch_two_chunks_with_timestamps(stitched_words, current_chunk_words)
+        
+        if self.verbose:
+            print(f"[ChunkStitcher] Stitch complete: {len(stitched_words)} words total")
+        
+        # Convert to WordSegments
+        return [
+            WordSegment(text=w["text"], start=w["start"], end=w["end"], speaker=w.get("speaker"))
+            for w in stitched_words
+        ]
     
     def _stitch_two_chunks(self, chunk1: List[str], chunk2: List[str]) -> List[str]:
         """
@@ -95,6 +171,111 @@ class ChunkStitcher:
         # Take the non-overlapping part of chunk1 and all of chunk2
         # This handles cases where chunk2 might have better transcription at the boundary
         return chunk1[:overlap_start] + chunk2
+    
+    def _stitch_two_chunks_with_timestamps(self, chunk1: List[Dict[str, Any]], chunk2: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Stitch two chunks with timestamped words, handling overlaps intelligently.
+        
+        Args:
+            chunk1: First chunk's word list (dicts with "text", "start", "end")
+            chunk2: Second chunk's word list (dicts with "text", "start", "end")
+            
+        Returns:
+            Stitched word list with timestamps preserved
+        """
+        # Find the overlap region using text comparison
+        overlap_start, overlap_length = self._find_overlap_with_timestamps(chunk1, chunk2)
+        
+        if overlap_length == 0:
+            # No overlap found, simply concatenate
+            if self.verbose:
+                print(f"[ChunkStitcher] No overlap detected between chunks; concatenating directly")
+            return chunk1 + chunk2
+        
+        if self.verbose:
+            overlapping_words = [w["text"] for w in chunk1[overlap_start:overlap_start + overlap_length]]
+            print(f"[ChunkStitcher] Overlap found: start={overlap_start}, length={overlap_length}, words={overlapping_words}")
+        
+        # Handle the overlap
+        if overlap_length == len(chunk2):
+            # Second chunk is entirely contained in first
+            return chunk1
+        
+        # Take the non-overlapping part of chunk1 and all of chunk2
+        # This preserves timestamps from chunk2 at the boundary
+        return chunk1[:overlap_start] + chunk2
+    
+    def _find_overlap_with_timestamps(self, chunk1: List[Dict[str, Any]], chunk2: List[Dict[str, Any]]) -> Tuple[int, int]:
+        """
+        Find the overlap between two chunks with timestamped words.
+        
+        Args:
+            chunk1: First chunk's word list (dicts with "text", "start", "end")
+            chunk2: Second chunk's word list (dicts with "text", "start", "end")
+            
+        Returns:
+            Tuple of (overlap_start_index_in_chunk1, overlap_length)
+        """
+        # Maximum possible overlap length
+        max_possible_overlap = min(len(chunk1), len(chunk2))
+        
+        # Check for overlaps from largest to smallest
+        for overlap_size in range(max_possible_overlap, 0, -1):
+            # Try to find this size overlap at the end of chunk1 and start of chunk2
+            chunk1_end = [w["text"] for w in chunk1[-overlap_size:]]
+            chunk2_start = [w["text"] for w in chunk2[:overlap_size]]
+            
+            # Check for exact match
+            if chunk1_end == chunk2_start:
+                return len(chunk1) - overlap_size, overlap_size
+            
+            # Check for fuzzy match (similar words)
+            if self._is_fuzzy_match(chunk1_end, chunk2_start):
+                return len(chunk1) - overlap_size, overlap_size
+        
+        # Check for partial word overlaps
+        partial_overlap = self._find_partial_word_overlap_with_timestamps(chunk1, chunk2)
+        if partial_overlap:
+            return partial_overlap
+        
+        # No overlap found
+        return 0, 0
+    
+    def _find_partial_word_overlap_with_timestamps(self, chunk1: List[Dict[str, Any]], chunk2: List[Dict[str, Any]]) -> Optional[Tuple[int, int]]:
+        """
+        Check for partial word overlaps at chunk boundaries with timestamped words.
+        
+        Args:
+            chunk1: First chunk's word list (dicts)
+            chunk2: Second chunk's word list (dicts)
+            
+        Returns:
+            Tuple of (overlap_start_index_in_chunk1, overlap_length) if found, else None
+        """
+        if not chunk1 or not chunk2:
+            return None
+        
+        last_word_chunk1 = chunk1[-1]["text"]
+        first_word_chunk2 = chunk2[0]["text"]
+        
+        # Check if one word could be a continuation of the other
+        if self._is_partial_word_match(last_word_chunk1, first_word_chunk2):
+            if self.verbose:
+                print(f"[ChunkStitcher] Partial word overlap: replacing '{last_word_chunk1}' with '{first_word_chunk2}'")
+            return len(chunk1) - 1, 1
+        
+        # Check for two-word partial matches
+        if len(chunk1) >= 2 and len(chunk2) >= 2:
+            last_two_chunk1 = [chunk1[-2]["text"], chunk1[-1]["text"]]
+            first_two_chunk2 = [chunk2[0]["text"], chunk2[1]["text"]]
+            
+            if (self._is_partial_word_match(last_two_chunk1[0], first_two_chunk2[0]) and
+                self._words_similar(last_two_chunk1[1], first_two_chunk2[1])):
+                if self.verbose:
+                    print(f"[ChunkStitcher] Partial word overlap: replacing '{last_two_chunk1}' with '{first_two_chunk2}'")
+                return len(chunk1) - 2, 2
+        
+        return None
     
     def _find_overlap(self, chunk1: List[str], chunk2: List[str]) -> Tuple[int, int]:
         """
@@ -260,16 +441,18 @@ class ChunkStitcher:
         return False
 
 
-def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> str:
+def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> Union[str, List[WordSegment]]:
     """
     Convenience function to stitch transcript chunks.
     
     Args:
         chunks: List of chunk dictionaries with 'chunk_id' and 'words' keys
+               Words can be either List[str] or List[Dict] with timestamps
         **kwargs: Additional arguments (min_overlap_ratio, similarity_threshold, verbose)
         
     Returns:
-        Stitched transcript as a string
+        If words are strings: Stitched transcript as a string
+        If words have timestamps: List[WordSegment] with preserved timestamps
     """
     stitcher = ChunkStitcher(
         min_overlap_ratio=kwargs.get('min_overlap_ratio', 0.6),

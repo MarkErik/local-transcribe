@@ -26,6 +26,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
     """Combined transcriber+aligner using IBM Granite + MFA for chunked transcription with timestamps."""
 
     def __init__(self):
+        print("[Granite MFA] Initializing Granite MFA Transcriber Provider")
         # Granite configuration
         self.model_mapping = {
             "granite-2b": "ibm-granite/granite-speech-3.3-2b",
@@ -73,6 +74,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite models to cache."""
+        print("[Granite MFA] Starting model preload for Granite models")
         import sys
 
         cache_dir = models_dir / "transcribers" / "granite"
@@ -130,6 +132,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def _load_granite_model(self):
         """Load the Granite model if not already loaded."""
+        print("[Granite MFA] Loading Granite model...")
         if self.model is None:
             model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-8b"])
             
@@ -172,6 +175,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def _ensure_mfa_models(self):
         """Ensure MFA acoustic model and dictionary are downloaded."""
+        print("[Granite MFA] Ensuring MFA models are available...")
         print(f"[MFA] Checking MFA models in {self.mfa_models_dir}")
         env = os.environ.copy()
         env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
@@ -217,6 +221,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def _transcribe_single_chunk(self, wav, **kwargs) -> str:
         """Transcribe a single audio chunk using Granite."""
+        print("[Granite MFA] Transcribing audio chunk with Granite")
         try:
             wav_tensor = torch.from_numpy(wav).unsqueeze(0)
 
@@ -310,7 +315,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def _align_chunk_with_mfa(self, chunk_wav, chunk_transcript: str, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Align a single chunk using MFA and return timestamped words."""
-        
+        print("[Granite MFA] Aligning transcript with MFA")
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = pathlib.Path(temp_dir)
             audio_dir = temp_path / "audio"
@@ -517,6 +522,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 "words": List[Dict[str, Any]]  # Each word has "text", "start", "end"
             }
         """
+        print("[Granite MFA] Starting transcription with alignment using Granite + MFA")
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')
         if transcriber_model not in self.model_mapping:
             print(f"Warning: Unknown model {transcriber_model}, defaulting to granite-8b")
@@ -565,6 +571,8 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             chunk_num += 1
             chunk_end = min(chunk_start + chunk_samples, total_samples)
             chunk_wav = wav[chunk_start:chunk_end]
+            
+            print(f"[Granite MFA] Processing chunk {chunk_num} of {num_chunks}")
             
             if verbose:
                 chunk_duration_sec = len(chunk_wav) / sr

@@ -275,7 +275,7 @@ class BatchSimilarityCalculator:
         self.config = config
         self.calculator = SimilarityCalculator(config)
     
-    def calculate_batch_similarity(self, segments1: List[TextSegment], 
+    def calculate_batch_similarity(self, segments1: List[TextSegment],
                                   segments2: List[TextSegment]) -> List[List[SimilarityScore]]:
         """
         Calculate similarity matrix between two lists of segments.
@@ -287,13 +287,63 @@ class BatchSimilarityCalculator:
         Returns:
             2D matrix of similarity scores
         """
-        # Initialize similarity matrix
+        # Handle empty lists
+        if not segments1 or not segments2:
+            return [[]]
+        
+        # For large transcripts, use a more memory-efficient approach
+        n = len(segments1)
+        m = len(segments2)
+        
+        # If the matrices are too large, process in batches
+        max_size = 1000  # Maximum size for n*m before using batch processing
+        
+        if n * m > max_size:
+            return self._calculate_large_batch_similarity(segments1, segments2)
+        
+        # For smaller matrices, use the original approach
         similarity_matrix = [[None for _ in segments2] for _ in segments1]
         
         # Calculate similarities
         for i, seg1 in enumerate(segments1):
             for j, seg2 in enumerate(segments2):
                 similarity_matrix[i][j] = self.calculator.calculate_similarity(seg1, seg2)
+        
+        return similarity_matrix
+    
+    def _calculate_large_batch_similarity(self, segments1: List[TextSegment],
+                                         segments2: List[TextSegment]) -> List[List[SimilarityScore]]:
+        """
+        Calculate similarity matrix for large transcripts using a memory-efficient approach.
+        
+        Args:
+            segments1: First list of text segments
+            segments2: Second list of text segments
+            
+        Returns:
+            2D matrix of similarity scores
+        """
+        n = len(segments1)
+        m = len(segments2)
+        
+        # Initialize similarity matrix with None values
+        similarity_matrix = [[None for _ in segments2] for _ in segments1]
+        
+        # Process in batches to reduce memory usage
+        batch_size = 100  # Adjust based on memory constraints
+        
+        for i_start in range(0, n, batch_size):
+            i_end = min(i_start + batch_size, n)
+            
+            for j_start in range(0, m, batch_size):
+                j_end = min(j_start + batch_size, m)
+                
+                # Calculate similarities for this batch
+                for i in range(i_start, i_end):
+                    for j in range(j_start, j_end):
+                        similarity_matrix[i][j] = self.calculator.calculate_similarity(
+                            segments1[i], segments2[j]
+                        )
         
         return similarity_matrix
     

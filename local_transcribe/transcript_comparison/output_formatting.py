@@ -47,14 +47,22 @@ class ComparisonResultFormatter:
     def _format_json(self, comparison_result: ComparisonResult) -> str:
         """Format comparison results as JSON."""
         # Convert data structures to JSON-serializable format
+        # Get source information safely
+        ref_source = "unknown"
+        hyp_source = "unknown"
+        
+        if (comparison_result.alignment_result.aligned_pairs and
+            len(comparison_result.alignment_result.aligned_pairs) > 0):
+            first_pair = comparison_result.alignment_result.aligned_pairs[0]
+            if first_pair.reference_segment:
+                ref_source = first_pair.reference_segment.features.get("source", "unknown")
+            if first_pair.hypothesis_segment:
+                hyp_source = first_pair.hypothesis_segment.features.get("source", "unknown")
+        
         json_data = {
             "comparison_metadata": {
-                "reference_source": comparison_result.alignment_result.aligned_pairs[0].reference_segment.features.get("source", "unknown") 
-                                  if comparison_result.alignment_result.aligned_pairs and comparison_result.alignment_result.aligned_pairs[0].reference_segment 
-                                  else "unknown",
-                "hypothesis_source": comparison_result.alignment_result.aligned_pairs[0].hypothesis_segment.features.get("source", "unknown")
-                                   if comparison_result.alignment_result.aligned_pairs and comparison_result.alignment_result.aligned_pairs[0].hypothesis_segment
-                                   else "unknown",
+                "reference_source": ref_source,
+                "hypothesis_source": hyp_source,
                 "comparison_date": datetime.now().isoformat(),
                 "comparison_config": {
                     "semantic_threshold": self.config.semantic_threshold,
@@ -130,13 +138,17 @@ class ComparisonResultFormatter:
         lines.append("=" * 50)
         lines.append("")
         
-        # Metadata
-        ref_source = (comparison_result.alignment_result.aligned_pairs[0].reference_segment.features.get("source", "unknown")
-                     if comparison_result.alignment_result.aligned_pairs and comparison_result.alignment_result.aligned_pairs[0].reference_segment
-                     else "unknown")
-        hyp_source = (comparison_result.alignment_result.aligned_pairs[0].hypothesis_segment.features.get("source", "unknown")
-                     if comparison_result.alignment_result.aligned_pairs and comparison_result.alignment_result.aligned_pairs[0].hypothesis_segment
-                     else "unknown")
+        # Metadata - Get source information safely
+        ref_source = "unknown"
+        hyp_source = "unknown"
+        
+        if (comparison_result.alignment_result.aligned_pairs and
+            len(comparison_result.alignment_result.aligned_pairs) > 0):
+            first_pair = comparison_result.alignment_result.aligned_pairs[0]
+            if first_pair.reference_segment:
+                ref_source = first_pair.reference_segment.features.get("source", "unknown")
+            if first_pair.hypothesis_segment:
+                hyp_source = first_pair.hypothesis_segment.features.get("source", "unknown")
         
         lines.append(f"Reference Source: {ref_source}")
         lines.append(f"Hypothesis Source: {hyp_source}")
@@ -222,6 +234,18 @@ class ComparisonResultFormatter:
     
     def _format_html(self, comparison_result: ComparisonResult) -> str:
         """Format comparison results as HTML."""
+        # Get source information safely
+        ref_source = "unknown"
+        hyp_source = "unknown"
+        
+        if (comparison_result.alignment_result.aligned_pairs and
+            len(comparison_result.alignment_result.aligned_pairs) > 0):
+            first_pair = comparison_result.alignment_result.aligned_pairs[0]
+            if first_pair.reference_segment:
+                ref_source = first_pair.reference_segment.features.get("source", "unknown")
+            if first_pair.hypothesis_segment:
+                hyp_source = first_pair.hypothesis_segment.features.get("source", "unknown")
+        
         html = f"""
 <!DOCTYPE html>
 <html>
@@ -250,6 +274,14 @@ class ComparisonResultFormatter:
 </head>
 <body>
     <h1>Transcript Comparison Report</h1>
+    
+    <h2>Metadata</h2>
+    <table>
+        <tr><th>Property</th><th>Value</th></tr>
+        <tr><td>Reference Source</td><td>{ref_source}</td></tr>
+        <tr><td>Hypothesis Source</td><td>{hyp_source}</td></tr>
+        <tr><td>Comparison Date</td><td>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
+    </table>
     
     <h2>Summary</h2>
     <div class="metrics">

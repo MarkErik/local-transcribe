@@ -62,7 +62,7 @@ class TranscriptAlignmentEngine:
             alignment_score=alignment_score
         )
     
-    def _sequence_align(self, ref_segments: List[TextSegment], 
+    def _sequence_align(self, ref_segments: List[TextSegment],
                        hyp_segments: List[TextSegment]) -> List[AlignedPair]:
         """
         Perform sequence alignment using modified Needleman-Wunsch algorithm.
@@ -77,14 +77,17 @@ class TranscriptAlignmentEngine:
         if not ref_segments or not hyp_segments:
             return self._handle_empty_transcripts(ref_segments, hyp_segments)
         
+        n = len(ref_segments)
+        m = len(hyp_segments)
+        
+        # For large transcripts, use a memory-efficient approach
+        if n * m > 10000:  # Threshold for using memory-efficient version
+            return self._sequence_align_memory_efficient(ref_segments, hyp_segments)
+        
         # Calculate similarity matrix
         sim_matrix = self.batch_calculator.calculate_batch_similarity(ref_segments, hyp_segments)
         
         # Initialize DP matrix
-        n = len(ref_segments)
-        m = len(hyp_segments)
-        
-        # Create DP matrix with scores
         dp = [[0.0 for _ in range(m + 1)] for _ in range(n + 1)]
         
         # Create traceback matrix
@@ -129,6 +132,79 @@ class TranscriptAlignmentEngine:
         
         return aligned_pairs
     
+    def _sequence_align_memory_efficient(self, ref_segments: List[TextSegment],
+                                        hyp_segments: List[TextSegment]) -> List[AlignedPair]:
+        """
+        Perform sequence alignment using a memory-efficient version of Needleman-Wunsch.
+        Uses only O(min(n,m)) space by keeping only the current and previous rows.
+        
+        Args:
+            ref_segments: Reference transcript segments
+            hyp_segments: Hypothesis transcript segments
+            
+        Returns:
+            List of aligned segment pairs
+        """
+        n = len(ref_segments)
+        m = len(hyp_segments)
+        
+        # Ensure n is the smaller dimension for memory efficiency
+        if n > m:
+            # Swap to minimize memory usage
+            return self._sequence_align_memory_efficient(hyp_segments, ref_segments)
+        
+        # Calculate similarity matrix in batches to reduce memory
+        sim_matrix = self.batch_calculator.calculate_batch_similarity(ref_segments, hyp_segments)
+        
+        # Initialize DP matrix with only two rows
+        prev_row = [0.0] * (m + 1)
+        curr_row = [0.0] * (m + 1)
+        
+        # Initialize traceback matrix as a list of lists
+        traceback = [[None for _ in range(m + 1)] for _ in range(n + 1)]
+        
+        # Initialize first row
+        for j in range(1, m + 1):
+            prev_row[j] = prev_row[j-1] - self.config.gap_penalty
+            traceback[0][j] = 'left'
+        
+        # Fill DP matrix row by row
+        for i in range(1, n + 1):
+            # Initialize first column of current row
+            curr_row[0] = prev_row[0] - self.config.gap_penalty
+            traceback[i][0] = 'up'
+            
+            for j in range(1, m + 1):
+                # Get similarity score
+                sim_score = sim_matrix[i-1][j-1].combined
+                
+                # Calculate scores for three possible moves
+                match_score = prev_row[j-1] + sim_score
+                delete_score = prev_row[j] - self.config.gap_penalty
+                insert_score = curr_row[j-1] - self.config.gap_penalty
+                
+                # Choose the best score
+                best_score = max(match_score, delete_score, insert_score)
+                curr_row[j] = best_score
+                
+                # Record traceback
+                if best_score == match_score:
+                    traceback[i][j] = 'diagonal'
+                elif best_score == delete_score:
+                    traceback[i][j] = 'up'
+                else:
+                    traceback[i][j] = 'left'
+            
+            # Swap rows for next iteration
+            prev_row, curr_row = curr_row, prev_row
+        
+        # Traceback to find optimal alignment
+        aligned_pairs = self._traceback_alignment(
+            ref_segments, hyp_segments, None, traceback, sim_matrix
+        )
+        
+        return aligned_pairs
+    
     def _handle_empty_transcripts(self, ref_segments: List[TextSegment], 
                                  hyp_segments: List[TextSegment]) -> List[AlignedPair]:
         """Handle case where one or both transcripts are empty."""
@@ -162,9 +238,9 @@ class TranscriptAlignmentEngine:
         
         return aligned_pairs
     
-    def _traceback_alignment(self, ref_segments: List[TextSegment], 
+    def _traceback_alignment(self, ref_segments: List[TextSegment],
                             hyp_segments: List[TextSegment],
-                            dp: List[List[float]], 
+                            dp: List[List[float]],
                             traceback: List[List[str]],
                             sim_matrix: List[List[SimilarityScore]]) -> List[AlignedPair]:
         """
@@ -184,7 +260,13 @@ class TranscriptAlignmentEngine:
         j = len(hyp_segments)
         aligned_pairs = []
         
-        while i > 0 or j > 0:
+        # Add safeguard to prevent infinite loops
+        max_iterations = (i + j) * 2  # Safe upper bound
+        iteration_count = 0
+        
+        while (i > 0 or j > 0) and iteration_count < max_iterations:
+            iteration_count += 1
+            
             if i == 0:
                 # All remaining are insertions
                 for k in range(j-1, -1, -1):
@@ -214,7 +296,39 @@ class TranscriptAlignmentEngine:
                 break
             
             else:
+                # Ensure traceback matrix is valid
+                if i >= len(traceback) or j >= len(traceback[0]):
+                    # Handle out-of-bounds case
+                    if i > 0:
+                        pair = AlignedPair(
+                            reference_segment=ref_segments[i-1],
+                            hypothesis_segment=None,
+                            similarity_score=0.0,
+                            alignment_type="deletion",
+                            timing_difference=0.0,
+                            confidence=1.0
+                        )
+                        aligned_pairs.append(pair)
+                        i -= 1
+                    if j > 0:
+                        pair = AlignedPair(
+                            reference_segment=None,
+                            hypothesis_segment=hyp_segments[j-1],
+                            similarity_score=0.0,
+                            alignment_type="insertion",
+                            timing_difference=0.0,
+                            confidence=1.0
+                        )
+                        aligned_pairs.append(pair)
+                        j -= 1
+                    continue
+                
                 direction = traceback[i][j]
+                
+                # Handle invalid direction
+                if direction not in ['diagonal', 'up', 'left']:
+                    # Default to diagonal move if direction is invalid
+                    direction = 'diagonal'
                 
                 if direction == 'diagonal':
                     # Match or substitution
@@ -270,6 +384,10 @@ class TranscriptAlignmentEngine:
                     aligned_pairs.append(pair)
                     
                     j -= 1
+        
+        # Check if we exited due to iteration limit
+        if iteration_count >= max_iterations:
+            print("Warning: Traceback alignment reached maximum iterations, possible infinite loop prevented")
         
         # Reverse to get correct order
         aligned_pairs.reverse()

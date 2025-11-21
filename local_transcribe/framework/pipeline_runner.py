@@ -301,21 +301,21 @@ def run_pipeline(args, api, root):
                 "speaker",
                 paths["intermediate"] if args.verbose else None,
                 args.verbose,
-                "participant_",
+                "",
                 **kwargs
             )
 
             # 3) Process transcript into words and save as CSV
             import csv
             words = transcript.split()
-            csv_path = outdir / "participant_transcript.csv"
+            csv_path = outdir / "transcript.csv"
             with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(['Line', 'Word'])
                 for i, word in enumerate(words, 1):
                     writer.writerow([i, word])
             
-            print(f"[✓] Participant transcript saved to {csv_path}")
+            print(f"[✓] Transcript saved to {csv_path}")
             print(f"[i] Artifacts written to: {paths['root']}")
             
             # Print performance summary

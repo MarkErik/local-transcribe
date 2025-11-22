@@ -27,12 +27,12 @@ class CTCAlignerProvider(AlignerProvider):
         # Device is determined dynamically
         self.model_name = "facebook/wav2vec2-base-960h"  # CTC model for alignment
         self.model = None
+        self.tokenizer = None
+        self.sample_rate = 16000
 
     @property
     def device(self):
         return get_system_capability()
-        self.tokenizer = None
-        self.sample_rate = 16000
 
     @property
     def name(self) -> str:

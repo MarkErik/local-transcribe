@@ -26,7 +26,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("-i", "--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
-    p.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging output (intermediate files are always created).")
+    p.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging output.")
     p.add_argument("-l","--list-plugins", action="store_true", help="List available plugins and exit.")
     p.add_argument("--show-defaults", action="store_true", help="Show all default values and exit.")
     p.add_argument("-x", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")

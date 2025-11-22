@@ -75,9 +75,19 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which MLX Whisper models are available offline without downloading."""
-        # MLX Whisper handles caching automatically via Hugging Face Hub
-        # For now, assume all models need to be downloaded (conservative approach)
-        return models
+        missing = []
+        try:
+            from huggingface_hub import snapshot_download
+            for model in models:
+                try:
+                    # Try to download with local_files_only=True to check if available
+                    snapshot_download(model, local_files_only=True)
+                except Exception:
+                    missing.append(model)
+        except ImportError:
+            # If huggingface_hub not available, assume all missing
+            missing = models
+        return missing
 
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> str:
         """Transcribe audio using MLX Whisper model."""
@@ -141,8 +151,14 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         return word_segments
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
-        """Ensure models are available by preloading them."""
-        self.preload_models(models, models_dir)
+        """Ensure models are available by downloading them."""
+        try:
+            from huggingface_hub import snapshot_download
+            for model in models:
+                snapshot_download(model)
+                log_completion(f"MLX Whisper {model} downloaded successfully")
+        except ImportError:
+            raise ImportError("huggingface_hub package is required for downloading models.")
 
 
 def register_transcriber_plugins():

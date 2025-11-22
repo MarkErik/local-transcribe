@@ -300,37 +300,32 @@ def run_pipeline(args, api, root):
         "diarization": diarization_provider is not None
     }
 
-    # Initialize progress tracking
-    tracker = api["get_progress_tracker"]()
-    tracker.start()
+    # Ensure outdir & subdirs
+    outdir = ensure_outdir(args.outdir)
+    paths = api["ensure_session_dirs"](outdir, mode, speaker_files, args.verbose, capabilities)
 
-    try:
-        # Ensure outdir & subdirs
-        outdir = ensure_outdir(args.outdir)
-        paths = api["ensure_session_dirs"](outdir, mode, speaker_files, args.verbose, capabilities)
-
-        if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
-            print(f"[*] Mode: {mode} (combined_audio) | System: {args.system.upper()} | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
-        elif mode == "single_speaker_audio":
-            print(f"[*] Mode: {mode} | System: {args.system.upper()} | Transcriber: {args.transcriber_provider} | Outputs: CSV")
-        else:
-            provider_info = []
-            if hasattr(args, 'transcriber_provider') and args.transcriber_provider:
-                provider_info.append(f"Transcriber: {args.transcriber_provider}")
-            if hasattr(args, 'aligner_provider') and args.aligner_provider:
-                provider_info.append(f"Aligner: {args.aligner_provider}")
-            if hasattr(args, 'diarization_provider') and args.diarization_provider:
-                provider_info.append(f"Diarization: {args.diarization_provider}")
-            provider_str = " | ".join(provider_info) if provider_info else "Default providers"
-            turn_builder_str = f" | Turn Builder: {turn_builder_provider.name}" if turn_builder_provider else ""
-            print(f"[*] Mode: {mode} | System: {args.system.upper()} | {provider_str}{turn_builder_str} | Outputs: {', '.join(args.selected_outputs)}")
+    if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
+        print(f"[*] Mode: {mode} (combined_audio) | System: {args.system.upper()} | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
+    elif mode == "single_speaker_audio":
+        print(f"[*] Mode: {mode} | System: {args.system.upper()} | Transcriber: {args.transcriber_provider} | Outputs: CSV")
+    else:
+        provider_info = []
+        if hasattr(args, 'transcriber_provider') and args.transcriber_provider:
+            provider_info.append(f"Transcriber: {args.transcriber_provider}")
+        if hasattr(args, 'aligner_provider') and args.aligner_provider:
+            provider_info.append(f"Aligner: {args.aligner_provider}")
+        if hasattr(args, 'diarization_provider') and args.diarization_provider:
+            provider_info.append(f"Diarization: {args.diarization_provider}")
+        provider_str = " | ".join(provider_info) if provider_info else "Default providers"
+        turn_builder_str = f" | Turn Builder: {turn_builder_provider.name}" if turn_builder_provider else ""
+        print(f"[*] Mode: {mode} | System: {args.system.upper()} | {provider_str}{turn_builder_str} | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
         if mode == "single_speaker_audio":
             speaker_path = ensure_file(speaker_files["speaker"], "Single Speaker Audio")
 
             # 1) Standardize
-            std_audio = standardize_audio(speaker_path, outdir, tracker, api)
+            std_audio = standardize_audio(speaker_path, outdir, api)
 
             # 2) Transcribe only
             kwargs = vars(args).copy()
@@ -369,21 +364,17 @@ def run_pipeline(args, api, root):
             print(f"[✓] Transcript saved to {csv_path}")
             print(f"[i] Artifacts written to: {paths['root']}")
             
-            # Print performance summary
-            tracker.print_summary()
-            
             # Clean up temporary audio files
             cleanup_temp_audio(outdir)
             print("[✓] Temporary audio files cleaned up.")
             
-            tracker.stop()
             return 0
 
         elif mode == "combined_audio":
             mixed_path = ensure_file(speaker_files["combined_audio"], "Combined Audio")
 
             # 1) Standardize
-            std_audio = standardize_audio(mixed_path, outdir, tracker, api)
+            std_audio = standardize_audio(mixed_path, outdir, api)
 
             if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
                 # Use unified provider
@@ -525,7 +516,7 @@ def run_pipeline(args, api, root):
                 audio_path = ensure_file(audio_file, speaker_name)
                 
                 # 1) Standardize
-                std_audio = standardize_audio(audio_path, outdir, tracker, api, speaker_name)
+                std_audio = standardize_audio(audio_path, outdir, api, speaker_name)
                 
                 # 2) ASR + alignment
                 print(f"[*] Performing transcription and alignment for {speaker_name}...")
@@ -546,16 +537,11 @@ def run_pipeline(args, api, root):
                 
                 # Add words to the combined list
                 all_words.extend(words)            # 3) Build and merge turns using the split_audio_turn_builder
-            turns_task = tracker.add_task("Building and merging conversation turns", total=100, stage="turns")
-            tracker.update(turns_task, advance=50, description="Building optimal turns from all speakers")
             
             turn_kwargs = {}
             if hasattr(args, 'llm_turn_builder_url') and args.llm_turn_builder_url:
                 turn_kwargs['llm_url'] = args.llm_turn_builder_url
             transcript = turn_builder_provider.build_turns(all_words, **turn_kwargs)
-            
-            tracker.update(turns_task, advance=50, description="Conversation turns built and merged")
-            tracker.complete_task(turns_task, stage="turns")
             
             # Verbose: Save merged turns
             if args.verbose:
@@ -641,15 +627,8 @@ def run_pipeline(args, api, root):
         # Summary
         print(f"[i] Artifacts written to: {paths['root']}")
         
-        # Print performance summary
-        tracker.print_summary()
-        
         # Clean up temporary audio files
         cleanup_temp_audio(outdir)
         print("[✓] Temporary audio files cleaned up.")
         
         return 0
-        
-    finally:
-        # Always stop progress tracking
-        tracker.stop()

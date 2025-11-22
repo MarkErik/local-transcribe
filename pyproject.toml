@@ -33,7 +33,9 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = []
+dev = [
+    "pytest>=9.0.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -15,7 +15,6 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         # Core helpers (keep these as direct imports since they're utilities)
         from local_transcribe.lib.create_directories import ensure_session_dirs
         from local_transcribe.lib.audio_io import standardize_and_get_path
-        from local_transcribe.lib.progress import get_progress_tracker
         from local_transcribe.lib.logging_config import configure_global_logging
 
         # Import core plugin system
@@ -33,7 +32,6 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         return {
             "ensure_session_dirs": ensure_session_dirs,
             "standardize_and_get_path": standardize_and_get_path,
-            "get_progress_tracker": get_progress_tracker,
             "configure_global_logging": configure_global_logging,
             "registry": registry,
         }

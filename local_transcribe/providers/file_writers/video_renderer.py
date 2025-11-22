@@ -7,10 +7,11 @@ from local_transcribe.framework.plugin_interfaces import OutputWriter, Turn, Wor
 from local_transcribe.framework import registry
 
 
-def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Union[str, Path, Dict[str, str]], width: int = 1920, height: int = 1080):
+def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Union[str, Path, Dict[str, str]], width: int = 1920, height: int = 1080, word_segments: Optional[List[WordSegment]] = None):
     """
     Create a video with a black background and burned-in subtitles + original audio.
     Requires ffmpeg on PATH. Uses SRT input.
+    If word_segments provided and contain [REDACTED] tokens, audio will be blanked during those times.
 
     Args:
         subs_path: Path to SRT subtitle file
@@ -20,23 +21,47 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Un
             - Dict mapping speaker names to audio file paths for split_audio mode
         width: Video width (default 1920)
         height: Video height (default 1080)
+        word_segments: Optional word segments for [REDACTED] audio blanking
     """
     subs_path = Path(subs_path)
     output_mp4 = Path(output_mp4)
 
+    # Collect [REDACTED] time ranges for audio blanking
+    mute_ranges = []
+    if word_segments:
+        for word in word_segments:
+            if word.text == "[REDACTED]":
+                mute_ranges.append((word.start, word.end))
+    
     # Handle different audio configuration formats
     if isinstance(audio_config, (str, Path)):
         # Single audio track (combined_audio mode)
         audio_path = Path(audio_config)
-        cmd = [
-            "ffmpeg", "-y",
-            "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r=30",
-            "-i", str(audio_path),
-            "-vf", f"subtitles={subs_path.as_posix()}",
-            "-c:v", "libx264", "-tune", "stillimage",
-            "-c:a", "aac", "-shortest",
-            str(output_mp4),
-        ]
+        
+        if mute_ranges:
+            # Build audio filter to mute [REDACTED] time ranges
+            volume_filter = _build_volume_mute_filter(mute_ranges)
+            cmd = [
+                "ffmpeg", "-y",
+                "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r=30",
+                "-i", str(audio_path),
+                "-filter_complex", f"[1:a]{volume_filter}[a];[0:v]subtitles={subs_path.as_posix()}[v]",
+                "-map", "[v]", "-map", "[a]",
+                "-c:v", "libx264", "-tune", "stillimage",
+                "-c:a", "aac", "-shortest",
+                str(output_mp4),
+            ]
+        else:
+            # No muting needed - original logic
+            cmd = [
+                "ffmpeg", "-y",
+                "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r=30",
+                "-i", str(audio_path),
+                "-vf", f"subtitles={subs_path.as_posix()}",
+                "-c:v", "libx264", "-tune", "stillimage",
+                "-c:a", "aac", "-shortest",
+                str(output_mp4),
+            ]
     elif isinstance(audio_config, dict):
         # Multiple audio tracks with speaker names (split_audio mode)
         audio_paths = list(audio_config.values())
@@ -56,17 +81,35 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Un
         
         # Build audio filter complex for merging multiple tracks
         if len(audio_paths) == 1:
-            # Single track - no mixing needed
-            cmd.extend(["-map", "0:v", "-map", "1:a"])
+            # Single track - check if muting needed
+            if mute_ranges:
+                volume_filter = _build_volume_mute_filter(mute_ranges)
+                cmd.extend(["-filter_complex", f"[1:a]{volume_filter}[a];[0:v]subtitles={subs_path.as_posix()}[v]"])
+                cmd.extend(["-map", "[v]", "-map", "[a]"])
+            else:
+                cmd.extend(["-map", "0:v", "-map", "1:a"])
+                cmd.extend(["-vf", f"subtitles={subs_path.as_posix()}"])
         else:
             # Multiple tracks - merge them
             input_labels = [f"[{i+1}:a]" for i in range(len(audio_paths))]
-            merge_filter = f"{''.join(input_labels)}amerge=inputs={len(audio_paths)}[a]"
-            cmd.extend(["-filter_complex", merge_filter])
-            cmd.extend(["-map", "0:v", "-map", "[a]"])
+            merge_filter = f"{''.join(input_labels)}amerge=inputs={len(audio_paths)}[amerged]"
+            
+            if mute_ranges:
+                # Add muting after merge
+                volume_filter = _build_volume_mute_filter(mute_ranges)
+                filter_chain = f"{merge_filter};[amerged]{volume_filter}[a]"
+                cmd.extend(["-filter_complex", filter_chain])
+                cmd.extend(["-map", "0:v", "-map", "[a]"])
+            else:
+                cmd.extend(["-filter_complex", merge_filter])
+                cmd.extend(["-map", "0:v", "-map", "[amerged]"])
         
-        # Add subtitle filter and output settings
-        cmd.extend(["-vf", f"subtitles={subs_path.as_posix()}"])
+        # Add subtitle filter if not already in filter_complex
+        if not mute_ranges or len(audio_paths) > 1:
+            if "-vf" not in cmd:
+                cmd.extend(["-vf", f"subtitles={subs_path.as_posix()}"])
+        
+        # Add output settings
         cmd.extend(["-c:v", "libx264", "-tune", "stillimage"])
         cmd.extend(["-c:a", "aac", "-shortest"])
         cmd.append(str(output_mp4))
@@ -77,9 +120,30 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Un
     subprocess.run(cmd, check=True)
 
 
+def _build_volume_mute_filter(mute_ranges: List[tuple[float, float]]) -> str:
+    """
+    Build FFmpeg volume filter to mute specific time ranges.
+    
+    Args:
+        mute_ranges: List of (start, end) tuples in seconds
+        
+    Returns:
+        FFmpeg volume filter string
+        
+    Example output: "volume=enable='between(t,1.5,2.3)+between(t,5.7,6.1)':volume=0"
+    """
+    if not mute_ranges:
+        return ""
+    
+    conditions = [f"between(t,{start:.3f},{end:.3f})" for start, end in mute_ranges]
+    enable_expr = "+".join(conditions)
+    return f"volume=enable='{enable_expr}':volume=0"
+
+
 def _group_words_into_cues(words: List[WordSegment], max_words_per_cue: int = 3) -> List[Dict]:
     """
     Group word segments into subtitle cues.
+    Replaces [REDACTED] tokens with underscores for display.
     
     Args:
         words: List of WordSegment objects
@@ -94,8 +158,8 @@ def _group_words_into_cues(words: List[WordSegment], max_words_per_cue: int = 3)
     for word in words:
         # If speaker changes, finalize current cue
         if current_cue_words and word.speaker != current_cue_words[0].speaker:
-            # Create cue for previous speaker
-            cue_text = " ".join(w.text for w in current_cue_words)
+            # Create cue for previous speaker with [REDACTED] → ______
+            cue_text = " ".join("______" if w.text == "[REDACTED]" else w.text for w in current_cue_words)
             cue_start = current_cue_words[0].start
             cue_end = current_cue_words[-1].end
             cue_speaker = current_cue_words[0].speaker
@@ -112,8 +176,8 @@ def _group_words_into_cues(words: List[WordSegment], max_words_per_cue: int = 3)
         
         # Check if we should end the cue
         if len(current_cue_words) >= max_words_per_cue:
-            # Create cue
-            cue_text = " ".join(w.text for w in current_cue_words)
+            # Create cue with [REDACTED] → ______
+            cue_text = " ".join("______" if w.text == "[REDACTED]" else w.text for w in current_cue_words)
             cue_start = current_cue_words[0].start
             cue_end = current_cue_words[-1].end
             cue_speaker = current_cue_words[0].speaker
@@ -129,7 +193,7 @@ def _group_words_into_cues(words: List[WordSegment], max_words_per_cue: int = 3)
     
     # Handle remaining words
     if current_cue_words:
-        cue_text = " ".join(w.text for w in current_cue_words)
+        cue_text = " ".join("______" if w.text == "[REDACTED]" else w.text for w in current_cue_words)
         cue_start = current_cue_words[0].start
         cue_end = current_cue_words[-1].end
         cue_speaker = current_cue_words[0].speaker
@@ -189,8 +253,8 @@ class VideoWriter(OutputWriter):
             if audio_config is None:
                 raise ValueError("audio_config is required for video generation")
             
-            # Render the video
-            render_video(srt_path, output_path, audio_config)
+            # Render the video (pass word_segments for [REDACTED] audio blanking)
+            render_video(srt_path, output_path, audio_config, word_segments=word_segments)
             
         finally:
             # Clean up temporary SRT file

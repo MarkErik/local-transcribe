@@ -12,6 +12,7 @@ from local_transcribe.lib.system_output import log_status, log_progress, log_int
 from local_transcribe.lib.speaker_namer import assign_speaker_names
 from local_transcribe.lib.audio_processor import standardize_audio, cleanup_temp_audio
 from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_transcript_for_llm
+from local_transcribe.processing.llm_de_identifier import de_identify_word_segments, de_identify_text
 
 def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, base_name="", **kwargs):
     """Transcribe audio and return word segments with timestamps."""
@@ -346,6 +347,16 @@ def run_pipeline(args, api, root):
                 **kwargs
             )
 
+            # 2.5) De-identification (if enabled)
+            if args.de_identify:
+                log_progress("De-identifying transcript (text mode)")
+                transcript = de_identify_text(
+                    transcript,
+                    intermediate_dir=paths["intermediate"],
+                    llm_url=args.llm_de_identifier_url
+                )
+                log_progress("De-identification complete")
+
             # 3) Process transcript into words and save as CSV
             import csv
             words = transcript.split()
@@ -382,6 +393,13 @@ def run_pipeline(args, api, root):
                     device=device,
                     model=args.unified_model
                 )
+                
+                # Note: De-identification not supported in unified mode
+                if args.de_identify:
+                    log_status("Warning: De-identification not available in unified provider mode")
+                    log_progress("Unified providers return pre-built turns without word segments")
+                    log_progress("Use separate transcriber+aligner+diarization for de-identification support")
+                
                 # Save unified turns
                 json_turns_writer = api["registry"].get_output_writer("turns-json")
                 unified_file = paths["intermediate"] / "turns" / "unified_turns.json"
@@ -402,6 +420,22 @@ def run_pipeline(args, api, root):
                     llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080'),
                     stitching_method=getattr(args, 'stitching_method', 'local')
                 )
+
+                # 2.5) De-identification (if enabled) - BEFORE diarization
+                if args.de_identify:
+                    log_progress("De-identifying word segments")
+                    words = de_identify_word_segments(
+                        words,
+                        intermediate_dir=paths["intermediate"],
+                        llm_url=args.llm_de_identifier_url
+                    )
+                    log_progress("De-identification complete")
+                    
+                    # Save de-identified word segments
+                    json_word_writer = api["registry"].get_word_writer("word-segments-json")
+                    deidentified_file = paths["intermediate"] / "de_identification" / "word_segments_deidentified.json"
+                    json_word_writer.write(words, deidentified_file)
+                    log_intermediate_save(str(deidentified_file), "De-identified word segments saved to")
 
                 # 3) Diarize (assign speakers to words)
                 from local_transcribe.lib.system_capability_utils import get_system_capability
@@ -525,6 +559,23 @@ def run_pipeline(args, api, root):
                     llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080'),
                     stitching_method=getattr(args, 'stitching_method', 'local')
                 )
+                
+                # 2.5) De-identification per speaker (if enabled)
+                if args.de_identify:
+                    log_progress(f"De-identifying word segments for {speaker_name}")
+                    words = de_identify_word_segments(
+                        words,
+                        intermediate_dir=paths["intermediate"],
+                        llm_url=args.llm_de_identifier_url,
+                        speaker_name=speaker_name
+                    )
+                    log_progress(f"De-identification complete for {speaker_name}")
+                    
+                    # Save de-identified word segments per speaker
+                    json_word_writer = api["registry"].get_word_writer("word-segments-json")
+                    deidentified_file = paths["intermediate"] / "de_identification" / f"{speaker_name.lower()}_word_segments_deidentified.json"
+                    json_word_writer.write(words, deidentified_file)
+                    log_intermediate_save(str(deidentified_file), f"De-identified word segments saved for {speaker_name}")
                 
                 # Add words to the combined list
                 all_words.extend(words)            # 3) Build and merge turns using the split_audio_turn_builder

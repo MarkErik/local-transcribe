@@ -42,6 +42,8 @@ def _compute_needed_intermediate_dirs(capabilities: dict) -> set[str]:
     if mode == "single_speaker_audio":
         # Single speaker audio: just transcription directory
         needed.add("transcription")
+        # Add de_identification for all modes
+        needed.add("de_identification")
     elif mode == "combined_audio":
         if unified:
             # Unified: only turns
@@ -57,6 +59,8 @@ def _compute_needed_intermediate_dirs(capabilities: dict) -> set[str]:
             if diarization:
                 needed.add("diarization")
             needed.add("turns")
+        # Add de_identification for all modes
+        needed.add("de_identification")
     elif mode == "split_audio":
         if not has_builtin_alignment:
             needed.add("transcription")
@@ -65,5 +69,7 @@ def _compute_needed_intermediate_dirs(capabilities: dict) -> set[str]:
         if has_builtin_alignment:
             needed.add("transcription_alignment")
         needed.add("turns")
+        # Add de_identification for all modes
+        needed.add("de_identification")
     
     return needed

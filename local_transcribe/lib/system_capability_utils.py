@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# lib/config.py - Global configuration for the application
+# lib/system_capability_utils.py - System capability and device utilities for the application
 
 # Global configuration variables
 _system_capability = "cpu"  # Default to CPU

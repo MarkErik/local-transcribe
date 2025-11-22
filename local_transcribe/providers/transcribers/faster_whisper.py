@@ -26,7 +26,7 @@ def _ctranslate_device() -> str:
     Device for CTranslate2 (faster-whisper). CTranslate2 supports CUDA and CPU,
     but does NOT support MPS, so we fall back to CPU when MPS is selected.
     """
-    from local_transcribe.lib.config import get_system_capability
+    from local_transcribe.lib.system_capability_utils import get_system_capability
     import torch
     
     selected_device = get_system_capability()

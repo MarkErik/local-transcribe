@@ -14,7 +14,7 @@ from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from peft import PeftModel
 from huggingface_hub import hf_hub_download, snapshot_download
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
-from local_transcribe.lib.config import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 
 
 class GraniteTranscriberProvider(TranscriberProvider):

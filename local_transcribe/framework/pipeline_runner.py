@@ -14,7 +14,7 @@ from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_t
 
 def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, verbose=False, base_name="", **kwargs):
     """Transcribe audio and return word segments with timestamps."""
-    from local_transcribe.lib.config import get_system_capability
+    from local_transcribe.lib.system_capability_utils import get_system_capability
     
     # Add verbose and role to kwargs so they're passed to providers
     kwargs['verbose'] = verbose
@@ -120,7 +120,7 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
 
 def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=None, verbose=False, base_name="", **kwargs):
     """Transcribe audio and return transcript text only (no alignment)."""
-    from local_transcribe.lib.config import get_system_capability
+    from local_transcribe.lib.system_capability_utils import get_system_capability
     
     # Remove verbose and role from kwargs to avoid duplicates (they're explicit params)
     kwargs.pop('verbose', None)
@@ -387,7 +387,7 @@ def run_pipeline(args, api, root):
 
             if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
                 # Use unified provider
-                from local_transcribe.lib.config import get_system_capability
+                from local_transcribe.lib.system_capability_utils import get_system_capability
                 device = get_system_capability()
                 
                 transcript = unified_provider.transcribe_and_diarize(
@@ -419,7 +419,7 @@ def run_pipeline(args, api, root):
                 )
 
                 # 3) Diarize (assign speakers to words)
-                from local_transcribe.lib.config import get_system_capability
+                from local_transcribe.lib.system_capability_utils import get_system_capability
                 device = get_system_capability()
                 
                 words_with_speakers = diarization_provider.diarize(

@@ -13,7 +13,7 @@ import numpy as np
 import librosa
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
-from local_transcribe.lib.config import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 
 
 class Wav2Vec2AlignerProvider(AlignerProvider):

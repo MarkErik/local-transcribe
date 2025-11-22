@@ -9,7 +9,7 @@ import pathlib
 import torch
 import whisperx
 from local_transcribe.framework.plugin_interfaces import UnifiedProvider, Turn, registry
-from local_transcribe.lib.config import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 
 
 class WhisperXUnifiedProvider(UnifiedProvider):

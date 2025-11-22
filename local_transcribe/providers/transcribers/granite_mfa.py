@@ -474,7 +474,8 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                             word_dicts.append({
                                 "text": original_text,
                                 "start": start + chunk_start_time,
-                                "end": end + chunk_start_time
+                                "end": end + chunk_start_time,
+                                "speaker": speaker
                             })
                     except (ValueError, IndexError):
                         pass
@@ -565,7 +566,8 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             word_dicts.append({
                 "text": word,
                 "start": current_time,
-                "end": current_time + word_duration
+                "end": current_time + word_duration,
+                "speaker": speaker
             })
             current_time += word_duration
 

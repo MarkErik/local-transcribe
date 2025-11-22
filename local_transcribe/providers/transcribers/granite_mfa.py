@@ -252,7 +252,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             with torch.no_grad():
                 model_outputs = self.model.generate(
                     **model_inputs,
-                    max_new_tokens=200,
+                    max_new_tokens=400,
                     num_beams=4,
                     do_sample=False,
                     min_length=1,

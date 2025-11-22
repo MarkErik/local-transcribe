@@ -213,39 +213,15 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
                 blank=self.wav2vec2_processor.tokenizer.pad_token_id
             )
             
-            # token_spans[0] contains tuples of (target_token_idx, frame_idx)
-            # We need to group consecutive frames by target token
+            # token_spans[0] contains tuples of (target_token_idx, start_frame, end_frame)
             token_timestamps = []
             
-            if len(token_spans[0]) > 0:
-                # Group frames by token
-                current_token_idx = None
-                current_start = None
-                current_end = None
-                
-                for target_idx, frame_idx in token_spans[0]:
-                    if current_token_idx is None or target_idx != current_token_idx:
-                        # Save previous token if exists
-                        if current_token_idx is not None and current_token_idx < len(tokens):
-                            char = tokens[current_token_idx]
-                            # Convert frames to time (20ms per frame for Wav2Vec2 base)
-                            start_time = current_start * 0.02 * 1000  # Convert to ms
-                            end_time = (current_end + 1) * 0.02 * 1000  # +1 to include the end frame
-                            token_timestamps.append((char, start_time, end_time))
-                        
-                        # Start new token
-                        current_token_idx = target_idx
-                        current_start = frame_idx
-                        current_end = frame_idx
-                    else:
-                        # Continue current token
-                        current_end = frame_idx
-                
-                # Don't forget the last token
-                if current_token_idx is not None and current_token_idx < len(tokens):
-                    char = tokens[current_token_idx]
-                    start_time = current_start * 0.02 * 1000
-                    end_time = (current_end + 1) * 0.02 * 1000
+            for target_idx, start_frame, end_frame in token_spans[0]:
+                if target_idx < len(tokens):
+                    char = tokens[target_idx]
+                    # Convert frames to time (20ms per frame for Wav2Vec2 base)
+                    start_time = start_frame * 0.02 * 1000  # Convert to ms
+                    end_time = (end_frame + 1) * 0.02 * 1000  # +1 to include the end frame
                     token_timestamps.append((char, start_time, end_time))
             
             return token_timestamps

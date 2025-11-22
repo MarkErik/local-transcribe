@@ -19,6 +19,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("-s", "--single-speaker-audio", action="store_true", help="Process a single speaker audio file for transcription only, output as CSV.")
     p.add_argument("-n", "--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization) [Default: 2]")
     p.add_argument("-x", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")
+    p.add_argument("-d", "--de-identify")
 
     p.add_argument("--transcriber-provider", help="Transcriber provider to use [Default: auto-selected]")
     p.add_argument("--transcriber-model", help="Transcriber model to use (if provider supports multiple models) [Default: provider-specific]")
@@ -29,8 +30,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--transcript-cleanup-provider", help="Transcript cleanup provider to use for LLM-based transcript cleaning [Default: none]")
     
     p.add_argument("--llm-stitcher-url", default="http://0.0.0.0:8080", help="URL for LLM stitcher provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
+    p.add_argument("--llm-de-identifier-url", default="http://0.0.0.0:8080", help="URL for LLM personal information de-identifier processor (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
     p.add_argument("--llm-turn-builder-url", default="http://0.0.0.0:8080", help="URL for LLM turn builder provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
-    p.add_argument("--llm-transcript-cleanup-url", default="http://localhost:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for Llama.cpp server) [Default: http://localhost:8080]")
+    p.add_argument("--llm-transcript-cleanup-url", default="http://localhost:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
 
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")

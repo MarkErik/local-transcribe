@@ -540,11 +540,13 @@ def _create_audit_log(
                     seconds = ts % 60
                     ts_str = f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
                     
+                    original_word = rep.get('original', 'unknown')
                     speaker_str = f", speaker: {rep['speaker']}" if rep['speaker'] else ""
-                    f.write(f"[{ts_str}] [REDACTED] (word_index: {rep['word_index']}{speaker_str})\n")
+                    f.write(f"[{ts_str}] [REDACTED] (word:\"{original_word}\", word_index: {rep['word_index']}{speaker_str})\n")
                 else:
                     # Text only mode
-                    f.write(f"[word_index: {rep['word_index']}] [REDACTED]\n")
+                    original_word = rep.get('original', 'unknown')
+                    f.write(f"[word_index: {rep['word_index']}] [REDACTED] (word:\"{original_word}\")\n")
             
             f.write("\n" + "=" * 50 + "\n")
             f.write("Summary:\n")

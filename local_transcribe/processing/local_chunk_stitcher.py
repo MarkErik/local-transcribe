@@ -12,7 +12,7 @@ Supports both:
 """
 
 from typing import List, Dict, Any, Optional, Tuple
-from local_transcribe.lib.logging_config import log_progress
+from local_transcribe.lib.system_output import log_progress
 from difflib import SequenceMatcher
 from local_transcribe.framework.plugin_interfaces import WordSegment
 

@@ -19,7 +19,7 @@ from typing import Tuple, Optional
 
 # Try to import from local_transcribe package, fall back to standalone if not available
 try:
-    from .logging_config import get_logger, AudioProcessingError, error_context
+    from .system_output import get_logger, AudioProcessingError, error_context
     _HAVE_LOCAL_TRANSCRIBE = True
 except ImportError:
     # Standalone mode - define minimal equivalents

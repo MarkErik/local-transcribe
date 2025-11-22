@@ -15,7 +15,7 @@ def import_pipeline_modules(repo_root: pathlib.Path):
         # Core helpers (keep these as direct imports since they're utilities)
         from local_transcribe.lib.create_directories import ensure_session_dirs
         from local_transcribe.lib.audio_io import standardize_and_get_path
-        from local_transcribe.lib.logging_config import configure_global_logging
+        from local_transcribe.lib.system_output import configure_global_logging
 
         # Import core plugin system
         from local_transcribe.framework import registry

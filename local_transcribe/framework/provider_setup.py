@@ -159,10 +159,10 @@ class ProviderSetup:
                 )
                 
                 # Reinitialize with custom URL if provided
-                if (hasattr(self.args, 'transcript_cleanup_url') and 
-                    self.args.transcript_cleanup_url and 
+                if (hasattr(self.args, 'llm_transcript_cleanup_url') and 
+                    self.args.llm_transcript_cleanup_url and 
                     hasattr(transcript_cleanup_provider, 'url')):
-                    transcript_cleanup_provider.url = self.args.transcript_cleanup_url
+                    transcript_cleanup_provider.url = self.args.llm_transcript_cleanup_url
                 
                 providers['transcript_cleanup'] = transcript_cleanup_provider
                 

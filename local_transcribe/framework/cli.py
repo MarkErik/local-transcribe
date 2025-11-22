@@ -9,28 +9,32 @@ from local_transcribe.lib.environment import get_available_system_capabilities
 # ---------- CLI ----------
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="local-transcribe: batch transcription – offline, Apple Silicon friendly."
+        description="local-transcribe: offline transcription."
     )
-    p.add_argument("-a", "--audio-files", nargs='+', metavar="AUDIO_FILE", help="Audio files to process. One file = mixed audio with multiple speakers. Multiple files = separate tracks (2 files: interviewer + participant, 3+ files: prompt for speaker names).")
-    p.add_argument("--transcriber-provider", help="Transcriber provider to use [Default: auto-selected]")
-    p.add_argument("--transcriber-model", help="Transcriber model to use (if provider supports multiple models) [Default: provider-specific]")
-    p.add_argument("--aligner-provider", help="Aligner provider to use (required if transcriber doesn't have built-in alignment) [Default: auto-selected if needed]")
-    p.add_argument("--diarization-provider", help="Diarization provider to use (required for single audio files with multiple speakers) [Default: auto-selected if needed]")
-    p.add_argument("-n","--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization) [Default: 2]")
-    p.add_argument("--transcript-cleanup-provider", help="Transcript cleanup provider to use for LLM-based transcript cleaning [Default: none]")
-    p.add_argument("--transcript-cleanup-url", default="http://localhost:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for Llama.cpp server) [Default: http://localhost:8080]")
-    p.add_argument("--turn-builder-provider", help="Turn builder provider to use (for grouping transcribed words into turns) [Default: auto-selected based on audio mode]")
-    p.add_argument("--llm-stitcher-url", default="http://0.0.0.0:8080", help="URL for LLM stitcher provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
-    p.add_argument("--stitching-method", choices=["local", "llm"], default="local", help="Method for stitching transcript chunks [Default: local]. local=intelligent local overlap detection, llm=external LLM server stitching")
-    p.add_argument("--llm-turn-builder-url", default="http://0.0.0.0:8080", help="URL for LLM turn builder provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
-    p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
-    p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("-i", "--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
     p.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging output.")
-    p.add_argument("-l","--list-plugins", action="store_true", help="List available plugins and exit.")
-    p.add_argument("--show-defaults", action="store_true", help="Show all default values and exit.")
-    p.add_argument("-x", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")
+  
+    p.add_argument("-a", "--audio-files", nargs='+', metavar="AUDIO_FILE", help="Audio files to process. One file = mixed audio with multiple speakers. Multiple files = separate tracks (2 files: interviewer + participant, 3+ files: prompt for speaker names).")
+    p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")
     p.add_argument("-s", "--single-speaker-audio", action="store_true", help="Process a single speaker audio file for transcription only, output as CSV.")
+    p.add_argument("-n", "--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization) [Default: 2]")
+    p.add_argument("-x", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")
+
+    p.add_argument("--transcriber-provider", help="Transcriber provider to use [Default: auto-selected]")
+    p.add_argument("--transcriber-model", help="Transcriber model to use (if provider supports multiple models) [Default: provider-specific]")
+    p.add_argument("--stitching-method", choices=["local", "llm"], default="local", help="Method for stitching transcript chunks [Default: local]. local=intelligent local overlap detection, llm=external LLM server stitching")
+    p.add_argument("--aligner-provider", help="Aligner provider to use (required if transcriber doesn't have built-in alignment) [Default: auto-selected if needed]")
+    p.add_argument("--diarization-provider", help="Diarization provider to use (required for single audio files with multiple speakers) [Default: auto-selected if needed]")
+    p.add_argument("--turn-builder-provider", help="Turn builder provider to use (for grouping transcribed words into turns) [Default: auto-selected based on audio mode]")
+    p.add_argument("--transcript-cleanup-provider", help="Transcript cleanup provider to use for LLM-based transcript cleaning [Default: none]")
+    
+    p.add_argument("--llm-stitcher-url", default="http://0.0.0.0:8080", help="URL for LLM stitcher provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
+    p.add_argument("--llm-turn-builder-url", default="http://0.0.0.0:8080", help="URL for LLM turn builder provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
+    p.add_argument("--llm-transcript-cleanup-url", default="http://localhost:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for Llama.cpp server) [Default: http://localhost:8080]")
+
+    p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
+    p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
+    p.add_argument("--show-defaults", action="store_true", help="Show all default values and exit.")
 
     args = p.parse_args(argv)
 
@@ -54,14 +58,14 @@ def show_defaults():
     print("  - Number of Speakers: 2")
     print("  - Output Formats: All available formats")
     print("  - Processing Mode: Unified for single audio, Separate for multiple audio")
-    print("  - Single Speaker Audio: Disabled (use -p to enable)")
+    print("  - Single Speaker Audio: Disabled (use -s to enable)")
     print("  - Chunking (Granite): Always enabled")
     print("  - Stitching Method (Granite): local (default) or llm available")
     
     print("\nURLs:")
     print("  - LLM Stitcher URL: http://0.0.0.0:8080")
     print("  - LLM Turn Builder URL: http://0.0.0.0:8080")
-    print("  - Transcript Cleanup URL: http://localhost:8080")
+    print("  - LLM Transcript Cleanup URL: http://localhost:8080")
     
     print("\nNote: Some defaults may be overridden by system capabilities or provider availability.")
 
@@ -596,16 +600,16 @@ def interactive_prompt(args, api):
 
                     # If remote provider, ask for URL
                     if args.transcript_cleanup_provider == "llama_cpp_remote":
-                        default_url = getattr(args, 'transcript_cleanup_url', 'http://localhost:8080')
-                        url = input(f"Enter Llama.cpp server URL (e.g., http://192.168.1.100:8080) [Default: {default_url}]: ").strip()
+                        default_url = getattr(args, 'llm_transcript_cleanup_url', 'http://0.0.0.0:8080')
+                        url = input(f"Enter llama.cpp server URL (e.g., http://0.0.0.0:8080) [Default: {default_url}]: ").strip()
                         if url:
                             # Add http:// if not present
                             if not url.startswith(('http://', 'https://')):
                                 url = f"http://{url}"
-                            args.transcript_cleanup_url = url
+                            args.llm_transcript_cleanup_url = url
                             is_default = False
                         else:
-                            args.transcript_cleanup_url = default_url
+                            args.llm_transcript_cleanup_url = default_url
                             is_default = True
                     
                     default_marker = " [Default]" if is_default else ""

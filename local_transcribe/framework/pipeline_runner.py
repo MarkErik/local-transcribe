@@ -8,16 +8,16 @@ from typing import Optional
 from local_transcribe.framework.model_downloader import ensure_models_available
 from local_transcribe.framework.provider_setup import ProviderSetup
 from local_transcribe.framework.output_manager import OutputManager
+from local_transcribe.lib.logging_config import log_status, log_progress, log_intermediate_save, log_completion
 from local_transcribe.lib.speaker_namer import assign_speaker_names
 from local_transcribe.lib.audio_processor import standardize_audio, cleanup_temp_audio
 from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_transcript_for_llm
 
-def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, verbose=False, base_name="", **kwargs):
+def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, base_name="", **kwargs):
     """Transcribe audio and return word segments with timestamps."""
     from local_transcribe.lib.system_capability_utils import get_system_capability
     
-    # Add verbose and role to kwargs so they're passed to providers
-    kwargs['verbose'] = verbose
+    # Add role to kwargs so it's passed to providers
     kwargs['role'] = role
     
     # Get device from global config to pass explicitly
@@ -34,31 +34,29 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
         # Check if segments are chunked (for granite_mfa and similar plugins)
         if isinstance(segments, list) and segments and isinstance(segments[0], dict) and "chunk_id" in segments[0]:
             # Chunked output with timestamps - need to stitch
-            if verbose:
-                print(f"[i] Received chunked output with timestamps from {transcriber_provider.name}, {len(segments)} chunks")
+            log_progress(f"Received chunked output with timestamps from {transcriber_provider.name}, {len(segments)} chunks")
             
-            # Verbose: Save chunked data
+            # Save chunked data
             if intermediate_dir:
                 import json
                 # Chunks already have serializable format (dicts with text/start/end)
-                with open(intermediate_dir / "transcription_alignment" / f"{base_name}raw_chunks_timestamped.json", "w", encoding="utf-8") as f:
+                chunk_file = intermediate_dir / "transcription_alignment" / f"{base_name}raw_chunks_timestamped.json"
+                with open(chunk_file, "w", encoding="utf-8") as f:
                     json.dump(segments, f, indent=2, ensure_ascii=False)
-                if verbose:
-                    print(f"[i] Verbose: Raw timestamped chunks saved to Intermediate_Outputs/transcription_alignment/{base_name}raw_chunks_timestamped.json")
+                log_intermediate_save(str(chunk_file), "Raw timestamped chunks saved to")
             
             # Use local_chunk_stitcher (which now handles timestamped words)
             from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
-            if verbose:
-                print(f"[i] Stitching chunks with timestamps using intelligent local overlap detection")
+            log_progress("Stitching chunks with timestamps using intelligent local overlap detection")
             segments = stitch_chunks(segments, **kwargs)
             # Now segments is List[WordSegment]
         
-        # Verbose: Save word segments
+        # Save word segments
         if intermediate_dir:
             json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
-            json_word_writer.write(segments, intermediate_dir / "transcription_alignment" / f"{base_name}word_segments.json")
-            if verbose:
-                print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/transcription_alignment/{base_name}word_segments.json")
+            word_file = intermediate_dir / "transcription_alignment" / f"{base_name}word_segments.json"
+            json_word_writer.write(segments, word_file)
+            log_intermediate_save(str(word_file), "Word segments saved to")
     else:
         # Use transcriber + aligner composition
         transcript_result = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
@@ -66,10 +64,9 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
         # Handle chunked output (list of dicts) vs simple string output
         if isinstance(transcript_result, list):
             # Chunked output - need to stitch
-            if verbose:
-                print(f"[i] Received chunked output with {len(transcript_result)} chunks")
+            log_progress(f"Received chunked output with {len(transcript_result)} chunks")
             
-            # Verbose: Save chunked data
+            # Save chunked data
             if intermediate_dir:
                 import json
                 # Handle both string words and dict words (timestamped)
@@ -83,10 +80,10 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
                         # String words (convert to list for JSON)
                         serializable_chunks.append({"chunk_id": chunk["chunk_id"], "words": list(words)})
                 
-                with open(intermediate_dir / "transcription" / f"{base_name}raw_chunks.json", "w", encoding="utf-8") as f:
+                chunk_file = intermediate_dir / "transcription" / f"{base_name}raw_chunks.json"
+                with open(chunk_file, "w", encoding="utf-8") as f:
                     json.dump(serializable_chunks, f, indent=2, ensure_ascii=False)
-                if verbose:
-                    print(f"[i] Verbose: Raw chunks saved to Intermediate_Outputs/transcription/{base_name}raw_chunks.json")
+                log_intermediate_save(str(chunk_file), "Raw chunks saved to")
             
             # Choose stitching method
             stitching_method = kwargs.get('stitching_method', 'local')
@@ -94,48 +91,45 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             if stitching_method == 'llm':
                 # Use external LLM server for stitching
                 from local_transcribe.processing.llm_chunk_stitcher import stitch_chunks
-                if verbose:
-                    print(f"[i] Stitching chunks using external LLM server")
+                log_progress("Stitching chunks using external LLM server")
                 transcript = stitch_chunks(transcript_result, **kwargs)
             else:
                 # Use intelligent local chunk stitching (default)
                 from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
-                if verbose:
-                    print(f"[i] Stitching chunks using intelligent local overlap detection")
+                log_progress("Stitching chunks using intelligent local overlap detection")
                 transcript = stitch_chunks(transcript_result, **kwargs)
         else:
             # Simple string output - no stitching needed
             transcript = transcript_result
         
-        # Verbose: Save raw transcript
+        # Save raw transcript
         if intermediate_dir:
-            with open(intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt", "w", encoding="utf-8") as f:
+            transcript_file = intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt"
+            with open(transcript_file, "w", encoding="utf-8") as f:
                 f.write(transcript)
-            if verbose:
-                print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
+            log_intermediate_save(str(transcript_file), "Raw transcript saved to")
+        
         # Pass role to aligner via kwargs (already added above)
         segments = aligner_provider.align_transcript(audio_path, transcript, device=device, **kwargs)
-        # Verbose: Save word segments (speaker should already be assigned by aligner)
+        
+        # Save word segments (speaker should already be assigned by aligner)
         if intermediate_dir:
             json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
-            json_word_writer.write(segments, intermediate_dir / "alignment" / f"{base_name}word_segments.json")
-            if verbose:
-                print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/alignment/{base_name}word_segments.json")
+            word_file = intermediate_dir / "alignment" / f"{base_name}word_segments.json"
+            json_word_writer.write(segments, word_file)
+            log_intermediate_save(str(word_file), "Word segments saved to")
+    
     return segments
 
-def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=None, verbose=False, base_name="", **kwargs):
+def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=None, base_name="", **kwargs):
     """Transcribe audio and return transcript text only (no alignment)."""
     from local_transcribe.lib.system_capability_utils import get_system_capability
     
-    # Remove verbose and role from kwargs to avoid duplicates (they're explicit params)
-    kwargs.pop('verbose', None)
+    # Remove role from kwargs to avoid duplicates (it's an explicit param)
     kwargs.pop('role', None)
     
     # Get device from global config to pass explicitly
     device = get_system_capability()
-    
-    # Add verbose back to kwargs so it's passed to the transcriber provider
-    kwargs['verbose'] = verbose
     
     # Transcribe without alignment
     transcript = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
@@ -143,8 +137,7 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
     # Handle chunked output (list of dicts) vs simple string output
     if isinstance(transcript, list):
         # Chunked output - need to stitch
-        if verbose:
-            print(f"[i] Received chunked output with {len(transcript)} chunks")
+        log_progress(f"Received chunked output with {len(transcript)} chunks")
         
         # Always use local chunk stitcher by default, with fallback to LLM if specified
         stitching_method = kwargs.get('stitching_method', 'local')
@@ -152,17 +145,15 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
         if stitching_method == 'llm':
             # Use external LLM server for stitching
             from local_transcribe.processing.llm_chunk_stitcher import stitch_chunks
-            if verbose:
-                print(f"[i] Stitching chunks using external LLM server")
+            log_progress("Stitching chunks using external LLM server")
             transcript_text = stitch_chunks(transcript, **kwargs)
         else:
             # Use intelligent local chunk stitching (default)
             from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
-            if verbose:
-                print(f"[i] Stitching chunks using intelligent local overlap detection")
+            log_progress("Stitching chunks using intelligent local overlap detection")
             transcript_text = stitch_chunks(transcript, **kwargs)
         
-        # Verbose: Save chunked data
+        # Save chunked data
         if intermediate_dir:
             import json
             # Handle both string words and dict words
@@ -176,20 +167,20 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
                     # String words
                     serializable_chunks.append({"chunk_id": chunk["chunk_id"], "words": list(words)})
             
-            with open(intermediate_dir / "transcription" / f"{base_name}raw_chunks.json", "w", encoding="utf-8") as f:
+            chunk_file = intermediate_dir / "transcription" / f"{base_name}raw_chunks.json"
+            with open(chunk_file, "w", encoding="utf-8") as f:
                 json.dump(serializable_chunks, f, indent=2, ensure_ascii=False)
-            if verbose:
-                print(f"[i] Verbose: Raw chunks saved to Intermediate_Outputs/transcription/{base_name}raw_chunks.json")
+            log_intermediate_save(str(chunk_file), "Raw chunks saved to")
     else:
         # Simple string output
         transcript_text = transcript
     
-    # Verbose: Save final stitched transcript
+    # Save final stitched transcript
     if intermediate_dir:
-        with open(intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt", "w", encoding="utf-8") as f:
+        transcript_file = intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt"
+        with open(transcript_file, "w", encoding="utf-8") as f:
             f.write(transcript_text)
-        if verbose:
-            print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
+        log_intermediate_save(str(transcript_file), "Raw transcript saved to")
     
     return transcript_text
 
@@ -295,10 +286,10 @@ def run_pipeline(args, api, root):
     if download_result != 0:
         return download_result
 
-    # Configure logging based on verbose flag
-    api["configure_global_logging"](log_level="INFO" if args.verbose else "WARNING")
+    # Configure logging based on log level
+    api["configure_global_logging"](log_level=args.log_level)
 
-    # Compute capabilities for directory creation if the verbose flag is set
+    # Compute capabilities for directory creation
     capabilities = {
         "mode": mode,
         "unified": unified_provider is not None,
@@ -309,12 +300,12 @@ def run_pipeline(args, api, root):
 
     # Ensure outdir & subdirs
     outdir = ensure_outdir(args.outdir)
-    paths = api["ensure_session_dirs"](outdir, mode, speaker_files, args.verbose, capabilities)
+    paths = api["ensure_session_dirs"](outdir, mode, speaker_files, capabilities)
 
     if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
-        print(f"[*] Mode: {mode} (combined_audio) | System: {args.system.upper()} | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
+        log_status(f"Mode: {mode} (combined_audio) | System: {args.system.upper()} | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
     elif mode == "single_speaker_audio":
-        print(f"[*] Mode: {mode} | System: {args.system.upper()} | Transcriber: {args.transcriber_provider} | Outputs: CSV")
+        log_status(f"Mode: {mode} | System: {args.system.upper()} | Transcriber: {args.transcriber_provider} | Outputs: CSV")
     else:
         provider_info = []
         if hasattr(args, 'transcriber_provider') and args.transcriber_provider:
@@ -325,7 +316,7 @@ def run_pipeline(args, api, root):
             provider_info.append(f"Diarization: {args.diarization_provider}")
         provider_str = " | ".join(provider_info) if provider_info else "Default providers"
         turn_builder_str = f" | Turn Builder: {turn_builder_provider.name}" if turn_builder_provider else ""
-        print(f"[*] Mode: {mode} | System: {args.system.upper()} | {provider_str}{turn_builder_str} | Outputs: {', '.join(args.selected_outputs)}")
+        log_status(f"Mode: {mode} | System: {args.system.upper()} | {provider_str}{turn_builder_str} | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
         if mode == "single_speaker_audio":
@@ -338,7 +329,6 @@ def run_pipeline(args, api, root):
             kwargs = vars(args).copy()
             # Remove parameters that are already explicit arguments
             kwargs.pop('transcriber_provider', None)
-            # Note: verbose is kept in kwargs so only_transcribe can pass it to the transcriber
             kwargs.pop('audio_files', None)
             kwargs.pop('outdir', None)
             kwargs.pop('interactive', None)
@@ -346,14 +336,12 @@ def run_pipeline(args, api, root):
             kwargs.pop('show_defaults', None)
             kwargs.pop('system', None)
             kwargs.pop('single_speaker_audio', None)
-            kwargs.pop('verbose', None)
             
             transcript = only_transcribe(
                 transcriber_provider,
                 str(std_audio),
                 "speaker",
                 paths["intermediate"],
-                args.verbose,
                 "",
                 **kwargs
             )
@@ -394,11 +382,11 @@ def run_pipeline(args, api, root):
                     device=device,
                     model=args.unified_model
                 )
-                # Verbose: Save unified turns
-                if args.verbose:
-                    json_turns_writer = api["registry"].get_output_writer("turns-json")
-                    json_turns_writer.write(transcript, paths["intermediate"] / "turns" / "unified_turns.json")
-                    print("[i] Verbose: Unified turns saved to Intermediate_Outputs/turns/unified_turns.json")
+                # Save unified turns
+                json_turns_writer = api["registry"].get_output_writer("turns-json")
+                unified_file = paths["intermediate"] / "turns" / "unified_turns.json"
+                json_turns_writer.write(transcript, unified_file)
+                log_intermediate_save(str(unified_file), "Unified turns saved to")
             else:
                 # 2) Transcription + alignment
                 words = transcribe_with_alignment(
@@ -407,7 +395,6 @@ def run_pipeline(args, api, root):
                     str(std_audio),
                     None,
                     intermediate_dir=paths.get("intermediate"),
-                    verbose=args.verbose,
                     base_name="",
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
@@ -427,22 +414,22 @@ def run_pipeline(args, api, root):
                     device=device,
                     models_dir=models_dir
                 )
-                # Verbose: Save diarized segments
-                if args.verbose:
-                    json_word_writer = api["registry"].get_word_writer("word-segments-json")
-                    json_word_writer.write(words_with_speakers, paths["intermediate"] / "diarization" / "diarized_word_segments.json")
-                    print("[i] Verbose: Diarized word segments saved to Intermediate_Outputs/diarization/diarized_word_segments.json")
+                # Save diarized segments
+                json_word_writer = api["registry"].get_word_writer("word-segments-json")
+                diarization_file = paths["intermediate"] / "diarization" / "diarized_word_segments.json"
+                json_word_writer.write(words_with_speakers, diarization_file)
+                log_intermediate_save(str(diarization_file), "Diarized word segments saved to")
 
                 # 4) Build turns
                 turn_kwargs = {}
                 if hasattr(args, 'llm_turn_builder_url') and args.llm_turn_builder_url:
                     turn_kwargs['llm_url'] = args.llm_turn_builder_url
                 transcript = turn_builder_provider.build_turns(words_with_speakers, **turn_kwargs)
-                # Verbose: Save raw turns
-                if args.verbose:
-                    json_turns_writer = api["registry"].get_output_writer("turns-json")
-                    json_turns_writer.write(transcript, paths["intermediate"] / "turns" / "raw_turns.json")
-                    print("[i] Verbose: Raw turns saved to Intermediate_Outputs/turns/raw_turns.json")
+                # Save raw turns
+                json_turns_writer = api["registry"].get_output_writer("turns-json")
+                turns_file = paths["intermediate"] / "turns" / "raw_turns.json"
+                json_turns_writer.write(transcript, turns_file)
+                log_intermediate_save(str(turns_file), "Raw turns saved to")
     
                 # Assign speaker names if interactive
                 transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
@@ -450,15 +437,15 @@ def run_pipeline(args, api, root):
                 # Write raw outputs including video (this is the only place video should be generated)
                 raw_dir = paths["root"] / "Transcript_Raw"
                 raw_dir.mkdir(parents=True, exist_ok=True)
-                print(f"[*] Writing raw outputs to {raw_dir}...")
+                log_status(f"Writing raw outputs to {raw_dir}")
                 output_manager = OutputManager.get_instance(api["registry"])
                 # For combined_audio mode, pass the single standardized audio file
                 audio_config = std_audio if mode == "combined_audio" else None
-                print(f"[i] Writing raw outputs with formats: {args.selected_outputs}")
+                log_progress(f"Writing raw outputs with formats: {args.selected_outputs}")
                 output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, audio_config, generate_video=True, word_segments=words_with_speakers)
 
             # 5) Prepare transcript for LLM processing
-            print("[*] Preparing transcript for LLM processing...")
+            log_status("Preparing transcript for LLM processing")
             try:
                 prep_result = prepare_transcript_for_llm(
                     transcript,
@@ -472,29 +459,27 @@ def run_pipeline(args, api, root):
                 # Update transcript with processed turns
                 transcript = prep_result['turns']
                 
-                print(f"[✓] Transcript preparation complete: {prep_result['stats']['segments_created']} segments created")
-                if args.verbose:
-                    print(f"    - Original turns: {prep_result['stats']['original_turns']}")
-                    print(f"    - Words processed: {prep_result['stats']['words_processed']}")
-                    print(f"    - Turns split: {prep_result['stats']['turns_split']}")
+                log_completion(f"Transcript preparation complete: {prep_result['stats']['segments_created']} segments created", {
+                    "original_turns": prep_result['stats']['original_turns'],
+                    "words_processed": prep_result['stats']['words_processed'],
+                    "turns_split": prep_result['stats']['turns_split']
+                })
             except Exception as e:
-                print(f"[!] Warning: Error during transcript preparation: {str(e)}")
-                print("[i] Continuing with original transcript...")
+                log_status(f"Warning: Error during transcript preparation: {str(e)}", "WARNING")
+                log_progress("Continuing with original transcript")
 
             # 6) Optional transcript LLM-based cleanup
             if transcript_cleanup_provider:
-                print(f"[*] Cleaning up transcript with {args.transcript_cleanup_provider}...")
-                print(f"    Processing {len(prep_result['segments'])} segments (max {getattr(args, 'max_words_per_segment', 500)} words each)")
+                log_status(f"Cleaning up transcript with {args.transcript_cleanup_provider}")
+                log_progress(f"Processing {len(prep_result['segments'])} segments (max {getattr(args, 'max_words_per_segment', 500)} words each)")
                 
                 # Process each segment through LLM
                 cleaned_segments = []
                 for idx, segment in enumerate(prep_result['segments']):
-                    if args.verbose:
-                        print(f"    [{idx+1}/{len(prep_result['segments'])}] Processing: {segment[:60]}...")
+                    log_progress(f"[{idx+1}/{len(prep_result['segments'])}] Processing: {segment[:60]}...")
                     cleaned = transcript_cleanup_provider.transcript_cleanup_segment(segment)
                     cleaned_segments.append(cleaned)
-                    if args.verbose:
-                        print(f"    [{idx+1}/{len(prep_result['segments'])}] Cleaned: {cleaned[:60]}...")
+                    log_progress(f"[{idx+1}/{len(prep_result['segments'])}] Cleaned: {cleaned[:60]}...")
                 
                 # Write cleaned transcript to processed directory
                 processed_dir = paths["root"] / "Transcript_Processed"
@@ -504,10 +489,10 @@ def run_pipeline(args, api, root):
                 cleaned_text_file = processed_dir / "transcript_cleaned.txt"
                 cleaned_text_file.write_text('\n\n'.join(cleaned_segments) + '\n', encoding='utf-8')
                 
-                print(f"[✓] Transcript cleanup complete: {cleaned_text_file}")
-                print("[i] Raw transcript with timestamps available in Transcript_Raw/")
+                log_completion(f"Transcript cleanup complete: {cleaned_text_file}")
+                log_progress("Raw transcript with timestamps available in Transcript_Raw/")
             else:
-                print("[i] No transcript cleanup selected, raw outputs already written.")
+                log_progress("No transcript cleanup selected, raw outputs already written.")
 
             print(f"[i] Artifacts written to: {paths['root']}")
 
@@ -533,7 +518,6 @@ def run_pipeline(args, api, root):
                     str(std_audio),
                     speaker_name,
                     intermediate_dir=paths.get("intermediate"),
-                    verbose=args.verbose,
                     base_name=f"{speaker_name.lower()}_",
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
@@ -550,16 +534,16 @@ def run_pipeline(args, api, root):
                 turn_kwargs['llm_url'] = args.llm_turn_builder_url
             transcript = turn_builder_provider.build_turns(all_words, **turn_kwargs)
             
-            # Verbose: Save merged turns
-            if args.verbose:
-                json_turns_writer = api["registry"].get_output_writer("turns-json")
-                json_turns_writer.write(transcript, paths["intermediate"] / "turns" / "merged_turns.json")
-                print("[i] Verbose: Merged turns saved to Intermediate_Outputs/turns/merged_turns.json")
+            # Save merged turns
+            json_turns_writer = api["registry"].get_output_writer("turns-json")
+            merged_file = paths["intermediate"] / "turns" / "merged_turns.json"
+            json_turns_writer.write(transcript, merged_file)
+            log_intermediate_save(str(merged_file), "Merged turns saved to")
 
             # Write raw outputs including video (this is the only place video should be generated)
             raw_dir = paths["root"] / "Transcript_Raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
-            print(f"[*] Writing raw outputs to {raw_dir}...")
+            log_status(f"Writing raw outputs to {raw_dir}")
             output_manager = OutputManager.get_instance(api["registry"])
             
             # For split audio mode, pass the speaker_files dictionary for video generation
@@ -576,7 +560,7 @@ def run_pipeline(args, api, root):
             )
 
             # 5) Prepare transcript for LLM processing
-            print("[*] Preparing transcript for LLM processing...")
+            log_status("Preparing transcript for LLM processing")
             try:
                 prep_result = prepare_transcript_for_llm(
                     transcript,
@@ -590,29 +574,27 @@ def run_pipeline(args, api, root):
                 # Update transcript with processed turns
                 transcript = prep_result['turns']
                 
-                print(f"[✓] Transcript preparation complete: {prep_result['stats']['segments_created']} segments created")
-                if args.verbose:
-                    print(f"    - Original turns: {prep_result['stats']['original_turns']}")
-                    print(f"    - Words processed: {prep_result['stats']['words_processed']}")
-                    print(f"    - Turns split: {prep_result['stats']['turns_split']}")
+                log_completion(f"Transcript preparation complete: {prep_result['stats']['segments_created']} segments created", {
+                    "original_turns": prep_result['stats']['original_turns'],
+                    "words_processed": prep_result['stats']['words_processed'],
+                    "turns_split": prep_result['stats']['turns_split']
+                })
             except Exception as e:
-                print(f"[!] Warning: Error during transcript preparation: {str(e)}")
-                print("[i] Continuing with original transcript...")
+                log_status(f"Warning: Error during transcript preparation: {str(e)}", "WARNING")
+                log_progress("Continuing with original transcript")
 
             # 6) Optional LLM-based transcript cleanup
             if transcript_cleanup_provider:
-                print(f"[*] Cleaning up transcript with {args.transcript_cleanup_provider}...")
-                print(f"    Processing {len(prep_result['segments'])} segments (max {getattr(args, 'max_words_per_segment', 500)} words each)")
+                log_status(f"Cleaning up transcript with {args.transcript_cleanup_provider}")
+                log_progress(f"Processing {len(prep_result['segments'])} segments (max {getattr(args, 'max_words_per_segment', 500)} words each)")
                 
                 # Process each segment through LLM
                 cleaned_segments = []
                 for idx, segment in enumerate(prep_result['segments']):
-                    if args.verbose:
-                        print(f"    [{idx+1}/{len(prep_result['segments'])}] Processing: {segment[:60]}...")
+                    log_progress(f"[{idx+1}/{len(prep_result['segments'])}] Processing: {segment[:60]}...")
                     cleaned = transcript_cleanup_provider.transcript_cleanup_segment(segment)
                     cleaned_segments.append(cleaned)
-                    if args.verbose:
-                        print(f"    [{idx+1}/{len(prep_result['segments'])}] Cleaned: {cleaned[:60]}...")
+                    log_progress(f"[{idx+1}/{len(prep_result['segments'])}] Cleaned: {cleaned[:60]}...")
                 
                 # Write cleaned transcript to processed directory
                 processed_dir = paths["root"] / "Transcript_Processed"
@@ -622,14 +604,14 @@ def run_pipeline(args, api, root):
                 cleaned_text_file = processed_dir / "transcript_cleaned.txt"
                 cleaned_text_file.write_text('\n\n'.join(cleaned_segments) + '\n', encoding='utf-8')
                 
-                print(f"[✓] Transcript cleanup complete: {cleaned_text_file}")
-                print("[i] Raw transcript with timestamps available in Transcript_Raw/")
+                log_completion(f"Transcript cleanup complete: {cleaned_text_file}")
+                log_progress("Raw transcript with timestamps available in Transcript_Raw/")
             else:
-                print("[i] No transcript cleanup selected, raw outputs already written.")
+                log_progress("No transcript cleanup selected, raw outputs already written.")
 
-            print(f"[i] Artifacts written to: {paths['root']}")
+            log_progress(f"Artifacts written to: {paths['root']}")
             
-            print("[✓] Separate audio processing complete.")
+            log_completion("Separate audio processing complete.")
 
         # Summary
         print(f"[i] Artifacts written to: {paths['root']}")

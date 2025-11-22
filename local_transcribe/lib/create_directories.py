@@ -2,7 +2,7 @@
 from __future__ import annotations
 import pathlib
 
-def ensure_session_dirs(output_dir: str | pathlib.Path, mode: str, speaker_files: dict = None, verbose: bool = False, capabilities: dict = None) -> dict[str, pathlib.Path]:
+def ensure_session_dirs(output_dir: str | pathlib.Path, mode: str, speaker_files: dict = None, capabilities: dict = None) -> dict[str, pathlib.Path]:
     """
     Creates a consistent directory structure for outputs and returns paths.
     Mode can be 'combined_audio' or 'split_audio'.

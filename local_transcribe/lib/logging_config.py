@@ -305,3 +305,86 @@ def error_context(
                 return func(*args, **kwargs)
         return wrapper
     return decorator
+
+
+class OutputContext:
+    """Global context for controlling output verbosity and logging."""
+    
+    def __init__(self, log_level: str = "WARNING"):
+        self.log_level = log_level.upper()
+        self.level_value = getattr(logging, self.log_level)
+        self.logger = get_logger()
+    
+    def should_log(self, level: str) -> bool:
+        """Check if a message at the given level should be logged."""
+        return getattr(logging, level.upper()) >= self.level_value
+    
+    def log_status(self, message: str, level: str = "INFO") -> None:
+        """Log a status message if the level is enabled."""
+        if self.should_log(level):
+            self.logger.log(getattr(logging, level.upper()), f"[*] {message}")
+    
+    def log_progress(self, message: str, details: Optional[str] = None) -> None:
+        """Log progress information with optional details."""
+        if self.should_log("INFO"):
+            self.logger.info(f"[i] {message}")
+            if details and self.should_log("DEBUG"):
+                self.logger.debug(f"    {details}")
+    
+    def log_intermediate_save(self, path: str, description: str) -> None:
+        """Log intermediate file saves."""
+        if self.should_log("INFO"):
+            self.logger.info(f"[+] {description}: {path}")
+    
+    def log_completion(self, message: str, stats: Optional[Dict[str, Any]] = None) -> None:
+        """Log completion messages with optional statistics."""
+        if self.should_log("INFO"):
+            self.logger.info(f"[✓] {message}")
+            if stats and self.should_log("DEBUG"):
+                for key, value in stats.items():
+                    self.logger.debug(f"    {key}: {value}")
+
+
+# Global output context
+_global_output_context: Optional[OutputContext] = None
+
+
+def get_output_context() -> OutputContext:
+    """Get or create the global output context."""
+    global _global_output_context
+    if _global_output_context is None:
+        _global_output_context = OutputContext()
+    return _global_output_context
+
+
+def configure_global_logging(
+    log_level: str = "WARNING",
+    log_file: Optional[str] = None,
+    console_output: bool = True,
+    structured_output: bool = False
+) -> None:
+    """Configure the global logger and output context."""
+    global _global_logger, _global_output_context
+    _global_logger = setup_logging(log_level, log_file, console_output, structured_output)
+    _global_output_context = OutputContext(log_level)
+
+
+# Convenience functions for global output control
+def log_status(message: str, level: str = "INFO") -> None:
+    """Log a status message globally."""
+    get_output_context().log_status(message, level)
+
+
+def log_progress(message: str, details: Optional[str] = None) -> None:
+    """Log progress information globally."""
+    get_output_context().log_progress(message, details)
+
+
+def log_intermediate_save(path: str, description: str) -> None:
+    """Log intermediate file save globally."""
+    get_output_context().log_intermediate_save(path, description)
+
+
+def log_completion(message: str, stats: Optional[Dict[str, Any]] = None) -> None:
+    """Log completion message globally."""
+    get_output_context().log_completion(message, stats)

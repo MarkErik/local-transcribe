@@ -12,7 +12,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         description="local-transcribe: offline transcription."
     )
     p.add_argument("-i", "--interactive", action="store_true", help="Interactive mode: prompt for provider and output selections.")
-    p.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging output.")
+    p.add_argument("-l", "--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="WARNING", help="Set logging level (DEBUG, INFO, WARNING, ERROR) [Default: WARNING]")
   
     p.add_argument("-a", "--audio-files", nargs='+', metavar="AUDIO_FILE", help="Audio files to process. One file = mixed audio with multiple speakers. Multiple files = separate tracks (2 files: interviewer + participant, 3+ files: prompt for speaker names).")
     p.add_argument("-o", "--outdir", metavar="OUTPUT_DIR", help="Directory to write outputs into (created if missing).")

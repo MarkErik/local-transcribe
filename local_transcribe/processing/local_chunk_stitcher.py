@@ -8,10 +8,11 @@ and dealing with slight differences in similar-sounding words.
 
 Supports both:
 - Simple string words: chunks with "words" as List[str]
-- Timestamped words: chunks with "words" as List[Dict] where each dict has "text", "start", "end"
+- Timestamped words: chunks with "words" as List[Dict] with "text", "start", "end" keys
 """
 
-from typing import List, Dict, Any, Tuple, Optional, Union
+from typing import List, Dict, Any, Optional, Tuple
+from local_transcribe.lib.logging_config import log_progress
 from difflib import SequenceMatcher
 from local_transcribe.framework.plugin_interfaces import WordSegment
 
@@ -21,18 +22,16 @@ class ChunkStitcher:
     A class for stitching overlapping transcript chunks with intelligent overlap detection.
     """
     
-    def __init__(self, min_overlap_ratio: float = 0.6, similarity_threshold: float = 0.7, verbose: bool = False):
+    def __init__(self, min_overlap_ratio: float = 0.6, similarity_threshold: float = 0.7):
         """
         Initialize the chunk stitcher with configurable thresholds.
         
         Args:
             min_overlap_ratio: Minimum ratio of overlapping words to consider a valid overlap
             similarity_threshold: Threshold for word similarity using SequenceMatcher
-            verbose: Enable verbose output for debugging and progress monitoring
         """
         self.min_overlap_ratio = min_overlap_ratio
         self.similarity_threshold = similarity_threshold
-        self.verbose = verbose
     
     def stitch_chunks(self, chunks: List[Dict[str, Any]]) -> Union[str, List[WordSegment]]:
         """
@@ -81,18 +80,15 @@ class ChunkStitcher:
         # Start with the first chunk
         stitched_words = chunks[0]["words"].copy()
         
-        if self.verbose:
-            print(f"[ChunkStitcher] Processing {len(chunks)} chunks (string words)")
+        log_progress(f"Processing {len(chunks)} chunks (string words)")
         
         # Iteratively stitch each subsequent chunk
         for i in range(1, len(chunks)):
-            if self.verbose:
-                print(f"[ChunkStitcher] Processing chunk {i + 1} of {len(chunks)}")
+            log_progress(f"Processing chunk {i + 1} of {len(chunks)}")
             current_chunk_words = chunks[i]["words"]
             stitched_words = self._stitch_two_chunks(stitched_words, current_chunk_words)
         
-        if self.verbose:
-            print(f"[ChunkStitcher] Stitch complete: {len(stitched_words)} words total")
+        log_progress(f"Stitch complete: {len(stitched_words)} words total")
         
         return " ".join(stitched_words)
     
@@ -120,18 +116,15 @@ class ChunkStitcher:
         # Start with the first chunk
         stitched_words = chunks[0]["words"].copy()
         
-        if self.verbose:
-            print(f"[ChunkStitcher] Processing {len(chunks)} chunks (timestamped words)")
+        log_progress(f"Processing {len(chunks)} chunks (timestamped words)")
         
         # Iteratively stitch each subsequent chunk
         for i in range(1, len(chunks)):
-            if self.verbose:
-                print(f"[ChunkStitcher] Processing chunk {i + 1} of {len(chunks)}")
+            log_progress(f"Processing chunk {i + 1} of {len(chunks)}")
             current_chunk_words = chunks[i]["words"]
             stitched_words = self._stitch_two_chunks_with_timestamps(stitched_words, current_chunk_words)
         
-        if self.verbose:
-            print(f"[ChunkStitcher] Stitch complete: {len(stitched_words)} words total")
+        log_progress(f"Stitch complete: {len(stitched_words)} words total")
         
         # Convert to WordSegments
         return [
@@ -155,13 +148,11 @@ class ChunkStitcher:
         
         if overlap_length == 0:
             # No overlap found, simply concatenate
-            if self.verbose:
-                print(f"[ChunkStitcher] No overlap detected between chunks; concatenating directly")
+            log_progress("No overlap detected between chunks; concatenating directly")
             return chunk1 + chunk2
         
-        if self.verbose:
-            overlapping_words = chunk1[overlap_start:overlap_start + overlap_length]
-            print(f"[ChunkStitcher] Overlap found: start={overlap_start}, length={overlap_length}, words={overlapping_words}")
+        overlapping_words = chunk1[overlap_start:overlap_start + overlap_length]
+        log_progress(f"Overlap found: start={overlap_start}, length={overlap_length}, words={overlapping_words}")
         
         # Handle the overlap
         if overlap_length == len(chunk2):
@@ -188,13 +179,11 @@ class ChunkStitcher:
         
         if overlap_length == 0:
             # No overlap found, simply concatenate
-            if self.verbose:
-                print(f"[ChunkStitcher] No overlap detected between chunks; concatenating directly")
+            log_progress("No overlap detected between chunks; concatenating directly")
             return chunk1 + chunk2
         
-        if self.verbose:
-            overlapping_words = [w["text"] for w in chunk1[overlap_start:overlap_start + overlap_length]]
-            print(f"[ChunkStitcher] Overlap found: start={overlap_start}, length={overlap_length}, words={overlapping_words}")
+        overlapping_words = [w["text"] for w in chunk1[overlap_start:overlap_start + overlap_length]]
+        log_progress(f"Overlap found: start={overlap_start}, length={overlap_length}, words={overlapping_words}")
         
         # Handle the overlap
         if overlap_length == len(chunk2):
@@ -260,8 +249,7 @@ class ChunkStitcher:
         
         # Check if one word could be a continuation of the other
         if self._is_partial_word_match(last_word_chunk1, first_word_chunk2):
-            if self.verbose:
-                print(f"[ChunkStitcher] Partial word overlap: replacing '{last_word_chunk1}' with '{first_word_chunk2}'")
+            log_progress(f"Partial word overlap: replacing '{last_word_chunk1}' with '{first_word_chunk2}'")
             return len(chunk1) - 1, 1
         
         # Check for two-word partial matches
@@ -271,8 +259,7 @@ class ChunkStitcher:
             
             if (self._is_partial_word_match(last_two_chunk1[0], first_two_chunk2[0]) and
                 self._words_similar(last_two_chunk1[1], first_two_chunk2[1])):
-                if self.verbose:
-                    print(f"[ChunkStitcher] Partial word overlap: replacing '{last_two_chunk1}' with '{first_two_chunk2}'")
+                log_progress(f"Partial word overlap: replacing '{last_two_chunk1}' with '{first_two_chunk2}'")
                 return len(chunk1) - 2, 2
         
         return None
@@ -334,14 +321,14 @@ class ChunkStitcher:
         for w1, w2 in zip(words1, words2):
             if self._words_similar(w1, w2):
                 matches += 1
-                if w1 != w2 and self.verbose:
+                if w1 != w2:
                     ratio = SequenceMatcher(None, w1.lower(), w2.lower()).ratio()
                     fuzzy_pairs.append(f"'{w1}' ~ '{w2}' (ratio={ratio:.2f})")
         
         # Require at least min_overlap_ratio of words to be similar
         is_match = matches / len(words1) >= self.min_overlap_ratio
-        if is_match and fuzzy_pairs and self.verbose:
-            print(f"[ChunkStitcher] Fuzzy matches in overlap: {', '.join(fuzzy_pairs)}")
+        if is_match and fuzzy_pairs:
+            log_progress(f"Fuzzy matches in overlap: {', '.join(fuzzy_pairs)}")
         
         return is_match
     
@@ -389,8 +376,7 @@ class ChunkStitcher:
         # Check if one word could be a continuation of the other
         if self._is_partial_word_match(last_word_chunk1, first_word_chunk2):
             # Replace the partial word in chunk1 with the complete word from chunk2
-            if self.verbose:
-                print(f"[ChunkStitcher] Partial word overlap: replacing '{last_word_chunk1}' with '{first_word_chunk2}'")
+            log_progress(f"Partial word overlap: replacing '{last_word_chunk1}' with '{first_word_chunk2}'")
             return len(chunk1) - 1, 1
         
         # Check for two-word partial matches
@@ -400,8 +386,7 @@ class ChunkStitcher:
             
             if (self._is_partial_word_match(last_two_chunk1[0], first_two_chunk2[0]) and
                 self._words_similar(last_two_chunk1[1], first_two_chunk2[1])):
-                if self.verbose:
-                    print(f"[ChunkStitcher] Partial word overlap: replacing '{last_two_chunk1}' with '{first_two_chunk2}'")
+                log_progress(f"Partial word overlap: replacing '{last_two_chunk1}' with '{first_two_chunk2}'")
                 return len(chunk1) - 2, 2
         
         return None
@@ -448,7 +433,7 @@ def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> Union[str, List[Wor
     Args:
         chunks: List of chunk dictionaries with 'chunk_id' and 'words' keys
                Words can be either List[str] or List[Dict] with timestamps
-        **kwargs: Additional arguments (min_overlap_ratio, similarity_threshold, verbose)
+        **kwargs: Additional arguments (min_overlap_ratio, similarity_threshold)
         
     Returns:
         If words are strings: Stitched transcript as a string
@@ -456,7 +441,6 @@ def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> Union[str, List[Wor
     """
     stitcher = ChunkStitcher(
         min_overlap_ratio=kwargs.get('min_overlap_ratio', 0.6),
-        similarity_threshold=kwargs.get('similarity_threshold', 0.7),
-        verbose=kwargs.get('verbose', False)
+        similarity_threshold=kwargs.get('similarity_threshold', 0.7)
     )
     return stitcher.stitch_chunks(chunks)

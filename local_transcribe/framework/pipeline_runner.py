@@ -38,12 +38,13 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
                 print(f"[i] Received chunked output with timestamps from {transcriber_provider.name}, {len(segments)} chunks")
             
             # Verbose: Save chunked data
-            if verbose and intermediate_dir:
+            if intermediate_dir:
                 import json
                 # Chunks already have serializable format (dicts with text/start/end)
                 with open(intermediate_dir / "transcription_alignment" / f"{base_name}raw_chunks_timestamped.json", "w", encoding="utf-8") as f:
                     json.dump(segments, f, indent=2, ensure_ascii=False)
-                print(f"[i] Verbose: Raw timestamped chunks saved to Intermediate_Outputs/transcription_alignment/{base_name}raw_chunks_timestamped.json")
+                if verbose:
+                    print(f"[i] Verbose: Raw timestamped chunks saved to Intermediate_Outputs/transcription_alignment/{base_name}raw_chunks_timestamped.json")
             
             # Use local_chunk_stitcher (which now handles timestamped words)
             from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
@@ -53,10 +54,11 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             # Now segments is List[WordSegment]
         
         # Verbose: Save word segments
-        if verbose and intermediate_dir:
+        if intermediate_dir:
             json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
             json_word_writer.write(segments, intermediate_dir / "transcription_alignment" / f"{base_name}word_segments.json")
-            print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/transcription_alignment/{base_name}word_segments.json")
+            if verbose:
+                print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/transcription_alignment/{base_name}word_segments.json")
     else:
         # Use transcriber + aligner composition
         transcript_result = transcriber_provider.transcribe(audio_path, device=device, **kwargs)
@@ -68,7 +70,7 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
                 print(f"[i] Received chunked output with {len(transcript_result)} chunks")
             
             # Verbose: Save chunked data
-            if verbose and intermediate_dir:
+            if intermediate_dir:
                 import json
                 # Handle both string words and dict words (timestamped)
                 serializable_chunks = []
@@ -83,7 +85,8 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
                 
                 with open(intermediate_dir / "transcription" / f"{base_name}raw_chunks.json", "w", encoding="utf-8") as f:
                     json.dump(serializable_chunks, f, indent=2, ensure_ascii=False)
-                print(f"[i] Verbose: Raw chunks saved to Intermediate_Outputs/transcription/{base_name}raw_chunks.json")
+                if verbose:
+                    print(f"[i] Verbose: Raw chunks saved to Intermediate_Outputs/transcription/{base_name}raw_chunks.json")
             
             # Choose stitching method
             stitching_method = kwargs.get('stitching_method', 'local')
@@ -105,17 +108,19 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             transcript = transcript_result
         
         # Verbose: Save raw transcript
-        if verbose and intermediate_dir:
+        if intermediate_dir:
             with open(intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt", "w", encoding="utf-8") as f:
                 f.write(transcript)
-            print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
+            if verbose:
+                print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
         # Pass role to aligner via kwargs (already added above)
         segments = aligner_provider.align_transcript(audio_path, transcript, device=device, **kwargs)
         # Verbose: Save word segments (speaker should already be assigned by aligner)
-        if verbose and intermediate_dir:
+        if intermediate_dir:
             json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
             json_word_writer.write(segments, intermediate_dir / "alignment" / f"{base_name}word_segments.json")
-            print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/alignment/{base_name}word_segments.json")
+            if verbose:
+                print(f"[i] Verbose: Word segments saved to Intermediate_Outputs/alignment/{base_name}word_segments.json")
     return segments
 
 def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=None, verbose=False, base_name="", **kwargs):
@@ -158,7 +163,7 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
             transcript_text = stitch_chunks(transcript, **kwargs)
         
         # Verbose: Save chunked data
-        if verbose and intermediate_dir:
+        if intermediate_dir:
             import json
             # Handle both string words and dict words
             serializable_chunks = []
@@ -173,16 +178,18 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
             
             with open(intermediate_dir / "transcription" / f"{base_name}raw_chunks.json", "w", encoding="utf-8") as f:
                 json.dump(serializable_chunks, f, indent=2, ensure_ascii=False)
-            print(f"[i] Verbose: Raw chunks saved to Intermediate_Outputs/transcription/{base_name}raw_chunks.json")
+            if verbose:
+                print(f"[i] Verbose: Raw chunks saved to Intermediate_Outputs/transcription/{base_name}raw_chunks.json")
     else:
         # Simple string output
         transcript_text = transcript
     
     # Verbose: Save final stitched transcript
-    if verbose and intermediate_dir:
+    if intermediate_dir:
         with open(intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt", "w", encoding="utf-8") as f:
             f.write(transcript_text)
-        print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
+        if verbose:
+            print(f"[i] Verbose: Raw transcript saved to Intermediate_Outputs/transcription/{base_name}raw_transcript.txt")
     
     return transcript_text
 
@@ -345,7 +352,7 @@ def run_pipeline(args, api, root):
                 transcriber_provider,
                 str(std_audio),
                 "speaker",
-                paths["intermediate"] if args.verbose else None,
+                paths["intermediate"],
                 args.verbose,
                 "",
                 **kwargs

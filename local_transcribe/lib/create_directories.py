@@ -7,7 +7,7 @@ def ensure_session_dirs(output_dir: str | pathlib.Path, mode: str, speaker_files
     Creates a consistent directory structure for outputs and returns paths.
     Mode can be 'combined_audio' or 'split_audio'.
     For split_audio, speaker_files dict maps speaker names to file paths.
-    If verbose, creates Intermediate_Outputs subdirectories based on capabilities.
+    Creates Intermediate_Outputs subdirectories based on plugin capabilities.
     capabilities: dict with keys 'mode', 'unified', 'has_builtin_alignment', 'aligner', 'diarization'
     """
     root = pathlib.Path(output_dir).expanduser().resolve()
@@ -17,14 +17,13 @@ def ensure_session_dirs(output_dir: str | pathlib.Path, mode: str, speaker_files
         "root": root,
     }
 
-    if verbose:
-        needed_intermediate_dirs = _compute_needed_intermediate_dirs(capabilities or {})
-        intermediate_dir = root / "Intermediate_Outputs"
-        intermediate_dir.mkdir(parents=True, exist_ok=True)
-        paths["intermediate"] = intermediate_dir
-        
-        for subdir in needed_intermediate_dirs:
-            (intermediate_dir / subdir).mkdir(exist_ok=True)
+    needed_intermediate_dirs = _compute_needed_intermediate_dirs(capabilities or {})
+    intermediate_dir = root / "Intermediate_Outputs"
+    intermediate_dir.mkdir(parents=True, exist_ok=True)
+    paths["intermediate"] = intermediate_dir
+    
+    for subdir in needed_intermediate_dirs:
+        (intermediate_dir / subdir).mkdir(exist_ok=True)
 
     return paths
 

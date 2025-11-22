@@ -9,6 +9,7 @@ import pathlib
 import tempfile
 import subprocess
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
+from local_transcribe.lib.system_output import get_logger, log_progress, log_completion
 
 
 class MFAAlignerProvider(AlignerProvider):
@@ -17,6 +18,7 @@ class MFAAlignerProvider(AlignerProvider):
     def __init__(self):
         # MFA setup
         self.mfa_models_dir = None
+        self.logger = get_logger()
 
     @property
     def name(self) -> str:
@@ -55,22 +57,22 @@ class MFAAlignerProvider(AlignerProvider):
         local_mfa_env = project_root / ".mfa_env" / "bin" / "mfa"
         
         if local_mfa_env.exists():
-            print(f"[MFA] Using local MFA: {local_mfa_env}")
+            self.logger.info(f"[MFA] Using local MFA: {local_mfa_env}")
             return str(local_mfa_env)
         
         # Fall back to system MFA
-        print(f"[MFA] Using system MFA: mfa")
+        self.logger.info(f"[MFA] Using system MFA: mfa")
         return "mfa"
 
     def _ensure_mfa_models(self):
         """Ensure MFA acoustic model and dictionary are downloaded to project directory."""
-        print(f"[MFA] Checking MFA models in {self.mfa_models_dir}")
+        self.logger.info(f"[MFA] Checking MFA models in {self.mfa_models_dir}")
         # Set MFA_ROOT_DIR environment variable to use project models directory
         env = os.environ.copy()
         env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
 
         mfa_cmd = self._get_mfa_command()
-        print(f"[MFA] Using MFA command: {mfa_cmd}")
+        self.logger.info(f"[MFA] Using MFA command: {mfa_cmd}")
         
         try:
             # Check if models are already downloaded
@@ -81,18 +83,18 @@ class MFAAlignerProvider(AlignerProvider):
                 check=True,
                 env=env
             )
-            print(f"[MFA] Available acoustic models: {result.stdout.strip()}")
+            self.logger.debug(f"[MFA] Available acoustic models: {result.stdout.strip()}")
 
             if "english_us_arpa" not in result.stdout:
-                print(f"[MFA] Downloading MFA English acoustic model to {self.mfa_models_dir}...")
+                log_progress(f"[MFA] Downloading MFA English acoustic model to {self.mfa_models_dir}...")
                 subprocess.run(
                     [mfa_cmd, "model", "download", "acoustic", "english_us_arpa"],
                     check=True,
                     env=env
                 )
-                print(f"[MFA] Acoustic model downloaded successfully")
+                log_completion(f"[MFA] Acoustic model downloaded successfully")
             else:
-                print(f"[MFA] Acoustic model english_us_arpa already available")
+                self.logger.info(f"[MFA] Acoustic model english_us_arpa already available")
 
             result = subprocess.run(
                 [mfa_cmd, "model", "list", "dictionary"],
@@ -101,23 +103,23 @@ class MFAAlignerProvider(AlignerProvider):
                 check=True,
                 env=env
             )
-            print(f"[MFA] Available dictionaries: {result.stdout.strip()}")
+            self.logger.debug(f"[MFA] Available dictionaries: {result.stdout.strip()}")
 
             if "english_us_arpa" not in result.stdout:
-                print(f"[MFA] Downloading MFA English dictionary to {self.mfa_models_dir}...")
+                log_progress(f"[MFA] Downloading MFA English dictionary to {self.mfa_models_dir}...")
                 subprocess.run(
                     [mfa_cmd, "model", "download", "dictionary", "english_us_arpa"],
                     check=True,
                     env=env
                 )
-                print(f"[MFA] Dictionary downloaded successfully")
+                log_completion(f"[MFA] Dictionary downloaded successfully")
             else:
-                print(f"[MFA] Dictionary english_us_arpa already available")
+                self.logger.info(f"[MFA] Dictionary english_us_arpa already available")
 
         except subprocess.CalledProcessError as e:
-            print(f"[MFA] ERROR: Failed to check/download MFA models: {e}")
-            print(f"[MFA] stdout: {e.stdout}")
-            print(f"[MFA] stderr: {e.stderr}")
+            self.logger.error(f"[MFA] ERROR: Failed to check/download MFA models: {e}")
+            self.logger.error(f"[MFA] stdout: {e.stdout}")
+            self.logger.error(f"[MFA] stderr: {e.stderr}")
             raise
 
     def _parse_textgrid(self, textgrid_path: pathlib.Path, original_transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
@@ -128,16 +130,16 @@ class MFAAlignerProvider(AlignerProvider):
             original_transcript: Original transcript with punctuation/capitalization
             speaker: Speaker identifier
         """
-        print(f"[MFA] Parsing TextGrid: {textgrid_path}")
+        self.logger.info(f"[MFA] Parsing TextGrid: {textgrid_path}")
         segments = []
 
         try:
             with open(textgrid_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            print(f"[MFA] TextGrid has {len(lines)} lines")
+            self.logger.debug(f"[MFA] TextGrid has {len(lines)} lines")
             if len(lines) < 10:
-                print(f"[MFA] TextGrid content (first 10 lines): {lines}")
+                self.logger.debug(f"[MFA] TextGrid content (first 10 lines): {lines}")
             
             # Build a mapping of normalized words to original words
             original_words = original_transcript.split()
@@ -160,21 +162,21 @@ class MFAAlignerProvider(AlignerProvider):
             for i, line in enumerate(lines):
                 if 'name = "words"' in line:
                     word_tier_start = i
-                    print(f"[MFA] Found word tier at line {i}")
+                    self.logger.debug(f"[MFA] Found word tier at line {i}")
                 # Find the next tier (phones) to know where words tier ends
                 elif word_tier_start is not None and 'name = "phones"' in line:
                     word_tier_end = i
-                    print(f"[MFA] Word tier ends at line {i}")
+                    self.logger.debug(f"[MFA] Word tier ends at line {i}")
                     break
 
             if word_tier_start is None:
-                print(f"[MFA] ERROR: Could not find word tier in TextGrid")
+                self.logger.error(f"[MFA] ERROR: Could not find word tier in TextGrid")
                 raise ValueError("Could not find word tier in TextGrid")
             
             # If we didn't find the phones tier, parse until end of file
             if word_tier_end is None:
                 word_tier_end = len(lines)
-                print(f"[MFA] No phones tier found, parsing until end of file")
+                self.logger.debug(f"[MFA] No phones tier found, parsing until end of file")
 
             # Parse intervals only within the words tier
             i = word_tier_start
@@ -226,15 +228,15 @@ class MFAAlignerProvider(AlignerProvider):
                                 speaker=speaker
                             ))
                     except (ValueError, IndexError) as e:
-                        print(f"[MFA] Warning: Failed to parse interval at line {i}: {e}")
+                        self.logger.warning(f"[MFA] Warning: Failed to parse interval at line {i}: {e}")
                         pass
 
                 i += 1
 
-            print(f"[MFA] Successfully parsed {interval_count} intervals, created {len(segments)} segments")
+            self.logger.info(f"[MFA] Successfully parsed {interval_count} intervals, created {len(segments)} segments")
 
         except Exception as e:
-            print(f"[MFA] ERROR: Failed to parse TextGrid: {e}")
+            self.logger.error(f"[MFA] ERROR: Failed to parse TextGrid: {e}")
             raise
 
         # Replace <unk> with original words using context
@@ -244,15 +246,15 @@ class MFAAlignerProvider(AlignerProvider):
 
     def _replace_unk_with_original(self, segments: List[WordSegment], original_transcript: str) -> None:
         """Replace <unk> tokens in aligned segments with words from the original transcript using two-pointer alignment."""
-        print(f"[MFA UNK REPLACE] Starting <unk> replacement")
+        self.logger.debug(f"[MFA UNK REPLACE] Starting <unk> replacement")
         
         aligned_texts = [seg.text for seg in segments]
         original_words = original_transcript.split()
         
-        print(f"[MFA UNK REPLACE] Original transcript word count: {len(original_words)}")
-        print(f"[MFA UNK REPLACE] MFA aligned word count before replacement: {len(aligned_texts)}")
-        print(f"[MFA UNK REPLACE] Aligned texts ({len(aligned_texts)} words): {' '.join(aligned_texts[:10])} ... {' '.join(aligned_texts[-10:])}" if len(aligned_texts) > 20 else f"[MFA UNK REPLACE] Aligned texts: {' '.join(aligned_texts)}")
-        print(f"[MFA UNK REPLACE] Original words ({len(original_words)} words): {' '.join(original_words[:10])} ... {' '.join(original_words[-10:])}" if len(original_words) > 20 else f"[MFA UNK REPLACE] Original words: {' '.join(original_words)}")
+        self.logger.debug(f"[MFA UNK REPLACE] Original transcript word count: {len(original_words)}")
+        self.logger.debug(f"[MFA UNK REPLACE] MFA aligned word count before replacement: {len(aligned_texts)}")
+        self.logger.debug(f"[MFA UNK REPLACE] Aligned texts ({len(aligned_texts)} words): {' '.join(aligned_texts[:10])} ... {' '.join(aligned_texts[-10:])}" if len(aligned_texts) > 20 else f"[MFA UNK REPLACE] Aligned texts: {' '.join(aligned_texts)}")
+        self.logger.debug(f"[MFA UNK REPLACE] Original words ({len(original_words)} words): {' '.join(original_words[:10])} ... {' '.join(original_words[-10:])}" if len(original_words) > 20 else f"[MFA UNK REPLACE] Original words: {' '.join(original_words)}")
         
         ptr = 0
         for i, seg in enumerate(segments):
@@ -266,25 +268,25 @@ class MFAAlignerProvider(AlignerProvider):
                 orig_end = min(len(original_words), ptr + 6)
                 original_context = original_words[orig_start:orig_end]
                 
-                print(f"[MFA UNK REPLACE] Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
+                self.logger.debug(f"[MFA UNK REPLACE] Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
                 
                 if ptr < len(original_words):
                     replacement = original_words[ptr]
                     seg.text = replacement
-                    print(f"[MFA UNK REPLACE] Replaced with: '{replacement}'")
+                    self.logger.debug(f"[MFA UNK REPLACE] Replaced with: '{replacement}'")
                     ptr += 1
                 else:
-                    print(f"[MFA UNK REPLACE] No more original words available, leaving as <unk>")
+                    self.logger.debug(f"[MFA UNK REPLACE] No more original words available, leaving as <unk>")
             else:
                 if ptr < len(original_words) and seg.text.lower() == original_words[ptr].lower():
-                    print(f"[MFA UNK REPLACE] Matched '{seg.text}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
+                    self.logger.debug(f"[MFA UNK REPLACE] Matched '{seg.text}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
                     ptr += 1
                 else:
-                    print(f"[MFA UNK REPLACE] No match for '{seg.text}' at ptr {ptr}, not advancing ptr")
+                    self.logger.debug(f"[MFA UNK REPLACE] No match for '{seg.text}' at ptr {ptr}, not advancing ptr")
         
         final_texts = [seg.text for seg in segments]
-        print(f"[MFA UNK REPLACE] MFA aligned word count after replacement: {len(final_texts)}")
-        print(f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts[:10])} ... {' '.join(final_texts[-10:])}" if len(final_texts) > 20 else f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts)}")
+        self.logger.debug(f"[MFA UNK REPLACE] MFA aligned word count after replacement: {len(final_texts)}")
+        self.logger.debug(f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts[:10])} ... {' '.join(final_texts[-10:])}" if len(final_texts) > 20 else f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts)}")
 
     def _simple_alignment(self, audio_path: str, transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
         """Fallback to simple even-distribution alignment."""
@@ -297,15 +299,15 @@ class MFAAlignerProvider(AlignerProvider):
         words = transcript.split()
 
         if not words:
-            print(f"[MFA] Simple alignment: No words in transcript")
+            self.logger.info(f"[MFA] Simple alignment: No words in transcript")
             return []
 
         # Simple even distribution
         word_duration = duration / len(words)
 
-        print(f"[MFA] Simple alignment: Audio duration={duration:.2f}s, {len(words)} words, word_duration={word_duration:.3f}s")
-        print(f"[MFA] First 5 words: {words[:5]}")
-        print(f"[MFA] Last 5 words: {words[-5:]}")
+        self.logger.info(f"[MFA] Simple alignment: Audio duration={duration:.2f}s, {len(words)} words, word_duration={word_duration:.3f}s")
+        self.logger.debug(f"[MFA] First 5 words: {words[:5]}")
+        self.logger.debug(f"[MFA] Last 5 words: {words[-5:]}")
 
         segments = []
         current_time = 0.0
@@ -339,19 +341,19 @@ class MFAAlignerProvider(AlignerProvider):
             device: Device to use (ignored for MFA)
             **kwargs: Additional options including 'role' or 'speaker'
         """
-        print(f"[MFA] Starting alignment for audio: {audio_path}")
-        print(f"[MFA] Transcript: {transcript[:200]}..." if len(transcript) > 200 else f"[MFA] Transcript: {transcript}")
+        self.logger.info(f"[MFA] Starting alignment for audio: {audio_path}")
+        self.logger.debug(f"[MFA] Transcript: {transcript[:200]}..." if len(transcript) > 200 else f"[MFA] Transcript: {transcript}")
         
         # Extract speaker from kwargs (passed from split_audio mode)
         speaker = kwargs.get('role') or kwargs.get('speaker')
-        print(f"[MFA] Speaker: {speaker}")
+        self.logger.debug(f"[MFA] Speaker: {speaker}")
         
         # Ensure MFA models directory exists
         if self.mfa_models_dir is None:
             models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models")))
             self.mfa_models_dir = models_root / "aligners" / "mfa"
             self.mfa_models_dir.mkdir(parents=True, exist_ok=True)
-            print(f"[MFA] Using MFA models directory: {self.mfa_models_dir}")
+            self.logger.info(f"[MFA] Using MFA models directory: {self.mfa_models_dir}")
 
         # Download MFA models if needed
         self._ensure_mfa_models()
@@ -376,18 +378,18 @@ class MFAAlignerProvider(AlignerProvider):
             # but let's copy it to ensure proper format
             import shutil
             shutil.copy(audio_path, audio_file)
-            print(f"[MFA] Audio file copied to: {audio_file} (size: {audio_file.stat().st_size} bytes)")
+            self.logger.debug(f"[MFA] Audio file copied to: {audio_file} (size: {audio_file.stat().st_size} bytes)")
             
             # Get audio duration for debugging
             import librosa
             audio_duration = librosa.get_duration(filename=str(audio_file))
-            print(f"[MFA] Audio duration: {audio_duration:.2f} seconds")
-            print(f"[MFA] Audio file copied to: {audio_file} (size: {audio_file.stat().st_size} bytes)")
+            self.logger.debug(f"[MFA] Audio duration: {audio_duration:.2f} seconds")
+            self.logger.debug(f"[MFA] Audio file copied to: {audio_file} (size: {audio_file.stat().st_size} bytes)")
             
             # Get audio duration for debugging
             import librosa
             audio_duration = librosa.get_duration(filename=str(audio_file))
-            print(f"[MFA] Audio duration: {audio_duration:.2f} seconds")
+            self.logger.debug(f"[MFA] Audio duration: {audio_duration:.2f} seconds")
 
             # Create matching transcript file (.lab extension)
             # MFA needs text without punctuation, so normalize it
@@ -396,13 +398,13 @@ class MFAAlignerProvider(AlignerProvider):
                 for word in transcript.split()
             )
             
-            print(f"[MFA] Normalized transcript: {normalized_transcript[:200]}..." if len(normalized_transcript) > 200 else f"[MFA] Normalized transcript: {normalized_transcript}")
-            print(f"[MFA] Transcript word count: {len(normalized_transcript.split())}")
-            print(f"[MFA] Temp directory: {temp_path}")
+            self.logger.debug(f"[MFA] Normalized transcript: {normalized_transcript[:200]}..." if len(normalized_transcript) > 200 else f"[MFA] Normalized transcript: {normalized_transcript}")
+            self.logger.debug(f"[MFA] Transcript word count: {len(normalized_transcript.split())}")
+            self.logger.debug(f"[MFA] Temp directory: {temp_path}")
             
             transcript_file = audio_dir / f"{audio_name.rsplit('.', 1)[0]}.lab"
             transcript_file.write_text(normalized_transcript, encoding='utf-8')
-            print(f"[MFA] Transcript file written: {transcript_file} (size: {transcript_file.stat().st_size} bytes)")
+            self.logger.debug(f"[MFA] Transcript file written: {transcript_file} (size: {transcript_file.stat().st_size} bytes)")
 
             # Setup output directory for alignments
             output_dir = temp_path / "output"
@@ -421,9 +423,9 @@ class MFAAlignerProvider(AlignerProvider):
                 mfa_env_bin = pathlib.Path(self._get_mfa_command()).parent
                 env["PATH"] = str(mfa_env_bin) + os.pathsep + env.get("PATH", "")
                 
-                print(f"[MFA] MFA environment bin: {mfa_env_bin}")
-                print(f"[MFA] Updated PATH: {env['PATH']}")
-                print(f"[MFA] Checking if fstcompile exists: {(mfa_env_bin / 'fstcompile').exists()}")
+                self.logger.debug(f"[MFA] MFA environment bin: {mfa_env_bin}")
+                self.logger.debug(f"[MFA] Updated PATH: {env['PATH']}")
+                self.logger.debug(f"[MFA] Checking if fstcompile exists: {(mfa_env_bin / 'fstcompile').exists()}")
 
                 # Output TextGrid file
                 textgrid_file = output_dir / f"{audio_name.rsplit('.', 1)[0]}.TextGrid"
@@ -446,11 +448,11 @@ class MFAAlignerProvider(AlignerProvider):
                     "--debug",
                 ]
 
-                print(f"[MFA] Running command: {' '.join(cmd)}")
-                print(f"[MFA] Audio file: {audio_file} (exists: {audio_file.exists()})")
-                print(f"[MFA] Transcript file: {transcript_file} (content: {normalized_transcript[:100]}...)")
-                print(f"[MFA] Expected output: {textgrid_file}")
-                print(f"[MFA] Starting MFA subprocess now...")
+                self.logger.debug(f"[MFA] Running command: {' '.join(cmd)}")
+                self.logger.debug(f"[MFA] Audio file: {audio_file} (exists: {audio_file.exists()})")
+                self.logger.debug(f"[MFA] Transcript file: {transcript_file} (content: {normalized_transcript[:100]}...)")
+                self.logger.debug(f"[MFA] Expected output: {textgrid_file}")
+                self.logger.debug(f"[MFA] Starting MFA subprocess now...")
 
                 result = subprocess.run(
                     cmd,
@@ -461,43 +463,43 @@ class MFAAlignerProvider(AlignerProvider):
                     timeout=3600  # 1 hour timeout
                 )
 
-                print(f"[MFA] MFA subprocess completed!")
-                print(f"[MFA] Command completed successfully. Exit code: {result.returncode}")
+                self.logger.info(f"[MFA] MFA subprocess completed!")
+                self.logger.info(f"[MFA] Command completed successfully. Exit code: {result.returncode}")
                 # Note: stdout/stderr not captured when capture_output=False
 
                 # Parse TextGrid to extract word timestamps
                 if textgrid_file.exists():
-                    print(f"[MFA] TextGrid file exists at {textgrid_file}, parsing...")
-                    print(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
+                    self.logger.info(f"[MFA] TextGrid file exists at {textgrid_file}, parsing...")
+                    self.logger.debug(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
                     segments = self._parse_textgrid(textgrid_file, transcript, speaker=speaker)
-                    print(f"[MFA] Successfully parsed {len(segments)} word segments from TextGrid")
+                    self.logger.info(f"[MFA] Successfully parsed {len(segments)} word segments from TextGrid")
                     return segments
                 else:
-                    print(f"[MFA] ERROR: TextGrid file not found at {textgrid_file}")
-                    print(f"[MFA] Falling back to simple alignment")
+                    self.logger.error(f"[MFA] ERROR: TextGrid file not found at {textgrid_file}")
+                    self.logger.info(f"[MFA] Falling back to simple alignment")
                     return self._simple_alignment(audio_path, transcript, speaker=speaker)
 
             except subprocess.TimeoutExpired:
-                print(f"[MFA] ERROR: MFA alignment timed out after 3600 seconds")
-                print(f"[MFA] Command: {' '.join(cmd)}")
-                print(f"[MFA] Checking if TextGrid was created despite timeout: {textgrid_file.exists()}")
+                self.logger.error(f"[MFA] ERROR: MFA alignment timed out after 3600 seconds")
+                self.logger.error(f"[MFA] Command: {' '.join(cmd)}")
+                self.logger.debug(f"[MFA] Checking if TextGrid was created despite timeout: {textgrid_file.exists()}")
                 if textgrid_file.exists():
-                    print(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
-                print(f"[MFA] Falling back to simple alignment")
+                    self.logger.debug(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
+                self.logger.info(f"[MFA] Falling back to simple alignment")
                 return self._simple_alignment(audio_path, transcript, speaker=speaker)
             except subprocess.CalledProcessError as e:
-                print(f"[MFA] ERROR: MFA alignment failed with exit code {e.returncode}")
-                print(f"[MFA] Command: {' '.join(cmd)}")
+                self.logger.error(f"[MFA] ERROR: MFA alignment failed with exit code {e.returncode}")
+                self.logger.error(f"[MFA] Command: {' '.join(cmd)}")
                 # Note: stdout/stderr not captured when capture_output=False
-                print(f"[MFA] Checking if TextGrid was created despite error: {textgrid_file.exists()}")
+                self.logger.debug(f"[MFA] Checking if TextGrid was created despite error: {textgrid_file.exists()}")
                 if textgrid_file.exists():
-                    print(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
-                print(f"[MFA] Falling back to simple alignment")
+                    self.logger.debug(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
+                self.logger.info(f"[MFA] Falling back to simple alignment")
                 return self._simple_alignment(audio_path, transcript, speaker=speaker)
             except FileNotFoundError:
-                print(f"[MFA] ERROR: MFA command not found: {mfa_cmd}")
-                print(f"[MFA] Run: bash setup_mfa.sh")
-                print(f"[MFA] Falling back to simple alignment")
+                self.logger.error(f"[MFA] ERROR: MFA command not found: {mfa_cmd}")
+                self.logger.error(f"[MFA] Run: bash setup_mfa.sh")
+                self.logger.info(f"[MFA] Falling back to simple alignment")
                 return self._simple_alignment(audio_path, transcript, speaker=speaker)
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:

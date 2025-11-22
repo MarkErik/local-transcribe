@@ -103,7 +103,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                     os.environ["HF_HOME"] = str(cache_dir)
                     token = os.getenv("HF_TOKEN")
                     snapshot_download(model, token=token)
-                    print(f"[✓] {model} downloaded successfully.")
+                    log_completion(f"{model} downloaded successfully.")
         except Exception as e:
             raise Exception(f"Failed to download {model}: {e}")
         finally:
@@ -134,7 +134,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def _load_granite_model(self):
         """Load the Granite model if not already loaded."""
-        print("[Granite MFA] Loading Granite model...")
+        log_progress("Loading Granite model...")
         if self.model is None:
             model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-8b"])
             
@@ -151,13 +151,13 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=True, token=token)
                 self.tokenizer = self.processor.tokenizer
 
-                print(f"[i] Loading Granite model on device: {self.device}")
+                log_progress(f"Loading Granite model on device: {self.device}")
                 self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
                     model_name, 
                     local_files_only=True, 
                     token=token
                 ).to(self.device)
-                print(f"[✓] Granite model loaded successfully")
+                log_completion("Granite model loaded successfully")
             except Exception as e:
                 self.logger.debug(f"Failed to load model {model_name}")
                 self.logger.debug(f"Cache directory exists: {cache_dir.exists()}")
@@ -177,8 +177,8 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def _ensure_mfa_models(self):
         """Ensure MFA acoustic model and dictionary are downloaded."""
-        print("[Granite MFA] Ensuring MFA models are available...")
-        print(f"[MFA] Checking MFA models in {self.mfa_models_dir}")
+        log_progress("Ensuring MFA models are available...")
+        log_progress(f"Checking MFA models in {self.mfa_models_dir}")
         env = os.environ.copy()
         env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
 
@@ -194,7 +194,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             )
 
             if "english_us_arpa" not in result.stdout:
-                print(f"[MFA] Downloading MFA English acoustic model...")
+                log_progress("Downloading MFA English acoustic model...")
                 subprocess.run(
                     [mfa_cmd, "model", "download", "acoustic", "english_us_arpa"],
                     check=True,
@@ -210,7 +210,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             )
 
             if "english_us_arpa" not in result.stdout:
-                print(f"[MFA] Downloading MFA English dictionary...")
+                log_progress("Downloading MFA English dictionary...")
                 subprocess.run(
                     [mfa_cmd, "model", "download", "dictionary", "english_us_arpa"],
                     check=True,
@@ -218,12 +218,12 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 )
 
         except subprocess.CalledProcessError as e:
-            print(f"[MFA] ERROR: Failed to check/download MFA models: {e}")
+            self.logger.error(f"Failed to check/download MFA models: {e}")
             raise
 
     def _transcribe_single_chunk(self, wav, **kwargs) -> str:
         """Transcribe a single audio chunk using Granite."""
-        print("[Granite MFA] Transcribing audio chunk with Granite")
+        log_progress("Transcribing audio chunk with Granite")
         try:
             wav_tensor = torch.from_numpy(wav).unsqueeze(0)
 
@@ -311,7 +311,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         text = re.sub(r'\s+', ' ', text).strip()
         
         if verbose and 'total_removed' in locals() and total_removed > 0:
-            print(f"Removed {total_removed} labels from chunk transcript.")
+            self.logger.info(f"Removed {total_removed} labels from chunk transcript.")
         
         return text
 
@@ -324,7 +324,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             chunk_start_time: Absolute start time of this chunk in the full audio (seconds)
             speaker: Speaker identifier
         """
-        print(f"[Granite MFA] Aligning transcript with MFA (chunk starts at {chunk_start_time:.2f}s)")
+        log_progress(f"Aligning transcript with MFA (chunk starts at {chunk_start_time:.2f}s)")
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = pathlib.Path(temp_dir)
             audio_dir = temp_path / "audio"
@@ -485,7 +485,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 i += 1
 
         except Exception as e:
-            print(f"[MFA] Warning: Failed to parse TextGrid: {e}")
+            self.logger.warning(f"Failed to parse TextGrid: {e}")
             return self._simple_alignment_to_word_dicts(None, original_transcript, chunk_start_time, speaker)
 
         # Replace <unk> tokens with words from original transcript
@@ -500,13 +500,13 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             word_dicts: List of word dictionaries from MFA alignment (modified in place)
             original_transcript: Original transcript from Granite with all words
         """
-        print(f"[Granite MFA UNK REPLACE] Starting <unk> replacement")
+        log_progress("Starting <unk> replacement")
         
         aligned_texts = [wd["text"] for wd in word_dicts]
         original_words = original_transcript.split()
         
-        print(f"[Granite MFA UNK REPLACE] Original transcript word count: {len(original_words)}")
-        print(f"[Granite MFA UNK REPLACE] MFA aligned word count before replacement: {len(aligned_texts)}")
+        self.logger.debug(f"Original transcript word count: {len(original_words)}")
+        self.logger.debug(f"MFA aligned word count before replacement: {len(aligned_texts)}")
         
         ptr = 0
         for i, word_dict in enumerate(word_dicts):
@@ -520,25 +520,25 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 orig_end = min(len(original_words), ptr + 6)
                 original_context = original_words[orig_start:orig_end]
                 
-                print(f"[Granite MFA UNK REPLACE] Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
+                self.logger.debug(f"Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
                 
                 if ptr < len(original_words):
                     replacement = original_words[ptr]
                     word_dict["text"] = replacement
                     aligned_texts[i] = replacement  # Update local copy for debugging
-                    print(f"[Granite MFA UNK REPLACE] Replaced with: '{replacement}'")
+                    self.logger.debug(f"Replaced with: '{replacement}'")
                     ptr += 1
                 else:
-                    print(f"[Granite MFA UNK REPLACE] No more original words available, leaving as <unk>")
+                    self.logger.debug("No more original words available, leaving as <unk>")
             else:
                 if ptr < len(original_words) and word_dict["text"].lower() == original_words[ptr].lower():
-                    print(f"[Granite MFA UNK REPLACE] Matched '{word_dict['text']}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
+                    self.logger.debug(f"Matched '{word_dict['text']}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
                     ptr += 1
                 else:
-                    print(f"[Granite MFA UNK REPLACE] No match for '{word_dict['text']}' at ptr {ptr}, not advancing ptr")
+                    self.logger.debug(f"No match for '{word_dict['text']}' at ptr {ptr}, not advancing ptr")
         
         final_texts = [wd["text"] for wd in word_dicts]
-        print(f"[Granite MFA UNK REPLACE] MFA aligned word count after replacement: {len(final_texts)}")
+        self.logger.debug(f"MFA aligned word count after replacement: {len(final_texts)}")
 
     def _simple_alignment_to_word_dicts(self, chunk_wav, transcript: str, chunk_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fallback: simple even distribution of timestamps.
@@ -598,10 +598,10 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 "words": List[Dict[str, Any]]  # Each word has "text", "start", "end"
             }
         """
-        print("[Granite MFA] Starting transcription with alignment using Granite + MFA")
+        log_progress("Starting transcription with alignment using Granite + MFA")
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')
         if transcriber_model not in self.model_mapping:
-            print(f"Warning: Unknown model {transcriber_model}, defaulting to granite-8b")
+            self.logger.warning(f"Unknown model {transcriber_model}, defaulting to granite-8b")
             transcriber_model = 'granite-8b'
 
         self.selected_model = transcriber_model
@@ -637,7 +637,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         num_chunks = math.ceil(duration / effective_chunk_length) if effective_chunk_length > 0 else 1
         
         if verbose:
-            print(f"[i] Audio duration: {duration:.1f}s - processing in {num_chunks} chunks")
+            log_progress(f"Audio duration: {duration:.1f}s - processing in {num_chunks} chunks")
         
         chunk_start = 0
         chunk_num = 0
@@ -651,11 +651,11 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             # Calculate absolute start time of this chunk in the full audio
             chunk_start_time = chunk_start / sr
             
-            print(f"[Granite MFA] Processing chunk {chunk_num} of {num_chunks} (starts at {chunk_start_time:.2f}s)")
+            log_progress(f"Processing chunk {chunk_num} of {num_chunks} (starts at {chunk_start_time:.2f}s)")
             
             if verbose:
                 chunk_duration_sec = len(chunk_wav) / sr
-                print(f"[i] Processing chunk {chunk_num} of {num_chunks} ({chunk_duration_sec:.1f}s)...")
+                log_progress(f"Processing chunk {chunk_num} of {num_chunks} ({chunk_duration_sec:.1f}s)...")
             
             if len(chunk_wav) < min_chunk_samples:
                 if prev_chunk_wav is not None:
@@ -701,7 +701,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         
         if verbose:
             total_words = sum(len(chunk["words"]) for chunk in chunks_with_timestamps)
-            print(f"[✓] Transcription and alignment complete: {len(chunks_with_timestamps)} chunks, {total_words} words")
+            log_completion(f"Transcription and alignment complete: {len(chunks_with_timestamps)} chunks, {total_words} words")
         
         return chunks_with_timestamps
 

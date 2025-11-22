@@ -12,6 +12,7 @@ import soundfile as sf
 from pyannote.audio import Pipeline
 from local_transcribe.framework.plugin_interfaces import DiarizationProvider, WordSegment, Turn, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_output import get_logger, log_progress
 
 
 class PyAnnoteDiarizationProvider(DiarizationProvider):
@@ -29,6 +30,9 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
     def description(self) -> str:
         return "Speaker diarization using pyannote.audio models"
 
+    def __init__(self):
+        self.logger = get_logger()
+
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         # Return the actual HuggingFace model ID that needs to be downloaded
         return ["pyannote/speaker-diarization-community-1"]
@@ -39,22 +43,22 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         import sys
         
         # DEBUG: Log environment state before download attempt
-        print(f"DEBUG: HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        print(f"DEBUG: HF_HOME: {os.environ.get('HF_HOME')}")
-        print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+        self.logger.debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        self.logger.debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
+        self.logger.debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
         
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         os.environ["HF_HUB_OFFLINE"] = "0"
         
         # DEBUG: Confirm environment variable was set
-        print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        self.logger.debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
 
         # Force reload of huggingface_hub modules to pick up new environment
-        print(f"DEBUG: Reloading huggingface_hub modules...")
+        self.logger.debug(f"Reloading huggingface_hub modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            print(f"DEBUG: Reloaded {module_name}")
+            self.logger.debug(f"Reloaded {module_name}")
 
         try:
             from huggingface_hub import snapshot_download
@@ -68,25 +72,25 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
                     # Get token from environment
                     token = os.getenv("HF_TOKEN", "")
                     
-                    print(f"DEBUG: Attempting to download pyannote model to cache_dir: {cache_dir}")
-                    print(f"DEBUG: Using HF_TOKEN: {'***' if token else 'NOT SET'}")
+                    self.logger.debug(f"Attempting to download pyannote model to cache_dir: {cache_dir}")
+                    self.logger.debug(f"Using HF_TOKEN: {'***' if token else 'NOT SET'}")
                     
                     # Use snapshot_download like other working providers
                     snapshot_download(model, cache_dir=str(cache_dir), token=token)
-                    print(f"[✓] {model} downloaded successfully.")
+                    log_completion(f"{model} downloaded successfully.")
                     
                     # DEBUG: Check what was actually created
                     if cache_dir.exists():
-                        print(f"DEBUG: After download, cache directory contents: {list(cache_dir.iterdir())}")
+                        self.logger.debug(f"After download, cache directory contents: {list(cache_dir.iterdir())}")
                 else:
-                    print(f"Warning: Unknown model {model}, skipping download")
+                    self.logger.warning(f"Unknown model {model}, skipping download")
         except Exception as e:
-            print(f"DEBUG: Download failed with error: {e}")
-            print(f"DEBUG: Error type: {type(e)}")
+            self.logger.debug(f"Download failed with error: {e}")
+            self.logger.debug(f"Error type: {type(e)}")
 
             # Additional debug: Check environment at time of error
-            print(f"DEBUG: At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
-            print(f"DEBUG: At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+            self.logger.debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            self.logger.debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
 
             raise Exception(f"Failed to download {model}: {e}")
         finally:
@@ -204,12 +208,12 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             raise FileNotFoundError(f"No snapshots found in {snapshots_dir}")
         
         latest_snapshot_dir = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
-        print(f"DEBUG: Loading pyannote model from: {latest_snapshot_dir}")
+        self.logger.debug(f"Loading pyannote model from: {latest_snapshot_dir}")
 
         # Get token from environment
         token = os.getenv("HF_TOKEN", "")
         
-        print(f"DEBUG: Loading pyannote model with token: {'***' if token else 'NOT SET'}")
+        self.logger.debug(f"Loading pyannote model with token: {'***' if token else 'NOT SET'}")
         
         # Load pipeline from the specific snapshot directory
         pipeline = Pipeline.from_pretrained(
@@ -222,14 +226,14 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             try:
                 if device == "cuda" and torch.cuda.is_available():
                     pipeline.to(torch.device("cuda"))
-                    print(f"[i] PyAnnote using CUDA device")
+                    log_progress("PyAnnote using CUDA device")
                 elif device == "mps" and torch.backends.mps.is_available():
                     pipeline.to(torch.device("mps"))
-                    print(f"[i] PyAnnote using MPS device")
+                    log_progress("PyAnnote using MPS device")
                 else:
-                    print(f"[!] Warning: {device} not available, using CPU for PyAnnote")
+                    self.logger.warning(f"Warning: {device} not available, using CPU for PyAnnote")
             except Exception as e:
-                print(f"[!] Warning: Could not move PyAnnote pipeline to {device}, using CPU: {e}")
+                self.logger.warning(f"Warning: Could not move PyAnnote pipeline to {device}, using CPU: {e}")
 
         # Load waveform
         waveform, sample_rate = self._load_waveform_mono_32f(audio_path)

@@ -14,6 +14,7 @@ import librosa
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_output import get_logger, log_progress, log_completion
 
 
 class Wav2Vec2AlignerProvider(AlignerProvider):
@@ -26,6 +27,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         # Wav2Vec2 components for alignment
         self.wav2vec2_processor = None
         self.wav2vec2_model = None
+        self.logger = get_logger()
 
     @property
     def device(self):
@@ -55,29 +57,29 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         import sys
 
         # DEBUG: Log environment state before download attempt
-        print(f"DEBUG: HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        print(f"DEBUG: HF_HOME: {os.environ.get('HF_HOME')}")
-        print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+        self.logger.debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        self.logger.debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
+        self.logger.debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
 
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         os.environ["HF_HUB_OFFLINE"] = "0"
 
         # DEBUG: Confirm environment variable was set
-        print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        self.logger.debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
 
         # Force reload of huggingface_hub modules to pick up new environment
-        print(f"DEBUG: Reloading huggingface_hub modules...")
+        self.logger.debug("Reloading huggingface_hub modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            print(f"DEBUG: Reloaded {module_name}")
+            self.logger.debug(f"Reloaded {module_name}")
 
         # Also reload transformers modules
-        print(f"DEBUG: Reloading transformers modules...")
+        self.logger.debug("Reloading transformers modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            print(f"DEBUG: Reloaded {module_name}")
+            self.logger.debug(f"Reloaded {module_name}")
 
         from huggingface_hub import snapshot_download
 
@@ -98,16 +100,16 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
                 if model == "facebook/wav2vec2-base-960h":
                     # Use snapshot_download with cache_dir parameter pointing to the standard location
                     snapshot_download(model, cache_dir=cache_dir, token=os.getenv("HF_TOKEN"))
-                    print(f"[✓] {model} downloaded successfully.")
+                    log_completion(f"{model} downloaded successfully")
                 else:
-                    print(f"Warning: Unknown model {model}, skipping download")
+                    self.logger.warning(f"Unknown model {model}, skipping download")
         except Exception as e:
-            print(f"DEBUG: Download failed with error: {e}")
-            print(f"DEBUG: Error type: {type(e)}")
+            self.logger.debug(f"Download failed with error: {e}")
+            self.logger.debug(f"Error type: {type(e)}")
 
             # Additional debug: Check environment at time of error
-            print(f"DEBUG: At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
-            print(f"DEBUG: At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+            self.logger.debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            self.logger.debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
 
             raise Exception(f"Failed to download {model}: {e}")
         finally:
@@ -174,10 +176,10 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
                     self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token)
                     self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token).to(self.device)
             except Exception as e:
-                print(f"DEBUG: Failed to load Wav2Vec2 model {self.wav2vec2_model_name}")
-                print(f"DEBUG: Cache directory exists: {(models_root / 'huggingface' / 'hub').exists()}")
+                self.logger.debug(f"Failed to load Wav2Vec2 model {self.wav2vec2_model_name}")
+                self.logger.debug(f"Cache directory exists: {(models_root / 'huggingface' / 'hub').exists()}")
                 if (models_root / 'huggingface' / 'hub').exists():
-                    print(f"DEBUG: Cache directory contents: {list((models_root / 'huggingface' / 'hub').iterdir())}")
+                    self.logger.debug(f"Cache directory contents: {list((models_root / 'huggingface' / 'hub').iterdir())}")
                 raise e
 
     def _get_token_timestamps(self, emissions: torch.Tensor, transcript: str) -> List[tuple]:
@@ -231,7 +233,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             
         except Exception as e:
             # Fallback to simple frame-based alignment if forced_align fails
-            print(f"Warning: Forced alignment failed ({e}), using fallback method")
+            self.logger.warning(f"Forced alignment failed ({e}), using fallback method")
             return self._fallback_token_alignment(emissions, tokens)
 
     def _extract_token_boundaries(self, aligned_labels: torch.Tensor, tokens: List[str], 

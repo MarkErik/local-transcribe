@@ -11,6 +11,7 @@ import requests
 from typing import List, Dict, Optional, Tuple
 
 from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, Turn, registry
+from local_transcribe.lib.system_output import get_logger, log_progress, log_completion
 
 
 class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
@@ -42,7 +43,10 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
     @property
     def description(self) -> str:
         return "Improved LLM-based turn builder for split audio with proper word merging and sorting"
-    
+
+    def __init__(self):
+        self.logger = get_logger()
+
     def build_turns(
         self,
         words: List[WordSegment],
@@ -67,17 +71,15 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
             List of Turn objects with natural turn boundaries
         """
         if not words:
-            print("WARNING: No words provided to turn builder")
+            self.logger.warning("No words provided to turn builder")
             return []
         
-        print(f"\n{'='*60}")
-        print(f"Split Audio LLM Turn Builder (Improved)")
-        print(f"{'='*60}")
-        print(f"Input: {len(words)} word segments")
+        self.logger.info(f"Split Audio LLM Turn Builder (Improved)")
+        self.logger.info(f"Input: {len(words)} word segments")
         
         # CRITICAL: Merge and sort words by timestamp
         sorted_words = self._merge_and_sort_words(words)
-        print(f"After merge/sort: {len(sorted_words)} words in chronological order")
+        self.logger.info(f"After merge/sort: {len(sorted_words)} words in chronological order")
         
         # Validate chronological ordering
         self._validate_chronological_order(sorted_words)
@@ -89,10 +91,10 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
         use_chunking = kwargs.get('use_chunking', True)
         
         if use_chunking and len(sorted_words) > self.SMALL_TRANSCRIPT_THRESHOLD:
-            print(f"Using chunked processing (transcript > {self.SMALL_TRANSCRIPT_THRESHOLD} words)")
+            self.logger.info(f"Using chunked processing (transcript > {self.SMALL_TRANSCRIPT_THRESHOLD} words)")
             return self._build_turns_with_chunking(sorted_words, **kwargs)
         else:
-            print(f"Using direct processing (transcript <= {self.SMALL_TRANSCRIPT_THRESHOLD} words)")
+            self.logger.info(f"Using direct processing (transcript <= {self.SMALL_TRANSCRIPT_THRESHOLD} words)")
             return self._build_turns_direct(sorted_words, **kwargs)
     
     def _merge_and_sort_words(self, words: List[WordSegment]) -> List[WordSegment]:
@@ -113,9 +115,9 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
         
         # Show first few words to verify ordering
         if sorted_words:
-            print("\nFirst 10 words after sorting:")
+            self.logger.debug("First 10 words after sorting:")
             for i, word in enumerate(sorted_words[:10]):
-                print(f"  {i}: {word.start:>8.2f}s - {word.speaker:<15} '{word.text}'")
+                self.logger.debug(f"  {i}: {word.start:>8.2f}s - {word.speaker:<15} '{word.text}'")
         
         return sorted_words
     
@@ -130,11 +132,11 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
                 issues.append(f"Word {i} starts after word {i+1}: {words[i].start:.2f} > {words[i+1].start:.2f}")
         
         if issues:
-            print(f"WARNING: Found {len(issues)} chronological ordering issues:")
+            self.logger.warning(f"Found {len(issues)} chronological ordering issues:")
             for issue in issues[:5]:  # Show first 5
-                print(f"  - {issue}")
+                self.logger.warning(f"  - {issue}")
         else:
-            print("✓ Chronological order validated")
+            self.logger.info("Chronological order validated")
     
     def _log_conversation_stats(self, words: List[WordSegment]) -> None:
         """Log statistics about the conversation."""
@@ -156,12 +158,12 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
         # Time span
         duration = words[-1].end - words[0].start
         
-        print(f"\nConversation Statistics:")
-        print(f"  Duration: {duration:.1f} seconds")
-        print(f"  Speakers: {list(speaker_counts.keys())}")
+        self.logger.info(f"Conversation Statistics:")
+        self.logger.info(f"  Duration: {duration:.1f} seconds")
+        self.logger.info(f"  Speakers: {list(speaker_counts.keys())}")
         for speaker, count in speaker_counts.items():
-            print(f"    {speaker}: {count} words")
-        print(f"  Speaker changes: {speaker_changes}")
+            self.logger.info(f"    {speaker}: {count} words")
+        self.logger.info(f"  Speaker changes: {speaker_changes}")
     
     def _build_turns_direct(self, words: List[WordSegment], **kwargs) -> List[Turn]:
         """
@@ -174,7 +176,7 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
         Returns:
             List of Turn objects
         """
-        print("\n--- Direct LLM Processing ---")
+        self.logger.info("Direct LLM Processing")
         
         # Prepare prompt
         prompt = self._build_improved_prompt(words, **kwargs)
@@ -186,22 +188,22 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
         try:
             llm_response = self._query_llm(prompt, llm_url, timeout)
         except Exception as e:
-            print(f"ERROR: LLM query failed: {e}")
-            print("Falling back to simple turn builder")
+            self.logger.error(f"LLM query failed: {e}")
+            self.logger.info("Falling back to simple turn builder")
             return self._fallback_simple_turns(words)
         
         # Parse response
         try:
             parsed_turns = self._parse_llm_response(llm_response, words)
         except Exception as e:
-            print(f"ERROR: Failed to parse LLM response: {e}")
-            print("Falling back to simple turn builder")
+            self.logger.error(f"Failed to parse LLM response: {e}")
+            self.logger.info("Falling back to simple turn builder")
             return self._fallback_simple_turns(words)
         
         # Reconstruct timings
         turns = self._reconstruct_timings_robust(parsed_turns, words)
         
-        print(f"✓ Created {len(turns)} turns from {len(parsed_turns)} LLM outputs")
+        log_completion(f"Created {len(turns)} turns from {len(parsed_turns)} LLM outputs")
         return turns
     
     def _build_turns_with_chunking(self, words: List[WordSegment], **kwargs) -> List[Turn]:
@@ -215,36 +217,36 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
         Returns:
             List of Turn objects
         """
-        print("\n--- Chunked Processing ---")
+        self.logger.info("Chunked Processing")
         
         chunk_size = kwargs.get('chunk_size', self.DEFAULT_CHUNK_SIZE)
         overlap_ratio = kwargs.get('overlap_ratio', self.DEFAULT_OVERLAP_RATIO)
         overlap_size = max(1, int(chunk_size * overlap_ratio))
         
-        print(f"Chunk size: {chunk_size}, Overlap: {overlap_size}")
+        self.logger.info(f"Chunk size: {chunk_size}, Overlap: {overlap_size}")
         
         # Create overlapping chunks
         chunks = self._create_overlapping_chunks(words, chunk_size, overlap_size)
-        print(f"Created {len(chunks)} chunks")
+        self.logger.info(f"Created {len(chunks)} chunks")
         
         # Process each chunk
         all_turns = []
         for i, (chunk_words, start_idx, end_idx) in enumerate(chunks):
-            print(f"\nProcessing chunk {i+1}/{len(chunks)} (words {start_idx}-{end_idx})")
+            self.logger.info(f"Processing chunk {i+1}/{len(chunks)} (words {start_idx}-{end_idx})")
             
             try:
                 # Build turns for this chunk
                 chunk_turns = self._build_turns_direct(chunk_words, **kwargs)
                 all_turns.extend(chunk_turns)
             except Exception as e:
-                print(f"ERROR processing chunk {i+1}: {e}")
+                self.logger.error(f"ERROR processing chunk {i+1}: {e}")
                 # Fall back to simple turns for this chunk
                 all_turns.extend(self._fallback_simple_turns(chunk_words))
         
         # Merge overlapping turns
         merged_turns = self._merge_overlapping_turns(all_turns)
         
-        print(f"\n✓ Final result: {len(merged_turns)} turns from {len(chunks)} chunks")
+        log_completion(f"Final result: {len(merged_turns)} turns from {len(chunks)} chunks")
         return merged_turns
     
     def _create_overlapping_chunks(
@@ -344,8 +346,8 @@ JSON OUTPUT:"""
         Returns:
             LLM response text
         """
-        print(f"Querying LLM at {url}...")
-        print(f"Prompt length: {len(prompt)} characters")
+        self.logger.info(f"Querying LLM at {url}...")
+        self.logger.debug(f"Prompt length: {len(prompt)} characters")
         
         payload = {
             "prompt": prompt,
@@ -364,7 +366,7 @@ JSON OUTPUT:"""
         result = response.json()
         response_text = result.get("content", "")
         
-        print(f"✓ LLM response received ({len(response_text)} characters)")
+        log_completion(f"LLM response received ({len(response_text)} characters)")
         return response_text
     
     def _parse_llm_response(self, response_text: str, original_words: List[WordSegment]) -> List[Dict[str, str]]:
@@ -378,7 +380,7 @@ JSON OUTPUT:"""
         Returns:
             List of dicts with 'speaker' and 'text' keys
         """
-        print("\n--- Parsing LLM Response ---")
+        self.logger.info("Parsing LLM Response")
         
         # Try to extract JSON from response
         response_text = response_text.strip()
@@ -396,8 +398,8 @@ JSON OUTPUT:"""
         try:
             turns_data = json.loads(json_text)
         except json.JSONDecodeError as e:
-            print(f"JSON parse error: {e}")
-            print(f"Attempted to parse: {json_text[:500]}...")
+            self.logger.error(f"JSON parse error: {e}")
+            self.logger.debug(f"Attempted to parse: {json_text[:500]}...")
             raise ValueError(f"Invalid JSON in LLM response: {e}")
         
         if not isinstance(turns_data, list):
@@ -407,11 +409,11 @@ JSON OUTPUT:"""
         parsed_turns = []
         for i, turn in enumerate(turns_data):
             if not isinstance(turn, dict):
-                print(f"WARNING: Turn {i} is not a dict, skipping")
+                self.logger.warning(f"Turn {i} is not a dict, skipping")
                 continue
             
             if 'speaker' not in turn or 'text' not in turn:
-                print(f"WARNING: Turn {i} missing required fields, skipping")
+                self.logger.warning(f"Turn {i} missing required fields, skipping")
                 continue
             
             parsed_turns.append({
@@ -419,14 +421,14 @@ JSON OUTPUT:"""
                 'text': str(turn['text']).strip()
             })
         
-        print(f"✓ Parsed {len(parsed_turns)} turns from LLM response")
+        self.logger.info(f"Parsed {len(parsed_turns)} turns from LLM response")
         
         # Show sample
         if parsed_turns:
-            print("\nSample turns:")
+            self.logger.debug("Sample turns:")
             for i, turn in enumerate(parsed_turns[:3]):
                 text_preview = turn['text'][:60] + "..." if len(turn['text']) > 60 else turn['text']
-                print(f"  {i+1}. {turn['speaker']}: {text_preview}")
+                self.logger.debug(f"  {i+1}. {turn['speaker']}: {text_preview}")
         
         return parsed_turns
     
@@ -445,7 +447,7 @@ JSON OUTPUT:"""
         Returns:
             List of Turn objects with timings
         """
-        print("\n--- Reconstructing Timings ---")
+        self.logger.info("Reconstructing Timings")
         
         turns = []
         word_index = 0
@@ -513,11 +515,11 @@ JSON OUTPUT:"""
                     text=reconstructed_text
                 ))
             else:
-                print(f"WARNING: Could not match words for turn {turn_idx}: {speaker}")
-                print(f"  Expected: {turn_text[:80]}...")
+                self.logger.warning(f"Could not match words for turn {turn_idx}: {speaker}")
+                self.logger.debug(f"  Expected: {turn_text[:80]}...")
                 # Continue anyway - don't fail the entire process
         
-        print(f"✓ Created {len(turns)} turns with timings")
+        log_completion(f"Created {len(turns)} turns with timings")
         return turns
     
     def _merge_overlapping_turns(self, turns: List[Turn]) -> List[Turn]:
@@ -571,7 +573,7 @@ JSON OUTPUT:"""
         Returns:
             List of Turn objects
         """
-        print("\n--- Using Fallback Simple Turn Builder ---")
+        self.logger.info("Using Fallback Simple Turn Builder")
         
         if not words:
             return []
@@ -614,7 +616,7 @@ JSON OUTPUT:"""
                 text=text
             ))
         
-        print(f"✓ Created {len(turns)} simple turns")
+        log_completion(f"Created {len(turns)} simple turns")
         return turns
 
 

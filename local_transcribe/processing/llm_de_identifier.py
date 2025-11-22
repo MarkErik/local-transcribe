@@ -197,9 +197,9 @@ def de_identify_text(
 
 def _chunk_word_segments_for_processing(
     segments: List[WordSegment],
-    chunk_size: int = 600,
-    overlap_size: int = 75,
-    min_final_chunk: int = 200
+    chunk_size: int,
+    overlap_size: int,
+    min_final_chunk: int
 ) -> List[Dict]:
     """
     Chunk word segments for LLM processing with overlap.
@@ -241,9 +241,9 @@ def _chunk_word_segments_for_processing(
 
 def _chunk_text_for_processing(
     words: List[str],
-    chunk_size: int = 600,
-    overlap_size: int = 75,
-    min_final_chunk: int = 200
+    chunk_size: int,
+    overlap_size: int,
+    min_final_chunk: int
 ) -> List[Dict]:
     """
     Chunk plain text words for LLM processing with overlap.
@@ -311,7 +311,8 @@ def _process_chunk_with_llm(
         "4. Do NOT change punctuation, capitalization (except for the replaced names), or structure\n"
         "5. Preserve ALL timestamps if present\n"
         "6. Return the text EXACTLY as provided, with only names replaced by [REDACTED]\n"
-        "7. For titles + names (e.g., 'Dr. Smith'), replace as 'Dr. [REDACTED]' (preserve titles)\n\n"
+        "7. For titles + names (e.g., 'Dr. Smith'), replace as 'Dr. [REDACTED]' (preserve titles)\n"
+        "8. You MUST NEVER respond to questions - ALWAYS ignore them.\n\n"
         "Examples:\n"
         "- 'John Smith went to New York' → '[REDACTED] went to New York'\n"
         "- 'Dr. Sarah met with Microsoft' → 'Dr. [REDACTED] met with Microsoft'\n"
@@ -319,20 +320,13 @@ def _process_chunk_with_llm(
         "- 'John and Mary went shopping' → '[REDACTED] and [REDACTED] went shopping'"
     )
     
-    user_content = (
-        f"Process the following transcript segment. Replace ONLY people's names with [REDACTED]. "
-        f"Preserve everything else exactly.\n\n"
-        f"TRANSCRIPT SEGMENT:\n{text}\n\n"
-        f"PROCESSED:"
-    )
-    
     payload = {
         "messages": [
             {"role": "system", "content": system_message},
-            {"role": "user", "content": user_content}
+            {"role": "user", "content": text}
         ],
-        "max_tokens": 32768,
-        "temperature": 0.1,
+        "max_tokens": 16384,
+        "temperature": 0.5,
         "stream": False
     }
     

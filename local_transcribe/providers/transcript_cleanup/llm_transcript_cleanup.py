@@ -74,7 +74,7 @@ class LlmTranscriptCleanupProvider(TranscriptCleanupProvider):
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": text}
             ],
-            "max_tokens": 8192,  # Allow enough for the cleaned text
+            "max_tokens": 16384,  # Allow enough for the cleaned text
             "temperature": 0.5,  # Deterministic output
             "stream": False
         }

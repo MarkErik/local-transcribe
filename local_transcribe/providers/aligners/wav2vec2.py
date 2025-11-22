@@ -6,6 +6,7 @@ Aligner plugin using Wav2Vec2 forced alignment.
 from typing import List, Optional
 import os
 import pathlib
+import warnings
 import torch
 import torchaudio
 import numpy as np
@@ -166,8 +167,12 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
                 token = os.getenv("HF_TOKEN")
                 # Models should be cached by preload_models, so use local_files_only=True
                 # Let transformers find models in the standard HuggingFace cache location
-                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token)
-                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token).to(self.device)
+                
+                # Suppress the masked_spec_embed warning - it's only used during training, not inference
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message=".*masked_spec_embed.*")
+                    self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token)
+                    self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token).to(self.device)
             except Exception as e:
                 print(f"DEBUG: Failed to load Wav2Vec2 model {self.wav2vec2_model_name}")
                 print(f"DEBUG: Cache directory exists: {(models_root / 'huggingface' / 'hub').exists()}")
@@ -200,29 +205,27 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         token_ids = [dictionary.get(t, dictionary.get('[UNK]', 0)) for t in tokens]
         
         try:
-            # Get frame-by-frame best predictions
-            emissions_squeezed = emissions[0]  # Remove batch dimension: [time, vocab]
-            predicted_ids = torch.argmax(emissions_squeezed, dim=-1)  # [time]
-            
-            # Use torchaudio's forced_align to get the alignment path
-            # This returns frame indices where each target token is aligned
+            # Use torchaudio's forced_align to get frame-level alignment
+            # Note: This function returns (aligned_labels, scores) as tensors, not token spans
             log_probs = emissions.log_softmax(dim=-1).cpu()  # Move to CPU for forced_align compatibility
-            token_spans = torchaudio.functional.forced_align(
-                log_probs,  # Shape: [batch, time, vocab]
-                torch.tensor([token_ids]),  # Shape: [batch, target_length]
-                blank=self.wav2vec2_processor.tokenizer.pad_token_id
+            
+            # Suppress deprecation warning for forced_align
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*forced_align.*deprecated.*")
+                aligned_labels, scores = torchaudio.functional.forced_align(
+                    log_probs,  # Shape: [batch, time, vocab]
+                    torch.tensor([token_ids]),  # Shape: [batch, target_length]
+                    blank=self.wav2vec2_processor.tokenizer.pad_token_id
+                )
+            
+            # aligned_labels shape: [batch, time] - contains token_id for each frame
+            # Now we need to extract token boundaries from the frame-level predictions
+            token_timestamps = self._extract_token_boundaries(
+                aligned_labels[0],  # Remove batch dimension: [time]
+                tokens,
+                token_ids,
+                self.wav2vec2_processor.tokenizer.pad_token_id
             )
-            
-            # token_spans[0] contains tuples of (target_token_idx, start_frame, end_frame)
-            token_timestamps = []
-            
-            for target_idx, start_frame, end_frame in token_spans[0]:
-                if target_idx < len(tokens):
-                    char = tokens[target_idx]
-                    # Convert frames to time (20ms per frame for Wav2Vec2 base)
-                    start_time = start_frame * 0.02 * 1000  # Convert to ms
-                    end_time = (end_frame + 1) * 0.02 * 1000  # +1 to include the end frame
-                    token_timestamps.append((char, start_time, end_time))
             
             return token_timestamps
             
@@ -230,6 +233,71 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             # Fallback to simple frame-based alignment if forced_align fails
             print(f"Warning: Forced alignment failed ({e}), using fallback method")
             return self._fallback_token_alignment(emissions, tokens)
+
+    def _extract_token_boundaries(self, aligned_labels: torch.Tensor, tokens: List[str], 
+                                   token_ids: List[int], blank_id: int) -> List[tuple]:
+        """Extract token boundaries from frame-level aligned labels.
+        
+        Args:
+            aligned_labels: Tensor of shape [time] with token_id for each frame
+            tokens: List of characters/tokens in the transcript
+            token_ids: List of token IDs corresponding to tokens
+            blank_id: The ID of the blank token in CTC
+            
+        Returns:
+            List of (char, start_time_ms, end_time_ms) tuples
+        """
+        token_timestamps = []
+        aligned_labels_list = aligned_labels.tolist()
+        
+        # Map token_ids to their positions in the transcript
+        token_id_to_char = {tid: tokens[i] for i, tid in enumerate(token_ids)}
+        
+        # Track which transcript token we're currently looking for
+        current_token_idx = 0
+        frame_start = None
+        
+        for frame_idx, label_id in enumerate(aligned_labels_list):
+            # Skip blank frames
+            if label_id == blank_id:
+                # If we were tracking a token, finalize it
+                if frame_start is not None and current_token_idx < len(token_ids):
+                    # Convert frames to time (20ms per frame for Wav2Vec2 base)
+                    start_time = frame_start * 0.02 * 1000  # Convert to ms
+                    end_time = frame_idx * 0.02 * 1000  # End at current frame
+                    token_timestamps.append((tokens[current_token_idx], start_time, end_time))
+                    
+                    current_token_idx += 1
+                    frame_start = None
+                continue
+            
+            # Check if this label matches the current expected token
+            if current_token_idx < len(token_ids) and label_id == token_ids[current_token_idx]:
+                # Start or continue tracking this token
+                if frame_start is None:
+                    frame_start = frame_idx
+            else:
+                # Label doesn't match - could be repeated token or mismatch
+                # If we were tracking a token, finalize it
+                if frame_start is not None and current_token_idx < len(token_ids):
+                    start_time = frame_start * 0.02 * 1000
+                    end_time = frame_idx * 0.02 * 1000
+                    token_timestamps.append((tokens[current_token_idx], start_time, end_time))
+                    
+                    current_token_idx += 1
+                    frame_start = None
+                    
+                    # Check if this new label matches the next token
+                    if current_token_idx < len(token_ids) and label_id == token_ids[current_token_idx]:
+                        frame_start = frame_idx
+        
+        # Finalize the last token if still tracking
+        if frame_start is not None and current_token_idx < len(token_ids):
+            start_time = frame_start * 0.02 * 1000
+            end_time = len(aligned_labels_list) * 0.02 * 1000
+            token_timestamps.append((tokens[current_token_idx], start_time, end_time))
+        
+        return token_timestamps
 
     def _fallback_token_alignment(self, emissions: torch.Tensor, tokens: List[str]) -> List[tuple]:
         """Fallback token alignment using simple peak detection."""

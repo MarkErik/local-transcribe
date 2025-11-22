@@ -108,7 +108,7 @@ class ColoredFormatter(logging.Formatter):
 
 
 def setup_logging(
-    log_level: str = "INFO",
+    log_level: str = "WARNING",
     log_file: Optional[str] = None,
     console_output: bool = True,
     structured_output: bool = False
@@ -260,7 +260,7 @@ def get_logger() -> logging.Logger:
 
 
 def configure_global_logging(
-    log_level: str = "INFO",
+    log_level: str = "WARNING",
     log_file: Optional[str] = None,
     console_output: bool = True,
     structured_output: bool = False

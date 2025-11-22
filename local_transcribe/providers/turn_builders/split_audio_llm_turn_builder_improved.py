@@ -182,7 +182,7 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
         prompt = self._build_improved_prompt(words, **kwargs)
         
         # Query LLM
-        llm_url = kwargs.get('llm_url', 'http://localhost:8080')
+        llm_url = kwargs.get('llm_url', 'http://0.0.0.0:8080')
         timeout = kwargs.get('timeout', None)
         
         try:

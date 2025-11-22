@@ -12,7 +12,7 @@ from local_transcribe.lib.system_output import get_logger
 class LlmTranscriptCleanupProvider(TranscriptCleanupProvider):
     """Transcript cleanup provider using a remote LLM server via HTTP API."""
 
-    def __init__(self, url: str = "http://localhost:8080"):
+    def __init__(self, url: str = "http://0.0.0.0:8080"):
         self.url = url.rstrip('/')
         self.logger = get_logger()
 

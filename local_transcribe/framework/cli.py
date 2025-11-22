@@ -32,7 +32,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--llm-stitcher-url", default="http://0.0.0.0:8080", help="URL for LLM stitcher provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
     p.add_argument("--llm-de-identifier-url", default="http://0.0.0.0:8080", help="URL for LLM personal information de-identifier processor (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
     p.add_argument("--llm-turn-builder-url", default="http://0.0.0.0:8080", help="URL for LLM turn builder provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
-    p.add_argument("--llm-transcript-cleanup-url", default="http://localhost:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
+    p.add_argument("--llm-transcript-cleanup-url", default="http://0.0.0.0:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
 
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
@@ -67,7 +67,7 @@ def show_defaults():
     print("\nURLs:")
     print("  - LLM Stitcher URL: http://0.0.0.0:8080")
     print("  - LLM Turn Builder URL: http://0.0.0.0:8080")
-    print("  - LLM Transcript Cleanup URL: http://localhost:8080")
+    print("  - LLM Transcript Cleanup URL: http://0.0.0.0:8080")
     
     print("\nNote: Some defaults may be overridden by system capabilities or provider availability.")
 

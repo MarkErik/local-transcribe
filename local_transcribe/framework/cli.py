@@ -599,7 +599,7 @@ def interactive_prompt(args, api):
                     is_default = False
 
                     # If remote provider, ask for URL
-                    if args.transcript_cleanup_provider == "llama_cpp_remote":
+                    if args.transcript_cleanup_provider == "llm_transcript_cleanup":
                         default_url = getattr(args, 'llm_transcript_cleanup_url', 'http://0.0.0.0:8080')
                         url = input(f"Enter llama.cpp server URL (e.g., http://0.0.0.0:8080) [Default: {default_url}]: ").strip()
                         if url:

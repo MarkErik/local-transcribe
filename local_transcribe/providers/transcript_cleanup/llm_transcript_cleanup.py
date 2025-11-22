@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Remote Llama.cpp cleanup provider for transcript processing.
+Remote LLM cleanup provider for transcript processing.
 """
 
 import json
@@ -9,8 +9,8 @@ from local_transcribe.framework.plugin_interfaces import TranscriptCleanupProvid
 from local_transcribe.lib.system_output import get_logger
 
 
-class LlamaCppRemoteTranscriptCleanupProvider(TranscriptCleanupProvider):
-    """Transcript cleanup provider using a remote Llama.cpp server via HTTP API."""
+class LlmTranscriptCleanupProvider(TranscriptCleanupProvider):
+    """Transcript cleanup provider using a remote LLM server via HTTP API."""
 
     def __init__(self, url: str = "http://localhost:8080"):
         self.url = url.rstrip('/')
@@ -18,15 +18,15 @@ class LlamaCppRemoteTranscriptCleanupProvider(TranscriptCleanupProvider):
 
     @property
     def name(self) -> str:
-        return "llama_cpp_remote"
+        return "llm_transcript_cleanup"
 
     @property
     def short_name(self) -> str:
-        return "Llama.cpp Remote"
+        return "LLM Transcript Cleanup"
 
     @property
     def description(self) -> str:
-        return "Remote Llama.cpp server for LLM-based transcript cleanup"
+        return "Remote LLM server for transcript cleanup"
 
     def transcript_cleanup_segment(self, text: str, **kwargs) -> str:
         """Clean up a transcript segment using the remote LLM."""
@@ -102,7 +102,7 @@ class LlamaCppRemoteTranscriptCleanupProvider(TranscriptCleanupProvider):
 def register_transcript_cleanup_plugins():
     """Register transcript cleanup plugins."""
     # Default local instance; can be overridden
-    provider = LlamaCppRemoteTranscriptCleanupProvider()
+    provider = LlmTranscriptCleanupProvider()
     registry.register_transcript_cleanup_provider(provider)
 
 

@@ -206,8 +206,9 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             
             # Use torchaudio's forced_align to get the alignment path
             # This returns frame indices where each target token is aligned
+            log_probs = emissions.log_softmax(dim=-1).cpu()  # Move to CPU for forced_align compatibility
             token_spans = torchaudio.functional.forced_align(
-                emissions.log_softmax(dim=-1),  # Shape: [batch, time, vocab]
+                log_probs,  # Shape: [batch, time, vocab]
                 torch.tensor([token_ids]),  # Shape: [batch, target_length]
                 blank=self.wav2vec2_processor.tokenizer.pad_token_id
             )

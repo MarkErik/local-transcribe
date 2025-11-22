@@ -317,7 +317,7 @@ class CTCAlignerProvider(AlignerProvider):
 
         try:
             # Use torchaudio's forced_align for proper CTC alignment
-            log_probs = torch.log_softmax(emissions, dim=-1)
+            log_probs = torch.log_softmax(emissions, dim=-1).cpu()  # Move to CPU for forced_align compatibility
             
             # Ensure emissions has batch dimension: [batch, time, vocab]
             if log_probs.dim() == 2:

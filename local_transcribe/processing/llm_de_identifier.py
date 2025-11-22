@@ -334,7 +334,7 @@ def _process_chunk_with_llm(
     for attempt in range(max_retries):
         try:
             response = requests.post(
-                f"{llm_url}/v1/chat/completions",
+                f"{llm_url}/chat/completions",
                 json=payload,
                 timeout=timeout
             )

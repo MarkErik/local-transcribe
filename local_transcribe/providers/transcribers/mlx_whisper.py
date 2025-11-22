@@ -7,6 +7,7 @@ from typing import List, Optional
 import os
 import pathlib
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
+from local_transcribe.lib.system_output import get_logger, log_completion
 
 
 class MLXWhisperTranscriberProvider(TranscriberProvider):
@@ -28,6 +29,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
             "large-v3": "mlx-community/whisper-large-v3",
             "turbo": "mlx-community/whisper-turbo",
         }
+        self.logger = get_logger()
         self.selected_model = None  # Will be set during transcription
 
     @property
@@ -65,11 +67,11 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
                         # Load and immediately discard to download/cache the model
                         # Use a dummy audio file path that doesn't exist to trigger download without transcribing
                         temp_result = mlx_whisper.transcribe("/dev/null", path_or_hf_repo=model, verbose=False)
-                        print(f"[✓] MLX Whisper {model} downloaded successfully.")
+                        log_completion(f"MLX Whisper {model} downloaded successfully")
                     except Exception as e:
-                        print(f"Warning: Failed to preload {model}: {e}")
+                        self.logger.warning(f"Failed to preload {model}: {e}")
         except ImportError:
-            print("Warning: mlx-whisper not available, skipping preload")
+            self.logger.warning("mlx-whisper not available, skipping preload")
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which MLX Whisper models are available offline without downloading."""

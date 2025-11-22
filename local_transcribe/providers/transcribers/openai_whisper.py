@@ -7,6 +7,7 @@ from typing import List, Optional
 import os
 import pathlib
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
+from local_transcribe.lib.system_output import get_logger, log_completion
 
 
 class OpenAIWhisperTranscriberProvider(TranscriberProvider):
@@ -21,6 +22,7 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
         }
         self.selected_model = None  # Will be set during transcription
         self.whisper_model = None
+        self.logger = get_logger()
 
     @property
     def name(self) -> str:
@@ -53,29 +55,29 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
         import sys
 
         # DEBUG: Log environment state before download attempt
-        print(f"DEBUG: HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        print(f"DEBUG: HF_HOME: {os.environ.get('HF_HOME')}")
-        print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+        self.logger.debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        self.logger.debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
+        self.logger.debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
 
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         os.environ["HF_HUB_OFFLINE"] = "0"
 
         # DEBUG: Confirm environment variable was set
-        print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        self.logger.debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
 
         # Force reload of huggingface_hub modules to pick up new environment
-        print(f"DEBUG: Reloading huggingface_hub modules...")
+        self.logger.debug("Reloading huggingface_hub modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            print(f"DEBUG: Reloaded {module_name}")
+            self.logger.debug(f"Reloaded {module_name}")
 
         # Also reload transformers modules
-        print(f"DEBUG: Reloading transformers modules...")
+        self.logger.debug("Reloading transformers modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            print(f"DEBUG: Reloaded {module_name}")
+            self.logger.debug(f"Reloaded {module_name}")
 
         try:
             cache_dir_whisper = models_dir / "transcribers" / "openai_whisper"
@@ -88,16 +90,16 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
                         # Load and immediately discard to download/cache the model
                         temp_model = whisper.load_model(model, download_root=str(cache_dir_whisper))
                         del temp_model  # Free memory immediately
-                        print(f"[✓] Whisper {model} downloaded successfully.")
+                        log_completion(f"Whisper {model} downloaded successfully")
                     except ImportError:
-                        print(f"Warning: openai-whisper not available, skipping {model}")
+                        self.logger.warning(f"openai-whisper not available, skipping {model}")
         except Exception as e:
-            print(f"DEBUG: Download failed with error: {e}")
-            print(f"DEBUG: Error type: {type(e)}")
+            self.logger.debug(f"Download failed with error: {e}")
+            self.logger.debug(f"Error type: {type(e)}")
 
             # Additional debug: Check environment at time of error
-            print(f"DEBUG: At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
-            print(f"DEBUG: At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+            self.logger.debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            self.logger.debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
 
             raise Exception(f"Failed to download {model}: {e}")
         finally:

@@ -10,6 +10,7 @@ import torch
 import whisperx
 from local_transcribe.framework.plugin_interfaces import UnifiedProvider, Turn, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_output import get_logger
 
 
 class WhisperXUnifiedProvider(UnifiedProvider):
@@ -25,6 +26,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             "base": "base",
         }
         self.selected_model = None  # Will be set during transcription
+        self.logger = get_logger()
 
     @property
     def device(self):
@@ -118,7 +120,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             model = whisperx.load_model(model_name, device=self.device, compute_type=compute_type)
             with torch.no_grad():
                 result = model.transcribe(audio, batch_size=16)
-            print(f"Transcription: {result['segments'][:2]}...")  # Debug
+            self.logger.debug(f"Transcription: {result['segments'][:2]}...")
             
             # Clean up transcription model
             del model
@@ -128,7 +130,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=self.device)
             with torch.no_grad():
                 result = whisperx.align(result["segments"], model_a, metadata, audio, device=self.device, return_char_alignments=False)
-            print(f"Alignment: {result['segments'][:2]}...")  # Debug
+            self.logger.debug(f"Alignment: {result['segments'][:2]}...")
             
             # Clean up alignment model
             del model_a
@@ -140,7 +142,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             with torch.no_grad():
                 diarize_segments = diarize_model(audio, num_speakers=num_speakers)
                 result = whisperx.assign_word_speakers(diarize_segments, result)
-            print(f"Diarization: {result['segments'][:2]}...")  # Debug
+            self.logger.debug(f"Diarization: {result['segments'][:2]}...")
             
             # Clean up diarization model
             del diarize_model

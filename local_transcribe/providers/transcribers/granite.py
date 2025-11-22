@@ -15,6 +15,7 @@ from peft import PeftModel
 from huggingface_hub import hf_hub_download, snapshot_download
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_output import get_logger, log_progress, log_completion
 
 
 class GraniteTranscriberProvider(TranscriberProvider):
@@ -32,6 +33,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         self.chunk_length_seconds = 60.0  # Configurable chunk length in seconds
         self.overlap_seconds = 3.0  # Configurable overlap between chunks in seconds
         self.min_chunk_seconds = 6.0  # Configurable minimum chunk length in seconds
+        self.logger = get_logger()
 
     @property
     def device(self):
@@ -72,31 +74,31 @@ class GraniteTranscriberProvider(TranscriberProvider):
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         # DEBUG: Log environment state before download attempt
-        print(f"DEBUG: HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        print(f"DEBUG: HF_HOME: {os.environ.get('HF_HOME')}")
-        print(f"DEBUG: HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+        self.logger.debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        self.logger.debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
+        self.logger.debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
 
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         original_hf_home = os.environ.get("HF_HOME")
         os.environ["HF_HUB_OFFLINE"] = "0"
 
         # DEBUG: Confirm environment variable was set
-        print(f"DEBUG: HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        print(f"DEBUG: HF_HOME after setting: {os.environ.get('HF_HOME')}")
+        self.logger.debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        self.logger.debug(f"HF_HOME after setting: {os.environ.get('HF_HOME')}")
 
         # Force reload of huggingface_hub modules to pick up new environment
-        print(f"DEBUG: Reloading huggingface_hub modules...")
+        self.logger.debug("Reloading huggingface_hub modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            print(f"DEBUG: Reloaded {module_name}")
+            self.logger.debug(f"Reloaded {module_name}")
 
         # Also reload transformers modules
-        print(f"DEBUG: Reloading transformers modules...")
+        self.logger.debug("Reloading transformers modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            print(f"DEBUG: Reloaded {module_name}")
+            self.logger.debug(f"Reloaded {module_name}")
 
         from huggingface_hub import snapshot_download
 
@@ -108,16 +110,16 @@ class GraniteTranscriberProvider(TranscriberProvider):
                     # Use snapshot_download without cache_dir parameter (uses HF_HOME)
                     token = os.getenv("HF_TOKEN")
                     snapshot_download(model, token=token)
-                    print(f"[✓] {model} downloaded successfully.")
+                    log_completion(f"{model} downloaded successfully")
                 else:
-                    print(f"Warning: Unknown model {model}, skipping download")
+                    self.logger.warning(f"Unknown model {model}, skipping download")
         except Exception as e:
-            print(f"DEBUG: Download failed with error: {e}")
-            print(f"DEBUG: Error type: {type(e)}")
+            self.logger.debug(f"Download failed with error: {e}")
+            self.logger.debug(f"Error type: {type(e)}")
 
             # Additional debug: Check environment at time of error
-            print(f"DEBUG: At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
-            print(f"DEBUG: At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+            self.logger.debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            self.logger.debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
 
             raise Exception(f"Failed to download {model}: {e}")
         finally:
@@ -179,25 +181,25 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
                 # Load model - PEFT adapter loads automatically from model config
                 # The model has embedded PEFT config, no need to manually call PeftModel.from_pretrained
-                print(f"[i] Loading Granite model on device: {self.device}")
+                log_progress(f"Loading Granite model on device: {self.device}")
                 self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
                     model_name, 
                     local_files_only=True, 
                     token=token
                 ).to(self.device)
-                print(f"[✓] Granite model loaded successfully")
+                log_completion("Granite model loaded successfully")
             except Exception as e:
-                print(f"DEBUG: Failed to load model {model_name}")
-                print(f"DEBUG: Cache directory exists: {cache_dir.exists()}")
+                self.logger.debug(f"Failed to load model {model_name}")
+                self.logger.debug(f"Cache directory exists: {cache_dir.exists()}")
                 if cache_dir.exists():
-                    print(f"DEBUG: Cache directory contents: {list(cache_dir.iterdir())}")
+                    self.logger.debug(f"Cache directory contents: {list(cache_dir.iterdir())}")
                 raise e
 
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
         """Transcribe audio using Granite model."""
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')  # Default to 8b
         if transcriber_model not in self.model_mapping:
-            print(f"Warning: Unknown model {transcriber_model}, defaulting to granite-8b")
+            self.logger.warning(f"Unknown model {transcriber_model}, defaulting to granite-8b")
             transcriber_model = 'granite-8b'
 
         self.selected_model = transcriber_model
@@ -217,10 +219,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
         effective_chunk_length = self.chunk_length_seconds - self.overlap_seconds
         num_chunks = math.ceil(duration / effective_chunk_length) if effective_chunk_length > 0 else 1
         
-        if kwargs.get('verbose', False):
-            print(f"[i] Audio duration: {duration:.1f}s - processing in {num_chunks} chunks to manage memory")
-        
         # Always process in chunks and return chunked output
+        log_progress(f"Audio duration: {duration:.1f}s - processing in {num_chunks} chunks to manage memory")
         return self._transcribe_chunked(wav, sr, **kwargs)
 
     def _transcribe_single_chunk(self, wav, **kwargs) -> str:
@@ -278,7 +278,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
             )
 
             # Post-process the output to remove dialogue markers and quotation marks
-            cleaned_text = self._clean_transcription_output(output_text[0].strip(), verbose=kwargs.get('verbose', False))
+            cleaned_text = self._clean_transcription_output(output_text[0].strip())
 
             return cleaned_text
             
@@ -305,7 +305,6 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
     def _transcribe_chunked(self, wav, sr, **kwargs) -> List[Dict[str, Any]]:
         """Transcribe audio in chunks to manage memory for long files."""
-        verbose = kwargs.get('verbose', False)
 
         chunk_samples = int(self.chunk_length_seconds * sr)
         overlap_samples = int(self.overlap_seconds * sr)  # Configurable overlap to avoid cutting words
@@ -323,9 +322,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
             chunk_end = min(chunk_start + chunk_samples, total_samples)
             chunk_wav = wav[chunk_start:chunk_end]
             
-            if verbose:
-                chunk_duration_sec = len(chunk_wav) / sr
-                print(f"[i] Processing chunk {chunk_num} of {total_chunks} ({chunk_duration_sec:.1f}s)...")
+            chunk_duration_sec = len(chunk_wav) / sr
+            log_progress(f"Processing chunk {chunk_num} of {total_chunks} ({chunk_duration_sec:.1f}s)...")
             
             if len(chunk_wav) < min_chunk_samples:
                 if prev_chunk_wav is not None:
@@ -358,23 +356,21 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         return chunks
             
-    def _clean_transcription_output(self, text: str, verbose: bool = False) -> str:
+    def _clean_transcription_output(self, text: str) -> str:
         """
         Clean the transcription output for a single chunk by removing dialogue markers and quotation marks.
         
         Args:
             text: Raw transcription output from the model for a single chunk
-            verbose: If True, print how many labels were removed
             
         Returns:
             Cleaned transcription text for a single chunk
         """
-        # Count labels before removal if verbose
-        if verbose:
-            user_count = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
-            assistant_count = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
-            assistant_short_count = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
-            total_removed = user_count + assistant_count + assistant_short_count
+        # Count labels before removal for debug logging
+        user_count = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
+        assistant_count = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
+        assistant_short_count = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
+        total_removed = user_count + assistant_count + assistant_short_count
         
         # Remove "User:" and "AI Assistant:" labels (case insensitive)
         text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
@@ -389,9 +385,9 @@ class GraniteTranscriberProvider(TranscriberProvider):
         # Clean up extra whitespace that might result from removals
         text = re.sub(r'\s+', ' ', text).strip()
         
-        # Print count if verbose
-        if verbose and total_removed > 0:
-            print(f"Removed {total_removed} labels from chunk transcript.")
+        # Log count if any labels were removed
+        if total_removed > 0:
+            self.logger.debug(f"Removed {total_removed} labels from chunk transcript.")
         
         return text
 

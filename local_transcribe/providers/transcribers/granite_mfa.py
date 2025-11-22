@@ -20,13 +20,15 @@ import subprocess
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_output import get_logger, log_progress, log_completion
 
 
 class GraniteMFATranscriberProvider(TranscriberProvider):
     """Combined transcriber+aligner using IBM Granite + MFA for chunked transcription with timestamps."""
 
     def __init__(self):
-        print("[Granite MFA] Initializing Granite MFA Transcriber Provider")
+        self.logger = get_logger()
+        self.logger.info("Initializing Granite MFA Transcriber Provider")
         # Granite configuration
         self.model_mapping = {
             "granite-2b": "ibm-granite/granite-speech-3.3-2b",
@@ -74,7 +76,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite models to cache."""
-        print("[Granite MFA] Starting model preload for Granite models")
+        self.logger.info("Starting model preload for Granite models")
         import sys
 
         cache_dir = models_dir / "transcribers" / "granite"
@@ -157,10 +159,10 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 ).to(self.device)
                 print(f"[✓] Granite model loaded successfully")
             except Exception as e:
-                print(f"DEBUG: Failed to load model {model_name}")
-                print(f"DEBUG: Cache directory exists: {cache_dir.exists()}")
+                self.logger.debug(f"Failed to load model {model_name}")
+                self.logger.debug(f"Cache directory exists: {cache_dir.exists()}")
                 if cache_dir.exists():
-                    print(f"DEBUG: Cache directory contents: {list(cache_dir.iterdir())}")
+                    self.logger.debug(f"Cache directory contents: {list(cache_dir.iterdir())}")
                 raise e
 
     def _get_mfa_command(self):

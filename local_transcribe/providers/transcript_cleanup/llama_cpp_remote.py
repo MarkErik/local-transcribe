@@ -6,6 +6,7 @@ Remote Llama.cpp cleanup provider for transcript processing.
 import json
 import requests
 from local_transcribe.framework.plugin_interfaces import TranscriptCleanupProvider, registry
+from local_transcribe.lib.system_output import get_logger
 
 
 class LlamaCppRemoteTranscriptCleanupProvider(TranscriptCleanupProvider):
@@ -13,6 +14,7 @@ class LlamaCppRemoteTranscriptCleanupProvider(TranscriptCleanupProvider):
 
     def __init__(self, url: str = "http://localhost:8080"):
         self.url = url.rstrip('/')
+        self.logger = get_logger()
 
     @property
     def name(self) -> str:
@@ -90,10 +92,10 @@ class LlamaCppRemoteTranscriptCleanupProvider(TranscriptCleanupProvider):
             return cleaned_data.get("cleaned_text", text)  # Fallback to original if parsing fails
 
         except requests.RequestException as e:
-            print(f"Error communicating with Llama.cpp server: {e}")
+            self.logger.error(f"Error communicating with Llama.cpp server: {e}")
             return text  # Return original text on error
         except (KeyError, json.JSONDecodeError) as e:
-            print(f"Error parsing LLM response: {e}")
+            self.logger.error(f"Error parsing LLM response: {e}")
             return text  # Return original text on error
 
 

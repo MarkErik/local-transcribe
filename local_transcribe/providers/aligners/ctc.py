@@ -25,7 +25,7 @@ class CTCAlignerProvider(AlignerProvider):
 
     def __init__(self):
         # Device is determined dynamically
-        self.model_name = "facebook/mms-300m"  # Multilingual CTC model
+        self.model_name = "facebook/wav2vec2-base-960h"  # CTC model for alignment
         self.model = None
 
     @property
@@ -44,7 +44,7 @@ class CTCAlignerProvider(AlignerProvider):
 
     @property
     def description(self) -> str:
-        return "CTC-based forced alignment for multilingual word-level timestamps"
+        return "CTC-based forced alignment for word-level timestamps using Wav2Vec2"
 
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         if selected_model:
@@ -52,7 +52,7 @@ class CTCAlignerProvider(AlignerProvider):
         return [self.model_name]
 
     def get_available_models(self) -> List[str]:
-        return ["mms-300m", "mms-1b", "wav2vec2-base"]
+        return ["facebook/wav2vec2-base-960h", "facebook/wav2vec2-large-960h"]
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload CTC models to cache."""
@@ -87,7 +87,7 @@ class CTCAlignerProvider(AlignerProvider):
 
         try:
             for model in models:
-                if model == "facebook/mms-300m":
+                if model.startswith("facebook/wav2vec2"):
                     # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
                     xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
                     if xdg_cache_home:

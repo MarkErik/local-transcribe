@@ -26,17 +26,17 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
     def __init__(self):
         # Model mapping: user-friendly name -> MLX Whisper model repo
         self.model_mapping = {
-            "tiny": "mlx-community/whisper-tiny",
-            "tiny.en": "mlx-community/whisper-tiny.en",
-            "base": "mlx-community/whisper-base",
-            "base.en": "mlx-community/whisper-base.en",
-            "small": "mlx-community/whisper-small",
-            "small.en": "mlx-community/whisper-small.en",
-            "medium": "mlx-community/whisper-medium",
-            "medium.en": "mlx-community/whisper-medium.en",
-            "large": "mlx-community/whisper-large",
-            "large-v2": "mlx-community/whisper-large-v2",
-            "large-v3": "mlx-community/whisper-large-v3",
+            "tiny": "mlx-community/whisper-tiny-mlx",
+            "tiny.en": "mlx-community/whisper-tiny.en-mlx",
+            "base": "mlx-community/whisper-base-mlx",
+            "base.en": "mlx-community/whisper-base.en-mlx",
+            "small": "mlx-community/whisper-small-mlx",
+            "small.en": "mlx-community/whisper-small.en-mlx",
+            "medium": "mlx-community/whisper-medium-mlx",
+            "medium.en": "mlx-community/whisper-medium.en-mlx",
+            "large": "mlx-community/whisper-large-mlx",
+            "large-v2": "mlx-community/whisper-large-v2-mlx",
+            "large-v3": "mlx-community/whisper-large-v3-mlx",
             "turbo": "mlx-community/whisper-turbo",
         }
         self.logger = get_logger()

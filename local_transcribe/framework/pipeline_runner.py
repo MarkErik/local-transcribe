@@ -8,7 +8,7 @@ from typing import Optional
 from local_transcribe.framework.model_downloader import ensure_models_available
 from local_transcribe.framework.provider_setup import ProviderSetup
 from local_transcribe.framework.output_manager import OutputManager
-from local_transcribe.lib.system_output import log_status, log_progress, log_intermediate_save, log_completion
+from local_transcribe.lib.program_logger import log_status, log_progress, log_intermediate_save, log_completion
 from local_transcribe.lib.speaker_namer import assign_speaker_names
 from local_transcribe.lib.audio_processor import standardize_audio, cleanup_temp_audio
 from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_transcript_for_llm

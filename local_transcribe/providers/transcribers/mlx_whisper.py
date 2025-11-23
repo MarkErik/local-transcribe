@@ -14,7 +14,7 @@ import numpy as np
 import librosa
 from scipy.io import wavfile
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
-from local_transcribe.lib.system_output import get_logger, log_completion, log_progress
+from local_transcribe.lib.program_logger import get_logger, log_completion, log_progress
 
 
 class MLXWhisperTranscriberProvider(TranscriberProvider):

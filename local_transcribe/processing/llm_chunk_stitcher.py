@@ -6,7 +6,7 @@ LLM-based stitcher for merging chunked transcripts.
 import json
 import requests
 from typing import List, Dict, Any, Optional
-from local_transcribe.lib.system_output import log_progress
+from local_transcribe.lib.program_logger import log_progress
 
 
 def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> str:

@@ -9,7 +9,7 @@ import pathlib
 import tempfile
 import subprocess
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
-from local_transcribe.lib.system_output import get_logger, log_progress, log_completion
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion
 
 
 class MFAAlignerProvider(AlignerProvider):

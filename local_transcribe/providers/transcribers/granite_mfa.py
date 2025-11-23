@@ -20,7 +20,7 @@ import subprocess
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
-from local_transcribe.lib.system_output import get_logger, log_progress, log_completion
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion
 
 
 class GraniteMFATranscriberProvider(TranscriberProvider):

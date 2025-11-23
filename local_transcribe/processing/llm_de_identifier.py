@@ -13,7 +13,7 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from local_transcribe.framework.plugin_interfaces import WordSegment
-from local_transcribe.lib.system_output import log_progress, log_status
+from local_transcribe.lib.program_logger import log_progress, log_status
 
 
 # Configuration defaults

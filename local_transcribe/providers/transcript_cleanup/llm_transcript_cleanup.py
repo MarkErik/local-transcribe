@@ -6,7 +6,7 @@ Remote LLM cleanup provider for transcript processing.
 import json
 import requests
 from local_transcribe.framework.plugin_interfaces import TranscriptCleanupProvider, registry
-from local_transcribe.lib.system_output import get_logger
+from local_transcribe.lib.program_logger import get_logger
 
 
 class LlmTranscriptCleanupProvider(TranscriptCleanupProvider):

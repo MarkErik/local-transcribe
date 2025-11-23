@@ -11,7 +11,7 @@ import requests
 from typing import List, Dict, Optional, Tuple
 
 from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, Turn, registry
-from local_transcribe.lib.system_output import get_logger, log_progress, log_completion
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion
 
 
 class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):

@@ -15,7 +15,7 @@ from peft import PeftModel
 from huggingface_hub import hf_hub_download, snapshot_download
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
-from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
 
 class GraniteTranscriberProvider(TranscriberProvider):
@@ -74,31 +74,31 @@ class GraniteTranscriberProvider(TranscriberProvider):
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         # DEBUG: Log environment state before download attempt
-        self.logger.debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        self.logger.debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
-        self.logger.debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+        log_debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        log_debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
+        log_debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
 
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         original_hf_home = os.environ.get("HF_HOME")
         os.environ["HF_HUB_OFFLINE"] = "0"
 
         # DEBUG: Confirm environment variable was set
-        self.logger.debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        self.logger.debug(f"HF_HOME after setting: {os.environ.get('HF_HOME')}")
+        log_debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        log_debug(f"HF_HOME after setting: {os.environ.get('HF_HOME')}")
 
         # Force reload of huggingface_hub modules to pick up new environment
-        self.logger.debug("Reloading huggingface_hub modules...")
+        log_debug("Reloading huggingface_hub modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            self.logger.debug(f"Reloaded {module_name}")
+            log_debug(f"Reloaded {module_name}")
 
         # Also reload transformers modules
-        self.logger.debug("Reloading transformers modules...")
+        log_debug("Reloading transformers modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            self.logger.debug(f"Reloaded {module_name}")
+            log_debug(f"Reloaded {module_name}")
 
         from huggingface_hub import snapshot_download
 
@@ -114,12 +114,12 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 else:
                     self.logger.warning(f"Unknown model {model}, skipping download")
         except Exception as e:
-            self.logger.debug(f"Download failed with error: {e}")
-            self.logger.debug(f"Error type: {type(e)}")
+            log_debug(f"Download failed with error: {e}")
+            log_debug(f"Error type: {type(e)}")
 
             # Additional debug: Check environment at time of error
-            self.logger.debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
-            self.logger.debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+            log_debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            log_debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
 
             raise Exception(f"Failed to download {model}: {e}")
         finally:
@@ -189,10 +189,10 @@ class GraniteTranscriberProvider(TranscriberProvider):
                 ).to(self.device)
                 log_completion("Granite model loaded successfully")
             except Exception as e:
-                self.logger.debug(f"Failed to load model {model_name}")
-                self.logger.debug(f"Cache directory exists: {cache_dir.exists()}")
+                log_debug(f"Failed to load model {model_name}")
+                log_debug(f"Cache directory exists: {cache_dir.exists()}")
                 if cache_dir.exists():
-                    self.logger.debug(f"Cache directory contents: {list(cache_dir.iterdir())}")
+                    log_debug(f"Cache directory contents: {list(cache_dir.iterdir())}")
                 raise e
 
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
@@ -387,7 +387,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         
         # Log count if any labels were removed
         if total_removed > 0:
-            self.logger.debug(f"Removed {total_removed} labels from chunk transcript.")
+            log_debug(f"Removed {total_removed} labels from chunk transcript.")
         
         return text
 

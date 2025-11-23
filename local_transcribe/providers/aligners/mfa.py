@@ -9,7 +9,7 @@ import pathlib
 import tempfile
 import subprocess
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
-from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug, log_debug
 
 
 class MFAAlignerProvider(AlignerProvider):
@@ -83,7 +83,7 @@ class MFAAlignerProvider(AlignerProvider):
                 check=True,
                 env=env
             )
-            self.logger.debug(f"[MFA] Available acoustic models: {result.stdout.strip()}")
+            log_debug(f"[MFA] Available acoustic models: {result.stdout.strip()}")
 
             if "english_us_arpa" not in result.stdout:
                 log_progress(f"[MFA] Downloading MFA English acoustic model to {self.mfa_models_dir}...")
@@ -103,7 +103,7 @@ class MFAAlignerProvider(AlignerProvider):
                 check=True,
                 env=env
             )
-            self.logger.debug(f"[MFA] Available dictionaries: {result.stdout.strip()}")
+            log_debug(f"[MFA] Available dictionaries: {result.stdout.strip()}")
 
             if "english_us_arpa" not in result.stdout:
                 log_progress(f"[MFA] Downloading MFA English dictionary to {self.mfa_models_dir}...")
@@ -137,9 +137,9 @@ class MFAAlignerProvider(AlignerProvider):
             with open(textgrid_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            self.logger.debug(f"[MFA] TextGrid has {len(lines)} lines")
+            log_debug(f"[MFA] TextGrid has {len(lines)} lines")
             if len(lines) < 10:
-                self.logger.debug(f"[MFA] TextGrid content (first 10 lines): {lines}")
+                log_debug(f"[MFA] TextGrid content (first 10 lines): {lines}")
             
             # Build a mapping of normalized words to original words
             original_words = original_transcript.split()
@@ -162,11 +162,11 @@ class MFAAlignerProvider(AlignerProvider):
             for i, line in enumerate(lines):
                 if 'name = "words"' in line:
                     word_tier_start = i
-                    self.logger.debug(f"[MFA] Found word tier at line {i}")
+                    log_debug(f"[MFA] Found word tier at line {i}")
                 # Find the next tier (phones) to know where words tier ends
                 elif word_tier_start is not None and 'name = "phones"' in line:
                     word_tier_end = i
-                    self.logger.debug(f"[MFA] Word tier ends at line {i}")
+                    log_debug(f"[MFA] Word tier ends at line {i}")
                     break
 
             if word_tier_start is None:
@@ -176,7 +176,7 @@ class MFAAlignerProvider(AlignerProvider):
             # If we didn't find the phones tier, parse until end of file
             if word_tier_end is None:
                 word_tier_end = len(lines)
-                self.logger.debug(f"[MFA] No phones tier found, parsing until end of file")
+                log_debug(f"[MFA] No phones tier found, parsing until end of file")
 
             # Parse intervals only within the words tier
             i = word_tier_start
@@ -246,15 +246,15 @@ class MFAAlignerProvider(AlignerProvider):
 
     def _replace_unk_with_original(self, segments: List[WordSegment], original_transcript: str) -> None:
         """Replace <unk> tokens in aligned segments with words from the original transcript using two-pointer alignment."""
-        self.logger.debug(f"[MFA UNK REPLACE] Starting <unk> replacement")
+        log_debug(f"[MFA UNK REPLACE] Starting <unk> replacement")
         
         aligned_texts = [seg.text for seg in segments]
         original_words = original_transcript.split()
         
-        self.logger.debug(f"[MFA UNK REPLACE] Original transcript word count: {len(original_words)}")
-        self.logger.debug(f"[MFA UNK REPLACE] MFA aligned word count before replacement: {len(aligned_texts)}")
-        self.logger.debug(f"[MFA UNK REPLACE] Aligned texts ({len(aligned_texts)} words): {' '.join(aligned_texts[:10])} ... {' '.join(aligned_texts[-10:])}" if len(aligned_texts) > 20 else f"[MFA UNK REPLACE] Aligned texts: {' '.join(aligned_texts)}")
-        self.logger.debug(f"[MFA UNK REPLACE] Original words ({len(original_words)} words): {' '.join(original_words[:10])} ... {' '.join(original_words[-10:])}" if len(original_words) > 20 else f"[MFA UNK REPLACE] Original words: {' '.join(original_words)}")
+        log_debug(f"[MFA UNK REPLACE] Original transcript word count: {len(original_words)}")
+        log_debug(f"[MFA UNK REPLACE] MFA aligned word count before replacement: {len(aligned_texts)}")
+        log_debug(f"[MFA UNK REPLACE] Aligned texts ({len(aligned_texts)} words): {' '.join(aligned_texts[:10])} ... {' '.join(aligned_texts[-10:])}" if len(aligned_texts) > 20 else f"[MFA UNK REPLACE] Aligned texts: {' '.join(aligned_texts)}")
+        log_debug(f"[MFA UNK REPLACE] Original words ({len(original_words)} words): {' '.join(original_words[:10])} ... {' '.join(original_words[-10:])}" if len(original_words) > 20 else f"[MFA UNK REPLACE] Original words: {' '.join(original_words)}")
         
         ptr = 0
         for i, seg in enumerate(segments):
@@ -268,25 +268,25 @@ class MFAAlignerProvider(AlignerProvider):
                 orig_end = min(len(original_words), ptr + 6)
                 original_context = original_words[orig_start:orig_end]
                 
-                self.logger.debug(f"[MFA UNK REPLACE] Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
+                log_debug(f"[MFA UNK REPLACE] Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
                 
                 if ptr < len(original_words):
                     replacement = original_words[ptr]
                     seg.text = replacement
-                    self.logger.debug(f"[MFA UNK REPLACE] Replaced with: '{replacement}'")
+                    log_debug(f"[MFA UNK REPLACE] Replaced with: '{replacement}'")
                     ptr += 1
                 else:
-                    self.logger.debug(f"[MFA UNK REPLACE] No more original words available, leaving as <unk>")
+                    log_debug(f"[MFA UNK REPLACE] No more original words available, leaving as <unk>")
             else:
                 if ptr < len(original_words) and seg.text.lower() == original_words[ptr].lower():
-                    self.logger.debug(f"[MFA UNK REPLACE] Matched '{seg.text}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
+                    log_debug(f"[MFA UNK REPLACE] Matched '{seg.text}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
                     ptr += 1
                 else:
-                    self.logger.debug(f"[MFA UNK REPLACE] No match for '{seg.text}' at ptr {ptr}, not advancing ptr")
+                    log_debug(f"[MFA UNK REPLACE] No match for '{seg.text}' at ptr {ptr}, not advancing ptr")
         
         final_texts = [seg.text for seg in segments]
-        self.logger.debug(f"[MFA UNK REPLACE] MFA aligned word count after replacement: {len(final_texts)}")
-        self.logger.debug(f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts[:10])} ... {' '.join(final_texts[-10:])}" if len(final_texts) > 20 else f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts)}")
+        log_debug(f"[MFA UNK REPLACE] MFA aligned word count after replacement: {len(final_texts)}")
+        log_debug(f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts[:10])} ... {' '.join(final_texts[-10:])}" if len(final_texts) > 20 else f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts)}")
 
     def _simple_alignment(self, audio_path: str, transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
         """Fallback to simple even-distribution alignment."""
@@ -306,8 +306,8 @@ class MFAAlignerProvider(AlignerProvider):
         word_duration = duration / len(words)
 
         self.logger.info(f"[MFA] Simple alignment: Audio duration={duration:.2f}s, {len(words)} words, word_duration={word_duration:.3f}s")
-        self.logger.debug(f"[MFA] First 5 words: {words[:5]}")
-        self.logger.debug(f"[MFA] Last 5 words: {words[-5:]}")
+        log_debug(f"[MFA] First 5 words: {words[:5]}")
+        log_debug(f"[MFA] Last 5 words: {words[-5:]}")
 
         segments = []
         current_time = 0.0
@@ -342,11 +342,11 @@ class MFAAlignerProvider(AlignerProvider):
             **kwargs: Additional options including 'role' or 'speaker'
         """
         self.logger.info(f"[MFA] Starting alignment for audio: {audio_path}")
-        self.logger.debug(f"[MFA] Transcript: {transcript[:200]}..." if len(transcript) > 200 else f"[MFA] Transcript: {transcript}")
+        log_debug(f"[MFA] Transcript: {transcript[:200]}..." if len(transcript) > 200 else f"[MFA] Transcript: {transcript}")
         
         # Extract speaker from kwargs (passed from split_audio mode)
         speaker = kwargs.get('role') or kwargs.get('speaker')
-        self.logger.debug(f"[MFA] Speaker: {speaker}")
+        log_debug(f"[MFA] Speaker: {speaker}")
         
         # Ensure MFA models directory exists
         if self.mfa_models_dir is None:
@@ -378,18 +378,18 @@ class MFAAlignerProvider(AlignerProvider):
             # but let's copy it to ensure proper format
             import shutil
             shutil.copy(audio_path, audio_file)
-            self.logger.debug(f"[MFA] Audio file copied to: {audio_file} (size: {audio_file.stat().st_size} bytes)")
+            log_debug(f"[MFA] Audio file copied to: {audio_file} (size: {audio_file.stat().st_size} bytes)")
             
             # Get audio duration for debugging
             import librosa
             audio_duration = librosa.get_duration(filename=str(audio_file))
-            self.logger.debug(f"[MFA] Audio duration: {audio_duration:.2f} seconds")
-            self.logger.debug(f"[MFA] Audio file copied to: {audio_file} (size: {audio_file.stat().st_size} bytes)")
+            log_debug(f"[MFA] Audio duration: {audio_duration:.2f} seconds")
+            log_debug(f"[MFA] Audio file copied to: {audio_file} (size: {audio_file.stat().st_size} bytes)")
             
             # Get audio duration for debugging
             import librosa
             audio_duration = librosa.get_duration(filename=str(audio_file))
-            self.logger.debug(f"[MFA] Audio duration: {audio_duration:.2f} seconds")
+            log_debug(f"[MFA] Audio duration: {audio_duration:.2f} seconds")
 
             # Create matching transcript file (.lab extension)
             # MFA needs text without punctuation, so normalize it
@@ -398,13 +398,13 @@ class MFAAlignerProvider(AlignerProvider):
                 for word in transcript.split()
             )
             
-            self.logger.debug(f"[MFA] Normalized transcript: {normalized_transcript[:200]}..." if len(normalized_transcript) > 200 else f"[MFA] Normalized transcript: {normalized_transcript}")
-            self.logger.debug(f"[MFA] Transcript word count: {len(normalized_transcript.split())}")
-            self.logger.debug(f"[MFA] Temp directory: {temp_path}")
+            log_debug(f"[MFA] Normalized transcript: {normalized_transcript[:200]}..." if len(normalized_transcript) > 200 else f"[MFA] Normalized transcript: {normalized_transcript}")
+            log_debug(f"[MFA] Transcript word count: {len(normalized_transcript.split())}")
+            log_debug(f"[MFA] Temp directory: {temp_path}")
             
             transcript_file = audio_dir / f"{audio_name.rsplit('.', 1)[0]}.lab"
             transcript_file.write_text(normalized_transcript, encoding='utf-8')
-            self.logger.debug(f"[MFA] Transcript file written: {transcript_file} (size: {transcript_file.stat().st_size} bytes)")
+            log_debug(f"[MFA] Transcript file written: {transcript_file} (size: {transcript_file.stat().st_size} bytes)")
 
             # Setup output directory for alignments
             output_dir = temp_path / "output"
@@ -423,9 +423,9 @@ class MFAAlignerProvider(AlignerProvider):
                 mfa_env_bin = pathlib.Path(self._get_mfa_command()).parent
                 env["PATH"] = str(mfa_env_bin) + os.pathsep + env.get("PATH", "")
                 
-                self.logger.debug(f"[MFA] MFA environment bin: {mfa_env_bin}")
-                self.logger.debug(f"[MFA] Updated PATH: {env['PATH']}")
-                self.logger.debug(f"[MFA] Checking if fstcompile exists: {(mfa_env_bin / 'fstcompile').exists()}")
+                log_debug(f"[MFA] MFA environment bin: {mfa_env_bin}")
+                log_debug(f"[MFA] Updated PATH: {env['PATH']}")
+                log_debug(f"[MFA] Checking if fstcompile exists: {(mfa_env_bin / 'fstcompile').exists()}")
 
                 # Output TextGrid file
                 textgrid_file = output_dir / f"{audio_name.rsplit('.', 1)[0]}.TextGrid"
@@ -448,11 +448,11 @@ class MFAAlignerProvider(AlignerProvider):
                     "--debug",
                 ]
 
-                self.logger.debug(f"[MFA] Running command: {' '.join(cmd)}")
-                self.logger.debug(f"[MFA] Audio file: {audio_file} (exists: {audio_file.exists()})")
-                self.logger.debug(f"[MFA] Transcript file: {transcript_file} (content: {normalized_transcript[:100]}...)")
-                self.logger.debug(f"[MFA] Expected output: {textgrid_file}")
-                self.logger.debug(f"[MFA] Starting MFA subprocess now...")
+                log_debug(f"[MFA] Running command: {' '.join(cmd)}")
+                log_debug(f"[MFA] Audio file: {audio_file} (exists: {audio_file.exists()})")
+                log_debug(f"[MFA] Transcript file: {transcript_file} (content: {normalized_transcript[:100]}...)")
+                log_debug(f"[MFA] Expected output: {textgrid_file}")
+                log_debug(f"[MFA] Starting MFA subprocess now...")
 
                 result = subprocess.run(
                     cmd,
@@ -470,7 +470,7 @@ class MFAAlignerProvider(AlignerProvider):
                 # Parse TextGrid to extract word timestamps
                 if textgrid_file.exists():
                     self.logger.info(f"[MFA] TextGrid file exists at {textgrid_file}, parsing...")
-                    self.logger.debug(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
+                    log_debug(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
                     segments = self._parse_textgrid(textgrid_file, transcript, speaker=speaker)
                     self.logger.info(f"[MFA] Successfully parsed {len(segments)} word segments from TextGrid")
                     return segments
@@ -482,18 +482,18 @@ class MFAAlignerProvider(AlignerProvider):
             except subprocess.TimeoutExpired:
                 self.logger.error(f"[MFA] ERROR: MFA alignment timed out after 3600 seconds")
                 self.logger.error(f"[MFA] Command: {' '.join(cmd)}")
-                self.logger.debug(f"[MFA] Checking if TextGrid was created despite timeout: {textgrid_file.exists()}")
+                log_debug(f"[MFA] Checking if TextGrid was created despite timeout: {textgrid_file.exists()}")
                 if textgrid_file.exists():
-                    self.logger.debug(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
+                    log_debug(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
                 self.logger.info(f"[MFA] Falling back to simple alignment")
                 return self._simple_alignment(audio_path, transcript, speaker=speaker)
             except subprocess.CalledProcessError as e:
                 self.logger.error(f"[MFA] ERROR: MFA alignment failed with exit code {e.returncode}")
                 self.logger.error(f"[MFA] Command: {' '.join(cmd)}")
                 # Note: stdout/stderr not captured when capture_output=False
-                self.logger.debug(f"[MFA] Checking if TextGrid was created despite error: {textgrid_file.exists()}")
+                log_debug(f"[MFA] Checking if TextGrid was created despite error: {textgrid_file.exists()}")
                 if textgrid_file.exists():
-                    self.logger.debug(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
+                    log_debug(f"[MFA] TextGrid file size: {textgrid_file.stat().st_size} bytes")
                 self.logger.info(f"[MFA] Falling back to simple alignment")
                 return self._simple_alignment(audio_path, transcript, speaker=speaker)
             except FileNotFoundError:

@@ -20,7 +20,7 @@ import subprocess
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
-from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
 
 class GraniteMFATranscriberProvider(TranscriberProvider):
@@ -159,10 +159,10 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 ).to(self.device)
                 log_completion("Granite model loaded successfully")
             except Exception as e:
-                self.logger.debug(f"Failed to load model {model_name}")
-                self.logger.debug(f"Cache directory exists: {cache_dir.exists()}")
+                log_debug(f"Failed to load model {model_name}")
+                log_debug(f"Cache directory exists: {cache_dir.exists()}")
                 if cache_dir.exists():
-                    self.logger.debug(f"Cache directory contents: {list(cache_dir.iterdir())}")
+                    log_debug(f"Cache directory contents: {list(cache_dir.iterdir())}")
                 raise e
 
     def _get_mfa_command(self):
@@ -505,8 +505,8 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         aligned_texts = [wd["text"] for wd in word_dicts]
         original_words = original_transcript.split()
         
-        self.logger.debug(f"Original transcript word count: {len(original_words)}")
-        self.logger.debug(f"MFA aligned word count before replacement: {len(aligned_texts)}")
+        log_debug(f"Original transcript word count: {len(original_words)}")
+        log_debug(f"MFA aligned word count before replacement: {len(aligned_texts)}")
         
         ptr = 0
         for i, word_dict in enumerate(word_dicts):
@@ -520,25 +520,25 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 orig_end = min(len(original_words), ptr + 6)
                 original_context = original_words[orig_start:orig_end]
                 
-                self.logger.debug(f"Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
+                log_debug(f"Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
                 
                 if ptr < len(original_words):
                     replacement = original_words[ptr]
                     word_dict["text"] = replacement
                     aligned_texts[i] = replacement  # Update local copy for debugging
-                    self.logger.debug(f"Replaced with: '{replacement}'")
+                    log_debug(f"Replaced with: '{replacement}'")
                     ptr += 1
                 else:
-                    self.logger.debug("No more original words available, leaving as <unk>")
+                    log_debug("No more original words available, leaving as <unk>")
             else:
                 if ptr < len(original_words) and word_dict["text"].lower() == original_words[ptr].lower():
-                    self.logger.debug(f"Matched '{word_dict['text']}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
+                    log_debug(f"Matched '{word_dict['text']}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
                     ptr += 1
                 else:
-                    self.logger.debug(f"No match for '{word_dict['text']}' at ptr {ptr}, not advancing ptr")
+                    log_debug(f"No match for '{word_dict['text']}' at ptr {ptr}, not advancing ptr")
         
         final_texts = [wd["text"] for wd in word_dicts]
-        self.logger.debug(f"MFA aligned word count after replacement: {len(final_texts)}")
+        log_debug(f"MFA aligned word count after replacement: {len(final_texts)}")
 
     def _simple_alignment_to_word_dicts(self, chunk_wav, transcript: str, chunk_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fallback: simple even distribution of timestamps.

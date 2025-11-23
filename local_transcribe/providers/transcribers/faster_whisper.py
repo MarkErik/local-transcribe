@@ -8,7 +8,7 @@ import os
 import pathlib
 from faster_whisper import WhisperModel as FWModel
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
-from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
 
 # CT2 (faster-whisper) repos to search locally under ./models/transcribers/ct2/...
@@ -102,22 +102,22 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
         import sys
 
         # DEBUG: Log environment state before download attempt
-        self.logger.debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        self.logger.debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
-        self.logger.debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+        log_debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        log_debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
+        log_debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
 
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         os.environ["HF_HUB_OFFLINE"] = "0"
 
         # DEBUG: Confirm environment variable was set
-        self.logger.debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        log_debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
 
         # Force reload of huggingface_hub modules to pick up new environment
-        self.logger.debug("Reloading huggingface_hub modules...")
+        log_debug("Reloading huggingface_hub modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            self.logger.debug(f"Reloaded {module_name}")
+            log_debug(f"Reloaded {module_name}")
 
         # Now import snapshot_download after environment change
         from huggingface_hub import snapshot_download
@@ -126,32 +126,32 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
             ct2_cache = models_dir / "transcribers" / "ct2"
 
             # DEBUG: Check cache directory structure
-            self.logger.debug(f"Cache directory: {ct2_cache}")
-            self.logger.debug(f"Cache directory exists: {ct2_cache.exists()}")
+            log_debug(f"Cache directory: {ct2_cache}")
+            log_debug(f"Cache directory exists: {ct2_cache.exists()}")
             if ct2_cache.exists():
-                self.logger.debug(f"Cache directory contents: {list(ct2_cache.iterdir())}")
+                log_debug(f"Cache directory contents: {list(ct2_cache.iterdir())}")
 
             for model in models:
                 # Use cache_dir to create standard HF cache structure
-                self.logger.debug(f"Attempting to download {model} to cache_dir: {ct2_cache}")
+                log_debug(f"Attempting to download {model} to cache_dir: {ct2_cache}")
 
                 # Additional debug: Check if huggingface_hub sees the offline mode correctly
                 from huggingface_hub import HfFolder
-                self.logger.debug(f"HfFolder.get_token(): {'***' if HfFolder.get_token() else 'NOT SET'}")
+                log_debug(f"HfFolder.get_token(): {'***' if HfFolder.get_token() else 'NOT SET'}")
 
                 snapshot_download(model, cache_dir=str(ct2_cache))
                 log_completion(f"{model} downloaded successfully")
 
                 # DEBUG: Check what was actually created
                 if ct2_cache.exists():
-                    self.logger.debug(f"After download, cache directory contents: {list(ct2_cache.iterdir())}")
+                    log_debug(f"After download, cache directory contents: {list(ct2_cache.iterdir())}")
         except Exception as e:
-            self.logger.debug(f"Download failed with error: {e}")
-            self.logger.debug(f"Error type: {type(e)}")
+            log_debug(f"Download failed with error: {e}")
+            log_debug(f"Error type: {type(e)}")
 
             # Additional debug: Check environment at time of error
-            self.logger.debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
-            self.logger.debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+            log_debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            log_debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
 
             raise Exception(f"Failed to download {model}: {e}")
         finally:

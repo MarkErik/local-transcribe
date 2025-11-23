@@ -12,7 +12,7 @@ import soundfile as sf
 from pyannote.audio import Pipeline
 from local_transcribe.framework.plugin_interfaces import DiarizationProvider, WordSegment, Turn, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
-from local_transcribe.lib.program_logger import get_logger, log_progress
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug
 
 
 class PyAnnoteDiarizationProvider(DiarizationProvider):
@@ -43,22 +43,22 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         import sys
         
         # DEBUG: Log environment state before download attempt
-        self.logger.debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        self.logger.debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
-        self.logger.debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
+        log_debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        log_debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
+        log_debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
         
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         os.environ["HF_HUB_OFFLINE"] = "0"
         
         # DEBUG: Confirm environment variable was set
-        self.logger.debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
+        log_debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
 
         # Force reload of huggingface_hub modules to pick up new environment
-        self.logger.debug(f"Reloading huggingface_hub modules...")
+        log_debug(f"Reloading huggingface_hub modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            self.logger.debug(f"Reloaded {module_name}")
+            log_debug(f"Reloaded {module_name}")
 
         try:
             from huggingface_hub import snapshot_download
@@ -72,8 +72,8 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
                     # Get token from environment
                     token = os.getenv("HF_TOKEN", "")
                     
-                    self.logger.debug(f"Attempting to download pyannote model to cache_dir: {cache_dir}")
-                    self.logger.debug(f"Using HF_TOKEN: {'***' if token else 'NOT SET'}")
+                    log_debug(f"Attempting to download pyannote model to cache_dir: {cache_dir}")
+                    log_debug(f"Using HF_TOKEN: {'***' if token else 'NOT SET'}")
                     
                     # Use snapshot_download like other working providers
                     snapshot_download(model, cache_dir=str(cache_dir), token=token)
@@ -81,16 +81,16 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
                     
                     # DEBUG: Check what was actually created
                     if cache_dir.exists():
-                        self.logger.debug(f"After download, cache directory contents: {list(cache_dir.iterdir())}")
+                        log_debug(f"After download, cache directory contents: {list(cache_dir.iterdir())}")
                 else:
                     self.logger.warning(f"Unknown model {model}, skipping download")
         except Exception as e:
-            self.logger.debug(f"Download failed with error: {e}")
-            self.logger.debug(f"Error type: {type(e)}")
+            log_debug(f"Download failed with error: {e}")
+            log_debug(f"Error type: {type(e)}")
 
             # Additional debug: Check environment at time of error
-            self.logger.debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
-            self.logger.debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
+            log_debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
+            log_debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
 
             raise Exception(f"Failed to download {model}: {e}")
         finally:
@@ -208,12 +208,12 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             raise FileNotFoundError(f"No snapshots found in {snapshots_dir}")
         
         latest_snapshot_dir = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
-        self.logger.debug(f"Loading pyannote model from: {latest_snapshot_dir}")
+        log_debug(f"Loading pyannote model from: {latest_snapshot_dir}")
 
         # Get token from environment
         token = os.getenv("HF_TOKEN", "")
         
-        self.logger.debug(f"Loading pyannote model with token: {'***' if token else 'NOT SET'}")
+        log_debug(f"Loading pyannote model with token: {'***' if token else 'NOT SET'}")
         
         # Load pipeline from the specific snapshot directory
         pipeline = Pipeline.from_pretrained(

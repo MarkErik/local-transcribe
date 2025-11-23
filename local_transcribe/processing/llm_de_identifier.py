@@ -13,7 +13,7 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from local_transcribe.framework.plugin_interfaces import WordSegment
-from local_transcribe.lib.program_logger import log_progress, log_status
+from local_transcribe.lib.program_logger import log_progress, log_status, log_debug
 
 
 # Configuration defaults
@@ -216,9 +216,9 @@ def _chunk_word_segments_for_processing(
         chunk_text = " ".join(seg.text for seg in chunk_segments)
         
         # Debug: Log chunk information
-        log_progress(f"DEBUG: Creating chunk {len(chunks)+1} with {len(chunk_segments)} segments (words: {len(chunk_text.split())})")
+        log_debug(f"Creating chunk {len(chunks)+1} with {len(chunk_segments)} segments (words: {len(chunk_text.split())})")
         if len(chunk_text.split()) > 0:
-            log_progress(f"DEBUG: First few words of chunk: {chunk_text.split()[:5]}")
+            log_debug(f"First few words of chunk: {chunk_text.split()[:5]}")
         
         chunks.append({
             'segments': chunk_segments,
@@ -236,7 +236,7 @@ def _chunk_word_segments_for_processing(
             chunks[-1]['end_idx'] = len(segments)
             chunks[-1]['segments'] = segments[i:]
             chunks[-1]['text'] = " ".join(seg.text for seg in chunks[-1]['segments'])
-            log_progress(f"DEBUG: Merged final chunk with {len(chunks[-1]['segments'])} segments")
+            log_debug(f"Merged final chunk with {len(chunks[-1]['segments'])} segments")
             break
         
         # Move forward, accounting for overlap
@@ -266,9 +266,9 @@ def _chunk_text_for_processing(
         chunk_text = " ".join(chunk_words)
         
         # Debug: Log chunk information
-        log_progress(f"DEBUG: Creating text chunk {len(chunks)+1} with {len(chunk_words)} words")
+        log_debug(f"Creating text chunk {len(chunks)+1} with {len(chunk_words)} words")
         if len(chunk_words) > 0:
-            log_progress(f"DEBUG: First few words of text chunk: {chunk_words[:5]}")
+            log_debug(f"First few words of text chunk: {chunk_words[:5]}")
         
         chunks.append({
             'words': chunk_words,
@@ -286,7 +286,7 @@ def _chunk_text_for_processing(
             chunks[-1]['end_idx'] = len(words)
             chunks[-1]['words'] = words[i:]
             chunks[-1]['text'] = " ".join(chunks[-1]['words'])
-            log_progress(f"DEBUG: Merged final text chunk with {len(chunks[-1]['words'])} words")
+            log_debug(f"Merged final text chunk with {len(chunks[-1]['words'])} words")
             break
         
         # Move forward, accounting for overlap
@@ -344,7 +344,7 @@ def _process_chunk_with_llm(
     }
     
     # Debug: Log what we're sending to the LLM
-    log_progress(f"DEBUG: Sending to LLM (chunk size: {len(text.split())} words): '{text[:200]}{'...' if len(text) > 200 else ''}'")
+    log_debug(f"Sending to LLM (chunk size: {len(text.split())} words): '{text[:200]}{'...' if len(text) > 200 else ''}'")
     
     # Retry logic
     for attempt in range(max_retries):
@@ -361,7 +361,7 @@ def _process_chunk_with_llm(
             processed_text = result["choices"][0]["message"]["content"].strip()
             
             # Debug: Log what we received from the LLM
-            log_progress(f"DEBUG: Received from LLM (response size: {len(processed_text.split())} words): '{processed_text[:200]}{'...' if len(processed_text) > 200 else ''}'")
+            log_debug(f"Received from LLM (response size: {len(processed_text.split())} words): '{processed_text[:200]}{'...' if len(processed_text) > 200 else ''}'")
             
             # Validation: check for reasonable output
             if _validate_llm_output(text, processed_text):
@@ -410,8 +410,8 @@ def _validate_llm_output(original: str, processed: str) -> bool:
     # Word count must be exactly the same since we replace words with [REDACTED] tokens
     if len(orig_words) != len(proc_words):
         log_progress(f"Validation failed: word count mismatch (orig: {len(orig_words)}, proc: {len(proc_words)})")
-        log_progress(f"DEBUG - Original text sample: '{original[:200]}{'...' if len(original) > 200 else ''}'")
-        log_progress(f"DEBUG - Processed text sample: '{processed[:200]}{'...' if len(processed) > 200 else ''}'")
+        log_debug(f"Original text sample: '{original[:200]}{'...' if len(original) > 200 else ''}'")
+        log_debug(f"Processed text sample: '{processed[:200]}{'...' if len(processed) > 200 else ''}'")
         return False
 
     # Check that [REDACTED] appears in reasonable quantity (not everything replaced)
@@ -438,7 +438,7 @@ def _map_replacements_back_to_segments(
     replacements = []
     
     # Debug: Log mapping details
-    log_progress(f"DEBUG: Mapping {len(original_segments)} original segments to {len(llm_words)} LLM words")
+    log_debug(f"Mapping {len(original_segments)} original segments to {len(llm_words)} LLM words")
     
     llm_idx = 0
     for seg_idx, segment in enumerate(original_segments):
@@ -452,7 +452,7 @@ def _map_replacements_back_to_segments(
         
         # Debug: Log word mapping details
         if seg_idx < 5:  # Only log first few for brevity
-            log_progress(f"DEBUG: Segment {seg_idx}: original='{segment.text}' -> LLM='{llm_word}'")
+            log_debug(f"Segment {seg_idx}: original='{segment.text}' -> LLM='{llm_word}'")
         
         # Create new segment with potentially modified text
         new_segment = WordSegment(
@@ -475,7 +475,7 @@ def _map_replacements_back_to_segments(
         llm_idx += 1
     
     # Debug: Log final mapping results
-    log_progress(f"DEBUG: Mapping completed - {len(modified_segments)} segments, {len(replacements)} replacements")
+    log_debug(f"Mapping completed - {len(modified_segments)} segments, {len(replacements)} replacements")
     
     return modified_segments, replacements
 

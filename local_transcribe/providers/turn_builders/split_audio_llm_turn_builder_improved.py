@@ -11,7 +11,7 @@ import requests
 from typing import List, Dict, Optional, Tuple
 
 from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, Turn, registry
-from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
 
 class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
@@ -115,9 +115,9 @@ class SplitAudioLlmTurnBuilderImprovedProvider(TurnBuilderProvider):
         
         # Show first few words to verify ordering
         if sorted_words:
-            self.logger.debug("First 10 words after sorting:")
+            log_debug("First 10 words after sorting:")
             for i, word in enumerate(sorted_words[:10]):
-                self.logger.debug(f"  {i}: {word.start:>8.2f}s - {word.speaker:<15} '{word.text}'")
+                log_debug(f"  {i}: {word.start:>8.2f}s - {word.speaker:<15} '{word.text}'")
         
         return sorted_words
     
@@ -347,7 +347,7 @@ JSON OUTPUT:"""
             LLM response text
         """
         self.logger.info(f"Querying LLM at {url}...")
-        self.logger.debug(f"Prompt length: {len(prompt)} characters")
+        log_debug(f"Prompt length: {len(prompt)} characters")
         
         payload = {
             "prompt": prompt,
@@ -399,7 +399,7 @@ JSON OUTPUT:"""
             turns_data = json.loads(json_text)
         except json.JSONDecodeError as e:
             self.logger.error(f"JSON parse error: {e}")
-            self.logger.debug(f"Attempted to parse: {json_text[:500]}...")
+            log_debug(f"Attempted to parse: {json_text[:500]}...")
             raise ValueError(f"Invalid JSON in LLM response: {e}")
         
         if not isinstance(turns_data, list):
@@ -425,10 +425,10 @@ JSON OUTPUT:"""
         
         # Show sample
         if parsed_turns:
-            self.logger.debug("Sample turns:")
+            log_debug("Sample turns:")
             for i, turn in enumerate(parsed_turns[:3]):
                 text_preview = turn['text'][:60] + "..." if len(turn['text']) > 60 else turn['text']
-                self.logger.debug(f"  {i+1}. {turn['speaker']}: {text_preview}")
+                log_debug(f"  {i+1}. {turn['speaker']}: {text_preview}")
         
         return parsed_turns
     
@@ -516,7 +516,7 @@ JSON OUTPUT:"""
                 ))
             else:
                 self.logger.warning(f"Could not match words for turn {turn_idx}: {speaker}")
-                self.logger.debug(f"  Expected: {turn_text[:80]}...")
+                log_debug(f"  Expected: {turn_text[:80]}...")
                 # Continue anyway - don't fail the entire process
         
         log_completion(f"Created {len(turns)} turns with timings")

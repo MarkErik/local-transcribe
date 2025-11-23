@@ -147,8 +147,8 @@ def setup_logging(
             console_formatter = StructuredFormatter()
         else:
             console_formatter = ColoredFormatter(
-                fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
+                fmt='%(asctime)s - %(levelname)s - %(message)s',
+                datefmt='%H:%M:%S'
             )
         
         console_handler.setFormatter(console_formatter)
@@ -343,6 +343,13 @@ class OutputContext:
             if stats and self.should_log("DEBUG"):
                 for key, value in stats.items():
                     self.logger.debug(f"    {key}: {value}")
+    
+    def log_debug(self, message: str, details: Optional[str] = None) -> None:
+        """Log debug information with optional details."""
+        if self.should_log("DEBUG"):
+            self.logger.debug(f"[d] {message}")
+            if details:
+                self.logger.debug(f"    {details}")
 
 
 # Global output context
@@ -388,3 +395,8 @@ def log_intermediate_save(path: str, description: str) -> None:
 def log_completion(message: str, stats: Optional[Dict[str, Any]] = None) -> None:
     """Log completion message globally."""
     get_output_context().log_completion(message, stats)
+
+
+def log_debug(message: str, details: Optional[str] = None) -> None:
+    """Log debug information globally."""
+    get_output_context().log_debug(message, details)

@@ -135,7 +135,7 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
 
                 self.whisper_model = whisper.load_model(model_name, download_root=str(whisper_cache_dir))
             except ImportError:
-                raise ImportError("openai-whisper package is required. Install with: pip install openai-whisper")
+                raise ImportError("openai-whisper package is required. Install with: uv add openai-whisper")
 
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> str:
         """Transcribe audio using Whisper model."""

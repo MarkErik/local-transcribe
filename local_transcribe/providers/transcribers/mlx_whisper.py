@@ -116,7 +116,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         try:
             import mlx_whisper
         except ImportError:
-            raise ImportError("mlx-whisper package is required. Install with: pip install mlx-whisper")
+            raise ImportError("mlx-whisper package is required. Install with: uv add mlx-whisper")
         
         # Create temporary WAV file for this chunk
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -159,7 +159,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         try:
             import mlx_whisper
         except ImportError:
-            raise ImportError("mlx-whisper package is required. Install with: pip install mlx-whisper")
+            raise ImportError("mlx-whisper package is required. Install with: uv add mlx-whisper")
         
         # Create temporary WAV file for this chunk
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -212,7 +212,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         try:
             import mlx_whisper
         except ImportError:
-            raise ImportError("mlx-whisper package is required. Install with: pip install mlx-whisper")
+            raise ImportError("mlx-whisper package is required. Install with: uv add mlx-whisper")
 
         # Set selected model from kwargs
         self.selected_model = kwargs.get('transcriber_model', 'base')
@@ -339,7 +339,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         try:
             import mlx_whisper
         except ImportError:
-            raise ImportError("mlx-whisper package is required. Install with: pip install mlx-whisper")
+            raise ImportError("mlx-whisper package is required. Install with: uv add mlx-whisper")
 
         # Set selected model from kwargs
         self.selected_model = kwargs.get('transcriber_model', 'base')

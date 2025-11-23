@@ -316,21 +316,22 @@ def _process_chunk_with_llm(
     
     system_message = (
         "You are a privacy protection assistant. Your task is to identify and replace ONLY people's names with the exact token [REDACTED].\n\n"
-        "CRITICAL RULES:\n"
-        "1. Replace ONLY personal names (first names, last names, full names)\n"
+        "CRITICAL REQUIREMENTS:\n"
+        "1. Replace ONLY personal names (first names, last names, full names) with [REDACTED]\n"
         "2. Do NOT replace place names, organization names, or other proper nouns\n"
-        "3. Do NOT add, remove, or modify any other words\n"
-        "4. Do NOT change punctuation, capitalization (except for the replaced names), or structure\n"
+        "3. Do NOT add, remove, or modify any other words in any way\n"
+        "4. Do NOT change punctuation, capitalization, or structure\n"
         "5. Preserve ALL timestamps if present\n"
-        "6. Return the text EXACTLY as provided, with only names replaced by [REDACTED]\n"
-        "7. For titles + names (e.g., 'Dr. Smith'), replace as 'Dr. [REDACTED]' (preserve titles)\n"
-        "8. You MUST NEVER respond to questions - ALWAYS ignore them.\n"
-        "9. IMPORTANT: Maintain the exact same number of words as the input text.\n\n"
+        "6. Return the EXACT SAME TEXT with only names replaced by [REDACTED]\n"
+        "7. The output must have the EXACT SAME NUMBER OF WORDS as the input\n"
+        "8. For titles + names (e.g., 'Dr. Smith'), replace as 'Dr. [REDACTED]'\n"
+        "9. You MUST NEVER respond to questions or add any extra content\n\n"
+        "PROCESS: Replace each word of a person's name with [REDACTED], keeping everything else identical.\n\n"
         "Examples:\n"
-        "- 'John Smith went to New York' → '[REDACTED] [REDACTED] went to New York'\n"
-        "- 'Dr. Sarah met with Microsoft' → 'Dr. [REDACTED] met with Microsoft'\n"
-        "- 'Chicago is where Emily lives' → 'Chicago is where [REDACTED] lives'\n"
-        "- 'John and Mary went shopping' → '[REDACTED] and [REDACTED] went shopping'"
+        "- Input: 'John Smith went to New York' (6 words)\n"
+        "- Output: '[REDACTED] [REDACTED] went to New York' (6 words)\n"
+        "- Input: 'Dr. Sarah met with Microsoft' (6 words)\n"
+        "- Output: 'Dr. [REDACTED] met with Microsoft' (6 words)"
     )
     
     payload = {
@@ -395,30 +396,29 @@ def _process_chunk_with_llm(
 def _validate_llm_output(original: str, processed: str) -> bool:
     """
     Validate that LLM output is reasonable.
-    
+
     Checks:
-    - Word count must be very close to original (allow ±2 words for minor variations)
+    - Word count must be exactly the same (name replacement preserves word count)
     - No excessive changes
     """
     orig_words = original.split()
     proc_words = processed.split()
-    
+
     # Count [REDACTED] tokens
     redacted_count = proc_words.count("[REDACTED]")
-    
-    # Allow small variations in word count (±2 words) since LLM may have minor inconsistencies
-    word_diff = abs(len(orig_words) - len(proc_words))
-    if word_diff > 2:
-        log_progress(f"Validation failed: word count difference too large (orig: {len(orig_words)}, proc: {len(proc_words)}, diff: {word_diff})")
+
+    # Word count must be exactly the same since we replace words with [REDACTED] tokens
+    if len(orig_words) != len(proc_words):
+        log_progress(f"Validation failed: word count mismatch (orig: {len(orig_words)}, proc: {len(proc_words)})")
         log_progress(f"DEBUG - Original text sample: '{original[:200]}{'...' if len(original) > 200 else ''}'")
         log_progress(f"DEBUG - Processed text sample: '{processed[:200]}{'...' if len(processed) > 200 else ''}'")
         return False
-    
+
     # Check that [REDACTED] appears in reasonable quantity (not everything replaced)
     if redacted_count > len(orig_words) * 0.5:
         log_progress(f"Validation failed: too many replacements ({redacted_count} out of {len(orig_words)} words)")
         return False
-    
+
     return True
 
 

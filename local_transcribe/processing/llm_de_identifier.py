@@ -337,7 +337,6 @@ def _process_chunk_with_llm(
             {"role": "system", "content": system_message},
             {"role": "user", "content": text}
         ],
-        "max_tokens": 16384,
         "temperature": 0.5,
         "stream": False
     }
@@ -397,7 +396,7 @@ def _validate_llm_output(original: str, processed: str) -> bool:
     Validate that LLM output is reasonable.
     
     Checks:
-    - Word count is similar (allowing for name replacements)
+    - Word count must be exactly the same (name replacement preserves word count)
     - No excessive changes
     """
     orig_words = original.split()
@@ -406,22 +405,11 @@ def _validate_llm_output(original: str, processed: str) -> bool:
     # Count [REDACTED] tokens
     redacted_count = proc_words.count("[REDACTED]")
     
-    # Debug: Log detailed information about the mismatch
-    if not (len(orig_words) - (redacted_count * 3) <= len(proc_words) <= len(orig_words) + redacted_count):
-        log_progress(f"Validation failed: word count mismatch (orig: {len(orig_words)}, proc: {len(proc_words)}, redacted: {redacted_count})")
+    # Word count must be exactly the same since we replace words with [REDACTED] tokens
+    if len(orig_words) != len(proc_words):
+        log_progress(f"Validation failed: word count mismatch (orig: {len(orig_words)}, proc: {len(proc_words)})")
         log_progress(f"DEBUG - Original text sample: '{original[:200]}{'...' if len(original) > 200 else ''}'")
         log_progress(f"DEBUG - Processed text sample: '{processed[:200]}{'...' if len(processed) > 200 else ''}'")
-        log_progress(f"DEBUG - Original words count: {len(orig_words)}")
-        log_progress(f"DEBUG - Processed words count: {len(proc_words)}")
-        log_progress(f"DEBUG - Expected range: [{len(orig_words) - (redacted_count * 3)}, {len(orig_words) + redacted_count}]")
-        # Log first few words to see exact content
-        if len(orig_words) > 0:
-            log_progress(f"DEBUG - First 5 original words: {orig_words[:5]}")
-        if len(proc_words) > 0:
-            log_progress(f"DEBUG - First 5 processed words: {proc_words[:5]}")
-        # Log any extra characters or whitespace
-        if len(original) != len(processed):
-            log_progress(f"DEBUG - Length difference: {len(original) - len(processed)}")
         return False
     
     # Check that [REDACTED] appears in reasonable quantity (not everything replaced)

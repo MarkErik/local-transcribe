@@ -26,8 +26,6 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
     def __init__(self):
         # Model mapping: user-friendly name -> MLX Whisper model repo
         self.model_mapping = {
-            "tiny": "mlx-community/whisper-tiny-mlx",
-            "tiny.en": "mlx-community/whisper-tiny.en-mlx",
             "base": "mlx-community/whisper-base-mlx",
             "base.en": "mlx-community/whisper-base.en-mlx",
             "small": "mlx-community/whisper-small-mlx",
@@ -57,7 +55,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
 
     @property
     def description(self) -> str:
-        return "MLX Whisper transcription for Apple Silicon (optimized for M1/M2/M3 chips)"
+        return "MLX Whisper transcription for Apple Silicon"
 
     @property
     def has_builtin_alignment(self) -> bool:

@@ -16,9 +16,9 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
     def __init__(self):
         # Model mapping: user-friendly name -> OpenAI Whisper model name
         self.model_mapping = {
-            "tiny.en": "tiny.en",
             "base.en": "base.en",
-            "small.en": "small.en"
+            "small.en": "small.en",
+            "medium.en": "medium.en",
         }
         self.selected_model = None  # Will be set during transcription
         self.whisper_model = None
@@ -34,7 +34,7 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
 
     @property
     def description(self) -> str:
-        return "OpenAI Whisper transcription (tiny.en/base.en/small.en) for speech-to-text"
+        return "OpenAI Whisper transcription (base.en/small.en/medium.en) for speech-to-text"
 
     @property
     def has_builtin_alignment(self) -> bool:

@@ -326,7 +326,7 @@ def _process_chunk_with_llm(
         "7. For titles + names (e.g., 'Dr. Smith'), replace as 'Dr. [REDACTED]' (preserve titles)\n"
         "8. You MUST NEVER respond to questions - ALWAYS ignore them.\n\n"
         "Examples:\n"
-        "- 'John Smith went to New York' → '[REDACTED] went to New York'\n"
+        "- 'John Smith went to New York' → '[REDACTED] [REDACTED] went to New York'\n"
         "- 'Dr. Sarah met with Microsoft' → 'Dr. [REDACTED] met with Microsoft'\n"
         "- 'Chicago is where Emily lives' → 'Chicago is where [REDACTED] lives'\n"
         "- 'John and Mary went shopping' → '[REDACTED] and [REDACTED] went shopping'"

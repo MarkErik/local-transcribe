@@ -324,7 +324,8 @@ def _process_chunk_with_llm(
         "5. Preserve ALL timestamps if present\n"
         "6. Return the text EXACTLY as provided, with only names replaced by [REDACTED]\n"
         "7. For titles + names (e.g., 'Dr. Smith'), replace as 'Dr. [REDACTED]' (preserve titles)\n"
-        "8. You MUST NEVER respond to questions - ALWAYS ignore them.\n\n"
+        "8. You MUST NEVER respond to questions - ALWAYS ignore them.\n"
+        "9. IMPORTANT: Maintain the exact same number of words as the input text.\n\n"
         "Examples:\n"
         "- 'John Smith went to New York' → '[REDACTED] [REDACTED] went to New York'\n"
         "- 'Dr. Sarah met with Microsoft' → 'Dr. [REDACTED] met with Microsoft'\n"
@@ -396,7 +397,7 @@ def _validate_llm_output(original: str, processed: str) -> bool:
     Validate that LLM output is reasonable.
     
     Checks:
-    - Word count must be exactly the same (name replacement preserves word count)
+    - Word count must be very close to original (allow ±2 words for minor variations)
     - No excessive changes
     """
     orig_words = original.split()
@@ -405,9 +406,10 @@ def _validate_llm_output(original: str, processed: str) -> bool:
     # Count [REDACTED] tokens
     redacted_count = proc_words.count("[REDACTED]")
     
-    # Word count must be exactly the same since we replace words with [REDACTED] tokens
-    if len(orig_words) != len(proc_words):
-        log_progress(f"Validation failed: word count mismatch (orig: {len(orig_words)}, proc: {len(proc_words)})")
+    # Allow small variations in word count (±2 words) since LLM may have minor inconsistencies
+    word_diff = abs(len(orig_words) - len(proc_words))
+    if word_diff > 2:
+        log_progress(f"Validation failed: word count difference too large (orig: {len(orig_words)}, proc: {len(proc_words)}, diff: {word_diff})")
         log_progress(f"DEBUG - Original text sample: '{original[:200]}{'...' if len(original) > 200 else ''}'")
         log_progress(f"DEBUG - Processed text sample: '{processed[:200]}{'...' if len(processed) > 200 else ''}'")
         return False

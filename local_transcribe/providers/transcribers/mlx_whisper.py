@@ -214,7 +214,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         # For short audio, use direct transcription (no chunking)
         if duration < self.chunk_length_seconds:
             result = mlx_whisper.transcribe(
-                tmp_path,
+                audio_path,
                 path_or_hf_repo=model_repo,
                 word_timestamps=True,
                 verbose=True,

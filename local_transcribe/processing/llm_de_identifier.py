@@ -124,18 +124,19 @@ def de_identify_word_segments(
             )
         
         # Send to LLM
-        processed_text, response_time_ms, validation_result = _process_chunk_with_llm(
+        processed_text, response_time_ms, validation_result, raw_llm_response = _process_chunk_with_llm(
             chunk['text'],
             llm_url=llm_url,
             **kwargs
         )
         
-        # Save output chunk for debug
+        # Save output chunk for debug - use raw LLM response if available to show actual failed output
         if debug_dir:
+            debug_response = raw_llm_response if raw_llm_response is not None else processed_text
             _save_debug_files(
                 chunk_num,
                 chunk_data,
-                processed_text,
+                debug_response,
                 validation_result,
                 debug_dir,
                 attempt=kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
@@ -283,18 +284,19 @@ def de_identify_text(
             )
         
         # Send to LLM
-        processed_text, response_time_ms, validation_result = _process_chunk_with_llm(
+        processed_text, response_time_ms, validation_result, raw_llm_response = _process_chunk_with_llm(
             chunk['text'],
             llm_url=llm_url,
             **kwargs
         )
         
-        # Save output chunk for debug
+        # Save output chunk for debug - use raw LLM response if available to show actual failed output
         if debug_dir:
+            debug_response = raw_llm_response if raw_llm_response is not None else processed_text
             _save_debug_files(
                 chunk_num,
                 chunk_data,
-                processed_text,
+                debug_response,
                 validation_result,
                 debug_dir,
                 attempt=kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
@@ -458,12 +460,16 @@ def _process_chunk_with_llm(
     text: str,
     llm_url: str,
     **kwargs
-) -> Tuple[str, Optional[float], Optional[Dict]]:
+) -> Tuple[str, Optional[float], Optional[Dict], Optional[str]]:
     """
     Process a text chunk with LLM to replace names with [REDACTED].
     
     Returns:
-        Tuple of (processed_text, response_time_ms, validation_result)
+        Tuple of (processed_text, response_time_ms, validation_result, raw_llm_response)
+        - processed_text: The text to use (either LLM response if valid, or original text as fallback)
+        - response_time_ms: Time taken for LLM request
+        - validation_result: Dict with validation info
+        - raw_llm_response: The actual LLM response (for debugging failed validations)
     """
     if not llm_url.startswith(('http://', 'https://')):
         llm_url = f'http://{llm_url}'
@@ -496,7 +502,7 @@ def _process_chunk_with_llm(
             {"role": "system", "content": system_message},
             {"role": "user", "content": text}
         ],
-        "temperature": 0.4,
+        "temperature": 0.5,
         "stream": False
     }
       
@@ -520,12 +526,13 @@ def _process_chunk_with_llm(
             # Validation: check for reasonable output
             validation_result = _validate_llm_output(text, processed_text)
             if validation_result['passed']:
-                return processed_text, response_time_ms, validation_result
+                return processed_text, response_time_ms, validation_result, processed_text
             else:
                 log_progress(f"Warning: LLM output validation failed on attempt {attempt+1}")
                 if attempt == max_retries - 1:
                     log_progress("Falling back to original text")
-                    return text, response_time_ms, validation_result
+                    # Return original text as fallback, but include raw LLM response for debugging
+                    return text, response_time_ms, validation_result, processed_text
                     
         except requests.RequestException as e:
             log_progress(f"LLM request failed (attempt {attempt+1}/{max_retries}): {e}")
@@ -534,7 +541,7 @@ def _process_chunk_with_llm(
                 time.sleep(sleep_time)
             else:
                 log_progress("All retry attempts failed, keeping original text")
-                return text, None, {'passed': False, 'reason': f'request failed: {e}', 'details': {}}
+                return text, None, {'passed': False, 'reason': f'request failed: {e}', 'details': {}}, None
                 
         except (KeyError, json.JSONDecodeError) as e:
             log_progress(f"LLM response parsing error (attempt {attempt+1}/{max_retries}): {e}")
@@ -543,9 +550,9 @@ def _process_chunk_with_llm(
                 time.sleep(sleep_time)
             else:
                 log_progress("All retry attempts failed, keeping original text")
-                return text, None, {'passed': False, 'reason': f'parsing error: {e}', 'details': {}}
+                return text, None, {'passed': False, 'reason': f'parsing error: {e}', 'details': {}}, None
     
-    return text, None, {'passed': False, 'reason': 'max retries exceeded', 'details': {}}
+    return text, None, {'passed': False, 'reason': 'max retries exceeded', 'details': {}}, None
 
 def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
     """

@@ -562,7 +562,7 @@ def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
 
     Checks:
     - Word count must be exactly the same (name replacement preserves word count)
-    - No excessive changes
+    - No changes other than name replacement
     
     Returns:
         Dict with 'passed' (bool), 'reason' (str), 'details' (dict)

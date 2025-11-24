@@ -19,12 +19,12 @@ from local_transcribe.lib.program_logger import log_progress, log_status, log_de
 
 # Configuration defaults
 DE_IDENTIFY_DEFAULTS = {
-    'chunk_size': 600,              # Words per chunk
-    'overlap_size': 75,             # Words of overlap between chunks
-    'min_final_chunk': 200,         # Min words for final chunk
-    'llm_timeout': 300,              # Seconds
-    'max_retries': 3,               # Retry attempts
-    'retry_backoff': 2.0,           # Exponential backoff multiplier
+    'chunk_size': 400,            # Words per chunk
+    'overlap_size': 75,           # Words of overlap between chunks
+    'min_final_chunk': 200,       # Min words for final chunk
+    'llm_timeout': 300,           # Seconds
+    'max_retries': 1,             # Retry attempts
+    'retry_backoff': 1.5,         # Exponential backoff multiplier
 }
 
 

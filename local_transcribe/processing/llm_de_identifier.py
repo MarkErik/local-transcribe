@@ -555,6 +555,7 @@ def _process_chunk_with_llm(
                 return text, None, {'passed': False, 'reason': f'parsing error: {e}', 'details': {}}
     
     return text, None, {'passed': False, 'reason': 'max retries exceeded', 'details': {}}
+
 def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
     """
     Validate that LLM output is reasonable.

@@ -35,3 +35,11 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
 else
   echo "✅ ffmpeg found: $(command -v ffmpeg)"
 fi
+
+echo "🔍 Checking for whisper.cpp…"
+if ! command -v whisper-cpp >/dev/null 2>&1; then
+  echo "⚠️  'whisper.cpp' not found on PATH."
+  echo "   Install via Homebrew:  brew install whisper-cpp"
+else
+  echo "✅ whisper.cpp found: $(command -v whisper-cpp)"
+fi

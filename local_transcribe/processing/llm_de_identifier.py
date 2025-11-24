@@ -5,7 +5,6 @@ Replaces personal names with [REDACTED] token while preserving place names.
 """
 
 import json
-import logging
 import requests
 import time
 from typing import List, Dict, Any, Optional, Tuple
@@ -54,8 +53,8 @@ def de_identify_word_segments(
     log_progress(f"De-identifying {len(segments)} word segments")
     
     # Check if DEBUG logging is enabled
-    logger = logging.getLogger()
-    debug_enabled = logger.getEffectiveLevel() <= logging.DEBUG
+    from local_transcribe.lib.program_logger import get_output_context
+    debug_enabled = get_output_context().should_log("DEBUG")
     
     # Setup debug directory if DEBUG logging is enabled
     debug_dir = None
@@ -214,8 +213,8 @@ def de_identify_text(
     log_progress(f"De-identifying text transcript ({len(words)} words)")
     
     # Check if DEBUG logging is enabled
-    logger = logging.getLogger()
-    debug_enabled = logger.getEffectiveLevel() <= logging.DEBUG
+    from local_transcribe.lib.program_logger import get_output_context
+    debug_enabled = get_output_context().should_log("DEBUG")
     
     # Setup debug directory if DEBUG logging is enabled
     debug_dir = None

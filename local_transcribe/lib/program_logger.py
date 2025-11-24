@@ -259,17 +259,6 @@ def get_logger() -> logging.Logger:
     return _global_logger
 
 
-def configure_global_logging(
-    log_level: str = "WARNING",
-    log_file: Optional[str] = None,
-    console_output: bool = True,
-    structured_output: bool = False
-) -> None:
-    """Configure the global logger instance."""
-    global _global_logger
-    _global_logger = setup_logging(log_level, log_file, console_output, structured_output)
-
-
 # Context manager for error handling
 class ErrorContext:
     """Context manager for automatic error logging."""

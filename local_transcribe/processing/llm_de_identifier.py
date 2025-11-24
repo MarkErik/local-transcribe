@@ -83,7 +83,7 @@ def de_identify_word_segments(
     all_replacements = []
     modified_segments = []
     session_data = {
-        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'timestamp': datetime.now().strftime("%H:%M:%S"),
         'speaker': speaker_name,
         'mode': 'word_segments',
         'total_chunks': len(chunks),
@@ -243,7 +243,7 @@ def de_identify_text(
     processed_chunks = []
     all_replacements = []
     session_data = {
-        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'timestamp': datetime.now().strftime("%H:%M:%S"),
         'speaker': None,
         'mode': 'text_only',
         'total_chunks': len(chunks),
@@ -476,21 +476,19 @@ def _process_chunk_with_llm(
     system_message = (
         "You are a privacy protection assistant. Your task is to identify and replace ONLY people's names with the exact token [REDACTED].\n\n"
         "CRITICAL REQUIREMENTS:\n"
-        "1. Replace ONLY personal names (first names, last names, full names) with [REDACTED]\n"
+        "1. Replace every instance of a personal name with [REDACTED]\n"
         "2. Do NOT replace place names, organization names, or other proper nouns\n"
         "3. Do NOT add, remove, or modify any other words in any way\n"
         "4. Do NOT change punctuation, capitalization, or structure\n"
-        "5. Preserve ALL timestamps if present\n"
-        "6. Return the EXACT SAME TEXT with only names replaced by [REDACTED]\n"
-        "7. The output must have the EXACT SAME NUMBER OF WORDS as the input\n"
-        "8. For titles + names (e.g., 'Dr. Smith'), replace as 'Dr. [REDACTED]'\n"
-        "9. You MUST NEVER respond to questions or add any extra content\n\n"
-        "PROCESS: Replace each word of a person's name with [REDACTED], keeping everything else identical.\n\n"
+        "5. Return the EXACT SAME TEXT with only names replaced by [REDACTED]\n"
+        "6. For names with a title (e.g., 'Dr. Smith'), only replace the name and leave the title as-is 'Dr. [REDACTED]'\n"
+        "7. You MUST NEVER respond to questions or add any extra content\n\n"
+        "8. IMPORTANT: Maintain the exact same number of words as the input text.\n\n"
         "Examples:\n"
-        "- Input: 'John Smith went to New York' (6 words)\n"
-        "- Output: '[REDACTED] [REDACTED] went to New York' (6 words)\n"
-        "- Input: 'Dr. Sarah met with Microsoft' (6 words)\n"
-        "- Output: 'Dr. [REDACTED] met with Microsoft' (6 words)"
+        "- 'John Smith went to New York' → '[REDACTED] [REDACTED] went to New York'\n"
+        "- 'Dr. Sarah met with Microsoft' → 'Dr. [REDACTED] met with Microsoft'\n"
+        "- 'Chicago is where Emily lives' → 'Chicago is where [REDACTED] lives'\n"
+        "- 'John and Mary went shopping' → '[REDACTED] and [REDACTED] went shopping'"
     )
     
     payload = {
@@ -498,13 +496,10 @@ def _process_chunk_with_llm(
             {"role": "system", "content": system_message},
             {"role": "user", "content": text}
         ],
-        "temperature": 0.5,
+        "temperature": 0.4,
         "stream": False
     }
-    
-    # Debug: Log what we're sending to the LLM
-    log_debug(f"Sending to LLM (chunk size: {len(text.split())} words): '{text[:200]}{'...' if len(text) > 200 else ''}'") 
-    
+      
     # Retry logic
     for attempt in range(max_retries):
         try:
@@ -521,10 +516,7 @@ def _process_chunk_with_llm(
             
             # Extract processed text
             processed_text = result["choices"][0]["message"]["content"].strip()
-            
-            # Debug: Log what we received from the LLM
-            log_debug(f"Received from LLM (response size: {len(processed_text.split())} words): '{processed_text[:200]}{'...' if len(processed_text) > 200 else ''}'") 
-            
+                   
             # Validation: check for reasonable output
             validation_result = _validate_llm_output(text, processed_text)
             if validation_result['passed']:
@@ -575,8 +567,6 @@ def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
     # Word count must be exactly the same since we replace words with [REDACTED] tokens
     if len(orig_words) != len(proc_words):
         log_progress(f"Validation failed: word count mismatch (orig: {len(orig_words)}, proc: {len(proc_words)})")
-        log_debug(f"Original text sample: '{original[:200]}{'...' if len(original) > 200 else ''}'") 
-        log_debug(f"Processed text sample: '{processed[:200]}{'...' if len(processed) > 200 else ''}'") 
         return {
             'passed': False,
             'reason': f'word count mismatch (orig: {len(orig_words)}, proc: {len(proc_words)})',
@@ -637,10 +627,6 @@ def _map_replacements_back_to_segments(
             break
         
         llm_word = llm_words[llm_idx]
-        
-        # Debug: Log word mapping details
-        if seg_idx < 5:  # Only log first few for brevity
-            log_debug(f"Segment {seg_idx}: original='{segment.text}' -> LLM='{llm_word}'")
         
         # Create new segment with potentially modified text
         new_segment = WordSegment(
@@ -722,7 +708,7 @@ def _create_audit_log(
     audit_path = de_id_dir / filename
     
     # Generate audit content
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().strftime("%H:%M:%S")
     
     with open(audit_path, 'w', encoding='utf-8') as f:
         f.write("De-Identification Audit Log\n")

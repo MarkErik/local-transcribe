@@ -37,9 +37,9 @@ else
 fi
 
 echo "🔍 Checking for whisper.cpp…"
-if ! command -v whisper-cpp >/dev/null 2>&1; then
-  echo "⚠️  'whisper.cpp' not found on PATH."
+if ! command -v whisper-cli >/dev/null 2>&1; then
+  echo "⚠️  'whisper-cli' not found on PATH."
   echo "   Install via Homebrew:  brew install whisper-cpp"
 else
-  echo "✅ whisper.cpp found: $(command -v whisper-cpp)"
+  echo "✅ whisper-cli found: $(command -v whisper-cli)"
 fi

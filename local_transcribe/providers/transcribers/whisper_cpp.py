@@ -106,8 +106,8 @@ class WhisperCppTranscriberProvider(TranscriberProvider):
             self._binary_path = env_path
             return self._binary_path
         
-        # Check for whisper-cpp command in PATH
-        whisper_cpp_cmd = shutil.which("whisper-cpp")
+        # Check for whisper-cli command in PATH
+        whisper_cpp_cmd = shutil.which("whisper-cli")
         if whisper_cpp_cmd:
             self._binary_path = whisper_cpp_cmd
             return self._binary_path
@@ -127,7 +127,8 @@ class WhisperCppTranscriberProvider(TranscriberProvider):
         
         raise FileNotFoundError(
             "whisper.cpp binary not found. Install with: brew install whisper-cpp\n"
-            "Or set WHISPER_CPP_PATH environment variable to the binary location."
+            "Or set WHISPER_CPP_PATH environment variable to the binary location.\n"
+            "Note: The command is 'whisper-cli'."
         )
 
     def _parse_wts_file(self, wts_file_path: str, role: Optional[str] = None) -> List[Dict[str, Any]]:

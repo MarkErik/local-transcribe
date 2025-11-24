@@ -32,10 +32,8 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
             "small.en": "mlx-community/whisper-small.en-mlx",
             "medium": "mlx-community/whisper-medium-mlx",
             "medium.en": "mlx-community/whisper-medium.en-mlx",
-            "large": "mlx-community/whisper-large-mlx",
-            "large-v2": "mlx-community/whisper-large-v2-mlx",
             "large-v3": "mlx-community/whisper-large-v3-mlx",
-            "turbo": "mlx-community/whisper-turbo",
+            "turbo-v3": "mlx-community/whisper-large-v3-turbo",
         }
         self.logger = get_logger()
         self.selected_model = None  # Will be set during transcription
@@ -142,7 +140,9 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
                 tmp_path,
                 path_or_hf_repo=model_repo,
                 word_timestamps=True,
-                verbose=False
+                verbose=True,
+                condition_on_previous_text=False,
+                language='en'
             )
             
             # Convert to word dicts with absolute timestamps
@@ -214,10 +214,12 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         # For short audio, use direct transcription (no chunking)
         if duration < self.chunk_length_seconds:
             result = mlx_whisper.transcribe(
-                audio_path,
+                tmp_path,
                 path_or_hf_repo=model_repo,
                 word_timestamps=True,
-                verbose=False
+                verbose=True,
+                condition_on_previous_text=False,
+                language='en'
             )
 
             # Convert to WordSegment format

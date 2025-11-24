@@ -5,6 +5,7 @@ Replaces personal names with [REDACTED] token while preserving place names.
 """
 
 import json
+import logging
 import requests
 import time
 from typing import List, Dict, Any, Optional, Tuple
@@ -52,6 +53,18 @@ def de_identify_word_segments(
     
     log_progress(f"De-identifying {len(segments)} word segments")
     
+    # Check if DEBUG logging is enabled
+    logger = logging.getLogger()
+    debug_enabled = logger.getEffectiveLevel() <= logging.DEBUG
+    
+    # Setup debug directory if DEBUG logging is enabled
+    debug_dir = None
+    if debug_enabled and intermediate_dir:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        debug_dir = intermediate_dir / "de_identification" / "llm_debug" / timestamp
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        log_debug(f"Debug mode enabled - saving debug files to {debug_dir}")
+    
     # Extract configuration from kwargs
     chunk_size = kwargs.get('chunk_size', DE_IDENTIFY_DEFAULTS['chunk_size'])
     overlap_size = kwargs.get('overlap_size', DE_IDENTIFY_DEFAULTS['overlap_size'])
@@ -70,16 +83,77 @@ def de_identify_word_segments(
     # Process each chunk
     all_replacements = []
     modified_segments = []
+    session_data = {
+        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'speaker': speaker_name,
+        'mode': 'word_segments',
+        'total_chunks': len(chunks),
+        'total_words': len(segments),
+        'chunks_passed': 0,
+        'chunks_failed': 0,
+        'failed_chunks': [],
+        'total_replacements': 0,
+        'config': {
+            'chunk_size': chunk_size,
+            'overlap_size': overlap_size,
+            'min_final_chunk': min_final_chunk,
+            'llm_url': llm_url,
+            'max_retries': kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
+            'llm_timeout': kwargs.get('llm_timeout', DE_IDENTIFY_DEFAULTS['llm_timeout'])
+        }
+    }
     
     for idx, chunk in enumerate(chunks):
-        log_progress(f"[{idx+1}/{len(chunks)}] Processing chunk with {len(chunk['segments'])} words")
+        chunk_num = idx + 1
+        log_progress(f"[{chunk_num}/{len(chunks)}] Processing chunk with {len(chunk['segments'])} words")
+        
+        # Save input chunk for debug
+        if debug_dir:
+            chunk_data = {
+                'text': chunk['text'],
+                'start_idx': chunk['start_idx'],
+                'end_idx': chunk['end_idx'],
+                'segments': chunk['segments']
+            }
+            _save_debug_files(
+                chunk_num,
+                chunk_data,
+                None,
+                None,
+                debug_dir,
+                mode='input'
+            )
         
         # Send to LLM
-        processed_text = _process_chunk_with_llm(
+        processed_text, response_time_ms, validation_result = _process_chunk_with_llm(
             chunk['text'],
             llm_url=llm_url,
             **kwargs
         )
+        
+        # Save output chunk for debug
+        if debug_dir:
+            _save_debug_files(
+                chunk_num,
+                chunk_data,
+                processed_text,
+                validation_result,
+                debug_dir,
+                attempt=kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
+                response_time_ms=response_time_ms,
+                mode='output'
+            )
+        
+        # Track validation results
+        if validation_result and validation_result['passed']:
+            session_data['chunks_passed'] += 1
+        else:
+            session_data['chunks_failed'] += 1
+            if validation_result:
+                session_data['failed_chunks'].append({
+                    'chunk_number': chunk_num,
+                    'reason': validation_result['reason']
+                })
         
         # Map replacements back to segments
         chunk_modified, chunk_replacements = _map_replacements_back_to_segments(
@@ -91,7 +165,14 @@ def de_identify_word_segments(
         modified_segments.extend(chunk_modified)
         all_replacements.extend(chunk_replacements)
         
-        log_progress(f"[{idx+1}/{len(chunks)}] Found {len(chunk_replacements)} names in chunk")
+        log_progress(f"[{chunk_num}/{len(chunks)}] Found {len(chunk_replacements)} names in chunk")
+    
+    # Update session totals
+    session_data['total_replacements'] = len(all_replacements)
+    
+    # Save session summary for debug
+    if debug_dir:
+        _save_session_summary(debug_dir, session_data, speaker_name)
     
     # Create audit log
     if intermediate_dir:
@@ -132,6 +213,18 @@ def de_identify_text(
     words = text.split()
     log_progress(f"De-identifying text transcript ({len(words)} words)")
     
+    # Check if DEBUG logging is enabled
+    logger = logging.getLogger()
+    debug_enabled = logger.getEffectiveLevel() <= logging.DEBUG
+    
+    # Setup debug directory if DEBUG logging is enabled
+    debug_dir = None
+    if debug_enabled and intermediate_dir:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        debug_dir = intermediate_dir / "de_identification" / "llm_debug" / timestamp
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        log_debug(f"Debug mode enabled - saving debug files to {debug_dir}")
+    
     # Extract configuration
     chunk_size = kwargs.get('chunk_size', DE_IDENTIFY_DEFAULTS['chunk_size'])
     overlap_size = kwargs.get('overlap_size', DE_IDENTIFY_DEFAULTS['overlap_size'])
@@ -150,16 +243,76 @@ def de_identify_text(
     # Process each chunk
     processed_chunks = []
     all_replacements = []
+    session_data = {
+        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'speaker': None,
+        'mode': 'text_only',
+        'total_chunks': len(chunks),
+        'total_words': len(words),
+        'chunks_passed': 0,
+        'chunks_failed': 0,
+        'failed_chunks': [],
+        'total_replacements': 0,
+        'config': {
+            'chunk_size': chunk_size,
+            'overlap_size': overlap_size,
+            'min_final_chunk': min_final_chunk,
+            'llm_url': llm_url,
+            'max_retries': kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
+            'llm_timeout': kwargs.get('llm_timeout', DE_IDENTIFY_DEFAULTS['llm_timeout'])
+        }
+    }
     
     for idx, chunk in enumerate(chunks):
-        log_progress(f"[{idx+1}/{len(chunks)}] Processing chunk with {len(chunk['words'])} words")
+        chunk_num = idx + 1
+        log_progress(f"[{chunk_num}/{len(chunks)}] Processing chunk with {len(chunk['words'])} words")
+        
+        # Save input chunk for debug
+        if debug_dir:
+            chunk_data = {
+                'text': chunk['text'],
+                'start_idx': chunk['start_idx'],
+                'end_idx': chunk['end_idx']
+            }
+            _save_debug_files(
+                chunk_num,
+                chunk_data,
+                None,
+                None,
+                debug_dir,
+                mode='input'
+            )
         
         # Send to LLM
-        processed_text = _process_chunk_with_llm(
+        processed_text, response_time_ms, validation_result = _process_chunk_with_llm(
             chunk['text'],
             llm_url=llm_url,
             **kwargs
         )
+        
+        # Save output chunk for debug
+        if debug_dir:
+            _save_debug_files(
+                chunk_num,
+                chunk_data,
+                processed_text,
+                validation_result,
+                debug_dir,
+                attempt=kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
+                response_time_ms=response_time_ms,
+                mode='output'
+            )
+        
+        # Track validation results
+        if validation_result and validation_result['passed']:
+            session_data['chunks_passed'] += 1
+        else:
+            session_data['chunks_failed'] += 1
+            if validation_result:
+                session_data['failed_chunks'].append({
+                    'chunk_number': chunk_num,
+                    'reason': validation_result['reason']
+                })
         
         processed_chunks.append({
             'text': processed_text,
@@ -179,6 +332,13 @@ def de_identify_text(
     
     # Merge processed chunks
     final_text = _merge_text_chunks(processed_chunks, overlap_size)
+    
+    # Update session totals
+    session_data['total_replacements'] = len(all_replacements)
+    
+    # Save session summary for debug
+    if debug_dir:
+        _save_session_summary(debug_dir, session_data)
     
     # Create audit log
     if intermediate_dir:
@@ -299,12 +459,12 @@ def _process_chunk_with_llm(
     text: str,
     llm_url: str,
     **kwargs
-) -> str:
+) -> Tuple[str, Optional[float], Optional[Dict]]:
     """
     Process a text chunk with LLM to replace names with [REDACTED].
     
     Returns:
-        Processed text with names replaced
+        Tuple of (processed_text, response_time_ms, validation_result)
     """
     if not llm_url.startswith(('http://', 'https://')):
         llm_url = f'http://{llm_url}'
@@ -344,33 +504,37 @@ def _process_chunk_with_llm(
     }
     
     # Debug: Log what we're sending to the LLM
-    log_debug(f"Sending to LLM (chunk size: {len(text.split())} words): '{text[:200]}{'...' if len(text) > 200 else ''}'")
+    log_debug(f"Sending to LLM (chunk size: {len(text.split())} words): '{text[:200]}{'...' if len(text) > 200 else ''}'") 
     
     # Retry logic
     for attempt in range(max_retries):
         try:
+            start_time = time.time()
             response = requests.post(
                 f"{llm_url}/chat/completions",
                 json=payload,
                 timeout=timeout
             )
             response.raise_for_status()
+            response_time_ms = (time.time() - start_time) * 1000
+            
             result = response.json()
             
             # Extract processed text
             processed_text = result["choices"][0]["message"]["content"].strip()
             
             # Debug: Log what we received from the LLM
-            log_debug(f"Received from LLM (response size: {len(processed_text.split())} words): '{processed_text[:200]}{'...' if len(processed_text) > 200 else ''}'")
+            log_debug(f"Received from LLM (response size: {len(processed_text.split())} words): '{processed_text[:200]}{'...' if len(processed_text) > 200 else ''}'") 
             
             # Validation: check for reasonable output
-            if _validate_llm_output(text, processed_text):
-                return processed_text
+            validation_result = _validate_llm_output(text, processed_text)
+            if validation_result['passed']:
+                return processed_text, response_time_ms, validation_result
             else:
                 log_progress(f"Warning: LLM output validation failed on attempt {attempt+1}")
                 if attempt == max_retries - 1:
                     log_progress("Falling back to original text")
-                    return text
+                    return text, response_time_ms, validation_result
                     
         except requests.RequestException as e:
             log_progress(f"LLM request failed (attempt {attempt+1}/{max_retries}): {e}")
@@ -379,7 +543,7 @@ def _process_chunk_with_llm(
                 time.sleep(sleep_time)
             else:
                 log_progress("All retry attempts failed, keeping original text")
-                return text
+                return text, None, {'passed': False, 'reason': f'request failed: {e}', 'details': {}}
                 
         except (KeyError, json.JSONDecodeError) as e:
             log_progress(f"LLM response parsing error (attempt {attempt+1}/{max_retries}): {e}")
@@ -388,18 +552,19 @@ def _process_chunk_with_llm(
                 time.sleep(sleep_time)
             else:
                 log_progress("All retry attempts failed, keeping original text")
-                return text
+                return text, None, {'passed': False, 'reason': f'parsing error: {e}', 'details': {}}
     
-    return text
-
-
-def _validate_llm_output(original: str, processed: str) -> bool:
+    return text, None, {'passed': False, 'reason': 'max retries exceeded', 'details': {}}
+def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
     """
     Validate that LLM output is reasonable.
 
     Checks:
     - Word count must be exactly the same (name replacement preserves word count)
     - No excessive changes
+    
+    Returns:
+        Dict with 'passed' (bool), 'reason' (str), 'details' (dict)
     """
     orig_words = original.split()
     proc_words = processed.split()
@@ -410,18 +575,41 @@ def _validate_llm_output(original: str, processed: str) -> bool:
     # Word count must be exactly the same since we replace words with [REDACTED] tokens
     if len(orig_words) != len(proc_words):
         log_progress(f"Validation failed: word count mismatch (orig: {len(orig_words)}, proc: {len(proc_words)})")
-        log_debug(f"Original text sample: '{original[:200]}{'...' if len(original) > 200 else ''}'")
-        log_debug(f"Processed text sample: '{processed[:200]}{'...' if len(processed) > 200 else ''}'")
-        return False
+        log_debug(f"Original text sample: '{original[:200]}{'...' if len(original) > 200 else ''}'") 
+        log_debug(f"Processed text sample: '{processed[:200]}{'...' if len(processed) > 200 else ''}'") 
+        return {
+            'passed': False,
+            'reason': f'word count mismatch (orig: {len(orig_words)}, proc: {len(proc_words)})',
+            'details': {
+                'original_word_count': len(orig_words),
+                'processed_word_count': len(proc_words),
+                'redacted_count': redacted_count
+            }
+        }
 
     # Check that [REDACTED] appears in reasonable quantity (not everything replaced)
     if redacted_count > len(orig_words) * 0.5:
         log_progress(f"Validation failed: too many replacements ({redacted_count} out of {len(orig_words)} words)")
-        return False
+        return {
+            'passed': False,
+            'reason': f'too many replacements ({redacted_count} out of {len(orig_words)} words)',
+            'details': {
+                'original_word_count': len(orig_words),
+                'processed_word_count': len(proc_words),
+                'redacted_count': redacted_count,
+                'redacted_percentage': (redacted_count / len(orig_words)) * 100
+            }
+        }
 
-    return True
-
-
+    return {
+        'passed': True,
+        'reason': 'validation passed',
+        'details': {
+            'original_word_count': len(orig_words),
+            'processed_word_count': len(proc_words),
+            'redacted_count': redacted_count
+        }
+    }
 def _map_replacements_back_to_segments(
     original_segments: List[WordSegment],
     llm_output: str,
@@ -578,3 +766,287 @@ def _create_audit_log(
                 f.write(f"- Replacement rate: {rate:.2f}%\n")
     
     log_progress(f"Audit log saved to {audit_path}")
+
+
+def _save_debug_files(
+    chunk_idx: int,
+    chunk_data: Dict,
+    llm_response: Optional[str],
+    validation_result: Optional[Dict],
+    debug_dir: Path,
+    attempt: int = 1,
+    response_time_ms: Optional[float] = None,
+    mode: str = 'input'
+) -> None:
+    """
+    Save debug files in both JSON and text formats.
+    
+    Args:
+        chunk_idx: Chunk number (1-indexed for display)
+        chunk_data: Dict with 'text', 'start_idx', 'end_idx', 'segments' (optional)
+        llm_response: LLM response text (for output mode)
+        validation_result: Dict with validation info (for output mode)
+        debug_dir: Directory to save debug files
+        attempt: Attempt number for retries
+        response_time_ms: Response time in milliseconds
+        mode: 'input' or 'output'
+    """
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    
+    chunk_num_str = f"{chunk_idx:03d}"
+    
+    if mode == 'input':
+        # Save input JSON
+        json_data = {
+            'chunk_number': chunk_idx,
+            'word_count': len(chunk_data['text'].split()),
+            'start_idx': chunk_data.get('start_idx', 0),
+            'end_idx': chunk_data.get('end_idx', 0),
+            'text': chunk_data['text']
+        }
+        
+        # Add segments if available (word_segments mode)
+        if 'segments' in chunk_data and chunk_data['segments']:
+            json_data['segments'] = [
+                {
+                    'word': seg.text,
+                    'start': seg.start,
+                    'end': seg.end,
+                    'speaker': seg.speaker
+                }
+                for seg in chunk_data['segments']
+            ]
+            # Add timestamp range
+            if chunk_data['segments']:
+                json_data['timestamp_range'] = {
+                    'start': chunk_data['segments'][0].start,
+                    'end': chunk_data['segments'][-1].end
+                }
+        
+        json_path = debug_dir / f"chunk_{chunk_num_str}_input.json"
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(json_data, f, indent=2, ensure_ascii=False)
+        
+        # Save input text
+        txt_path = debug_dir / f"chunk_{chunk_num_str}_input.txt"
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write("=" * 60 + "\n")
+            f.write(f"CHUNK {chunk_idx} - INPUT TO LLM\n")
+            f.write("=" * 60 + "\n")
+            f.write(f"Word count: {len(chunk_data['text'].split())}\n")
+            f.write(f"Index range: {chunk_data.get('start_idx', 0)}-{chunk_data.get('end_idx', 0)}\n")
+            
+            if 'segments' in chunk_data and chunk_data['segments']:
+                # Format timestamps
+                start_ts = chunk_data['segments'][0].start
+                end_ts = chunk_data['segments'][-1].end
+                start_str = _format_timestamp(start_ts)
+                end_str = _format_timestamp(end_ts)
+                f.write(f"Timestamp range: {start_str} - {end_str}\n")
+            
+            f.write("-" * 60 + "\n\n")
+            f.write(chunk_data['text'])
+            f.write("\n")
+    
+    elif mode == 'output':
+        if llm_response is None:
+            return
+        
+        # Save output JSON
+        json_data = {
+            'chunk_number': chunk_idx,
+            'attempt': attempt,
+            'response_time_ms': response_time_ms,
+            'input_word_count': len(chunk_data['text'].split()),
+            'output_word_count': len(llm_response.split()),
+            'text': llm_response
+        }
+        
+        if validation_result:
+            json_data['validation_passed'] = validation_result.get('passed', False)
+            json_data['validation_failure_reason'] = validation_result.get('reason', '')
+        
+        json_path = debug_dir / f"chunk_{chunk_num_str}_output.json"
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(json_data, f, indent=2, ensure_ascii=False)
+        
+        # Save output text
+        txt_path = debug_dir / f"chunk_{chunk_num_str}_output.txt"
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write("=" * 60 + "\n")
+            f.write(f"CHUNK {chunk_idx} - OUTPUT FROM LLM\n")
+            f.write("=" * 60 + "\n")
+            f.write(f"Attempt: {attempt}\n")
+            if response_time_ms:
+                f.write(f"Response time: {response_time_ms/1000:.2f}s\n")
+            
+            if validation_result:
+                status = "PASSED" if validation_result.get('passed', False) else "FAILED"
+                f.write(f"Validation: {status}")
+                if not validation_result.get('passed', False):
+                    f.write(f" - {validation_result.get('reason', '')}")
+                f.write("\n")
+            
+            f.write(f"Input word count: {len(chunk_data['text'].split())}\n")
+            f.write(f"Output word count: {len(llm_response.split())}\n")
+            f.write("-" * 60 + "\n\n")
+            f.write(llm_response)
+            f.write("\n")
+        
+        # Generate diff if validation failed
+        if validation_result and not validation_result.get('passed', False):
+            _generate_word_diff(
+                chunk_idx,
+                chunk_data['text'],
+                llm_response,
+                validation_result,
+                debug_dir
+            )
+
+
+def _format_timestamp(seconds: float) -> str:
+    """Format seconds as HH:MM:SS.mmm"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
+
+
+def _generate_word_diff(
+    chunk_idx: int,
+    original_text: str,
+    llm_text: str,
+    validation_result: Dict,
+    debug_dir: Path
+) -> None:
+    """
+    Generate word-by-word diff for failed validations.
+    
+    Args:
+        chunk_idx: Chunk number
+        original_text: Original text sent to LLM
+        llm_text: LLM response text
+        validation_result: Validation result dict
+        debug_dir: Directory to save diff file
+    """
+    orig_words = original_text.split()
+    llm_words = llm_text.split()
+    
+    chunk_num_str = f"{chunk_idx:03d}"
+    diff_path = debug_dir / f"chunk_{chunk_num_str}_diff.txt"
+    
+    with open(diff_path, 'w', encoding='utf-8') as f:
+        f.write("=" * 60 + "\n")
+        f.write(f"CHUNK {chunk_idx} - WORD-BY-WORD DIFF\n")
+        f.write("=" * 60 + "\n")
+        f.write(f"Validation failed: {validation_result.get('reason', 'unknown')}\n\n")
+        
+        # Summary
+        missing = max(0, len(orig_words) - len(llm_words))
+        extra = max(0, len(llm_words) - len(orig_words))
+        f.write(f"Missing words: {missing}\n")
+        f.write(f"Extra words: {extra}\n\n")
+        
+        # Word-by-word comparison
+        f.write("Word-by-word comparison:\n")
+        f.write("-" * 60 + "\n")
+        
+        max_len = max(len(orig_words), len(llm_words))
+        differences = []
+        
+        for i in range(max_len):
+            orig_word = orig_words[i] if i < len(orig_words) else None
+            llm_word = llm_words[i] if i < len(llm_words) else None
+            
+            if orig_word is None:
+                f.write(f"[{i:03d}] ✗ EXTRA: \"{llm_word}\"\n")
+                differences.append((i, 'EXTRA', None, llm_word))
+            elif llm_word is None:
+                f.write(f"[{i:03d}] ✗ MISSING: \"{orig_word}\"\n")
+                differences.append((i, 'MISSING', orig_word, None))
+            elif orig_word != llm_word:
+                f.write(f"[{i:03d}] ✗ CHANGED: \"{orig_word}\" → \"{llm_word}\"\n")
+                differences.append((i, 'CHANGED', orig_word, llm_word))
+            else:
+                # Only show first/last few matches to keep file readable
+                if i < 5 or i >= max_len - 5:
+                    f.write(f"[{i:03d}] ✓ {orig_word} → {llm_word}\n")
+                elif i == 5:
+                    f.write(f"... ({max_len - 10} matching words omitted) ...\n")
+        
+        # Show context around differences
+        if differences:
+            f.write("\n" + "=" * 60 + "\n")
+            f.write("Context around differences:\n")
+            f.write("-" * 60 + "\n")
+            
+            for diff_idx, diff_type, orig, llm in differences[:10]:  # Show first 10 diffs
+                context_start = max(0, diff_idx - 3)
+                context_end = min(len(orig_words), diff_idx + 4)
+                
+                f.write(f"\nPosition {diff_idx} ({diff_type}):\n")
+                f.write(f"  Original: \"{' '.join(orig_words[context_start:context_end])}\"\n")
+                
+                llm_context_end = min(len(llm_words), context_start + (context_end - context_start))
+                f.write(f"  LLM:      \"{' '.join(llm_words[context_start:llm_context_end])}\"\n")
+            
+            if len(differences) > 10:
+                f.write(f"\n... and {len(differences) - 10} more differences\n")
+
+
+def _save_session_summary(
+    debug_dir: Path,
+    session_data: Dict,
+    speaker_name: Optional[str] = None
+) -> None:
+    """
+    Save session summary in both JSON and text formats.
+    
+    Args:
+        debug_dir: Directory to save summary
+        session_data: Dict with session information
+        speaker_name: Optional speaker name
+    """
+    # Save JSON summary
+    json_path = debug_dir / "session_summary.json"
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(session_data, f, indent=2, ensure_ascii=False)
+    
+    # Save text summary
+    txt_path = debug_dir / "debug_summary.txt"
+    with open(txt_path, 'w', encoding='utf-8') as f:
+        f.write("=" * 60 + "\n")
+        f.write("DE-IDENTIFICATION DEBUG SUMMARY\n")
+        f.write("=" * 60 + "\n")
+        f.write(f"Generated: {session_data.get('timestamp', '')}\n")
+        if speaker_name:
+            f.write(f"Speaker: {speaker_name}\n")
+        f.write(f"Mode: {session_data.get('mode', 'unknown')}\n")
+        f.write(f"Total chunks: {session_data.get('total_chunks', 0)}\n")
+        f.write(f"Total words: {session_data.get('total_words', 0):,}\n\n")
+        
+        f.write("Configuration:\n")
+        config = session_data.get('config', {})
+        for key, value in config.items():
+            f.write(f"- {key}: {value}\n")
+        
+        f.write("\nResults:\n")
+        passed = session_data.get('chunks_passed', 0)
+        failed = session_data.get('chunks_failed', 0)
+        total = session_data.get('total_chunks', 0)
+        if total > 0:
+            pass_rate = (passed / total) * 100
+            f.write(f"- Chunks passed validation: {passed}/{total} ({pass_rate:.1f}%)\n")
+            f.write(f"- Chunks failed validation: {failed}/{total} ({100-pass_rate:.1f}%)\n")
+        f.write(f"- Total names replaced: {session_data.get('total_replacements', 0)}\n")
+        
+        failed_chunks = session_data.get('failed_chunks', [])
+        if failed_chunks:
+            f.write("\nFailed Chunks:\n")
+            for chunk_info in failed_chunks:
+                chunk_num = chunk_info.get('chunk_number', 0)
+                reason = chunk_info.get('reason', 'unknown')
+                f.write(f"- Chunk {chunk_num}: {reason}\n")
+        
+        f.write("\nSee individual chunk files for details.\n")
+        f.write("=" * 60 + "\n")

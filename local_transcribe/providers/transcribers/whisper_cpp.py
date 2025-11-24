@@ -489,7 +489,11 @@ class WhisperCppTranscriberProvider(TranscriberProvider):
         pass
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
-        """Ensure whisper.cpp binary and models are available."""
+        """Ensure whisper.cpp binary and models are available.
+        
+        Note: whisper.cpp models must be manually downloaded. This method checks
+        for their existence and provides download instructions if missing.
+        """
         # Check binary
         try:
             self._find_whisper_cpp_binary()
@@ -502,13 +506,30 @@ class WhisperCppTranscriberProvider(TranscriberProvider):
         whisper_cpp_models_dir = models_dir / "transcribers" / "whisper_cpp"
         whisper_cpp_models_dir.mkdir(parents=True, exist_ok=True)
         
+        missing_models = []
         for model in models:
             model_path = whisper_cpp_models_dir / model
             if not model_path.exists():
-                self.logger.warning(
-                    f"Model file not found: {model_path}\n"
-                    f"Download from: https://huggingface.co/ggerganov/whisper.cpp"
-                )
+                missing_models.append((model, model_path))
+        
+        if missing_models:
+            self.logger.error("whisper.cpp models must be manually downloaded.")
+            self.logger.error("\nMissing models:")
+            for model_name, model_path in missing_models:
+                self.logger.error(f"  - {model_name}")
+            
+            self.logger.error(f"\nDownload instructions:")
+            self.logger.error(f"1. Visit: https://huggingface.co/ggerganov/whisper.cpp/tree/main")
+            self.logger.error(f"2. Download the required .bin files")
+            self.logger.error(f"3. Place them in: {whisper_cpp_models_dir}")
+            self.logger.error(f"\nExample commands:")
+            for model_name, _ in missing_models:
+                url = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{model_name}"
+                self.logger.error(f"  curl -L '{url}' -o '{whisper_cpp_models_dir}/{model_name}'")
+            
+            raise FileNotFoundError(
+                f"Missing whisper.cpp model files. See log above for download instructions."
+            )
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which models are available offline."""

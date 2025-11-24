@@ -102,40 +102,6 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
             missing = models
         return missing
 
-    def _transcribe_single_chunk_text(self, chunk_audio: np.ndarray, sr: int, model_repo: str) -> str:
-        """Transcribe a single audio chunk (numpy array) and return text only.
-        
-        Args:
-            chunk_audio: Audio data as numpy array
-            sr: Sample rate
-            model_repo: MLX Whisper model repository name
-            
-        Returns:
-            Transcribed text as string
-        """
-        try:
-            import mlx_whisper
-        except ImportError:
-            raise ImportError("mlx-whisper package is required. Install with: uv add mlx-whisper")
-        
-        # Create temporary WAV file for this chunk
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp_path = tmp.name
-        
-        try:
-            # Write chunk to temporary file
-            # Convert float32 [-1, 1] to int16 [-32768, 32767]
-            audio_int16 = (chunk_audio * 32767).astype(np.int16)
-            wavfile.write(tmp_path, sr, audio_int16)
-            
-            # Transcribe the chunk
-            result = mlx_whisper.transcribe(tmp_path, path_or_hf_repo=model_repo, verbose=False)
-            return result["text"].strip()
-        finally:
-            # Clean up temporary file
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-    
     def _transcribe_single_chunk_with_timestamps(
         self,
         chunk_audio: np.ndarray,
@@ -199,121 +165,10 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> Union[str, List[Dict[str, Any]]]:
         """Transcribe audio using MLX Whisper model.
         
-        For audio shorter than chunk_length_seconds, returns a string.
-        For longer audio, returns a list of chunk dictionaries for stitching.
-        
-        Returns:
-            str: For short audio (< chunk_length_seconds)
-            List[Dict[str, Any]]: For long audio, each dict has 'chunk_id' and 'words' (List[str])
+        This method is required by the abstract base class but is never called
+        in practice since MLX Whisper has builtin alignment. Use transcribe_with_alignment instead.
         """
-        if not os.path.exists(audio_path):
-            raise ValueError(f"Audio file not found: {audio_path}")
-
-        try:
-            import mlx_whisper
-        except ImportError:
-            raise ImportError("mlx-whisper package is required. Install with: uv add mlx-whisper")
-
-        # Set selected model from kwargs
-        self.selected_model = kwargs.get('transcriber_model', 'base')
-        model_repo = self.model_mapping.get(self.selected_model, self.model_mapping["base"])
-        
-        # Load audio to check duration
-        wav, sr = librosa.load(audio_path, sr=16000, mono=True)
-        duration = len(wav) / sr
-        
-        # Check if audio is too short
-        if duration < self.min_chunk_seconds:
-            raise ValueError(
-                f"Audio duration ({duration:.1f}s) is too short. "
-                f"Minimum required: {self.min_chunk_seconds}s"
-            )
-        
-        # For short audio, use direct transcription (no chunking)
-        if duration < self.chunk_length_seconds:
-            result = mlx_whisper.transcribe(audio_path, path_or_hf_repo=model_repo, verbose=False)
-            return result["text"].strip()
-        
-        # Chunked processing for long audio
-        verbose = kwargs.get('verbose', False)
-        chunk_samples = int(self.chunk_length_seconds * sr)
-        overlap_samples = int(self.overlap_seconds * sr)
-        min_chunk_samples = int(self.min_chunk_seconds * sr)
-        
-        chunks = []
-        total_samples = len(wav)
-        effective_chunk_length = self.chunk_length_seconds - self.overlap_seconds
-        num_chunks = math.ceil(duration / effective_chunk_length) if effective_chunk_length > 0 else 1
-        
-        if verbose:
-            log_progress(f"Audio duration: {duration:.1f}s - processing in {num_chunks} chunks")
-        
-        chunk_start = 0
-        chunk_num = 0
-        prev_chunk_wav = None
-        
-        while chunk_start < total_samples:
-            chunk_num += 1
-            chunk_end = min(chunk_start + chunk_samples, total_samples)
-            chunk_wav = wav[chunk_start:chunk_end]
-            
-            # Calculate absolute start time of this chunk in the full audio
-            chunk_start_time = chunk_start / sr
-            
-            if verbose:
-                chunk_duration_sec = len(chunk_wav) / sr
-                log_progress(f"Processing chunk {chunk_num} of {num_chunks} (starts at {chunk_start_time:.2f}s, duration: {chunk_duration_sec:.1f}s)")
-            
-            # Handle last chunk if it's too small
-            if len(chunk_wav) < min_chunk_samples:
-                if prev_chunk_wav is not None and chunks:
-                    # Merge with previous chunk
-                    non_overlapping_part = chunk_wav[overlap_samples:] if len(chunk_wav) > overlap_samples else chunk_wav
-                    merged_wav = np.concatenate([prev_chunk_wav, non_overlapping_part])
-                    
-                    # Re-transcribe merged chunk
-                    chunk_text = self._transcribe_single_chunk_text(merged_wav, sr, model_repo)
-                    words = chunk_text.split()
-                    
-                    # Update last chunk
-                    chunks[-1] = {
-                        "chunk_id": chunks[-1]["chunk_id"],
-                        "words": words
-                    }
-                    
-                    if verbose:
-                        log_progress(f"Merged small final chunk with previous chunk")
-                else:
-                    # Process as normal if it's the only chunk
-                    chunk_text = self._transcribe_single_chunk_text(chunk_wav, sr, model_repo)
-                    words = chunk_text.split()
-                    chunks.append({
-                        "chunk_id": chunk_num,
-                        "words": words
-                    })
-            else:
-                # Normal chunk processing
-                chunk_text = self._transcribe_single_chunk_text(chunk_wav, sr, model_repo)
-                words = chunk_text.split()
-                chunks.append({
-                    "chunk_id": chunk_num,
-                    "words": words
-                })
-            
-            prev_chunk_wav = chunk_wav
-            
-            # Break if we've reached the end
-            if chunk_end == total_samples:
-                break
-            
-            # Move to next chunk with overlap
-            chunk_start = chunk_start + chunk_samples - overlap_samples
-        
-        if verbose:
-            total_words = sum(len(chunk["words"]) for chunk in chunks)
-            log_progress(f"Transcription complete: {len(chunks)} chunks, {total_words} words total")
-        
-        return chunks
+        raise NotImplementedError("MLX Whisper only supports transcribe_with_alignment. This method should never be called.")
 
     def transcribe_with_alignment(
         self,

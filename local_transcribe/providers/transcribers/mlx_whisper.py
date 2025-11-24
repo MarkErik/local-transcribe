@@ -143,12 +143,11 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
                 verbose=True,
                 condition_on_previous_text=False,
                 language='en',
-                # Anti-hallucination settings
-                hallucination_silence_threshold=2.0,
-                temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
-                compression_ratio_threshold=2.4,
-                logprob_threshold=-1.0,
-                no_speech_threshold=0.6,
+                hallucination_silence_threshold=10.0,
+                temperature=0.0,
+                compression_ratio_threshold=None,
+                logprob_threshold=None,
+                no_speech_threshold=0.8,
             )
             
             # Convert to word dicts with absolute timestamps
@@ -226,12 +225,11 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
                 verbose=True,
                 condition_on_previous_text=False,
                 language='en',
-                # Anti-hallucination settings
-                hallucination_silence_threshold=2.0,
-                temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
-                compression_ratio_threshold=2.4,
-                logprob_threshold=-1.0,
-                no_speech_threshold=0.6,
+                hallucination_silence_threshold=10.0,
+                temperature=0.0,
+                compression_ratio_threshold=None,
+                logprob_threshold=None,
+                no_speech_threshold=0.8,
             )
 
             # Convert to WordSegment format

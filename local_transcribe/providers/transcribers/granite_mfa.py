@@ -269,7 +269,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                     top_p=1.0,
                     length_penalty=1.0,
                     temperature=1.0,
-                    early_stopping = True,
+                    #early_stopping = True,
                     logits_processor=[repetition_penalty_processor],
                     bos_token_id=self.tokenizer.bos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,

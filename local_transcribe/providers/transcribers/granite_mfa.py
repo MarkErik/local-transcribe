@@ -17,6 +17,8 @@ import math
 import librosa
 import tempfile
 import subprocess
+import json
+from datetime import datetime
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
@@ -575,6 +577,56 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
         return word_dicts
 
+    def _save_debug_chunk(self, debug_dir: pathlib.Path, chunk_num: int, stage: str, data: Dict[str, Any]) -> None:
+        """Save debug files for a processing stage.
+        
+        Args:
+            debug_dir: Directory to save debug files
+            chunk_num: Chunk number (1-indexed)
+            stage: Processing stage name (granite_output, mfa_input, mfa_output)
+            data: Data to save
+        """
+        chunk_num_str = f"{chunk_num:03d}"
+        
+        # Save JSON file
+        json_path = debug_dir / f"chunk_{chunk_num_str}_{stage}.json"
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        
+        # Save human-readable text file
+        txt_path = debug_dir / f"chunk_{chunk_num_str}_{stage}.txt"
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write("=" * 60 + "\n")
+            f.write(f"CHUNK {chunk_num} - {stage.upper().replace('_', ' ')}\n")
+            f.write("=" * 60 + "\n")
+            f.write(f"Chunk start time: {data.get('chunk_start_time', 0):.2f}s\n")
+            
+            if 'text' in data:
+                f.write(f"Word count: {data.get('word_count', len(data['text'].split()))}\n")
+                f.write("-" * 60 + "\n\n")
+                f.write(data['text'])
+                f.write("\n")
+            elif 'normalized_text' in data:
+                f.write(f"Original word count: {data.get('original_word_count', 0)}\n")
+                f.write(f"Normalized word count: {data.get('normalized_word_count', 0)}\n")
+                f.write("-" * 60 + "\n")
+                f.write("ORIGINAL TEXT:\n")
+                f.write(data['original_text'])
+                f.write("\n\n")
+                f.write("NORMALIZED TEXT (sent to MFA):\n")
+                f.write(data['normalized_text'])
+                f.write("\n")
+            elif 'words' in data:
+                f.write(f"Word count: {data.get('word_count', len(data['words']))}\n")
+                if data['words']:
+                    first_word = data['words'][0]
+                    last_word = data['words'][-1]
+                    f.write(f"Time range: {first_word.get('start', 0):.2f}s - {last_word.get('end', 0):.2f}s\n")
+                f.write("-" * 60 + "\n\n")
+                # Write words with timestamps
+                for word in data['words']:
+                    f.write(f"[{word.get('start', 0):.2f}-{word.get('end', 0):.2f}] {word.get('text', '')}\n")
+
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs):
         """Not implemented - this provider requires alignment. Use transcribe_with_alignment()."""
         raise NotImplementedError(
@@ -599,6 +651,18 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             }
         """
         log_progress("Starting transcription with alignment using Granite + MFA")
+        
+        # Check if DEBUG logging is enabled and setup debug directory
+        from local_transcribe.lib.program_logger import get_output_context
+        debug_enabled = get_output_context().should_log("DEBUG")
+        debug_dir = None
+        intermediate_dir = kwargs.get('intermediate_dir')
+        if debug_enabled and intermediate_dir:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            debug_dir = pathlib.Path(intermediate_dir) / "transcription_alignment" / "granite_mfa_debug" / timestamp
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            log_debug(f"Debug mode enabled - saving debug files to {debug_dir}")
+        
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')
         if transcriber_model not in self.model_mapping:
             self.logger.warning(f"Unknown model {transcriber_model}, defaulting to granite-8b")
@@ -666,16 +730,53 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                     
                     # Use the start time from the previous chunk (which is being extended)
                     prev_chunk_start_time = chunks_with_timestamps[-1].get("chunk_start_time", chunk_start_time - (len(prev_chunk_wav) / sr))
+                    prev_chunk_id = chunks_with_timestamps[-1]["chunk_id"]
                     
                     # Transcribe merged chunk
                     chunk_text = self._transcribe_single_chunk(merged_wav, **kwargs)
                     
+                    # Save Granite output for debug (merged chunk)
+                    if debug_dir:
+                        self._save_debug_chunk(debug_dir, prev_chunk_id, "granite_output_merged", {
+                            "chunk_id": prev_chunk_id,
+                            "chunk_start_time": prev_chunk_start_time,
+                            "text": chunk_text,
+                            "word_count": len(chunk_text.split()),
+                            "note": f"Merged with short final chunk {chunk_num}"
+                        })
+                    
+                    # Save normalized transcript for MFA input (merged chunk)
+                    normalized_for_mfa = ' '.join(
+                        ''.join(c for c in word if c.isalnum() or c == "'")
+                        for word in chunk_text.split()
+                    )
+                    if debug_dir:
+                        self._save_debug_chunk(debug_dir, prev_chunk_id, "mfa_input_merged", {
+                            "chunk_id": prev_chunk_id,
+                            "chunk_start_time": prev_chunk_start_time,
+                            "original_text": chunk_text,
+                            "normalized_text": normalized_for_mfa,
+                            "original_word_count": len(chunk_text.split()),
+                            "normalized_word_count": len(normalized_for_mfa.split()),
+                            "note": f"Merged with short final chunk {chunk_num}"
+                        })
+                    
                     # Align merged chunk with absolute timestamps
                     timestamped_words = self._align_chunk_with_mfa(merged_wav, chunk_text, prev_chunk_start_time, role)
                     
+                    # Save MFA output for debug (merged chunk)
+                    if debug_dir:
+                        self._save_debug_chunk(debug_dir, prev_chunk_id, "mfa_output_merged", {
+                            "chunk_id": prev_chunk_id,
+                            "chunk_start_time": prev_chunk_start_time,
+                            "word_count": len(timestamped_words),
+                            "words": timestamped_words,
+                            "note": f"Merged with short final chunk {chunk_num}"
+                        })
+                    
                     # Update last chunk
                     chunks_with_timestamps[-1] = {
-                        "chunk_id": chunks_with_timestamps[-1]["chunk_id"],
+                        "chunk_id": prev_chunk_id,
                         "chunk_start_time": prev_chunk_start_time,
                         "words": timestamped_words
                     }
@@ -683,8 +784,41 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 # Normal chunk processing
                 chunk_text = self._transcribe_single_chunk(chunk_wav, **kwargs)
                 
+                # Save Granite output for debug
+                if debug_dir:
+                    self._save_debug_chunk(debug_dir, chunk_num, "granite_output", {
+                        "chunk_id": chunk_num,
+                        "chunk_start_time": chunk_start_time,
+                        "text": chunk_text,
+                        "word_count": len(chunk_text.split())
+                    })
+                
+                # Save normalized transcript for MFA input
+                normalized_for_mfa = ' '.join(
+                    ''.join(c for c in word if c.isalnum() or c == "'")
+                    for word in chunk_text.split()
+                )
+                if debug_dir:
+                    self._save_debug_chunk(debug_dir, chunk_num, "mfa_input", {
+                        "chunk_id": chunk_num,
+                        "chunk_start_time": chunk_start_time,
+                        "original_text": chunk_text,
+                        "normalized_text": normalized_for_mfa,
+                        "original_word_count": len(chunk_text.split()),
+                        "normalized_word_count": len(normalized_for_mfa.split())
+                    })
+                
                 # Align this chunk with absolute timestamps
                 timestamped_words = self._align_chunk_with_mfa(chunk_wav, chunk_text, chunk_start_time, role)
+                
+                # Save MFA output for debug
+                if debug_dir:
+                    self._save_debug_chunk(debug_dir, chunk_num, "mfa_output", {
+                        "chunk_id": chunk_num,
+                        "chunk_start_time": chunk_start_time,
+                        "word_count": len(timestamped_words),
+                        "words": timestamped_words
+                    })
                 
                 chunks_with_timestamps.append({
                     "chunk_id": chunk_num,

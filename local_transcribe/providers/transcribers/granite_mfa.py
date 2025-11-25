@@ -327,6 +327,11 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             speaker: Speaker identifier
         """
         log_progress(f"Aligning transcript with MFA (chunk starts at {chunk_start_time:.2f}s)")
+        
+        # Calculate chunk end time for potential timestamp interpolation
+        chunk_duration = len(chunk_wav) / 16000.0
+        chunk_end_time = chunk_start_time + chunk_duration
+        
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = pathlib.Path(temp_dir)
             audio_dir = temp_path / "audio"
@@ -386,7 +391,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 )
 
                 if textgrid_file.exists():
-                    return self._parse_textgrid_to_word_dicts(textgrid_file, chunk_transcript, chunk_start_time, speaker)
+                    return self._parse_textgrid_to_word_dicts(textgrid_file, chunk_transcript, chunk_start_time, chunk_end_time, speaker)
                 else:
                     # Fallback to simple distribution
                     return self._simple_alignment_to_word_dicts(chunk_wav, chunk_transcript, chunk_start_time, speaker)
@@ -395,13 +400,14 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 # Fallback to simple distribution
                 return self._simple_alignment_to_word_dicts(chunk_wav, chunk_transcript, chunk_start_time, speaker)
 
-    def _parse_textgrid_to_word_dicts(self, textgrid_path: pathlib.Path, original_transcript: str, chunk_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _parse_textgrid_to_word_dicts(self, textgrid_path: pathlib.Path, original_transcript: str, chunk_start_time: float = 0.0, chunk_end_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Parse MFA TextGrid and return list of word dicts with timestamps.
         
         Args:
             textgrid_path: Path to the TextGrid file
             original_transcript: Original transcript with punctuation/capitalization
             chunk_start_time: Absolute start time of this chunk in the full audio (seconds)
+            chunk_end_time: Absolute end time of this chunk in the full audio (seconds)
             speaker: Speaker identifier
         """
         word_dicts = []
@@ -490,57 +496,365 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             self.logger.warning(f"Failed to parse TextGrid: {e}")
             return self._simple_alignment_to_word_dicts(None, original_transcript, chunk_start_time, speaker)
 
-        # Replace <unk> tokens with words from original transcript
-        self._replace_unk_in_word_dicts(word_dicts, original_transcript)
+        # Replace MFA word text with Granite's original words
+        return self._replace_words_with_granite_text(word_dicts, original_transcript, chunk_start_time, chunk_end_time, speaker)
 
-        return word_dicts
-
-    def _replace_unk_in_word_dicts(self, word_dicts: List[Dict[str, Any]], original_transcript: str) -> None:
-        """Replace <unk> tokens in aligned word dicts with words from the original transcript using two-pointer alignment.
+    def _normalize_word_for_matching(self, word: str) -> str:
+        """Normalize a word for comparison during alignment.
         
         Args:
-            word_dicts: List of word dictionaries from MFA alignment (modified in place)
-            original_transcript: Original transcript from Granite with all words
+            word: The word to normalize
+            
+        Returns:
+            Lowercase word with only alphanumeric characters
         """
-        log_progress("Starting <unk> replacement")
+        return ''.join(c.lower() for c in word if c.isalnum())
+
+    def _word_similarity(self, word1: str, word2: str) -> float:
+        """Calculate similarity between two words for alignment purposes.
         
-        aligned_texts = [wd["text"] for wd in word_dicts]
-        original_words = original_transcript.split()
+        Args:
+            word1: First word
+            word2: Second word
+            
+        Returns:
+            Similarity score between 0.0 and 1.0
+        """
+        norm1 = self._normalize_word_for_matching(word1)
+        norm2 = self._normalize_word_for_matching(word2)
         
-        log_debug(f"Original transcript word count: {len(original_words)}")
-        log_debug(f"MFA aligned word count before replacement: {len(aligned_texts)}")
+        # Handle empty strings
+        if not norm1 or not norm2:
+            return 0.0
         
-        ptr = 0
-        for i, word_dict in enumerate(word_dicts):
-            if word_dict["text"] == "<unk>":
-                # Debug: show context
-                start_idx = max(0, i - 5)
-                end_idx = min(len(aligned_texts), i + 6)
-                aligned_context = aligned_texts[start_idx:end_idx]
+        # Exact match
+        if norm1 == norm2:
+            return 1.0
+        
+        # Prefix match (handles "we" matching "we'll" or "well")
+        if norm1.startswith(norm2) or norm2.startswith(norm1):
+            shorter = min(len(norm1), len(norm2))
+            longer = max(len(norm1), len(norm2))
+            return 0.7 + (0.2 * shorter / longer)
+        
+        # Character-level Levenshtein ratio
+        # Simple implementation for small words
+        len1, len2 = len(norm1), len(norm2)
+        if abs(len1 - len2) > max(len1, len2) // 2:
+            return 0.0
+        
+        # Compute Levenshtein distance
+        if len1 < len2:
+            norm1, norm2 = norm2, norm1
+            len1, len2 = len2, len1
+        
+        prev_row = list(range(len2 + 1))
+        for i, c1 in enumerate(norm1):
+            curr_row = [i + 1]
+            for j, c2 in enumerate(norm2):
+                insertions = prev_row[j + 1] + 1
+                deletions = curr_row[j] + 1
+                substitutions = prev_row[j] + (0 if c1 == c2 else 1)
+                curr_row.append(min(insertions, deletions, substitutions))
+            prev_row = curr_row
+        
+        distance = prev_row[-1]
+        max_len = max(len1, len2)
+        ratio = 1.0 - (distance / max_len)
+        
+        # Only return meaningful similarity for close matches
+        return ratio if ratio >= 0.6 else 0.0
+
+    def _align_word_sequences(self, granite_words: List[str], mfa_words: List[Dict[str, Any]]) -> List[tuple]:
+        """Align Granite words with MFA words using dynamic programming.
+        
+        Uses a similarity-aware alignment algorithm to find the best mapping
+        between the two sequences, handling insertions, deletions, and substitutions.
+        
+        Args:
+            granite_words: List of words from Granite transcript
+            mfa_words: List of word dicts from MFA alignment
+            
+        Returns:
+            List of tuples (granite_idx, mfa_idx) representing aligned pairs.
+            granite_idx is None if MFA has an extra word (to be merged).
+            mfa_idx is None if Granite has an extra word (needs interpolation).
+        """
+        n = len(granite_words)
+        m = len(mfa_words)
+        
+        mfa_texts = [wd["text"] for wd in mfa_words]
+        
+        # DP table: dp[i][j] = (score, backpointer)
+        # Score represents alignment quality (higher is better)
+        INF = float('-inf')
+        
+        # Initialize DP table
+        dp = [[0.0 for _ in range(m + 1)] for _ in range(n + 1)]
+        backptr = [[None for _ in range(m + 1)] for _ in range(n + 1)]
+        
+        # Gap penalties
+        GAP_PENALTY = -0.5
+        
+        # Initialize first row and column
+        for i in range(1, n + 1):
+            dp[i][0] = dp[i-1][0] + GAP_PENALTY
+            backptr[i][0] = (i-1, 0, 'granite_gap')
+        
+        for j in range(1, m + 1):
+            dp[0][j] = dp[0][j-1] + GAP_PENALTY
+            backptr[0][j] = (0, j-1, 'mfa_gap')
+        
+        # Fill DP table
+        for i in range(1, n + 1):
+            for j in range(1, m + 1):
+                granite_word = granite_words[i-1]
+                mfa_word = mfa_texts[j-1]
                 
-                orig_start = max(0, ptr - 5)
-                orig_end = min(len(original_words), ptr + 6)
-                original_context = original_words[orig_start:orig_end]
+                sim = self._word_similarity(granite_word, mfa_word)
                 
-                log_debug(f"Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
+                # Option 1: Match/substitute
+                match_score = dp[i-1][j-1] + sim
                 
-                if ptr < len(original_words):
-                    replacement = original_words[ptr]
-                    word_dict["text"] = replacement
-                    aligned_texts[i] = replacement  # Update local copy for debugging
-                    log_debug(f"Replaced with: '{replacement}'")
-                    ptr += 1
+                # Option 2: Gap in MFA (Granite has extra word)
+                granite_gap_score = dp[i-1][j] + GAP_PENALTY
+                
+                # Option 3: Gap in Granite (MFA has extra word - likely a split)
+                mfa_gap_score = dp[i][j-1] + GAP_PENALTY
+                
+                # Choose best option
+                if match_score >= granite_gap_score and match_score >= mfa_gap_score:
+                    dp[i][j] = match_score
+                    backptr[i][j] = (i-1, j-1, 'match')
+                elif granite_gap_score >= mfa_gap_score:
+                    dp[i][j] = granite_gap_score
+                    backptr[i][j] = (i-1, j, 'granite_gap')
                 else:
-                    log_debug("No more original words available, leaving as <unk>")
+                    dp[i][j] = mfa_gap_score
+                    backptr[i][j] = (i, j-1, 'mfa_gap')
+        
+        # Traceback to find alignment
+        alignment = []
+        i, j = n, m
+        
+        while i > 0 or j > 0:
+            if i == 0:
+                # Remaining MFA words have no Granite match
+                alignment.append((None, j-1))
+                j -= 1
+            elif j == 0:
+                # Remaining Granite words have no MFA match
+                alignment.append((i-1, None))
+                i -= 1
             else:
-                if ptr < len(original_words) and word_dict["text"].lower() == original_words[ptr].lower():
-                    log_debug(f"Matched '{word_dict['text']}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
-                    ptr += 1
-                else:
-                    log_debug(f"No match for '{word_dict['text']}' at ptr {ptr}, not advancing ptr")
+                _, _, move = backptr[i][j]
+                if move == 'match':
+                    alignment.append((i-1, j-1))
+                    i -= 1
+                    j -= 1
+                elif move == 'granite_gap':
+                    alignment.append((i-1, None))
+                    i -= 1
+                else:  # mfa_gap
+                    alignment.append((None, j-1))
+                    j -= 1
         
-        final_texts = [wd["text"] for wd in word_dicts]
-        log_debug(f"MFA aligned word count after replacement: {len(final_texts)}")
+        alignment.reverse()
+        return alignment
+
+    def _interpolate_timestamps(self, prev_end: float, next_start: float, num_words: int, 
+                                 words: List[str], speaker: Optional[str]) -> List[Dict[str, Any]]:
+        """Create word dicts with interpolated timestamps for words that MFA dropped.
+        
+        Args:
+            prev_end: End time of the previous aligned word
+            next_start: Start time of the next aligned word
+            num_words: Number of words to interpolate
+            words: The actual word texts
+            speaker: Speaker identifier
+            
+        Returns:
+            List of word dicts with interpolated timestamps
+        """
+        if num_words == 0:
+            return []
+        
+        duration = next_start - prev_end
+        word_duration = duration / num_words
+        
+        result = []
+        current_time = prev_end
+        
+        for word in words:
+            result.append({
+                "text": word,
+                "start": current_time,
+                "end": current_time + word_duration,
+                "speaker": speaker
+            })
+            current_time += word_duration
+        
+        return result
+
+    def _merge_mfa_timestamps(self, mfa_words: List[Dict[str, Any]], start_idx: int, end_idx: int) -> tuple:
+        """Get merged start/end times from a range of MFA words.
+        
+        Args:
+            mfa_words: List of MFA word dicts
+            start_idx: First index to include
+            end_idx: Last index to include (exclusive)
+            
+        Returns:
+            Tuple of (start_time, end_time)
+        """
+        if start_idx >= end_idx or start_idx >= len(mfa_words):
+            return (0.0, 0.0)
+        
+        start_time = mfa_words[start_idx]["start"]
+        end_time = mfa_words[min(end_idx - 1, len(mfa_words) - 1)]["end"]
+        
+        return (start_time, end_time)
+
+    def _replace_words_with_granite_text(self, word_dicts: List[Dict[str, Any]], original_transcript: str, 
+                                          chunk_start_time: float, chunk_end_time: float, 
+                                          speaker: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Replace MFA word text with Granite's original words, using MFA timestamps.
+        
+        This function handles three cases:
+        1. Word counts match: Direct positional replacement
+        2. MFA has fewer words: Use alignment + interpolation for gaps
+        3. MFA has more words: Use alignment + timestamp merging for splits
+        
+        Args:
+            word_dicts: List of word dictionaries from MFA alignment
+            original_transcript: Original transcript from Granite
+            chunk_start_time: Start time of the chunk (for gap interpolation at start)
+            chunk_end_time: End time of the chunk (for gap interpolation at end)
+            speaker: Speaker identifier
+            
+        Returns:
+            New list of word dicts with Granite text and MFA/interpolated timestamps
+        """
+        log_progress("Replacing MFA words with Granite text")
+        
+        granite_words = original_transcript.split()
+        mfa_count = len(word_dicts)
+        granite_count = len(granite_words)
+        
+        log_debug(f"Granite word count: {granite_count}, MFA word count: {mfa_count}")
+        
+        # Fast path: word counts match - direct positional replacement
+        if mfa_count == granite_count:
+            log_debug("Word counts match - using direct positional replacement")
+            result = []
+            for i, word_dict in enumerate(word_dicts):
+                result.append({
+                    "text": granite_words[i],
+                    "start": word_dict["start"],
+                    "end": word_dict["end"],
+                    "speaker": word_dict.get("speaker", speaker)
+                })
+            return result
+        
+        # Counts differ - need alignment
+        log_debug(f"Word counts differ ({granite_count} vs {mfa_count}) - using sequence alignment")
+        alignment = self._align_word_sequences(granite_words, word_dicts)
+        
+        log_debug(f"Alignment computed with {len(alignment)} entries")
+        
+        # Process alignment to build result
+        result = []
+        granite_idx = 0
+        pending_granite_words = []  # Words waiting for timestamps
+        last_end_time = chunk_start_time
+        
+        # Group alignment by Granite words
+        i = 0
+        while i < len(alignment):
+            g_idx, m_idx = alignment[i]
+            
+            if g_idx is not None and m_idx is not None:
+                # Matched pair - first handle any pending words
+                if pending_granite_words:
+                    current_start = word_dicts[m_idx]["start"]
+                    interpolated = self._interpolate_timestamps(
+                        last_end_time, current_start, 
+                        len(pending_granite_words), pending_granite_words, speaker
+                    )
+                    result.extend(interpolated)
+                    pending_granite_words = []
+                
+                # Check if next alignments are MFA gaps that should merge into this Granite word
+                mfa_start_idx = m_idx
+                mfa_end_idx = m_idx + 1
+                
+                j = i + 1
+                while j < len(alignment):
+                    next_g, next_m = alignment[j]
+                    if next_g is None and next_m is not None:
+                        # MFA extra word - merge it
+                        mfa_end_idx = next_m + 1
+                        j += 1
+                    else:
+                        break
+                
+                # Get merged timestamps
+                start_time, end_time = self._merge_mfa_timestamps(word_dicts, mfa_start_idx, mfa_end_idx)
+                
+                result.append({
+                    "text": granite_words[g_idx],
+                    "start": start_time,
+                    "end": end_time,
+                    "speaker": word_dicts[m_idx].get("speaker", speaker)
+                })
+                
+                last_end_time = end_time
+                i = j  # Skip merged MFA words
+                
+            elif g_idx is not None and m_idx is None:
+                # Granite word with no MFA match - queue for interpolation
+                pending_granite_words.append(granite_words[g_idx])
+                i += 1
+                
+            elif g_idx is None and m_idx is not None:
+                # MFA extra word with no Granite match at this position
+                # This shouldn't happen if alignment is correct, but handle gracefully
+                log_debug(f"Unexpected MFA extra word at position {m_idx}: '{word_dicts[m_idx]['text']}'")
+                i += 1
+                
+            else:
+                # Both None - shouldn't happen
+                i += 1
+        
+        # Handle any remaining pending words at the end
+        if pending_granite_words:
+            interpolated = self._interpolate_timestamps(
+                last_end_time, chunk_end_time,
+                len(pending_granite_words), pending_granite_words, speaker
+            )
+            result.extend(interpolated)
+        
+        # Validation
+        if len(result) != granite_count:
+            self.logger.warning(
+                f"Word count mismatch after alignment: expected {granite_count}, got {len(result)}. "
+                "Falling back to simple distribution."
+            )
+            # Ultimate fallback - simple distribution with Granite words
+            return self._simple_alignment_to_word_dicts(None, original_transcript, chunk_start_time, speaker)
+        
+        # Verify no <unk> tokens remain
+        unk_count = sum(1 for wd in result if wd["text"] == "<unk>")
+        if unk_count > 0:
+            self.logger.warning(f"Found {unk_count} remaining <unk> tokens after replacement")
+        
+        # Verify timestamps are monotonic
+        for i in range(1, len(result)):
+            if result[i]["start"] < result[i-1]["end"]:
+                log_debug(f"Non-monotonic timestamps at position {i}: {result[i-1]['end']:.3f} > {result[i]['start']:.3f}")
+        
+        log_debug(f"Replacement complete: {len(result)} words")
+        return result
 
     def _simple_alignment_to_word_dicts(self, chunk_wav, transcript: str, chunk_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fallback: simple even distribution of timestamps.

@@ -662,6 +662,8 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             debug_dir = pathlib.Path(intermediate_dir) / "transcription_alignment" / "granite_mfa_debug" / timestamp
             debug_dir.mkdir(parents=True, exist_ok=True)
             log_debug(f"Debug mode enabled - saving debug files to {debug_dir}")
+        else:
+            log_debug(f"Debug not enabled: debug_enabled={debug_enabled}, intermediate_dir={intermediate_dir}")
         
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')
         if transcriber_model not in self.model_mapping:

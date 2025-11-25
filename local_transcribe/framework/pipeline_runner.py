@@ -20,6 +20,7 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
     
     # Add role to kwargs so it's passed to providers
     kwargs['role'] = role
+    kwargs['intermediate_dir'] = intermediate_dir
     
     # Get device from global config to pass explicitly
     device = get_system_capability()

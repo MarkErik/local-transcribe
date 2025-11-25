@@ -20,6 +20,7 @@ import subprocess
 import json
 from datetime import datetime
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+from transformers import LogitsProcessorList, RepetitionPenaltyLogitsProcessor
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
@@ -251,17 +252,25 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 return_tensors="pt",
             ).to(self.device)
 
+            # The recommended repetition penalty is 3 as long as input IDs are excluded.
+            # Otherwise, you should use a repetition penalty of 1 to keep results stable.
+            repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(
+                penalty=3.0,
+                prompt_ignore_length=model_inputs["input_ids"].shape[-1],
+            )
+
             with torch.no_grad():
                 model_outputs = self.model.generate(
                     **model_inputs,
-                    max_new_tokens=400,
+                    max_new_tokens=256,
                     num_beams=4,
                     do_sample=False,
                     min_length=1,
                     top_p=1.0,
-                    repetition_penalty=3.0,
                     length_penalty=1.0,
                     temperature=1.0,
+                    early_stopping = True,
+                    logits_processor=[repetition_penalty_processor],
                     bos_token_id=self.tokenizer.bos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     pad_token_id=self.tokenizer.pad_token_id,

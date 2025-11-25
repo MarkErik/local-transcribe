@@ -98,7 +98,6 @@ def de_identify_word_segments(
             'overlap_size': overlap_size,
             'min_final_chunk': min_final_chunk,
             'llm_url': llm_url,
-            'max_retries': kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
             'llm_timeout': kwargs.get('llm_timeout', DE_IDENTIFY_DEFAULTS['llm_timeout']),
             'temperature': kwargs.get('temperature', DE_IDENTIFY_DEFAULTS['temperature'])
         }
@@ -141,7 +140,6 @@ def de_identify_word_segments(
                 debug_response,
                 validation_result,
                 debug_dir,
-                attempt=kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
                 response_time_ms=response_time_ms,
                 mode='output'
             )

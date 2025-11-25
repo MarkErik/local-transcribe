@@ -23,7 +23,7 @@ DE_IDENTIFY_DEFAULTS = {
     'overlap_size': 75,           # Words of overlap between chunks
     'min_final_chunk': 200,       # Min words for final chunk
     'llm_timeout': 300,           # Seconds
-    'temperature': 0.0,           # Temperature for LLM (0.0 = deterministic)
+    'temperature': 1.0,           # Temperature for LLM (0.0 = deterministic)
     'parse_harmony': True,        # Parse Harmony format responses (gpt-oss models)
 }
 

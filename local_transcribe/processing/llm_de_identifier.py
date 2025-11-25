@@ -5,6 +5,7 @@ Replaces personal names with [REDACTED] token while preserving place names.
 """
 
 import json
+import re
 import requests
 import time
 from typing import List, Dict, Any, Optional, Tuple
@@ -22,9 +23,8 @@ DE_IDENTIFY_DEFAULTS = {
     'overlap_size': 75,           # Words of overlap between chunks
     'min_final_chunk': 200,       # Min words for final chunk
     'llm_timeout': 300,           # Seconds
-    'max_retries': 1,             # Retry attempts
-    'retry_backoff': 1.5,         # Exponential backoff multiplier
     'temperature': 0.0,           # Temperature for LLM (0.0 = deterministic)
+    'parse_harmony': True,        # Parse Harmony format responses (gpt-oss models)
 }
 
 
@@ -260,9 +260,9 @@ def de_identify_text(
             'overlap_size': overlap_size,
             'min_final_chunk': min_final_chunk,
             'llm_url': llm_url,
-            'max_retries': kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
             'llm_timeout': kwargs.get('llm_timeout', DE_IDENTIFY_DEFAULTS['llm_timeout']),
-            'temperature': kwargs.get('temperature', DE_IDENTIFY_DEFAULTS['temperature'])
+            'temperature': kwargs.get('temperature', DE_IDENTIFY_DEFAULTS['temperature']),
+            'parse_harmony': kwargs.get('parse_harmony', DE_IDENTIFY_DEFAULTS['parse_harmony'])
         }
     }
     
@@ -302,7 +302,6 @@ def de_identify_text(
                 debug_response,
                 validation_result,
                 debug_dir,
-                attempt=kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
                 response_time_ms=response_time_ms,
                 mode='output'
             )
@@ -459,6 +458,43 @@ def _chunk_text_for_processing(
     return chunks
 
 
+def _parse_harmony_response(raw_response: str) -> str:
+    """
+    Parse a Harmony-formatted response to extract the final channel content.
+    
+    Harmony format (used by gpt-oss models) uses special tokens:
+    - <|channel|>analysis<|message|>... - Chain of thought (internal)
+    - <|channel|>final<|message|>... - Final user-facing response
+    - <|end|> / <|return|> - End markers
+    
+    Returns:
+        The content from the 'final' channel, or the raw response if no Harmony format detected.
+    """
+    # Pattern to extract channel and content
+    pattern = r'<\|channel\|>(\w+)<\|message\|>(.*?)(?:<\|end\|>|<\|return\|>|<\|start\|>|$)'
+    
+    matches = re.findall(pattern, raw_response, re.DOTALL)
+    
+    # Look for 'final' channel content
+    for channel, content in matches:
+        if channel == 'final':
+            return content.strip()
+    
+    # If no Harmony format detected, check if there are any harmony tokens
+    if '<|' not in raw_response:
+        return raw_response.strip()
+    
+    # Try a simpler extraction - get content after last <|message|>
+    last_message = raw_response.split('<|message|>')
+    if len(last_message) > 1:
+        content = last_message[-1]
+        # Remove trailing tokens
+        content = re.sub(r'<\|[^|]+\|>.*$', '', content, flags=re.DOTALL)
+        return content.strip()
+    
+    return raw_response.strip()
+
+
 def _process_chunk_with_llm(
     text: str,
     llm_url: str,
@@ -479,8 +515,7 @@ def _process_chunk_with_llm(
     
     # Extract configuration
     timeout = kwargs.get('llm_timeout', DE_IDENTIFY_DEFAULTS['llm_timeout'])
-    max_retries = kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries'])
-    retry_backoff = kwargs.get('retry_backoff', DE_IDENTIFY_DEFAULTS['retry_backoff'])
+    parse_harmony = kwargs.get('parse_harmony', DE_IDENTIFY_DEFAULTS['parse_harmony'])
     
     system_message = (
         "You are an SPECIALIZED EDITOR with a single task - identify and replace ONLY people's names with the token [REDACTED].\n"
@@ -519,54 +554,43 @@ def _process_chunk_with_llm(
         "temperature": kwargs.get('temperature', DE_IDENTIFY_DEFAULTS['temperature']),
         "stream": False
     }
-      
-    # Retry logic
-    for attempt in range(max_retries):
-        try:
-            start_time = time.time()
-            response = requests.post(
-                f"{llm_url}/chat/completions",
-                json=payload,
-                timeout=timeout
-            )
-            response.raise_for_status()
-            response_time_ms = (time.time() - start_time) * 1000
-            
-            result = response.json()
-            
-            # Extract processed text
-            processed_text = result["choices"][0]["message"]["content"].strip()
-                   
-            # Validation: check for reasonable output
-            validation_result = _validate_llm_output(text, processed_text)
-            if validation_result['passed']:
-                return processed_text, response_time_ms, validation_result, processed_text
-            else:
-                log_progress(f"Warning: LLM output validation failed on attempt {attempt+1}")
-                if attempt == max_retries - 1:
-                    log_progress("Falling back to original text")
-                    # Return original text as fallback, but include raw LLM response for debugging
-                    return text, response_time_ms, validation_result, processed_text
-                    
-        except requests.RequestException as e:
-            log_progress(f"LLM request failed (attempt {attempt+1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                sleep_time = retry_backoff ** attempt
-                time.sleep(sleep_time)
-            else:
-                log_progress("All retry attempts failed, keeping original text")
-                return text, None, {'passed': False, 'reason': f'request failed: {e}', 'details': {}}, None
-                
-        except (KeyError, json.JSONDecodeError) as e:
-            log_progress(f"LLM response parsing error (attempt {attempt+1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                sleep_time = retry_backoff ** attempt
-                time.sleep(sleep_time)
-            else:
-                log_progress("All retry attempts failed, keeping original text")
-                return text, None, {'passed': False, 'reason': f'parsing error: {e}', 'details': {}}, None
     
-    return text, None, {'passed': False, 'reason': 'max retries exceeded', 'details': {}}, None
+    try:
+        start_time = time.time()
+        response = requests.post(
+            f"{llm_url}/chat/completions",
+            json=payload,
+            timeout=timeout
+        )
+        response.raise_for_status()
+        response_time_ms = (time.time() - start_time) * 1000
+        
+        result = response.json()
+        
+        # Extract raw response
+        raw_response = result["choices"][0]["message"]["content"]
+        
+        # Parse Harmony format if enabled
+        if parse_harmony:
+            processed_text = _parse_harmony_response(raw_response)
+        else:
+            processed_text = raw_response.strip()
+        
+        # Validation: check for reasonable output
+        validation_result = _validate_llm_output(text, processed_text)
+        if validation_result['passed']:
+            return processed_text, response_time_ms, validation_result, raw_response
+        else:
+            log_progress("Warning: LLM output validation failed, falling back to original text")
+            return text, response_time_ms, validation_result, raw_response
+                
+    except requests.RequestException as e:
+        log_progress(f"LLM request failed: {e}")
+        return text, None, {'passed': False, 'reason': f'request failed: {e}', 'details': {}}, None
+            
+    except (KeyError, json.JSONDecodeError) as e:
+        log_progress(f"LLM response parsing error: {e}")
+        return text, None, {'passed': False, 'reason': f'parsing error: {e}', 'details': {}}, None
 
 def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
     """
@@ -781,7 +805,6 @@ def _save_debug_files(
     llm_response: Optional[str],
     validation_result: Optional[Dict],
     debug_dir: Path,
-    attempt: int = 1,
     response_time_ms: Optional[float] = None,
     mode: str = 'input'
 ) -> None:
@@ -794,7 +817,6 @@ def _save_debug_files(
         llm_response: LLM response text (for output mode)
         validation_result: Dict with validation info (for output mode)
         debug_dir: Directory to save debug files
-        attempt: Attempt number for retries
         response_time_ms: Response time in milliseconds
         mode: 'input' or 'output'
     """
@@ -862,7 +884,6 @@ def _save_debug_files(
         # Save output JSON
         json_data = {
             'chunk_number': chunk_idx,
-            'attempt': attempt,
             'response_time_ms': response_time_ms,
             'input_word_count': len(chunk_data['text'].split()),
             'output_word_count': len(llm_response.split()),
@@ -883,7 +904,6 @@ def _save_debug_files(
             f.write("=" * 60 + "\n")
             f.write(f"CHUNK {chunk_idx} - OUTPUT FROM LLM\n")
             f.write("=" * 60 + "\n")
-            f.write(f"Attempt: {attempt}\n")
             if response_time_ms:
                 f.write(f"Response time: {response_time_ms/1000:.2f}s\n")
             

@@ -24,6 +24,7 @@ DE_IDENTIFY_DEFAULTS = {
     'llm_timeout': 300,           # Seconds
     'max_retries': 1,             # Retry attempts
     'retry_backoff': 1.5,         # Exponential backoff multiplier
+    'temperature': 0.0,           # Temperature for LLM (0.0 = deterministic)
 }
 
 
@@ -98,7 +99,8 @@ def de_identify_word_segments(
             'min_final_chunk': min_final_chunk,
             'llm_url': llm_url,
             'max_retries': kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
-            'llm_timeout': kwargs.get('llm_timeout', DE_IDENTIFY_DEFAULTS['llm_timeout'])
+            'llm_timeout': kwargs.get('llm_timeout', DE_IDENTIFY_DEFAULTS['llm_timeout']),
+            'temperature': kwargs.get('temperature', DE_IDENTIFY_DEFAULTS['temperature'])
         }
     }
     
@@ -259,7 +261,8 @@ def de_identify_text(
             'min_final_chunk': min_final_chunk,
             'llm_url': llm_url,
             'max_retries': kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries']),
-            'llm_timeout': kwargs.get('llm_timeout', DE_IDENTIFY_DEFAULTS['llm_timeout'])
+            'llm_timeout': kwargs.get('llm_timeout', DE_IDENTIFY_DEFAULTS['llm_timeout']),
+            'temperature': kwargs.get('temperature', DE_IDENTIFY_DEFAULTS['temperature'])
         }
     }
     
@@ -504,7 +507,7 @@ def _process_chunk_with_llm(
             {"role": "system", "content": system_message},
             {"role": "user", "content": text}
         ],
-        "temperature": 0.5,
+        "temperature": kwargs.get('temperature', DE_IDENTIFY_DEFAULTS['temperature']),
         "stream": False
     }
       

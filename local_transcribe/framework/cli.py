@@ -299,12 +299,12 @@ def interactive_prompt(args, api):
 
     # De-identification prompt (if not already set via CLI flag)
     if not args.de_identify:
-        response = input("\nWould you like to de-identify the transcript (replace people's names with [REDACTED])? [Y/n]: ").strip().lower()
+        response = input("\nWould you like to de-identify the transcript (replace people's names with [REDACTED])? [Default: Y/n]: ").strip().lower()
         args.de_identify = response != 'n'  # Default to Yes
         if args.de_identify:
-            print("✓ De-identification enabled [Default]")
+            print("✓ De-identification enabled")
         else:
-            print("✓ De-identification disabled")
+            print("De-identification disabled")
     else:
         print("✓ De-identification enabled (set via CLI flag)")
 

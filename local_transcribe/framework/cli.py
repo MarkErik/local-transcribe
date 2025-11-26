@@ -20,6 +20,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("-n", "--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization) [Default: 2]")
     p.add_argument("-x", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")
     p.add_argument("-d", "--de-identify", action="store_true", help="Enable de-identification to replace people's names with [REDACTED] [Default: prompt in interactive mode]")
+    p.add_argument("--de-identify-second-pass", action="store_true", help="Enable second-pass de-identification using names discovered across all speakers [Default: prompt in interactive mode if de-identify enabled]")
 
     p.add_argument("--transcriber-provider", help="Transcriber provider to use [Default: auto-selected]")
     p.add_argument("--transcriber-model", help="Transcriber model to use (if provider supports multiple models) [Default: provider-specific]")
@@ -307,6 +308,17 @@ def interactive_prompt(args, api):
             print("De-identification disabled")
     else:
         print("✓ De-identification enabled (set via CLI flag)")
+    
+    # Second-pass de-identification prompt (only if de-identify is enabled)
+    if args.de_identify and not args.de_identify_second_pass:
+        response = input("\nEnable second-pass de-identification? (uses names found across all speakers to catch missed instances) [Default: Y/n]: ").strip().lower()
+        args.de_identify_second_pass = response != 'n'  # Default to Yes
+        if args.de_identify_second_pass:
+            print("✓ Second-pass de-identification enabled")
+        else:
+            print("Second-pass de-identification disabled")
+    elif args.de_identify and args.de_identify_second_pass:
+        print("✓ Second-pass de-identification enabled (set via CLI flag)")
 
     # Determine mode based on number of audio files
     if hasattr(args, 'audio_files') and args.audio_files:

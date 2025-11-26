@@ -8,13 +8,25 @@ import json
 import re
 import requests
 import time
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Set, Union
 from pathlib import Path
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from local_transcribe.framework.plugin_interfaces import WordSegment
 from local_transcribe.lib.program_logger import log_progress, log_status, log_debug
+
+
+@dataclass
+class DeIdentificationResult:
+    """Result from first-pass de-identification, includes discovered names for second pass."""
+    segments: List[WordSegment]
+    replacements: List[Dict]
+    discovered_names: Set[str] = field(default_factory=set)
+    
+    def get_names_list(self) -> List[str]:
+        """Return sorted list of discovered names."""
+        return sorted(self.discovered_names)
 
 
 # Configuration defaults
@@ -33,8 +45,9 @@ def de_identify_word_segments(
     intermediate_dir: Optional[Path] = None,
     llm_url: str = "http://0.0.0.0:8080",
     speaker_name: Optional[str] = None,
+    return_result_object: bool = False,
     **kwargs
-) -> List[WordSegment]:
+) -> Union[List[WordSegment], DeIdentificationResult]:
     """
     De-identify word segments by replacing people's names with [REDACTED].
     
@@ -43,12 +56,17 @@ def de_identify_word_segments(
         intermediate_dir: Path to save audit logs
         llm_url: URL of LLM server
         speaker_name: Optional speaker name for per-speaker audit logs
+        return_result_object: If True, return DeIdentificationResult with discovered names
+                              If False (default), return just the segments for backwards compatibility
         **kwargs: Additional configuration options
         
     Returns:
-        List[WordSegment] with modified text fields (names replaced with [REDACTED])
+        If return_result_object=False: List[WordSegment] with modified text fields
+        If return_result_object=True: DeIdentificationResult with segments, replacements, and discovered names
     """
     if not segments:
+        if return_result_object:
+            return DeIdentificationResult(segments=segments, replacements=[], discovered_names=set())
         return segments
     
     log_progress(f"De-identifying {len(segments)} word segments")
@@ -170,12 +188,19 @@ def de_identify_word_segments(
     # Update session totals
     session_data['total_replacements'] = len(all_replacements)
     
+    # Extract discovered names from replacements
+    discovered_names = set()
+    for rep in all_replacements:
+        original = rep.get('original', '')
+        if original and original != '[REDACTED]' and original.strip():
+            discovered_names.add(original.strip())
+    
     # Save session summary for debug
     if debug_dir:
         _save_session_summary(debug_dir, session_data, speaker_name)
     
-    # Create audit log
-    if intermediate_dir:
+    # Create audit log (only if not using second pass - second pass creates combined log)
+    if intermediate_dir and not kwargs.get('skip_audit_log', False):
         _create_audit_log(
             all_replacements,
             intermediate_dir,
@@ -185,7 +210,14 @@ def de_identify_word_segments(
         )
     
     log_progress(f"De-identification complete: {len(all_replacements)} names replaced with [REDACTED]")
+    log_progress(f"Discovered {len(discovered_names)} unique names: {', '.join(sorted(discovered_names)) if discovered_names else 'none'}")
     
+    if return_result_object:
+        return DeIdentificationResult(
+            segments=modified_segments,
+            replacements=all_replacements,
+            discovered_names=discovered_names
+        )
     return modified_segments
 
 

@@ -1,0 +1,442 @@
+# Proposal 2: Hierarchical Turn Structure with Interjections
+
+## Overview
+
+This proposal introduces a fundamental rethinking of conversation transcription output. Instead of a flat list of sequential turns, we implement a **hierarchical structure** that models natural conversation dynamics, including:
+
+- **Primary turns:** Extended speaking segments (the "floor holder")
+- **Interjections:** Brief utterances that don't interrupt the flow
+- **Overlaps:** Simultaneous speech segments
+
+This approach better represents real conversational patterns, especially in interviews, discussions, and multi-party conversations where speakers frequently interject brief acknowledgments, questions, or reactions.
+
+## Core Concept
+
+Traditional turn-based transcription treats every speaker change as a new turn, leading to fragmented output:
+
+```json
+[
+  {"speaker": "Participant", "text": "i mean basically i'm just very"},
+  {"speaker": "Interviewer", "text": "yeah"},
+  {"speaker": "Participant", "text": "passionate about like online spaces..."}
+]
+```
+
+The hierarchical approach recognizes that "yeah" is likely an acknowledgment rather than a full turn, and structures it accordingly:
+
+```json
+{
+  "primary_speaker": "Participant",
+  "start": 15.17,
+  "end": 31.32,
+  "text": "i mean basically i'm just very passionate about like online spaces...",
+  "interjections": [
+    {
+      "speaker": "Interviewer",
+      "start": 18.5,
+      "end": 18.57,
+      "text": "yeah",
+      "type": "acknowledgment"
+    }
+  ]
+}
+```
+
+## Data Structure Specification
+
+### Core Classes
+
+```python
+@dataclass
+class InterjectionSegment:
+    """Represents a brief utterance that doesn't claim the conversational floor"""
+    speaker: str
+    start: float
+    end: float
+    text: str
+    confidence: float  # 0-1, how likely this is truly an interjection
+    interjection_type: str  # "acknowledgment", "question", "reaction", "overlap"
+    interrupt_level: str  # "low", "medium", "high"
+
+@dataclass
+class ConversationTurn:
+    """Represents a primary speaking turn with optional interjections"""
+    turn_id: int
+    primary_speaker: str
+    start: float
+    end: float
+    text: str  # Full text including context around interjections
+    words: List[WordSegment]  # All words in turn
+
+    # Hierarchical elements
+    interjections: List[InterjectionSegment]
+    flow_continuity: float  # 0-1, how uninterrupted this turn is
+    turn_type: str  # "monologue", "dialog_exchange", "overlap"
+
+    # Metadata
+    word_count: int
+    duration: float
+    speaking_rate: float  # words per minute
+
+@dataclass
+class EnrichedTranscript:
+    """Complete transcript with hierarchical structure"""
+    turns: List[ConversationTurn]
+    metadata: dict
+    speaker_statistics: dict
+    conversation_metrics: dict
+```
+
+## Interjection Detection Algorithm
+
+### Phase 1: Rule-Based Filtering
+
+Identify potential interjections using objective criteria:
+
+```python
+def is_potential_interjection(word_segment: WordSegment, context: List[WordSegment]) -> bool:
+    """
+    Determine if a word segment is likely an interjection based on:
+    - Duration threshold (< 2 seconds)
+    - Word count threshold (< 5 words)
+    - Timing overlap with other speaker
+    - Common interjection patterns
+    """
+
+    # Duration check
+    duration = word_segment.end - word_segment.start
+    if duration >= 2.0:
+        return False
+
+    # Word count check (group consecutive words from same speaker)
+    consecutive_words = get_consecutive_words(word_segment, context)
+    if len(consecutive_words) >= 5:
+        return False
+
+    # Check for common interjection patterns
+    text = " ".join(w.text for w in consecutive_words).lower()
+    interjection_patterns = {
+        "acknowledgment": ["yeah", "uh-huh", "mm-hmm", "right", "okay", "sure"],
+        "question": ["what", "why", "how", "really", "oh"],
+        "reaction": ["wow", "oh", "ah", "hmm"]
+    }
+
+    for category, patterns in interjection_patterns.items():
+        if any(pattern in text for pattern in patterns):
+            return True
+
+    return False
+```
+
+### Phase 2: LLM Classification
+
+For ambiguous cases, use LLM to classify interjections:
+
+```
+PROMPT: "Analyze this utterance in conversation context:
+
+Context before: '[previous 3 turns]'
+Target utterance: '[speaker] at [time]: "[text]"'
+Context after: '[next 3 turns]'
+
+Is this utterance:
+1. A full conversational turn that claims the floor?
+2. An interjection/acknowledgment that doesn't interrupt the flow?
+3. An overlapping interruption?
+
+Consider:
+- Length and complexity
+- Position relative to other speakers
+- Semantic relationship to surrounding speech
+- Typical conversational patterns
+
+Respond with: classification, confidence (0-1), and reasoning.
+```
+
+### Phase 3: Contextual Integration
+
+Attach interjections to appropriate primary turns:
+
+```python
+def attach_interjections_to_turns(turns: List[ConversationTurn], interjections: List[InterjectionSegment]) -> List[ConversationTurn]:
+    """
+    Associate interjections with the most appropriate primary turn based on:
+    - Temporal overlap
+    - Semantic relevance
+    - Speaker relationships
+    """
+
+    for interjection in interjections:
+        # Find overlapping or adjacent turns
+        candidates = find_overlapping_turns(interjection, turns)
+
+        if candidates:
+            # Score each candidate
+            best_turn = max(candidates, key=lambda t: score_interjection_fit(interjection, t))
+            best_turn.interjections.append(interjection)
+        else:
+            # Create standalone turn for interjection
+            standalone_turn = ConversationTurn.from_interjection(interjection)
+            turns.append(standalone_turn)
+
+    return turns
+```
+
+## Turn Reconstruction Algorithm
+
+### Primary Turn Building
+
+1. **Group consecutive words by speaker**
+2. **Identify natural boundaries:**
+   - Significant pauses (> 2 seconds)
+   - Topic shifts (LLM analysis)
+   - Speaker changes (unless interjection)
+3. **Merge turns separated only by interjections**
+
+```python
+def build_primary_turns(word_segments: List[WordSegment]) -> List[ConversationTurn]:
+    """
+    Build primary turns by grouping consecutive words from same speaker,
+    allowing for brief interjections to be embedded rather than creating separate turns.
+    """
+
+    turns = []
+    current_words = []
+    current_speaker = None
+
+    for word in word_segments:
+        if word.speaker != current_speaker:
+            # Speaker change - check if this is an interjection
+            if current_words and is_potential_interjection(word, word_segments):
+                # Don't create new turn, handle as interjection later
+                continue
+            else:
+                # Create new primary turn
+                if current_words:
+                    turns.append(create_turn_from_words(current_words, current_speaker))
+                current_words = [word]
+                current_speaker = word.speaker
+        else:
+            current_words.append(word)
+
+    # Handle final turn
+    if current_words:
+        turns.append(create_turn_from_words(current_words, current_speaker))
+
+    return turns
+```
+
+### Flow Continuity Analysis
+
+Calculate how uninterrupted each turn is:
+
+```python
+def calculate_flow_continuity(turn: ConversationTurn, all_words: List[WordSegment]) -> float:
+    """
+    Calculate flow continuity (0-1) based on:
+    - Ratio of primary speaker words to total words in time range
+    - Number and duration of interjections
+    - Speaking rate consistency
+    """
+
+    turn_duration = turn.end - turn.start
+    interjection_duration = sum(ij.end - ij.start for ij in turn.interjections)
+
+    # Primary speaker time vs total time
+    primary_ratio = (turn_duration - interjection_duration) / turn_duration
+
+    # Interjection frequency penalty
+    interjection_penalty = min(len(turn.interjections) * 0.1, 0.5)
+
+    return primary_ratio * (1 - interjection_penalty)
+```
+
+## Output Formats
+
+### 1. Annotated Markdown (Default)
+
+```markdown
+### Turn 3 (15.17s - 31.32s)
+**Participant:** i mean basically i'm just very passionate about like
+online spaces as like a way to make friends i think it's pretty looked
+down upon to like make friends online at the moment even though it is
+like friends online at the moment even though it has like very much affected
+
+  → *[18.5s] Interviewer acknowledges: "yeah"*
+
+---
+
+### Turn 4 (31.65s - 45.80s)
+**Participant:** my life positively so i don't know i saw this study...
+
+  → *[31.24s] Interviewer questions: "and where"*
+```
+
+### 2. Structured JSON
+
+```json
+{
+  "turns": [
+    {
+      "turn_id": 3,
+      "primary_speaker": "Participant",
+      "start": 15.17,
+      "end": 31.32,
+      "text": "i mean basically i'm just very passionate...",
+      "flow_continuity": 0.85,
+      "turn_type": "continuous_with_acknowledgments",
+      "interjections": [
+        {
+          "speaker": "Interviewer",
+          "start": 18.5,
+          "end": 18.57,
+          "text": "yeah",
+          "type": "acknowledgment",
+          "interrupt_level": "low",
+          "confidence": 0.92
+        }
+      ],
+      "word_count": 52,
+      "duration": 16.15,
+      "speaking_rate": 193.2
+    }
+  ],
+  "metadata": {
+    "total_turns": 15,
+    "total_interjections": 8,
+    "conversation_duration": 185.5,
+    "speakers": ["Participant", "Interviewer"]
+  }
+}
+```
+
+### 3. Interactive HTML Timeline
+
+```html
+<div class="conversation-timeline">
+  <div class="turn primary" style="left: 8.1%; width: 15.3%;">
+    <div class="speaker">Participant</div>
+    <div class="text">i mean basically i'm just very passionate...</div>
+    <div class="interjection-marker" style="left: 20%;">yeah</div>
+  </div>
+</div>
+```
+
+### 4. Dialogue Script Format
+
+```
+PARTICIPANT: (15.17s) i mean basically i'm just very passionate about
+             like online spaces as like a way to make friends i think
+             it's pretty looked down upon to like make friends online
+             at the moment even though it is like friends online at
+             the moment even though it has like very much affected
+
+             [INTERVIEWER: (18.5s) yeah]
+
+             (continues) my life positively so i don't know i saw
+             this study and i was like that's really cool...
+```
+
+## Implementation Roadmap
+
+### Phase 1: Core Infrastructure (Week 1-2)
+- Define data structures
+- Implement basic interjection detection rules
+- Create turn reconstruction algorithm
+- Add JSON output format
+
+### Phase 2: LLM Integration (Week 3)
+- Add LLM-based interjection classification
+- Implement contextual analysis
+- Tune confidence thresholds
+
+### Phase 3: Output Formats (Week 4)
+- Implement markdown output
+- Create HTML timeline visualization
+- Add dialogue script format
+- CLI options for format selection
+
+### Phase 4: Analysis & Metrics (Week 5)
+- Add conversation flow metrics
+- Implement speaker statistics
+- Create validation tools
+- Performance optimization
+
+### Phase 5: Integration & Testing (Week 6)
+- Integrate with existing pipeline
+- Comprehensive testing with various conversation types
+- Documentation and examples
+
+## Benefits
+
+### For Researchers
+- **Better conversation analysis:** Captures natural flow and interruptions
+- **Interjection patterns:** Study how speakers acknowledge, question, or react
+- **Flow metrics:** Quantify conversational dynamics
+- **Rich metadata:** Speaking rates, continuity scores, turn types
+
+### For Users
+- **More readable transcripts:** Less fragmented output
+- **Context preservation:** Interjections shown in context
+- **Multiple formats:** Choose output style for different use cases
+- **Backward compatibility:** Can export as flat turns if needed
+
+### For Developers
+- **Extensible structure:** Easy to add new interjection types
+- **Modular design:** Separate detection, classification, and output
+- **Configurable thresholds:** Tune for different conversation styles
+- **Rich API:** Programmatic access to hierarchical structure
+
+## Challenges & Mitigations
+
+### Challenge 1: Subjective Classification
+**Issue:** What constitutes an interjection vs. a full turn?
+**Mitigation:**
+- Multiple classification methods (rules + LLM)
+- Confidence scores for uncertain cases
+- User-configurable thresholds
+- Fallback to flat structure
+
+### Challenge 2: Performance Impact
+**Issue:** LLM calls for every potential interjection
+**Mitigation:**
+- Batch processing for multiple interjections
+- Caching of LLM responses
+- Rule-based filtering before LLM
+- Optional simplified mode
+
+### Challenge 3: Output Format Compatibility
+**Issue:** Existing tools expect flat turn structure
+**Mitigation:**
+- Export functions to convert hierarchical → flat
+- Multiple output formats
+- Clear migration path
+- Backward compatibility mode
+
+### Challenge 4: Cultural/Style Variations
+**Issue:** Interjection patterns vary by culture/language
+**Mitigation:**
+- Configurable pattern libraries
+- Language-specific rules
+- Training data from diverse sources
+- User feedback integration
+
+## Evaluation Metrics
+
+### Accuracy Metrics
+- **Interjection detection precision/recall**
+- **Turn boundary accuracy** (compared to human annotation)
+- **Word coverage** (all source words accounted for)
+- **Speaker attribution accuracy**
+
+### User Experience Metrics
+- **Transcript readability** (survey-based)
+- **Analysis utility** (researcher feedback)
+- **Processing time** (performance benchmarks)
+- **Format adoption** (usage statistics)
+
+## Conclusion
+
+This hierarchical approach represents a significant advancement in conversation transcription, moving beyond simple sequential turns to capture the rich dynamics of natural speech. By recognizing interjections and maintaining conversational flow, it provides more accurate and useful transcripts for research, analysis, and readability.
+
+The modular design allows for gradual implementation and testing, with clear fallback options and multiple output formats to ensure broad compatibility and adoption.

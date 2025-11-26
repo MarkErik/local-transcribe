@@ -1,14 +1,15 @@
-# Proposal 2: Hierarchical Turn Structure with Interjections
+# Proposal: Interview Transcripts - Hierarchical Turn Structure with Interjections
 
 ## Overview
 
-This proposal introduces a fundamental rethinking of conversation transcription output. Instead of a flat list of sequential turns, we implement a **hierarchical structure** that models natural conversation dynamics, including:
+This proposal introduces a fundamental rethinking of interview conversation transcription output. Instead of a flat list of sequential turns, we implement a **hierarchical structure** that models natural conversation dynamics, including:
 
 - **Primary turns:** Extended speaking segments (the "floor holder")
 - **Interjections:** Brief utterances that don't interrupt the flow
 - **Overlaps:** Simultaneous speech segments
 
 This approach better represents real conversational patterns, especially in interviews, discussions, and multi-party conversations where speakers frequently interject brief acknowledgments, questions, or reactions.
+And because we want to designed this to support the interview-style, where people may think for a bit before answering a question, but then talk for quite a while as another person listens.
 
 ## Core Concept
 
@@ -339,33 +340,32 @@ PARTICIPANT: (15.17s) i mean basically i'm just very passionate about
 
 ## Implementation Roadmap
 
-### Phase 1: Core Infrastructure (Week 1-2)
+### Phase 1: Core Infrastructure
 - Define data structures
 - Implement basic interjection detection rules
 - Create turn reconstruction algorithm
 - Add JSON output format
 
-### Phase 2: LLM Integration (Week 3)
+### Phase 2: LLM Integration
 - Add LLM-based interjection classification
 - Implement contextual analysis
 - Tune confidence thresholds
 
-### Phase 3: Output Formats (Week 4)
+### Phase 3: Output Formats
 - Implement markdown output
 - Create HTML timeline visualization
 - Add dialogue script format
 - CLI options for format selection
 
-### Phase 4: Analysis & Metrics (Week 5)
+### Phase 4: Analysis & Metrics
 - Add conversation flow metrics
 - Implement speaker statistics
 - Create validation tools
 - Performance optimization
 
-### Phase 5: Integration & Testing (Week 6)
+### Phase 5: Integration & Testing
 - Integrate with existing pipeline
 - Comprehensive testing with various conversation types
-- Documentation and examples
 
 ## Benefits
 
@@ -397,46 +397,9 @@ PARTICIPANT: (15.17s) i mean basically i'm just very passionate about
 - User-configurable thresholds
 - Fallback to flat structure
 
-### Challenge 2: Performance Impact
-**Issue:** LLM calls for every potential interjection
-**Mitigation:**
-- Batch processing for multiple interjections
-- Caching of LLM responses
-- Rule-based filtering before LLM
-- Optional simplified mode
-
-### Challenge 3: Output Format Compatibility
-**Issue:** Existing tools expect flat turn structure
-**Mitigation:**
-- Export functions to convert hierarchical → flat
-- Multiple output formats
-- Clear migration path
-- Backward compatibility mode
-
-### Challenge 4: Cultural/Style Variations
-**Issue:** Interjection patterns vary by culture/language
-**Mitigation:**
-- Configurable pattern libraries
-- Language-specific rules
-- Training data from diverse sources
-- User feedback integration
-
-## Evaluation Metrics
-
-### Accuracy Metrics
-- **Interjection detection precision/recall**
-- **Turn boundary accuracy** (compared to human annotation)
-- **Word coverage** (all source words accounted for)
-- **Speaker attribution accuracy**
-
-### User Experience Metrics
-- **Transcript readability** (survey-based)
-- **Analysis utility** (researcher feedback)
-- **Processing time** (performance benchmarks)
-- **Format adoption** (usage statistics)
 
 ## Conclusion
 
-This hierarchical approach represents a significant advancement in conversation transcription, moving beyond simple sequential turns to capture the rich dynamics of natural speech. By recognizing interjections and maintaining conversational flow, it provides more accurate and useful transcripts for research, analysis, and readability.
+This hierarchical approach represents a significant advancement in interview conversation transcription, moving beyond simple sequential turns to capture the rich dynamics of natural speech. By recognizing interjections and maintaining conversational flow, it provides more accurate and useful transcripts for research, analysis, and readability.
 
 The modular design allows for gradual implementation and testing, with clear fallback options and multiple output formats to ensure broad compatibility and adoption.

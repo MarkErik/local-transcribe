@@ -41,8 +41,8 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         self.processor = None
         self.model = None
         self.chunk_length_seconds = 60.0
-        self.overlap_seconds = 3.0
-        self.min_chunk_seconds = 6.0
+        self.overlap_seconds = 4.0
+        self.min_chunk_seconds = 7.0
         
         # MFA configuration
         self.mfa_models_dir = None
@@ -269,7 +269,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                     top_p=1.0,
                     length_penalty=1.0,
                     temperature=1.0,
-                    #early_stopping = True,
+                    early_stopping = True,
                     logits_processor=[repetition_penalty_processor],
                     bos_token_id=self.tokenizer.bos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,

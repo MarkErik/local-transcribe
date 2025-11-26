@@ -177,9 +177,11 @@ class AudioCropper:
     def crop_audio(self, 
                    input_path: str | pathlib.Path,
                    output_path: str | pathlib.Path,
-                   duration_minutes: float) -> None:
+                   duration_minutes: Optional[float] = None,
+                   start_minutes: float = 0.0,
+                   end_minutes: Optional[float] = None) -> None:
         """
-        Crop an audio file to the specified duration using ffmpeg.
+        Crop an audio file to the specified duration or time range using ffmpeg.
         
         Parameters
         ----------
@@ -187,13 +189,28 @@ class AudioCropper:
             Path to input audio file
         output_path : str | pathlib.Path
             Path for cropped output file
-        duration_minutes : float
-            Desired duration in minutes
+        duration_minutes : float, optional
+            Desired duration in minutes (from start of file). Deprecated in favor
+            of start_minutes/end_minutes but kept for backward compatibility.
+        start_minutes : float, optional
+            Start time in minutes (default: 0.0)
+        end_minutes : float, optional
+            End time in minutes. If provided with start_minutes, crops the range
+            [start_minutes, end_minutes]. If None and duration_minutes is set,
+            uses duration_minutes from start_minutes.
             
         Raises
         ------
         AudioProcessingError
             If cropping fails or input duration is shorter than requested
+            
+        Examples
+        --------
+        # Crop first 5 minutes (traditional behavior)
+        crop_audio(input, output, duration_minutes=5.0)
+        
+        # Crop from 4 minutes to 12 minutes (8 minute output)
+        crop_audio(input, output, start_minutes=4.0, end_minutes=12.0)
         """
         try:
             input_path = pathlib.Path(input_path).resolve()
@@ -201,32 +218,77 @@ class AudioCropper:
             
             # Get input duration
             input_duration = self.get_audio_duration(input_path)
-            target_duration_seconds = duration_minutes * 60
             
-            # Check if input is long enough
-            if input_duration < target_duration_seconds:
-                error_msg = (
-                    f"Input audio ({input_duration:.2f}s) is shorter than requested "
-                    f"duration ({target_duration_seconds:.2f}s)"
+            # Determine start and target duration in seconds
+            start_seconds = start_minutes * 60
+            
+            if end_minutes is not None:
+                # Range-based cropping: start_minutes to end_minutes
+                if end_minutes <= start_minutes:
+                    error_msg = (
+                        f"End time ({end_minutes:.2f} min) must be greater than "
+                        f"start time ({start_minutes:.2f} min)"
+                    )
+                    self.logger.error(error_msg)
+                    raise AudioProcessingError(error_msg, audio_path=str(input_path))
+                
+                end_seconds = end_minutes * 60
+                target_duration_seconds = end_seconds - start_seconds
+                
+                # Check if input is long enough for the requested end time
+                if input_duration < end_seconds:
+                    error_msg = (
+                        f"Input audio ({input_duration:.2f}s / {input_duration/60:.2f} min) is shorter than "
+                        f"requested end time ({end_seconds:.2f}s / {end_minutes:.2f} min)"
+                    )
+                    self.logger.error(error_msg)
+                    raise AudioProcessingError(error_msg, audio_path=str(input_path))
+                    
+                self.logger.info(
+                    f"Cropping {input_path.name} from {start_minutes:.2f} min to {end_minutes:.2f} min "
+                    f"(output duration: {target_duration_seconds/60:.2f} min / {target_duration_seconds:.2f}s)"
                 )
+            elif duration_minutes is not None:
+                # Traditional duration-based cropping from start_minutes
+                target_duration_seconds = duration_minutes * 60
+                required_duration = start_seconds + target_duration_seconds
+                
+                # Check if input is long enough
+                if input_duration < required_duration:
+                    error_msg = (
+                        f"Input audio ({input_duration:.2f}s) is shorter than requested "
+                        f"duration ({required_duration:.2f}s from start {start_seconds:.2f}s)"
+                    )
+                    self.logger.error(error_msg)
+                    raise AudioProcessingError(error_msg, audio_path=str(input_path))
+                
+                self.logger.info(
+                    f"Cropping {input_path.name} to {duration_minutes:.2f} minutes "
+                    f"({target_duration_seconds:.2f}s) from {start_minutes:.2f} min"
+                )
+            else:
+                error_msg = "Either duration_minutes or end_minutes must be provided"
                 self.logger.error(error_msg)
-                raise AudioProcessingError(
-                    error_msg,
-                    audio_path=str(input_path)
-                )
+                raise AudioProcessingError(error_msg, audio_path=str(input_path))
             
             # Ensure output directory exists
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
-            self.logger.info(f"Cropping {input_path.name} to {duration_minutes:.2f} minutes ({target_duration_seconds:.2f}s)")
-            
+            # Build ffmpeg command
             cmd = [
                 "ffmpeg", "-y",
                 "-i", str(input_path),
+            ]
+            
+            # Add start time if not starting from beginning
+            if start_seconds > 0:
+                cmd.extend(["-ss", str(start_seconds)])
+            
+            cmd.extend([
                 "-t", str(target_duration_seconds),  # Duration to record/copy
                 "-c", "copy",  # Copy streams without re-encoding for speed
                 str(output_path)
-            ]
+            ])
             
             self.logger.info(f"Running ffmpeg command: {' '.join(cmd)}")
             
@@ -271,10 +333,12 @@ class AudioCropper:
 @error_context(reraise=True)
 def crop_audio_files(file1: str | pathlib.Path,
                     file2: str | pathlib.Path, 
-                    duration_minutes: float,
-                    output_dir: Optional[str | pathlib.Path] = None) -> Tuple[pathlib.Path, pathlib.Path]:
+                    duration_minutes: Optional[float] = None,
+                    output_dir: Optional[str | pathlib.Path] = None,
+                    start_minutes: float = 0.0,
+                    end_minutes: Optional[float] = None) -> Tuple[pathlib.Path, pathlib.Path]:
     """
-    Convenience function to crop two audio files to the same duration.
+    Convenience function to crop two audio files to the same duration or time range.
     
     Parameters
     ----------
@@ -282,10 +346,15 @@ def crop_audio_files(file1: str | pathlib.Path,
         Path to first audio file
     file2 : str | pathlib.Path  
         Path to second audio file
-    duration_minutes : float
-        Desired duration in minutes for both files
+    duration_minutes : float, optional
+        Desired duration in minutes for both files (from start). Used when
+        end_minutes is not provided.
     output_dir : Optional[str | pathlib.Path]
         Directory for output files. If None, uses same directory as inputs.
+    start_minutes : float, optional
+        Start time in minutes (default: 0.0)
+    end_minutes : float, optional
+        End time in minutes. If provided, crops the range [start_minutes, end_minutes].
         
     Returns
     -------
@@ -296,6 +365,14 @@ def crop_audio_files(file1: str | pathlib.Path,
     ------
     AudioProcessingError
         If processing fails at any step
+        
+    Examples
+    --------
+    # Crop first 5 minutes of both files
+    crop_audio_files(file1, file2, duration_minutes=5.0)
+    
+    # Crop from 4 minutes to 12 minutes (8 minute output)
+    crop_audio_files(file1, file2, start_minutes=4.0, end_minutes=12.0)
     """
     cropper = AudioCropper()
     
@@ -308,16 +385,24 @@ def crop_audio_files(file1: str | pathlib.Path,
     else:
         output_dir = pathlib.Path(output_dir)
     
-    # Generate output paths
+    # Generate output paths with descriptive names
     file1_path = pathlib.Path(file1)
     file2_path = pathlib.Path(file2)
     
-    output1 = output_dir / f"{file1_path.stem}_cropped_{duration_minutes}min{file1_path.suffix}"
-    output2 = output_dir / f"{file2_path.stem}_cropped_{duration_minutes}min{file2_path.suffix}"
+    if end_minutes is not None:
+        # Range-based naming: e.g., "file_cropped_4-12min.wav"
+        output1 = output_dir / f"{file1_path.stem}_cropped_{start_minutes}-{end_minutes}min{file1_path.suffix}"
+        output2 = output_dir / f"{file2_path.stem}_cropped_{start_minutes}-{end_minutes}min{file2_path.suffix}"
+    else:
+        # Traditional duration naming
+        output1 = output_dir / f"{file1_path.stem}_cropped_{duration_minutes}min{file1_path.suffix}"
+        output2 = output_dir / f"{file2_path.stem}_cropped_{duration_minutes}min{file2_path.suffix}"
     
     # Crop both files
-    cropper.crop_audio(file1, output1, duration_minutes)
-    cropper.crop_audio(file2, output2, duration_minutes)
+    cropper.crop_audio(file1, output1, duration_minutes=duration_minutes, 
+                       start_minutes=start_minutes, end_minutes=end_minutes)
+    cropper.crop_audio(file2, output2, duration_minutes=duration_minutes,
+                       start_minutes=start_minutes, end_minutes=end_minutes)
     
     return output1, output2
 
@@ -327,22 +412,49 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(
-        description="Crop two audio files to the same duration",
+        description="Crop two audio files to the same duration or time range",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Crop first 5 minutes of both files
   %(prog)s audio1.wav audio2.wav 5.0
+  
+  # Crop from 4 minutes to 12 minutes (8 minute output)
+  %(prog)s audio1.wav audio2.wav 4.0 12.0
+  
+  # Crop with output directory
   %(prog)s /path/to/file1.mp3 /path/to/file2.mp3 10.5 --output-dir ./cropped
+  %(prog)s /path/to/file1.mp3 /path/to/file2.mp3 2.0 8.5 --output-dir ./cropped
         """
     )
     
     parser.add_argument("file1", help="Path to first audio file")
     parser.add_argument("file2", help="Path to second audio file")
-    parser.add_argument("duration_minutes", type=float, help="Desired duration in minutes")
+    parser.add_argument(
+        "time_args", 
+        type=float, 
+        nargs='+',
+        metavar="TIME",
+        help="One number: duration in minutes from start. Two numbers: start_minutes end_minutes"
+    )
     parser.add_argument("--output-dir", "-o", help="Output directory (default: same as input)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     
     args = parser.parse_args()
+    
+    # Parse time arguments
+    if len(args.time_args) == 1:
+        # Single number: duration from start
+        duration_minutes = args.time_args[0]
+        start_minutes = 0.0
+        end_minutes = None
+    elif len(args.time_args) == 2:
+        # Two numbers: start and end times
+        duration_minutes = None
+        start_minutes = args.time_args[0]
+        end_minutes = args.time_args[1]
+    else:
+        parser.error("Expected 1 or 2 time arguments (duration OR start_minutes end_minutes)")
     
     # Configure logging level
     if args.verbose:
@@ -352,8 +464,10 @@ Examples:
         output1, output2 = crop_audio_files(
             args.file1,
             args.file2,
-            args.duration_minutes,
-            args.output_dir
+            duration_minutes=duration_minutes,
+            output_dir=args.output_dir,
+            start_minutes=start_minutes,
+            end_minutes=end_minutes
         )
         
         print(f"\n✓ Successfully cropped audio files:")

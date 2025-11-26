@@ -49,12 +49,17 @@ class ChunkStitcher:
             return ""
         
         # Detect format: check if words have timestamps
-        has_timestamps = (
-            chunks[0]["words"] and 
-            isinstance(chunks[0]["words"][0], dict) and
-            "text" in chunks[0]["words"][0] and
-            "start" in chunks[0]["words"][0]
-        )
+        # Check all chunks in case the first chunk has empty words
+        has_timestamps = False
+        for chunk in chunks:
+            if chunk["words"]:
+                first_word = chunk["words"][0]
+                has_timestamps = (
+                    isinstance(first_word, dict) and
+                    "text" in first_word and
+                    "start" in first_word
+                )
+                break  # Found a non-empty chunk, use its format
         
         if has_timestamps:
             return self._stitch_chunks_with_timestamps(chunks)

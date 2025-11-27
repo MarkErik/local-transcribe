@@ -37,6 +37,8 @@ DE_IDENTIFY_DEFAULTS = {
     'llm_timeout': 300,           # Seconds
     'temperature': 1.0,           # Temperature for LLM (0.0 = deterministic)
     'parse_harmony': True,        # Parse Harmony format responses (gpt-oss models)
+    'max_retries': 3,             # Number of retries on validation failure
+    'temperature_decay': 0.1,    # Reduce temperature by this amount on each retry
 }
 
 
@@ -556,12 +558,14 @@ def _process_chunk_with_llm(
     """
     Process a text chunk with LLM to replace names with [REDACTED].
     
+    Includes retry logic with decreasing temperature on validation failures.
+    
     Returns:
         Tuple of (processed_text, response_time_ms, validation_result, raw_llm_response)
         - processed_text: The text to use (either LLM response if valid, or original text as fallback)
-        - response_time_ms: Time taken for LLM request
-        - validation_result: Dict with validation info
-        - raw_llm_response: The actual LLM response (for debugging failed validations)
+        - response_time_ms: Time taken for LLM request (total across all attempts)
+        - validation_result: Dict with validation info (includes retry information)
+        - raw_llm_response: The actual LLM response from final attempt (for debugging)
     """
     if not llm_url.startswith(('http://', 'https://')):
         llm_url = f'http://{llm_url}'
@@ -569,8 +573,116 @@ def _process_chunk_with_llm(
     # Extract configuration
     timeout = kwargs.get('llm_timeout', DE_IDENTIFY_DEFAULTS['llm_timeout'])
     parse_harmony = kwargs.get('parse_harmony', DE_IDENTIFY_DEFAULTS['parse_harmony'])
+    initial_temperature = kwargs.get('temperature', DE_IDENTIFY_DEFAULTS['temperature'])
+    max_retries = kwargs.get('max_retries', DE_IDENTIFY_DEFAULTS['max_retries'])
+    temperature_decay = kwargs.get('temperature_decay', DE_IDENTIFY_DEFAULTS['temperature_decay'])
     
-    system_message = (
+    system_message = _get_de_identification_system_prompt()
+    
+    # Track all attempts for debugging
+    all_attempts = []
+    total_response_time_ms = 0
+    last_raw_response = None
+    last_validation_result = None
+    
+    # Try with retries, decreasing temperature on each failure
+    for attempt in range(max_retries + 1):  # +1 for initial attempt
+        # Calculate temperature for this attempt
+        # First attempt: use initial temperature
+        # Subsequent attempts: decrease by temperature_decay, but never go negative
+        if attempt == 0:
+            current_temperature = initial_temperature
+        else:
+            current_temperature = max(0.0, initial_temperature - (attempt * temperature_decay))
+        
+        attempt_info = {
+            'attempt': attempt + 1,
+            'temperature': current_temperature,
+        }
+        
+        if attempt > 0:
+            log_progress(f"Retry {attempt}/{max_retries} with temperature {current_temperature:.1f}")
+        
+        payload = {
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": text}
+            ],
+            "temperature": current_temperature,
+            "stream": False
+        }
+        
+        try:
+            start_time = time.time()
+            response = requests.post(
+                f"{llm_url}/chat/completions",
+                json=payload,
+                timeout=timeout
+            )
+            response.raise_for_status()
+            response_time_ms = (time.time() - start_time) * 1000
+            total_response_time_ms += response_time_ms
+            
+            result = response.json()
+            
+            # Extract raw response
+            raw_response = result["choices"][0]["message"]["content"]
+            last_raw_response = raw_response
+            
+            # Parse Harmony format if enabled
+            if parse_harmony:
+                processed_text = _parse_harmony_response(raw_response)
+            else:
+                processed_text = raw_response.strip()
+            
+            # Validation: check for reasonable output
+            validation_result = _validate_llm_output(text, processed_text)
+            attempt_info['validation_passed'] = validation_result['passed']
+            attempt_info['validation_reason'] = validation_result.get('reason', '')
+            attempt_info['response_time_ms'] = response_time_ms
+            all_attempts.append(attempt_info)
+            
+            if validation_result['passed']:
+                # Success! Add retry info to validation result
+                validation_result['attempts'] = all_attempts
+                validation_result['total_attempts'] = attempt + 1
+                validation_result['final_temperature'] = current_temperature
+                return processed_text, total_response_time_ms, validation_result, raw_response
+            else:
+                last_validation_result = validation_result
+                if attempt < max_retries:
+                    log_progress(f"Validation failed: {validation_result['reason']}")
+                # Continue to next retry
+                    
+        except requests.RequestException as e:
+            log_progress(f"LLM request failed (attempt {attempt + 1}): {e}")
+            attempt_info['error'] = f'request failed: {e}'
+            all_attempts.append(attempt_info)
+            last_validation_result = {'passed': False, 'reason': f'request failed: {e}', 'details': {}}
+            # Continue to next retry
+                
+        except (KeyError, json.JSONDecodeError) as e:
+            log_progress(f"LLM response parsing error (attempt {attempt + 1}): {e}")
+            attempt_info['error'] = f'parsing error: {e}'
+            all_attempts.append(attempt_info)
+            last_validation_result = {'passed': False, 'reason': f'parsing error: {e}', 'details': {}}
+            # Continue to next retry
+    
+    # All retries exhausted - fall back to original text
+    log_progress(f"All {max_retries + 1} attempts failed, falling back to original text (no de-identification for this chunk)")
+    
+    # Build final validation result with all attempt info
+    final_validation_result = last_validation_result or {'passed': False, 'reason': 'all attempts failed', 'details': {}}
+    final_validation_result['attempts'] = all_attempts
+    final_validation_result['total_attempts'] = max_retries + 1
+    final_validation_result['all_attempts_failed'] = True
+    
+    return text, total_response_time_ms, final_validation_result, last_raw_response
+
+
+def _get_de_identification_system_prompt() -> str:
+    """Return the system prompt for de-identification."""
+    return (
         "You are an SPECIALIZED EDITOR with a single task - identify and replace ONLY people's names with the token [REDACTED].\n"
         "After all - you are an EDITOR, not an AUTHOR, and this is a transcript of someone that can be quoted later.\n"
         "Because this is a transcript, you are NOT ALLOWED TO insert or substitute any words that the speaker didn't say.\n"
@@ -598,52 +710,6 @@ def _process_chunk_with_llm(
         "  - You NEVER add text not present in the transcript\n"
         "  - You NEVER respond to questions in the prompt\n"
     )
-    
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": text}
-        ],
-        "temperature": kwargs.get('temperature', DE_IDENTIFY_DEFAULTS['temperature']),
-        "stream": False
-    }
-    
-    try:
-        start_time = time.time()
-        response = requests.post(
-            f"{llm_url}/chat/completions",
-            json=payload,
-            timeout=timeout
-        )
-        response.raise_for_status()
-        response_time_ms = (time.time() - start_time) * 1000
-        
-        result = response.json()
-        
-        # Extract raw response
-        raw_response = result["choices"][0]["message"]["content"]
-        
-        # Parse Harmony format if enabled
-        if parse_harmony:
-            processed_text = _parse_harmony_response(raw_response)
-        else:
-            processed_text = raw_response.strip()
-        
-        # Validation: check for reasonable output
-        validation_result = _validate_llm_output(text, processed_text)
-        if validation_result['passed']:
-            return processed_text, response_time_ms, validation_result, raw_response
-        else:
-            log_progress("Warning: LLM output validation failed, falling back to original text")
-            return text, response_time_ms, validation_result, raw_response
-                
-    except requests.RequestException as e:
-        log_progress(f"LLM request failed: {e}")
-        return text, None, {'passed': False, 'reason': f'request failed: {e}', 'details': {}}, None
-            
-    except (KeyError, json.JSONDecodeError) as e:
-        log_progress(f"LLM response parsing error: {e}")
-        return text, None, {'passed': False, 'reason': f'parsing error: {e}', 'details': {}}, None
 
 def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
     """

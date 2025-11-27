@@ -239,9 +239,13 @@ def second_pass_de_identify(
             **kwargs
         )
         
-        # Save output for debug
+        # Save output for debug - parse Harmony format for readable output
         if debug_dir:
-            debug_response = raw_response if raw_response is not None else processed_text
+            parse_harmony = kwargs.get('parse_harmony', SECOND_PASS_DEFAULTS['parse_harmony'])
+            if parse_harmony and raw_response is not None:
+                debug_response = _parse_harmony_response(raw_response)
+            else:
+                debug_response = raw_response if raw_response is not None else processed_text
             _save_second_pass_debug(
                 chunk_num,
                 chunk_data,
@@ -249,7 +253,8 @@ def second_pass_de_identify(
                 validation_result,
                 debug_dir,
                 response_time_ms=response_time_ms,
-                mode='output'
+                mode='output',
+                original_text=chunk['text']
             )
         
         # Track validation results
@@ -401,10 +406,10 @@ def _process_chunk_second_pass(
     system_message = (
         "You are a SPECIALIZED EDITOR performing a SECOND PASS review for missed names in a transcript.\n"
         "The transcript has already been partially de-identified - you will see [REDACTED] tokens where names were previously found.\n\n"
-        "Your task: Look for any ADDITIONAL instances of the following names that may have been missed:\n\n"
+        "Your task: Look for any ADDITIONAL instances of the following names that may have been missed, and replace them with [REDACTED]:\n\n"
         f"{name_list_str}\n\n"
         "CRITICAL REQUIREMENTS:\n"
-        "1. Replace any instances of the listed names (or clear variations) with [REDACTED]\n"
+        "1. Replace any instances of the listed names with [REDACTED]\n"
         "2. DO NOT remove or modify existing [REDACTED] tokens - they must remain\n"
         "3. Only replace words that are clearly being used as personal names\n"
         "4. Context matters: 'Will' as a verb stays, 'Will' as a name becomes [REDACTED]\n"
@@ -604,9 +609,21 @@ def _save_second_pass_debug(
     validation_result: Optional[Dict],
     debug_dir: Path,
     response_time_ms: Optional[float] = None,
-    mode: str = 'input'
+    mode: str = 'input',
+    original_text: Optional[str] = None
 ) -> None:
-    """Save debug files for second pass."""
+    """Save debug files for second pass.
+    
+    Args:
+        chunk_idx: Chunk number (1-indexed for display)
+        chunk_data: Dict with 'text', 'start_idx', 'end_idx', etc.
+        llm_response: LLM response text (for output mode) - should be parsed if using Harmony format
+        validation_result: Dict with validation info (for output mode)
+        debug_dir: Directory to save debug files
+        response_time_ms: Response time in milliseconds
+        mode: 'input' or 'output'
+        original_text: Original input text for diff generation (optional, uses chunk_data['text'] if not provided)
+    """
     debug_dir.mkdir(parents=True, exist_ok=True)
     chunk_num_str = f"{chunk_idx:03d}"
     
@@ -671,6 +688,100 @@ def _save_second_pass_debug(
             f.write("-" * 60 + "\n\n")
             f.write(llm_response)
             f.write("\n")
+        
+        # Generate diff if validation failed
+        if validation_result and not validation_result.get('passed', False):
+            # Use original_text if provided, otherwise fall back to chunk_data['text']
+            diff_original = original_text if original_text is not None else chunk_data['text']
+            _generate_word_diff(
+                chunk_idx,
+                diff_original,
+                llm_response,
+                validation_result,
+                debug_dir
+            )
+
+
+def _generate_word_diff(
+    chunk_idx: int,
+    original_text: str,
+    llm_text: str,
+    validation_result: Dict,
+    debug_dir: Path
+) -> None:
+    """
+    Generate word-by-word diff for failed validations.
+    
+    Args:
+        chunk_idx: Chunk number
+        original_text: Original text sent to LLM
+        llm_text: LLM response text (should be parsed, not raw Harmony format)
+        validation_result: Validation result dict
+        debug_dir: Directory to save diff file
+    """
+    orig_words = original_text.split()
+    llm_words = llm_text.split()
+    
+    chunk_num_str = f"{chunk_idx:03d}"
+    diff_path = debug_dir / f"chunk_{chunk_num_str}_diff.txt"
+    
+    with open(diff_path, 'w', encoding='utf-8') as f:
+        f.write("=" * 60 + "\n")
+        f.write(f"CHUNK {chunk_idx} - WORD-BY-WORD DIFF (SECOND PASS)\n")
+        f.write("=" * 60 + "\n")
+        f.write(f"Validation failed: {validation_result.get('reason', 'unknown')}\n\n")
+        
+        # Summary
+        missing = max(0, len(orig_words) - len(llm_words))
+        extra = max(0, len(llm_words) - len(orig_words))
+        f.write(f"Missing words: {missing}\n")
+        f.write(f"Extra words: {extra}\n\n")
+        
+        # Word-by-word comparison
+        f.write("Word-by-word comparison:\n")
+        f.write("-" * 60 + "\n")
+        
+        max_len = max(len(orig_words), len(llm_words))
+        differences = []
+        
+        for i in range(max_len):
+            orig_word = orig_words[i] if i < len(orig_words) else None
+            llm_word = llm_words[i] if i < len(llm_words) else None
+            
+            if orig_word is None:
+                f.write(f"[{i:03d}] ✗ EXTRA: \"{llm_word}\"\n")
+                differences.append((i, 'EXTRA', None, llm_word))
+            elif llm_word is None:
+                f.write(f"[{i:03d}] ✗ MISSING: \"{orig_word}\"\n")
+                differences.append((i, 'MISSING', orig_word, None))
+            elif orig_word != llm_word:
+                f.write(f"[{i:03d}] ✗ CHANGED: \"{orig_word}\" → \"{llm_word}\"\n")
+                differences.append((i, 'CHANGED', orig_word, llm_word))
+            else:
+                # Only show first/last few matches to keep file readable
+                if i < 5 or i >= max_len - 5:
+                    f.write(f"[{i:03d}] ✓ {orig_word} → {llm_word}\n")
+                elif i == 5:
+                    f.write(f"... ({max_len - 10} matching words omitted) ...\n")
+        
+        # Show context around differences
+        if differences:
+            f.write("\n" + "=" * 60 + "\n")
+            f.write("Context around differences:\n")
+            f.write("-" * 60 + "\n")
+            
+            for diff_idx, diff_type, orig, llm in differences[:10]:  # Show first 10 diffs
+                context_start = max(0, diff_idx - 3)
+                context_end = min(len(orig_words), diff_idx + 4)
+                
+                f.write(f"\nPosition {diff_idx} ({diff_type}):\n")
+                f.write(f"  Original: \"{' '.join(orig_words[context_start:context_end])}\"\n")
+                
+                llm_context_end = min(len(llm_words), context_start + (context_end - context_start))
+                f.write(f"  LLM:      \"{' '.join(llm_words[context_start:llm_context_end])}\"\n")
+            
+            if len(differences) > 10:
+                f.write(f"\n... and {len(differences) - 10} more differences\n")
 
 
 def _save_second_pass_session_summary(debug_dir: Path, session_data: Dict) -> None:

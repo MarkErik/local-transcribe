@@ -149,9 +149,13 @@ def de_identify_word_segments(
             **kwargs
         )
         
-        # Save output chunk for debug - use raw LLM response if available to show actual failed output
+        # Save output chunk for debug - parse Harmony format for readable output
         if debug_dir:
-            debug_response = raw_llm_response if raw_llm_response is not None else processed_text
+            parse_harmony = kwargs.get('parse_harmony', DE_IDENTIFY_DEFAULTS['parse_harmony'])
+            if parse_harmony and raw_llm_response is not None:
+                debug_response = _parse_harmony_response(raw_llm_response)
+            else:
+                debug_response = raw_llm_response if raw_llm_response is not None else processed_text
             _save_debug_files(
                 chunk_num,
                 chunk_data,
@@ -159,7 +163,8 @@ def de_identify_word_segments(
                 validation_result,
                 debug_dir,
                 response_time_ms=response_time_ms,
-                mode='output'
+                mode='output',
+                original_text=chunk['text']
             )
         
         # Track validation results
@@ -323,9 +328,13 @@ def de_identify_text(
             **kwargs
         )
         
-        # Save output chunk for debug - use raw LLM response if available to show actual failed output
+        # Save output chunk for debug - parse Harmony format for readable output
         if debug_dir:
-            debug_response = raw_llm_response if raw_llm_response is not None else processed_text
+            parse_harmony = kwargs.get('parse_harmony', DE_IDENTIFY_DEFAULTS['parse_harmony'])
+            if parse_harmony and raw_llm_response is not None:
+                debug_response = _parse_harmony_response(raw_llm_response)
+            else:
+                debug_response = raw_llm_response if raw_llm_response is not None else processed_text
             _save_debug_files(
                 chunk_num,
                 chunk_data,
@@ -333,7 +342,8 @@ def de_identify_text(
                 validation_result,
                 debug_dir,
                 response_time_ms=response_time_ms,
-                mode='output'
+                mode='output',
+                original_text=chunk['text']
             )
         
         # Track validation results
@@ -836,7 +846,8 @@ def _save_debug_files(
     validation_result: Optional[Dict],
     debug_dir: Path,
     response_time_ms: Optional[float] = None,
-    mode: str = 'input'
+    mode: str = 'input',
+    original_text: Optional[str] = None
 ) -> None:
     """
     Save debug files in both JSON and text formats.
@@ -844,11 +855,12 @@ def _save_debug_files(
     Args:
         chunk_idx: Chunk number (1-indexed for display)
         chunk_data: Dict with 'text', 'start_idx', 'end_idx', 'segments' (optional)
-        llm_response: LLM response text (for output mode)
+        llm_response: LLM response text (for output mode) - should be parsed if using Harmony format
         validation_result: Dict with validation info (for output mode)
         debug_dir: Directory to save debug files
         response_time_ms: Response time in milliseconds
         mode: 'input' or 'output'
+        original_text: Original input text for diff generation (optional, uses chunk_data['text'] if not provided)
     """
     debug_dir.mkdir(parents=True, exist_ok=True)
     
@@ -952,9 +964,11 @@ def _save_debug_files(
         
         # Generate diff if validation failed
         if validation_result and not validation_result.get('passed', False):
+            # Use original_text if provided, otherwise fall back to chunk_data['text']
+            diff_original = original_text if original_text is not None else chunk_data['text']
             _generate_word_diff(
                 chunk_idx,
-                chunk_data['text'],
+                diff_original,
                 llm_response,
                 validation_result,
                 debug_dir

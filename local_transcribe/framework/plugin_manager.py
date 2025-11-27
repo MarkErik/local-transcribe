@@ -67,10 +67,6 @@ def handle_plugin_listing(api):
     for name, desc in api["registry"].list_diarization_providers().items():
         print(f"  {name}: {desc}")
 
-    print("\nTurn Builder Providers:")
-    for name, desc in api["registry"].list_turn_builder_providers().items():
-        print(f"  {name}: {desc}")
-
     print("\nTranscript Cleanup Providers:")
     for name, desc in api["registry"].list_transcript_cleanup_providers().items():
         print(f"  {name}: {desc}")

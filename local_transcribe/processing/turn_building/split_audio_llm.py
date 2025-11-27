@@ -69,7 +69,7 @@ class SplitAudioTurnBuilder:
     If the LLM is unavailable, falls back to rule-based classification.
     """
 
-    def __init__(self, llm_url: str = "http://100.84.208.72:8080"):
+    def __init__(self, llm_url: str = "http://0.0.0.0:8080"):
         """Initialize with default configuration."""
         self.config = TurnBuilderConfig()
         self.llm_url = llm_url
@@ -96,7 +96,7 @@ class SplitAudioTurnBuilder:
         Args:
             words: Word segments with speaker assignments (from all speakers)
             **kwargs: Configuration options including:
-                - llm_url: URL of the LLM server (default: http://100.84.208.72:8080)
+                - llm_url: URL of the LLM server (default: http://0.0.0.0:8080)
                 - intermediate_dir: Path to save intermediate files
                 - max_interjection_duration: Override default (2.0s)
                 - max_interjection_words: Override default (5)
@@ -710,7 +710,7 @@ def build_turns_split_audio(
     global _default_builder
     
     # Get LLM URL from kwargs or use default
-    llm_url = kwargs.get('llm_url', "http://100.84.208.72:8080")
+    llm_url = kwargs.get('llm_url', "http://0.0.0.0:8080")
     
     # Create a new builder instance (or reuse if same URL)
     if _default_builder is None or _default_builder.llm_url != llm_url:

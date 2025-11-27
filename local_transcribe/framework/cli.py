@@ -27,12 +27,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--stitching-method", choices=["local", "llm"], default="local", help="Method for stitching transcript chunks [Default: local]. local=intelligent local overlap detection, llm=external LLM server stitching")
     p.add_argument("--aligner-provider", help="Aligner provider to use (required if transcriber doesn't have built-in alignment) [Default: auto-selected if needed]")
     p.add_argument("--diarization-provider", help="Diarization provider to use (required for single audio files with multiple speakers) [Default: auto-selected if needed]")
-    p.add_argument("--turn-builder-provider", help="Turn builder provider to use (for grouping transcribed words into turns) [Default: auto-selected based on audio mode]")
     p.add_argument("--transcript-cleanup-provider", help="Transcript cleanup provider to use for LLM-based transcript cleaning [Default: none]")
     
     p.add_argument("--llm-stitcher-url", default="http://0.0.0.0:8080", help="URL for LLM stitcher provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
     p.add_argument("--llm-de-identifier-url", default="http://0.0.0.0:8080", help="URL for LLM personal information de-identifier processor (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
-    p.add_argument("--llm-turn-builder-url", default="http://0.0.0.0:8080", help="URL for LLM turn builder provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
+    p.add_argument("--llm-turn-builder-url", default="http://0.0.0.0:8080", help="URL for LLM turn builder (used in split audio mode) [Default: http://0.0.0.0:8080]")
     p.add_argument("--llm-transcript-cleanup-url", default="http://0.0.0.0:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
 
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
@@ -54,7 +53,6 @@ def show_defaults():
     print("  - Transcriber Model: Provider-specific default model")
     print("  - Aligner Provider: Auto-selected if needed based on transcriber")
     print("  - Diarization Provider: Auto-selected if needed for single audio files")
-    print("  - Turn Builder Provider: Auto-selected based on audio mode")
     print("  - Transcript Cleanup Provider: None (disabled)")
     
     print("\nConfiguration:")
@@ -84,8 +82,6 @@ def select_provider(registry, provider_type):
         providers = registry._unified_providers
     elif provider_type == "transcript_cleanup":
         providers = registry._transcript_cleanup_providers
-    elif provider_type == "turn_builder":
-        providers = registry._turn_builder_providers
     else:
         raise ValueError(f"Unknown provider type: {provider_type}")
     
@@ -504,82 +500,28 @@ def interactive_prompt(args, api):
         else:
             args.aligner_provider = None
 
-        # Select turn builder for split audio
-        if mode == "split_audio":
-            turn_builders = registry._turn_builder_providers
-            # For split audio mode, show the split_audio_turn_builder as the primary option
-            split_audio_turn_builders = {k: v for k, v in turn_builders.items() if k.startswith("split_audio")}
-            # Also include single speaker turn builders as fallback options
-            single_speaker_turn_builders = {k: v for k, v in turn_builders.items() if k.startswith("single_speaker")}
-            
-            # Combine split_audio first, then single_speaker options
-            all_turn_builders = {**split_audio_turn_builders, **single_speaker_turn_builders}
-            
-            if len(all_turn_builders) > 1:
-                print(f"\nAvailable Turn Builder Providers:")
-                for i, (name, provider) in enumerate(all_turn_builders.items(), 1):
-                    display_name = getattr(provider, 'short_name', provider.description)
-                    # Mark the recommended option
-                    if name.startswith("split_audio"):
-                        marker = " [Recommended]" if i == 1 else ""
-                        print(f"  {i}. {display_name}{marker}")
-                    else:
-                        print(f"  {i}. {display_name}")
-                
-                while True:
-                    choice_input = input(f"\nSelect turn builder (number) [Default: 1]: ").strip()
-                    if not choice_input:
-                        choice = 1
-                    else:
-                        try:
-                            choice = int(choice_input)
-                        except ValueError:
-                            print("Error: Please enter a valid number.")
-                            continue
-                    
-                    if 1 <= choice <= len(all_turn_builders):
-                        selected_key = list(all_turn_builders.keys())[choice - 1]
-                        args.turn_builder_provider = selected_key
-                        selected_provider = all_turn_builders[selected_key]
-                        display_name = getattr(selected_provider, 'short_name', selected_provider.description)
-                        is_default = choice == 1
-                        default_marker = " [Default]" if is_default else ""
-                        print(f"✓ Selected: {display_name}{default_marker}")
-                        break
-                    else:
-                        print("Error: Please enter a number from the list.")
-            else:
-                # Default to split_audio_llm_turn_builder if available, otherwise fall back
-                if split_audio_turn_builders:
-                    args.turn_builder_provider = list(split_audio_turn_builders.keys())[0]
-                elif single_speaker_turn_builders:
-                    args.turn_builder_provider = list(single_speaker_turn_builders.keys())[0]
-                else:
-                    args.turn_builder_provider = "split_audio_llm_turn_builder"  # Fallback default
-                print(f"✓ Selected: {args.turn_builder_provider} [Default]")
-
-            # If LLM turn builder selected, prompt for URL
-            if hasattr(args, 'turn_builder_provider') and args.turn_builder_provider in ["split_audio_llm", "split_audio_llm_turn_builder_improved"]:
-                default_url = getattr(args, 'llm_turn_builder_url', 'http://0.0.0.0:8080')
-                llm_url = input(f"LLM server URL for turn building [Default: {default_url}]: ").strip()
-                if not llm_url:
-                    llm_url = default_url
-                    is_default = True
-                else:
-                    # Add http:// if not present
-                    if not llm_url.startswith(('http://', 'https://')):
-                        llm_url = f"http://{llm_url}"
-                    is_default = False
-                args.llm_turn_builder_url = llm_url
-                default_marker = " [Default]" if is_default else ""
-                print(f"✓ Selected: LLM turn builder with URL: {llm_url}{default_marker}")
-
         # Select diarization provider (only needed for combined audio in separate mode)
         if mode == "combined_audio":
             diarization_providers = registry.list_diarization_providers()
             args.diarization_provider = select_provider(registry, "diarization")
         else:
             args.diarization_provider = None
+
+        # Prompt for LLM turn builder URL in split audio mode
+        if mode == "split_audio":
+            default_url = getattr(args, 'llm_turn_builder_url', 'http://0.0.0.0:8080')
+            llm_url = input(f"\nLLM server URL for turn building [Default: {default_url}]: ").strip()
+            if not llm_url:
+                llm_url = default_url
+                is_default = True
+            else:
+                # Add http:// if not present
+                if not llm_url.startswith(('http://', 'https://')):
+                    llm_url = f"http://{llm_url}"
+                is_default = False
+            args.llm_turn_builder_url = llm_url
+            default_marker = " [Default]" if is_default else ""
+            print(f"✓ Selected: LLM turn builder URL: {llm_url}{default_marker}")
 
         # Number of speakers
         if hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:

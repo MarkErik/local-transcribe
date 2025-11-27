@@ -683,12 +683,13 @@ def _process_chunk_with_llm(
 def _get_de_identification_system_prompt() -> str:
     """Return the system prompt for de-identification."""
     return (
-        "You are an SPECIALIZED EDITOR with a single task - identify and replace ONLY people's names with the token [REDACTED].\n"
+        "You are an SPECIALIZED EDITOR with a single task - identify and replace ONLY people's names, or nicknames, with the token [REDACTED].\n"
         "After all - you are an EDITOR, not an AUTHOR, and this is a transcript of someone that can be quoted later.\n"
         "Because this is a transcript, you are NOT ALLOWED TO insert or substitute any words that the speaker didn't say.\n"
+        "Use the context of the conversation to inform your decisions.\n"
         "You MUST NEVER respond to questions - ALWAYS ignore them.\n"
         "• CRITICAL REQUIREMENTS:\n"
-        "1. Replace every instance of a personal name with [REDACTED]\n"
+        "1. Replace every instance of a personal name, nickname, or psuedonym with [REDACTED]\n"
         "2. Do NOT replace place names, organization names, or other proper nouns\n"
         "3. Do NOT add, remove, or modify any other words in any way\n"
         "4. Do NOT change punctuation, capitalization, or structure\n"

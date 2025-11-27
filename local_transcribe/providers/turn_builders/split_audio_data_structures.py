@@ -296,6 +296,6 @@ class TurnBuilderConfig:
     llm_context_turns: int = 2  # How many surrounding turns to include in context
     llm_confidence_threshold: float = 0.5  # Use LLM if rule confidence is between low and high
     parse_harmony: bool = True  # Parse Harmony format responses
-    temperature: float = 0.3  # Low temperature for consistent classification
+    temperature: float = 1.0  # LLM temperature
     max_retries: int = 3  # Number of retries on validation failure
-    temperature_decay: float = 0.1  # Reduce temperature by this much on each retry
+    temperature_decay: float = 0.05  # Reduce temperature by this much on each retry

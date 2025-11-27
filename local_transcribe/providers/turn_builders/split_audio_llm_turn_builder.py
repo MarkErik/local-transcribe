@@ -47,9 +47,9 @@ from local_transcribe.providers.turn_builders.split_audio_base import (
 # LLM configuration defaults for turn builder
 LLM_TURN_BUILDER_DEFAULTS = {
     'llm_timeout': 120,           # Timeout for LLM requests in seconds
-    'temperature': 0.3,           # Low temperature for consistent classification
+    'temperature': 1.0,           # LLM temperature
     'max_retries': 3,             # Number of retries on validation failure
-    'temperature_decay': 0.1,     # Reduce temperature by this much on each retry
+    'temperature_decay': 0.05,     # Reduce temperature by this much on each retry
     'parse_harmony': True,        # Parse Harmony format responses
 }
 

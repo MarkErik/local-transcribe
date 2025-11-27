@@ -2,17 +2,21 @@
 """
 Shared base logic for turn builders.
 
-This module provides common functionality used by both the local (rule-based)
-and LLM-enhanced turn builders, including:
+This module provides common functionality used by the LLM-enhanced turn builder:
 - Word stream merging from multiple speakers
-- Speaker segment grouping
+- Smart speaker segment grouping with interjection detection during grouping
+- Tolerance window handling for split-audio timestamp misalignment
 - Interjection pattern detection
 - Metrics calculation
+
+The key innovation is detecting interjections DURING the grouping phase rather
+than creating micro-segments and classifying them after. This is essential for
+split-audio mode where timestamp overlap between separate tracks is common.
 """
 
 import re
 from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from local_transcribe.framework.plugin_interfaces import WordSegment
 from local_transcribe.lib.program_logger import log_progress, log_debug
@@ -23,6 +27,33 @@ from local_transcribe.providers.turn_builders.split_audio_data_structures import
     TranscriptFlow,
     TurnBuilderConfig
 )
+
+
+@dataclass
+class PendingInterjection:
+    """
+    Tracks a potential interjection detected during smart grouping.
+    
+    This is used to hold interjection candidates until we can determine
+    if they should be embedded in the current turn or become standalone.
+    """
+    speaker: str
+    words: List[WordSegment]
+    start: float
+    end: float
+    detected_during_turn_of: str  # The primary speaker when this was detected
+    
+    @property
+    def text(self) -> str:
+        return " ".join(w.text for w in self.words)
+    
+    @property
+    def word_count(self) -> int:
+        return len(self.words)
+    
+    @property
+    def duration(self) -> float:
+        return self.end - self.start
 
 
 def merge_word_streams(words: List[WordSegment]) -> List[WordSegment]:
@@ -46,9 +77,279 @@ def merge_word_streams(words: List[WordSegment]) -> List[WordSegment]:
     return sorted_words
 
 
+def smart_group_with_interjection_detection(
+    words: List[WordSegment],
+    config: TurnBuilderConfig
+) -> Tuple[List[RawSegment], List[PendingInterjection]]:
+    """
+    Smart grouping that detects interjections DURING the grouping phase.
+    
+    This is the key innovation for split-audio mode. Instead of creating
+    micro-segments every time timestamps interleave, we:
+    
+    1. Track a "primary speaker" who holds the conversational floor
+    2. Use a tolerance window to handle timestamp misalignment between tracks
+    3. Detect when another speaker's words are likely interjections vs. real turns
+    4. Keep the primary speaker's turn continuous, collecting interjections separately
+    
+    The tolerance window handles the fact that in split-audio mode, each track
+    is transcribed independently and timestamps may not align perfectly.
+    
+    Args:
+        words: Sorted list of WordSegment objects from all speakers
+        config: Configuration with thresholds and patterns
+        
+    Returns:
+        Tuple of (primary_segments, pending_interjections)
+        - primary_segments: RawSegment objects for primary turns
+        - pending_interjections: PendingInterjection objects detected during grouping
+    """
+    if not words:
+        return [], []
+    
+    # Configuration
+    tolerance_window = getattr(config, 'timestamp_tolerance', 0.5)  # seconds
+    max_interjection_words = config.max_interjection_words
+    max_interjection_duration = config.max_interjection_duration
+    
+    primary_segments: List[RawSegment] = []
+    pending_interjections: List[PendingInterjection] = []
+    
+    # State tracking
+    primary_speaker: Optional[str] = None
+    primary_words: List[WordSegment] = []
+    primary_start: Optional[float] = None
+    
+    # Buffer for potential interjection from another speaker
+    other_speaker_buffer: List[WordSegment] = []
+    other_speaker: Optional[str] = None
+    other_speaker_start: Optional[float] = None
+    
+    def _flush_primary_segment():
+        """Save current primary segment if it has content."""
+        nonlocal primary_words, primary_speaker, primary_start
+        if primary_words and primary_speaker:
+            segment = RawSegment(
+                speaker=primary_speaker,
+                start=primary_start,
+                end=primary_words[-1].end,
+                text=" ".join(w.text for w in primary_words),
+                words=primary_words.copy()
+            )
+            primary_segments.append(segment)
+        primary_words = []
+        primary_start = None
+    
+    def _flush_other_speaker_as_interjection():
+        """Save buffered other-speaker words as a pending interjection."""
+        nonlocal other_speaker_buffer, other_speaker, other_speaker_start
+        if other_speaker_buffer and other_speaker:
+            interjection = PendingInterjection(
+                speaker=other_speaker,
+                words=other_speaker_buffer.copy(),
+                start=other_speaker_start,
+                end=other_speaker_buffer[-1].end,
+                detected_during_turn_of=primary_speaker or "Unknown"
+            )
+            pending_interjections.append(interjection)
+        other_speaker_buffer = []
+        other_speaker = None
+        other_speaker_start = None
+    
+    def _flush_other_speaker_as_new_primary():
+        """The other speaker's buffer becomes the new primary turn."""
+        nonlocal primary_speaker, primary_words, primary_start
+        nonlocal other_speaker_buffer, other_speaker, other_speaker_start
+        
+        # First, flush any existing primary segment
+        _flush_primary_segment()
+        
+        # Now the other speaker becomes primary
+        primary_speaker = other_speaker
+        primary_words = other_speaker_buffer.copy()
+        primary_start = other_speaker_start
+        
+        # Clear other speaker buffer
+        other_speaker_buffer = []
+        other_speaker = None
+        other_speaker_start = None
+    
+    def _is_likely_interjection(buffer_words: List[WordSegment], text: str, duration: float) -> bool:
+        """
+        Quick check if buffered words look like an interjection.
+        
+        Uses simple heuristics - detailed classification happens later with LLM.
+        """
+        word_count = len(buffer_words)
+        
+        # Too many words or too long - probably not an interjection
+        if word_count > max_interjection_words:
+            return False
+        if duration > max_interjection_duration:
+            return False
+        
+        # Check for common interjection patterns
+        text_lower = text.lower().strip()
+        text_clean = re.sub(r'[^\w\s]', '', text_lower)
+        
+        # Very short utterances (1-2 words) are likely interjections
+        if word_count <= 2:
+            return True
+        
+        # Check acknowledgment patterns
+        for pattern in config.acknowledgment_patterns:
+            if pattern in text_clean or text_clean == pattern:
+                return True
+        
+        # Check reaction patterns  
+        for pattern in config.reaction_patterns:
+            if pattern in text_clean or text_clean == pattern:
+                return True
+        
+        # Short utterances (3-4 words) that are fast might be interjections
+        if word_count <= 4 and duration < 1.5:
+            return True
+        
+        return False
+    
+    # Process words
+    for word in words:
+        speaker = word.speaker or "Unknown"
+        
+        # Case 1: No primary speaker yet - this speaker becomes primary
+        if primary_speaker is None:
+            primary_speaker = speaker
+            primary_words = [word]
+            primary_start = word.start
+            continue
+        
+        # Case 2: Same as primary speaker
+        if speaker == primary_speaker:
+            # If we had another speaker buffered, handle them first
+            if other_speaker_buffer:
+                other_text = " ".join(w.text for w in other_speaker_buffer)
+                other_duration = other_speaker_buffer[-1].end - other_speaker_start
+                
+                if _is_likely_interjection(other_speaker_buffer, other_text, other_duration):
+                    # It's an interjection - save it and continue with primary
+                    _flush_other_speaker_as_interjection()
+                else:
+                    # Not an interjection - this was a real turn change
+                    # Save the other speaker as a new primary turn, then start fresh
+                    _flush_other_speaker_as_new_primary()
+                    # Now create a new primary segment for the returning speaker
+                    _flush_primary_segment()
+                    primary_speaker = speaker
+                    primary_words = [word]
+                    primary_start = word.start
+                    continue
+            
+            # Add to primary turn
+            primary_words.append(word)
+            continue
+        
+        # Case 3: Different speaker - might be interjection or turn change
+        if other_speaker is None:
+            # Start buffering this other speaker
+            other_speaker = speaker
+            other_speaker_buffer = [word]
+            other_speaker_start = word.start
+        elif speaker == other_speaker:
+            # Continue buffering same other speaker
+            other_speaker_buffer.append(word)
+        else:
+            # Third speaker appeared! Flush other_speaker first
+            other_text = " ".join(w.text for w in other_speaker_buffer)
+            other_duration = other_speaker_buffer[-1].end - other_speaker_start
+            
+            if _is_likely_interjection(other_speaker_buffer, other_text, other_duration):
+                _flush_other_speaker_as_interjection()
+            else:
+                _flush_other_speaker_as_new_primary()
+            
+            # Now buffer this third speaker
+            other_speaker = speaker
+            other_speaker_buffer = [word]
+            other_speaker_start = word.start
+    
+    # Final cleanup - flush remaining buffers
+    if other_speaker_buffer:
+        other_text = " ".join(w.text for w in other_speaker_buffer)
+        other_duration = other_speaker_buffer[-1].end - other_speaker_start
+        
+        if _is_likely_interjection(other_speaker_buffer, other_text, other_duration):
+            _flush_other_speaker_as_interjection()
+        else:
+            _flush_other_speaker_as_new_primary()
+    
+    _flush_primary_segment()
+    
+    # Post-processing: Merge consecutive same-speaker segments that are close together
+    # This handles cases where interjections split a speaker's turn
+    primary_segments = _merge_consecutive_same_speaker_segments(
+        primary_segments, config.max_gap_to_merge_turns
+    )
+    
+    # Calculate gaps between segments
+    _calculate_segment_gaps(primary_segments)
+    
+    log_debug(f"Smart grouping: {len(primary_segments)} primary segments, "
+              f"{len(pending_interjections)} pending interjections")
+    
+    return primary_segments, pending_interjections
+
+
+def _merge_consecutive_same_speaker_segments(
+    segments: List[RawSegment],
+    max_gap: float
+) -> List[RawSegment]:
+    """
+    Merge consecutive segments from the same speaker that are close together.
+    
+    This post-processing step handles cases where a speaker's turn was split
+    by detected interjections, leaving fragments that should be merged.
+    """
+    if len(segments) <= 1:
+        return segments
+    
+    merged: List[RawSegment] = []
+    current_segment = segments[0]
+    
+    for next_segment in segments[1:]:
+        # Check if we should merge
+        same_speaker = current_segment.speaker == next_segment.speaker
+        gap = next_segment.start - current_segment.end
+        close_enough = gap <= max_gap
+        
+        if same_speaker and close_enough:
+            # Merge: combine words and text
+            combined_words = current_segment.words + next_segment.words
+            combined_text = current_segment.text + " " + next_segment.text
+            current_segment = RawSegment(
+                speaker=current_segment.speaker,
+                start=current_segment.start,
+                end=next_segment.end,
+                text=combined_text,
+                words=combined_words
+            )
+        else:
+            # Don't merge - save current and move to next
+            merged.append(current_segment)
+            current_segment = next_segment
+    
+    # Don't forget the last segment
+    merged.append(current_segment)
+    
+    return merged
+
+
 def group_by_speaker(words: List[WordSegment]) -> List[RawSegment]:
     """
     Group consecutive words by speaker into raw segments.
+    
+    DEPRECATED: This naive approach creates too many micro-segments when
+    timestamps overlap in split-audio mode. Use smart_group_with_interjection_detection
+    instead for split-audio mode.
     
     Args:
         words: Sorted list of WordSegment objects
@@ -532,6 +833,156 @@ def _create_hierarchical_turn(segments: List[RawSegment], turn_id: int) -> Hiera
         words=all_words,
         interjections=[]
     )
+
+
+def assemble_hierarchical_turns_with_interjections(
+    primary_segments: List[RawSegment],
+    interjections: List[InterjectionSegment],
+    config: TurnBuilderConfig
+) -> List[HierarchicalTurn]:
+    """
+    Assemble hierarchical turns from primary segments with pre-verified interjections.
+    
+    This function is designed for the new smart grouping approach where interjections
+    are detected during grouping and verified separately (e.g., by LLM). The interjections
+    are already InterjectionSegment objects, not RawSegments.
+    
+    Args:
+        primary_segments: RawSegment objects for primary turns
+        interjections: Already-verified InterjectionSegment objects
+        config: Configuration with thresholds
+        
+    Returns:
+        List of HierarchicalTurn objects with interjections attached
+    """
+    if not primary_segments:
+        log_debug("No primary segments provided")
+        return []
+    
+    # Build primary turns, merging consecutive same-speaker segments
+    hierarchical_turns: List[HierarchicalTurn] = []
+    current_turn_segments: List[RawSegment] = []
+    current_speaker: Optional[str] = None
+    turn_id = 1
+    
+    for segment in primary_segments:
+        should_merge = (
+            current_speaker == segment.speaker and
+            current_turn_segments and
+            (segment.start - current_turn_segments[-1].end) <= config.max_gap_to_merge_turns
+        )
+        
+        if should_merge:
+            # Same speaker within gap threshold - merge
+            current_turn_segments.append(segment)
+        else:
+            # Different speaker or gap too large - finalize current turn and start new
+            if current_turn_segments:
+                hturn = _create_hierarchical_turn(current_turn_segments, turn_id)
+                hierarchical_turns.append(hturn)
+                turn_id += 1
+            
+            current_turn_segments = [segment]
+            current_speaker = segment.speaker
+    
+    # Finalize last turn
+    if current_turn_segments:
+        hturn = _create_hierarchical_turn(current_turn_segments, turn_id)
+        hierarchical_turns.append(hturn)
+    
+    # Attach interjections to appropriate turns
+    _attach_verified_interjections_to_turns(hierarchical_turns, interjections, config)
+    
+    log_debug(f"Assembled {len(hierarchical_turns)} hierarchical turns with "
+              f"{len(interjections)} interjections")
+    
+    return hierarchical_turns
+
+
+def _attach_verified_interjections_to_turns(
+    turns: List[HierarchicalTurn],
+    interjections: List[InterjectionSegment],
+    config: TurnBuilderConfig
+) -> None:
+    """
+    Attach verified InterjectionSegment objects to the most appropriate primary turns.
+    
+    Unlike _attach_interjections_to_turns, this works with already-verified
+    InterjectionSegment objects (not RawSegments).
+    """
+    for interjection in interjections:
+        best_turn = None
+        best_score = -1
+        
+        for turn in turns:
+            # Calculate how well this interjection fits with this turn
+            score = _score_interjection_segment_fit(interjection, turn)
+            if score > best_score:
+                best_score = score
+                best_turn = turn
+        
+        if best_turn is not None:
+            # Update interrupt level based on actual turn timing
+            interjection.interrupt_level = _calculate_interrupt_level(
+                interjection, best_turn.start, best_turn.end
+            )
+            best_turn.interjections.append(interjection)
+            
+            # Recalculate turn metrics
+            best_turn._calculate_flow_continuity()
+            best_turn._determine_turn_type()
+
+
+def _score_interjection_segment_fit(interjection: InterjectionSegment, turn: HierarchicalTurn) -> float:
+    """
+    Score how well an InterjectionSegment fits with a turn.
+    
+    Higher score = better fit.
+    """
+    # Different speaker required
+    if interjection.speaker == turn.primary_speaker:
+        return -1
+    
+    score = 0.0
+    
+    # Temporal overlap or adjacency
+    if interjection.start >= turn.start and interjection.end <= turn.end:
+        # Interjection is fully within turn bounds
+        score += 1.0
+    elif interjection.start >= turn.start - 0.5 and interjection.end <= turn.end + 0.5:
+        # Interjection is near turn bounds (within 0.5s)
+        score += 0.7
+    elif interjection.start >= turn.start - 1.0 and interjection.end <= turn.end + 1.0:
+        # Interjection is close to turn bounds (within 1s)
+        score += 0.4
+    else:
+        # Interjection is far from turn
+        return 0.0
+    
+    return score
+
+
+def _calculate_interrupt_level(
+    interjection: InterjectionSegment,
+    primary_turn_start: float,
+    primary_turn_end: float
+) -> str:
+    """Calculate interrupt level for an InterjectionSegment."""
+    overlap_start = max(interjection.start, primary_turn_start)
+    overlap_end = min(interjection.end, primary_turn_end)
+    
+    if overlap_start >= overlap_end:
+        return "none"
+    
+    overlap_duration = overlap_end - overlap_start
+    interjection_ratio = overlap_duration / interjection.duration if interjection.duration > 0 else 0
+    
+    if interjection_ratio < 0.3:
+        return "low"
+    elif interjection_ratio < 0.7:
+        return "medium"
+    else:
+        return "high"
 
 
 def _attach_interjections_to_turns(

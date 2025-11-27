@@ -4,13 +4,16 @@ Split audio turn builder provider using LLM-enhanced interjection detection.
 
 This module implements a turn builder for split-audio mode that:
 1. Merges word streams from multiple speakers into a unified timeline
-2. Groups consecutive words by speaker into segments
-3. Classifies clear cases using rules, ambiguous cases using LLM
-4. Assembles hierarchical turns with embedded interjections
-5. Returns TranscriptFlow with full hierarchical structure
+2. Uses smart grouping that detects interjections DURING grouping (not after)
+3. Handles timestamp misalignment with tolerance windows for split-audio mode
+4. Uses LLM for semantic verification of ambiguous interjection candidates
+5. Assembles hierarchical turns with embedded interjections
+6. Returns TranscriptFlow with full hierarchical structure
 
-This version uses LLM calls to classify ambiguous segments where
-rule-based confidence is not high enough.
+Key improvements over naive grouping:
+- Detects interjections during grouping phase, not after creating micro-segments
+- Uses tolerance window for timestamp misalignment between separate audio tracks
+- LLM semantic verification for ambiguous cases (not just confidence thresholds)
 """
 
 import re
@@ -28,14 +31,15 @@ from local_transcribe.providers.turn_builders.split_audio_data_structures import
     RawSegment,
     TurnBuilderConfig,
     TranscriptFlow,
-    HierarchicalTurn
+    HierarchicalTurn,
+    InterjectionSegment
 )
 from local_transcribe.providers.turn_builders.split_audio_base import (
     merge_word_streams,
-    group_by_speaker,
-    calculate_interjection_confidence,
+    smart_group_with_interjection_detection,
+    PendingInterjection,
     detect_interjection_type,
-    assemble_hierarchical_turns,
+    assemble_hierarchical_turns_with_interjections,
     build_transcript_flow
 )
 
@@ -44,13 +48,13 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
     """
     LLM-enhanced split audio turn builder.
     
-    This turn builder extends the rule-based version by using an LLM to
-    classify ambiguous segments - those where rule-based confidence is
-    between the low and high thresholds.
+    This turn builder uses smart grouping that detects interjections during
+    the grouping phase rather than creating micro-segments. It handles the
+    timestamp misalignment common in split-audio mode with tolerance windows.
     
-    Clear cases (very short acknowledgments, or long substantive turns)
-    are still classified using rules for efficiency. Only ambiguous cases
-    (e.g., 2-3 word utterances that could be either) are sent to the LLM.
+    The LLM is used for semantic verification of ambiguous interjection
+    candidates - cases where rule-based detection is uncertain about whether
+    an utterance is an interjection or a real turn change.
     
     If the LLM is unavailable, falls back to rule-based classification.
     """
@@ -63,7 +67,9 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
             "calls_made": 0,
             "calls_succeeded": 0,
             "calls_failed": 0,
-            "total_time_ms": 0
+            "total_time_ms": 0,
+            "verified_as_interjection": 0,
+            "verified_as_turn": 0
         }
 
     @property
@@ -86,6 +92,9 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
         """
         Build turns from word segments with speaker assignments.
         
+        Uses smart grouping that detects interjections during the grouping
+        phase, with LLM semantic verification for ambiguous cases.
+        
         Args:
             words: Word segments with speaker assignments (from all speakers)
             **kwargs: Configuration options including:
@@ -95,6 +104,7 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
                 - max_interjection_words: Override default (5)
                 - max_gap_to_merge_turns: Override default (3.0s)
                 - llm_timeout: Timeout for LLM requests in seconds
+                - timestamp_tolerance: Tolerance window for timestamp misalignment (0.5s)
             
         Returns:
             TranscriptFlow with hierarchical turn structure
@@ -112,7 +122,10 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
             self.llm_url = f'http://{self.llm_url}'
         
         # Reset LLM stats
-        self.llm_stats = {"calls_made": 0, "calls_succeeded": 0, "calls_failed": 0, "total_time_ms": 0}
+        self.llm_stats = {
+            "calls_made": 0, "calls_succeeded": 0, "calls_failed": 0, 
+            "total_time_ms": 0, "verified_as_interjection": 0, "verified_as_turn": 0
+        }
         
         # Get intermediate directory
         intermediate_dir = kwargs.get('intermediate_dir')
@@ -125,29 +138,40 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
         merged_words = merge_word_streams(words)
         log_progress(f"Merged into {len(merged_words)} words in timeline")
         
-        # Step 2: Group by speaker into raw segments
-        log_debug("Step 2: Grouping by speaker")
-        segments = group_by_speaker(merged_words)
-        log_progress(f"Grouped into {len(segments)} raw segments")
+        # Step 2: Smart grouping with interjection detection during grouping
+        log_debug("Step 2: Smart grouping with interjection detection")
+        primary_segments, pending_interjections = smart_group_with_interjection_detection(
+            merged_words, self.config
+        )
+        log_progress(f"Smart grouping: {len(primary_segments)} primary segments, "
+                    f"{len(pending_interjections)} pending interjections")
         
-        # Step 3: Classify segments using hybrid approach
-        log_debug("Step 3: Classifying segments (LLM-enhanced)")
-        self._classify_segments_with_llm(segments)
+        # Step 3: LLM semantic verification of ambiguous interjections
+        log_debug("Step 3: LLM semantic verification of pending interjections")
+        verified_interjections, promoted_to_turns = self._verify_interjections_with_llm(
+            pending_interjections, primary_segments
+        )
         
-        primary_count = sum(1 for s in segments if not s.is_interjection)
-        interjection_count = sum(1 for s in segments if s.is_interjection)
-        log_progress(f"Classification: {primary_count} primary, {interjection_count} interjections")
+        log_progress(f"LLM verification: {len(verified_interjections)} confirmed interjections, "
+                    f"{len(promoted_to_turns)} promoted to turns")
         log_progress(f"LLM stats: {self.llm_stats['calls_made']} calls, "
                     f"{self.llm_stats['calls_succeeded']} succeeded, "
                     f"{self.llm_stats['calls_failed']} failed")
         
-        # Step 4: Assemble hierarchical turns
-        log_debug("Step 4: Assembling hierarchical turns")
-        hierarchical_turns = assemble_hierarchical_turns(segments, self.config)
+        # Step 4: Merge promoted turns back into primary segments
+        if promoted_to_turns:
+            primary_segments = self._merge_promoted_turns(primary_segments, promoted_to_turns)
+            log_debug(f"After merging promoted turns: {len(primary_segments)} primary segments")
+        
+        # Step 5: Assemble hierarchical turns with verified interjections
+        log_debug("Step 5: Assembling hierarchical turns")
+        hierarchical_turns = assemble_hierarchical_turns_with_interjections(
+            primary_segments, verified_interjections, self.config
+        )
         log_progress(f"Assembled {len(hierarchical_turns)} hierarchical turns")
         
-        # Step 5: Build TranscriptFlow with metrics
-        log_debug("Step 5: Building TranscriptFlow")
+        # Step 6: Build TranscriptFlow with metrics
+        log_debug("Step 6: Building TranscriptFlow")
         transcript_flow = build_transcript_flow(
             hierarchical_turns,
             self.config,
@@ -155,7 +179,9 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
                 "builder": self.name,
                 "timestamp": datetime.now().isoformat(),
                 "total_words": len(words),
-                "total_segments": len(segments),
+                "primary_segments": len(primary_segments),
+                "verified_interjections": len(verified_interjections),
+                "promoted_to_turns": len(promoted_to_turns),
                 "llm_url": self.llm_url,
                 "llm_stats": self.llm_stats.copy()
             }
@@ -165,7 +191,8 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
         if intermediate_dir:
             self._save_intermediate_output(transcript_flow, intermediate_dir)
         
-        log_progress(f"Turn building complete: {transcript_flow.total_turns} turns, {transcript_flow.total_interjections} interjections")
+        log_progress(f"Turn building complete: {transcript_flow.total_turns} turns, "
+                    f"{transcript_flow.total_interjections} interjections")
         
         # Log summary
         self._log_summary(transcript_flow)
@@ -188,75 +215,177 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
             self.config.llm_timeout = kwargs['llm_timeout']
         if 'llm_context_turns' in kwargs:
             self.config.llm_context_turns = kwargs['llm_context_turns']
+        if 'timestamp_tolerance' in kwargs:
+            self.config.timestamp_tolerance = kwargs['timestamp_tolerance']
 
-    def _classify_segments_with_llm(self, segments: List[RawSegment]) -> None:
-        """
-        Classify segments using hybrid rule + LLM approach.
-        
-        Clear cases are handled by rules, ambiguous cases by LLM.
-        Modifies segments in place.
-        """
-        for i, segment in enumerate(segments):
-            prev_seg = segments[i - 1] if i > 0 else None
-            next_seg = segments[i + 1] if i < len(segments) - 1 else None
-            
-            # Calculate rule-based confidence
-            confidence, interjection_type = calculate_interjection_confidence(
-                segment, prev_seg, next_seg, self.config
-            )
-            segment.interjection_confidence = confidence
-            
-            # Hard rules: definitely not an interjection
-            if segment.duration > self.config.max_interjection_duration:
-                segment.is_interjection = False
-                segment.classification_method = "rule_duration"
-                continue
-            
-            if segment.word_count > self.config.max_interjection_words:
-                segment.is_interjection = False
-                segment.classification_method = "rule_word_count"
-                continue
-            
-            # Clear high-confidence interjection
-            if confidence >= self.config.high_confidence_threshold:
-                segment.is_interjection = True
-                segment.classification_method = "rule_high_confidence"
-                continue
-            
-            # Clear low-confidence (not interjection)
-            if confidence <= self.config.low_confidence_threshold:
-                segment.is_interjection = False
-                segment.classification_method = "rule_low_confidence"
-                continue
-            
-            # Ambiguous case - use LLM
-            log_debug(f"Ambiguous segment ({confidence:.2f}): '{segment.text[:50]}...' - using LLM")
-            
-            llm_result = self._classify_with_llm(segment, prev_seg, next_seg)
-            
-            if llm_result is not None:
-                segment.is_interjection = llm_result['is_interjection']
-                segment.interjection_confidence = llm_result.get('confidence', confidence)
-                segment.classification_method = "llm"
-            else:
-                # LLM failed - fall back to rule-based default
-                # For ambiguous cases, lean toward not-interjection (safer)
-                segment.is_interjection = False
-                segment.classification_method = "rule_fallback"
-
-    def _classify_with_llm(
+    def _verify_interjections_with_llm(
         self,
-        segment: RawSegment,
-        prev_segment: Optional[RawSegment],
-        next_segment: Optional[RawSegment]
-    ) -> Optional[Dict[str, Any]]:
+        pending_interjections: List[PendingInterjection],
+        primary_segments: List[RawSegment]
+    ) -> Tuple[List[InterjectionSegment], List[RawSegment]]:
         """
-        Classify a segment using the LLM.
+        Use LLM to semantically verify pending interjections.
+        
+        The smart grouping phase identified these as *potential* interjections
+        based on structural heuristics. Now we use the LLM to semantically
+        verify whether they are truly interjections or should be promoted
+        to primary turns.
         
         Args:
-            segment: The segment to classify
-            prev_segment: Previous segment for context
-            next_segment: Next segment for context
+            pending_interjections: Interjection candidates from smart grouping
+            primary_segments: The primary turn segments for context
+            
+        Returns:
+            Tuple of (verified_interjections, promoted_to_turns)
+        """
+        verified_interjections: List[InterjectionSegment] = []
+        promoted_to_turns: List[RawSegment] = []
+        
+        for pending in pending_interjections:
+            # Find surrounding context from primary segments
+            context_before, context_after = self._find_context_for_interjection(
+                pending, primary_segments
+            )
+            
+            # Determine if we need LLM verification
+            needs_llm = self._needs_llm_verification(pending)
+            
+            if needs_llm:
+                # Use LLM for semantic verification
+                llm_result = self._verify_with_llm(pending, context_before, context_after)
+                
+                if llm_result is not None:
+                    if llm_result['is_interjection']:
+                        self.llm_stats['verified_as_interjection'] += 1
+                        interjection = self._create_interjection_segment(
+                            pending, 
+                            llm_result.get('interjection_type', 'unclear'),
+                            llm_result.get('confidence', 0.8),
+                            "llm_verified"
+                        )
+                        verified_interjections.append(interjection)
+                    else:
+                        self.llm_stats['verified_as_turn'] += 1
+                        # Promote to primary turn
+                        segment = self._create_raw_segment_from_pending(pending)
+                        segment.classification_method = "llm_promoted_to_turn"
+                        promoted_to_turns.append(segment)
+                else:
+                    # LLM failed - use rule-based fallback
+                    interjection = self._create_interjection_segment(
+                        pending,
+                        detect_interjection_type(pending.text, self.config) or "unclear",
+                        0.6,
+                        "rule_fallback"
+                    )
+                    verified_interjections.append(interjection)
+            else:
+                # High confidence from rules - no LLM needed
+                interjection = self._create_interjection_segment(
+                    pending,
+                    detect_interjection_type(pending.text, self.config) or "unclear",
+                    0.9,
+                    "rule_high_confidence"
+                )
+                verified_interjections.append(interjection)
+        
+        return verified_interjections, promoted_to_turns
+    
+    def _needs_llm_verification(self, pending: PendingInterjection) -> bool:
+        """
+        Determine if a pending interjection needs LLM verification.
+        
+        Very short, pattern-matching utterances don't need LLM verification.
+        Longer or ambiguous ones do.
+        """
+        # Very short (1-2 words) with pattern match - high confidence
+        if pending.word_count <= 2:
+            if detect_interjection_type(pending.text, self.config):
+                return False
+        
+        # 3-5 words or no pattern match - needs verification
+        if pending.word_count >= 3:
+            return True
+        
+        # Short but no pattern match - verify
+        if not detect_interjection_type(pending.text, self.config):
+            return True
+        
+        return False
+    
+    def _find_context_for_interjection(
+        self,
+        pending: PendingInterjection,
+        primary_segments: List[RawSegment]
+    ) -> Tuple[Optional[RawSegment], Optional[RawSegment]]:
+        """Find the primary segments before and after this interjection."""
+        context_before = None
+        context_after = None
+        
+        for segment in primary_segments:
+            if segment.end <= pending.start:
+                context_before = segment
+            elif segment.start >= pending.end and context_after is None:
+                context_after = segment
+                break
+        
+        return context_before, context_after
+    
+    def _create_interjection_segment(
+        self,
+        pending: PendingInterjection,
+        interjection_type: str,
+        confidence: float,
+        classification_method: str
+    ) -> InterjectionSegment:
+        """Create an InterjectionSegment from a PendingInterjection."""
+        return InterjectionSegment(
+            speaker=pending.speaker,
+            start=pending.start,
+            end=pending.end,
+            text=pending.text,
+            words=pending.words,
+            confidence=confidence,
+            interjection_type=interjection_type,
+            interrupt_level="low",  # Will be recalculated during assembly
+            classification_method=classification_method
+        )
+    
+    def _create_raw_segment_from_pending(self, pending: PendingInterjection) -> RawSegment:
+        """Convert a PendingInterjection to a RawSegment (for promotion to turn)."""
+        return RawSegment(
+            speaker=pending.speaker,
+            start=pending.start,
+            end=pending.end,
+            text=pending.text,
+            words=pending.words,
+            is_interjection=False,
+            interjection_confidence=0.0
+        )
+    
+    def _merge_promoted_turns(
+        self,
+        primary_segments: List[RawSegment],
+        promoted_turns: List[RawSegment]
+    ) -> List[RawSegment]:
+        """Merge promoted turns back into primary segments, sorted by time."""
+        all_segments = primary_segments + promoted_turns
+        all_segments.sort(key=lambda s: s.start)
+        return all_segments
+
+    def _verify_with_llm(
+        self,
+        pending: PendingInterjection,
+        context_before: Optional[RawSegment],
+        context_after: Optional[RawSegment]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Use LLM to semantically verify if this is truly an interjection.
+        
+        Args:
+            pending: The pending interjection to verify
+            context_before: Previous primary segment for context
+            context_after: Next primary segment for context
             
         Returns:
             Dict with 'is_interjection', 'confidence', 'interjection_type', 'reasoning'
@@ -265,7 +394,7 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
         self.llm_stats["calls_made"] += 1
         
         # Build the prompt
-        prompt = self._build_classification_prompt(segment, prev_segment, next_segment)
+        prompt = self._build_verification_prompt(pending, context_before, context_after)
         
         try:
             start_time = time.time()
@@ -297,13 +426,13 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
             
             if parsed:
                 self.llm_stats["calls_succeeded"] += 1
-                log_debug(f"LLM classified '{segment.text[:30]}...' as "
+                log_debug(f"LLM verified '{pending.text[:30]}...' as "
                          f"{'interjection' if parsed['is_interjection'] else 'turn'} "
                          f"(confidence: {parsed.get('confidence', 'N/A')})")
                 return parsed
             else:
                 self.llm_stats["calls_failed"] += 1
-                log_debug(f"Failed to parse LLM response for '{segment.text[:30]}...'")
+                log_debug(f"Failed to parse LLM response for '{pending.text[:30]}...'")
                 return None
                 
         except requests.RequestException as e:
@@ -316,61 +445,71 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
             return None
 
     def _get_system_prompt(self) -> str:
-        """Get the system prompt for classification."""
+        """Get the system prompt for semantic verification."""
         return """You are an expert at analyzing interview conversations.
-Your task is to classify whether a short utterance is:
+
+Your task is to determine whether an utterance is:
 1. An INTERJECTION - a brief acknowledgment, reaction, or backchannel that does NOT claim the conversational floor
-2. A TURN - a substantive contribution that claims speaking rights
+2. A TURN - a substantive contribution that claims speaking rights and advances the conversation
 
-Examples of INTERJECTIONS:
-- "yeah", "uh-huh", "mm-hmm" (acknowledgments)
-- "really?", "what?" (brief questions)
-- "wow", "oh", "interesting" (reactions)
-- "right", "okay", "sure" (agreements)
+INTERJECTIONS include:
+- Acknowledgments: "yeah", "uh-huh", "mm-hmm", "right", "okay"
+- Brief reactions: "really?", "wow", "oh", "interesting"  
+- Backchannels that show listening without claiming the floor
 
-Examples of TURNS (even if short):
+TURNS include:
 - Starting a new topic or thought
 - Answering a question substantively
 - Asking a real question that expects an answer
 - Making a statement that advances the conversation
+- Taking over the conversational floor
 
-Consider the context: if the utterance is sandwiched between the same speaker continuing their thought, it's likely an interjection.
+KEY CONTEXT: This is from an interview where one person (usually the Participant) often speaks at length while the other (Interviewer) provides brief acknowledgments. If the utterance appears during the other speaker's extended turn, it's more likely an interjection.
 
 Respond with ONLY valid JSON (no markdown, no explanation):
 {"classification": "interjection" or "turn", "confidence": 0.0-1.0, "type": "acknowledgment"/"question"/"reaction"/"unclear" or null, "reasoning": "brief explanation"}"""
 
-    def _build_classification_prompt(
+    def _build_verification_prompt(
         self,
-        segment: RawSegment,
-        prev_segment: Optional[RawSegment],
-        next_segment: Optional[RawSegment]
+        pending: PendingInterjection,
+        context_before: Optional[RawSegment],
+        context_after: Optional[RawSegment]
     ) -> str:
-        """Build the user prompt for classification."""
-        lines = ["Analyze this utterance in an interview conversation:\n"]
+        """Build the user prompt for semantic verification."""
+        lines = [
+            "Analyze this utterance from an interview conversation:",
+            "",
+            "CONTEXT:"
+        ]
         
         # Previous context
-        if prev_segment:
-            prev_text = prev_segment.text[:200] + "..." if len(prev_segment.text) > 200 else prev_segment.text
-            lines.append(f"PREVIOUS: [{prev_segment.speaker}] \"{prev_text}\" ({prev_segment.duration:.1f}s, {prev_segment.word_count} words)")
+        if context_before:
+            prev_text = context_before.text[:300] + "..." if len(context_before.text) > 300 else context_before.text
+            lines.append(f"  Before: [{context_before.speaker}] \"{prev_text}\"")
+            lines.append(f"          ({context_before.duration:.1f}s, {context_before.word_count} words)")
         else:
-            lines.append("PREVIOUS: [start of conversation]")
+            lines.append("  Before: [start of conversation]")
         
         lines.append("")
         
-        # Target segment
-        lines.append(f"TARGET: [{segment.speaker}] \"{segment.text}\" ({segment.duration:.1f}s, {segment.word_count} words)")
+        # Target utterance
+        lines.append(f"TARGET UTTERANCE:")
+        lines.append(f"  [{pending.speaker}] \"{pending.text}\"")
+        lines.append(f"  ({pending.duration:.1f}s, {pending.word_count} words)")
+        lines.append(f"  Detected during {pending.detected_during_turn_of}'s speaking turn")
         
         lines.append("")
         
         # Next context
-        if next_segment:
-            next_text = next_segment.text[:200] + "..." if len(next_segment.text) > 200 else next_segment.text
-            lines.append(f"NEXT: [{next_segment.speaker}] \"{next_text}\" ({next_segment.duration:.1f}s, {next_segment.word_count} words)")
+        if context_after:
+            next_text = context_after.text[:300] + "..." if len(context_after.text) > 300 else context_after.text
+            lines.append(f"  After: [{context_after.speaker}] \"{next_text}\"")
+            lines.append(f"         ({context_after.duration:.1f}s, {context_after.word_count} words)")
         else:
-            lines.append("NEXT: [end of conversation]")
+            lines.append("  After: [end of conversation]")
         
         lines.append("")
-        lines.append("Is the TARGET utterance an interjection or a substantive turn?")
+        lines.append("Is the TARGET UTTERANCE an interjection or a substantive turn?")
         
         return "\n".join(lines)
 
@@ -490,6 +629,8 @@ Respond with ONLY valid JSON (no markdown, no explanation):
         log_progress(f"  LLM calls: {self.llm_stats['calls_made']} "
                     f"(success: {self.llm_stats['calls_succeeded']}, "
                     f"failed: {self.llm_stats['calls_failed']})")
+        log_progress(f"  LLM results: {self.llm_stats['verified_as_interjection']} interjections, "
+                    f"{self.llm_stats['verified_as_turn']} promoted to turns")
         
         if self.llm_stats['calls_succeeded'] > 0:
             avg_time = self.llm_stats['total_time_ms'] / self.llm_stats['calls_succeeded']

@@ -29,7 +29,7 @@ SECOND_PASS_DEFAULTS = {
     'temperature': 1.0,           # Temperature for LLM
     'parse_harmony': True,        # Parse Harmony format responses
     'max_retries': 3,             # Number of retries on validation failure
-    'temperature_decay': 0.1,    # Reduce temperature by this amount on each retry
+    'temperature_decay': 0.05,    # Reduce temperature by this amount on each retry
 }
 
 

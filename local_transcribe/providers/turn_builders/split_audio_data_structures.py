@@ -256,8 +256,9 @@ class TurnBuilderConfig:
     max_gap_before_interjection: float = 1.0  # seconds - interjections occur near other speech
     max_gap_to_merge_turns: float = 3.0  # seconds - same speaker turns within this gap are merged
     
-    # Overlap detection
+    # Overlap detection and timestamp tolerance
     overlap_tolerance: float = 0.1  # seconds - timing imprecision buffer
+    timestamp_tolerance: float = 0.5  # seconds - tolerance window for split-audio timestamp misalignment
     
     # Interjection patterns (lowercase for matching)
     acknowledgment_patterns: List[str] = field(default_factory=lambda: [

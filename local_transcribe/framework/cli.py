@@ -549,13 +549,13 @@ def interactive_prompt(args, api):
                     else:
                         print("Error: Please enter a number from the list.")
             else:
-                # Default to split_audio_turn_builder if available, otherwise fall back
+                # Default to split_audio_llm_turn_builder if available, otherwise fall back
                 if split_audio_turn_builders:
                     args.turn_builder_provider = list(split_audio_turn_builders.keys())[0]
                 elif single_speaker_turn_builders:
                     args.turn_builder_provider = list(single_speaker_turn_builders.keys())[0]
                 else:
-                    args.turn_builder_provider = "split_audio_turn_builder"  # Fallback default
+                    args.turn_builder_provider = "split_audio_llm_turn_builder"  # Fallback default
                 print(f"✓ Selected: {args.turn_builder_provider} [Default]")
 
             # If LLM turn builder selected, prompt for URL

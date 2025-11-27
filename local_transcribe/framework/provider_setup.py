@@ -140,8 +140,8 @@ class ProviderSetup:
             if mode == "combined_audio":
                 turn_builder_name = "multi_speaker"
             else:
-                # For split_audio mode, use the new split_audio_turn_builder
-                turn_builder_name = getattr(self.args, 'turn_builder_provider', "split_audio_turn_builder")
+                # For split_audio mode, use the LLM-enhanced turn builder
+                turn_builder_name = getattr(self.args, 'turn_builder_provider', "split_audio_llm_turn_builder")
             
             return self.registry.get_turn_builder_provider(turn_builder_name)
             

@@ -235,13 +235,14 @@ def smart_group_with_interjection_detection(
                     _flush_other_speaker_as_interjection()
                 else:
                     # Not an interjection - this was a real turn change
-                    # Save the other speaker as a new primary turn, then start fresh
+                    # The other speaker legitimately took the floor, so they become primary
+                    # The current word (from the original primary) now becomes the "other" speaker
                     _flush_other_speaker_as_new_primary()
-                    # Now create a new primary segment for the returning speaker
-                    _flush_primary_segment()
-                    primary_speaker = speaker
-                    primary_words = [word]
-                    primary_start = word.start
+                    # Now the current word starts a new "other speaker" buffer
+                    # (since we just made the other speaker the new primary)
+                    other_speaker = speaker
+                    other_speaker_buffer = [word]
+                    other_speaker_start = word.start
                     continue
             
             # Add to primary turn

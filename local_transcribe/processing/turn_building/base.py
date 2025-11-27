@@ -437,27 +437,40 @@ def detect_interjection_type(text: str, config: TurnBuilderConfig) -> Optional[s
     # Remove punctuation for matching
     text_clean = re.sub(r'[^\w\s]', '', text_lower)
     
+    # Split into words for whole-word matching
+    words = text_clean.split()
+    
+    def _pattern_matches(pattern: str, text: str, word_list: List[str]) -> bool:
+        """Check if pattern matches as whole word(s), not substring."""
+        # For single-word patterns, check if it's in the word list
+        if ' ' not in pattern:
+            return pattern in word_list
+        # For multi-word patterns, check if the phrase appears in the text
+        # Use word boundary regex to avoid substring matches
+        pattern_regex = r'\b' + re.escape(pattern) + r'\b'
+        return bool(re.search(pattern_regex, text))
+    
     # Check acknowledgment patterns
     for pattern in config.acknowledgment_patterns:
-        if pattern in text_clean or text_clean == pattern:
+        if _pattern_matches(pattern, text_clean, words):
             return "acknowledgment"
     
     # Check question patterns (also look for question marks)
     if "?" in text:
         return "question"
     for pattern in config.question_patterns:
-        if pattern in text_clean or text_clean == pattern:
+        if _pattern_matches(pattern, text_clean, words):
             return "question"
     
     # Check reaction patterns
     for pattern in config.reaction_patterns:
-        if pattern in text_clean or text_clean == pattern:
+        if _pattern_matches(pattern, text_clean, words):
             return "reaction"
     
     # Check fragment patterns (incomplete phrases)
     if hasattr(config, 'fragment_patterns'):
         for pattern in config.fragment_patterns:
-            if pattern in text_clean or text_clean == pattern:
+            if _pattern_matches(pattern, text_clean, words):
                 return "fragment"
     
     return None

@@ -156,12 +156,36 @@ class SplitAudioTurnBuilder:
                     f"{self.llm_stats['calls_succeeded']} succeeded, "
                     f"{self.llm_stats['calls_failed']} failed")
         
-        # Step 4: Merge promoted turns back into primary segments
+        # Step 4: Identify orphaned fragments among interjections
+        # These are single content words that got misclassified - they should
+        # be merged back into the speaker's nearby segment, not kept as interjections
+        log_debug("Step 4: Identifying orphaned fragments among interjections")
+        verified_interjections, orphaned_fragments = self._separate_orphaned_fragments(
+            verified_interjections, primary_segments
+        )
+        
+        if orphaned_fragments:
+            log_progress(f"Found {len(orphaned_fragments)} orphaned fragments to merge back")
+            # Convert orphaned InterjectionSegments to RawSegments for merging
+            for fragment in orphaned_fragments:
+                promoted_segment = RawSegment(
+                    speaker=fragment.speaker,
+                    start=fragment.start,
+                    end=fragment.end,
+                    text=fragment.text,
+                    words=fragment.words,
+                    is_interjection=False,
+                    interjection_confidence=0.0,
+                    classification_method="orphan_fragment"
+                )
+                promoted_to_turns.append(promoted_segment)
+        
+        # Step 5: Merge promoted turns (including orphaned fragments) back into primary segments
         if promoted_to_turns:
             primary_segments = self._merge_promoted_turns(primary_segments, promoted_to_turns)
             log_debug(f"After merging promoted turns: {len(primary_segments)} primary segments")
         
-        # Step 5: Assemble hierarchical turns with verified interjections
+        # Step 6: Assemble hierarchical turns with verified interjections
         log_debug("Step 5: Assembling hierarchical turns")
         hierarchical_turns = assemble_hierarchical_turns_with_interjections(
             primary_segments, verified_interjections, self.config
@@ -189,6 +213,15 @@ class SplitAudioTurnBuilder:
         if intermediate_dir:
             self._save_intermediate_output(transcript_flow, intermediate_dir)
         
+        # VALIDATION: Ensure word count is preserved
+        output_word_count = self._count_output_words(transcript_flow)
+        input_word_count = len(words)
+        if output_word_count != input_word_count:
+            log_progress(f"WARNING: Word count mismatch! Input: {input_word_count}, Output: {output_word_count}")
+            log_debug(f"Word count difference: {output_word_count - input_word_count} words")
+        else:
+            log_debug(f"Word count validated: {output_word_count} words preserved")
+        
         log_progress(f"Turn building complete: {transcript_flow.total_turns} turns, "
                     f"{transcript_flow.total_interjections} interjections")
         
@@ -196,6 +229,15 @@ class SplitAudioTurnBuilder:
         self._log_summary(transcript_flow)
         
         return transcript_flow
+    
+    def _count_output_words(self, transcript_flow: TranscriptFlow) -> int:
+        """Count total words in output (turns + interjections)."""
+        total = 0
+        for turn in transcript_flow.turns:
+            total += turn.word_count
+            for ij in turn.interjections:
+                total += ij.word_count
+        return total
 
     def _update_config_from_kwargs(self, kwargs: Dict[str, Any]) -> None:
         """Update configuration from kwargs."""
@@ -299,25 +341,140 @@ class SplitAudioTurnBuilder:
         
         return verified_interjections, promoted_to_turns
     
+    # Truly unambiguous backchannels - these almost never mean anything else
+    # Keep this list minimal to avoid false confidence
+    UNAMBIGUOUS_BACKCHANNELS = frozenset({
+        'yeah', 'yea', 'yep',
+        'uh-huh', 'uh huh', 'uhhuh',
+        'mm-hmm', 'mm hmm', 'mmhmm', 'mhm', 'mmm',
+        'uh', 'um', 'ah', 'hm', 'hmm',
+    })
+    
     def _needs_llm_verification(self, pending: PendingInterjection) -> bool:
         """
         Determine if a pending interjection needs LLM verification.
         
-        Very short, pattern-matching utterances don't need LLM verification.
-        Longer or ambiguous ones do.
+        Only skip LLM for truly unambiguous single-word backchannels that
+        almost never mean anything else in conversation. Everything else
+        gets sent to the LLM for semantic analysis.
+        
+        This prioritizes accuracy over speed - real speech is messy and
+        context-dependent, so we let the LLM handle ambiguous cases.
         """
-        # Very short (1-2 words) with pattern match - high confidence
-        if pending.word_count <= 2:
-            if detect_interjection_type(pending.text, self.config):
+        # Only skip LLM for single-word unambiguous backchannels
+        if pending.word_count == 1:
+            text_lower = pending.text.lower().strip()
+            if text_lower in self.UNAMBIGUOUS_BACKCHANNELS:
                 return False
         
-        # 3-5 words or no pattern match - needs verification
-        if pending.word_count >= 3:
-            return True
+        # Everything else needs LLM verification
+        return True
+    
+    # Common backchannel/filler words that are legitimate interjections
+    # Single words NOT in this set (when appearing isolated) may be orphaned fragments
+    COMMON_INTERJECTION_WORDS = frozenset({
+        # Acknowledgments
+        'yeah', 'yea', 'yep', 'yes', 'okay', 'ok', 'right', 'sure',
+        'uh-huh', 'uh huh', 'uhhuh', 'mm-hmm', 'mm hmm', 'mmhmm', 'mhm',
+        # Fillers
+        'uh', 'um', 'ah', 'hm', 'hmm', 'mmm', 'er',
+        # Reactions
+        'oh', 'wow', 'really', 'interesting', 'cool', 'nice', 'great',
+        # Discourse markers
+        'so', 'well', 'like', 'and', 'but', 'i', 'you', 'that', 'this',
+    })
+    
+    def _separate_orphaned_fragments(
+        self,
+        interjections: List[InterjectionSegment],
+        primary_segments: List[RawSegment]
+    ) -> Tuple[List[InterjectionSegment], List[InterjectionSegment]]:
+        """
+        Separate true interjections from orphaned fragments.
         
-        # Short but no pattern match - verify
-        if not detect_interjection_type(pending.text, self.config):
-            return True
+        Orphaned fragments are single-word "interjections" that:
+        1. Are NOT common backchannel/filler words
+        2. Appear during another speaker's extended turn
+        3. Look like they're part of a fragmented phrase
+        
+        These typically occur in split-audio mode when timestamp misalignment
+        scatters words from one speaker across another speaker's turn.
+        
+        Returns:
+            Tuple of (true_interjections, orphaned_fragments)
+        """
+        true_interjections: List[InterjectionSegment] = []
+        orphaned_fragments: List[InterjectionSegment] = []
+        
+        for interjection in interjections:
+            if self._is_orphaned_interjection(interjection, primary_segments):
+                log_debug(f"Identified orphaned fragment: '{interjection.text}' "
+                         f"by {interjection.speaker} at {interjection.start:.1f}s")
+                orphaned_fragments.append(interjection)
+            else:
+                true_interjections.append(interjection)
+        
+        return true_interjections, orphaned_fragments
+    
+    def _is_orphaned_interjection(
+        self,
+        interjection: InterjectionSegment,
+        primary_segments: List[RawSegment]
+    ) -> bool:
+        """
+        Determine if an interjection is actually an orphaned fragment.
+        
+        An orphaned fragment is a single content word that:
+        - Is NOT a common interjection word (yeah, okay, mm-hmm, etc.)
+        - Appears DURING another speaker's extended turn (timestamp overlaps)
+        - Has the same speaker as a nearby segment (indicating split-audio artifact)
+        
+        In split-audio mode, words can get timestamp misalignment where a speaker's
+        words appear scattered during another speaker's turn. These orphans should
+        be merged back into their speaker's nearby segment.
+        """
+        # Only consider single-word interjections as potential orphans
+        if interjection.word_count > 1:
+            return False
+        
+        text_lower = interjection.text.lower().strip()
+        
+        # If it's a common interjection/backchannel word, it's a real interjection
+        if text_lower in self.COMMON_INTERJECTION_WORDS:
+            return False
+        
+        # Key check: Does this interjection appear DURING another speaker's turn?
+        # (i.e., does it overlap with or fall within another speaker's segment?)
+        containing_segment = None
+        same_speaker_segment_nearby = None
+        
+        for ps in primary_segments:
+            # Check if interjection falls within this segment's time range
+            if ps.start <= interjection.start and interjection.end <= ps.end:
+                if ps.speaker != interjection.speaker:
+                    containing_segment = ps
+            
+            # Track if same speaker has a segment nearby (within 60s)
+            if ps.speaker == interjection.speaker:
+                gap = min(abs(interjection.start - ps.end), abs(ps.start - interjection.end))
+                if gap < 60.0:
+                    same_speaker_segment_nearby = ps
+        
+        # If this single content word appears during another speaker's extended turn,
+        # and the same speaker has a segment nearby, it's likely an orphaned fragment
+        if containing_segment is not None:
+            # The interjection falls within another speaker's turn
+            if containing_segment.word_count > 20:
+                # It's during a substantial turn - very likely an orphan
+                log_debug(f"Orphan detected: '{interjection.text}' at {interjection.start:.1f}s "
+                         f"falls within {containing_segment.speaker}'s turn "
+                         f"({containing_segment.word_count} words, {containing_segment.start:.1f}-{containing_segment.end:.1f}s)")
+                return True
+            elif same_speaker_segment_nearby is not None and containing_segment.word_count > 10:
+                # Moderate-length turn but same speaker has nearby segment
+                return True
+        
+        return False
         
         return False
     
@@ -376,10 +533,187 @@ class SplitAudioTurnBuilder:
         primary_segments: List[RawSegment],
         promoted_turns: List[RawSegment]
     ) -> List[RawSegment]:
-        """Merge promoted turns back into primary segments, sorted by time."""
-        all_segments = primary_segments + promoted_turns
+        """
+        Merge promoted turns back into primary segments.
+        
+        Handles orphaned fragments intelligently:
+        - Very short segments (1-2 words) that appear isolated during another
+          speaker's turn are likely timestamp artifacts from split-audio mode
+        - These orphans are merged into the nearest same-speaker segment
+          rather than becoming standalone micro-turns
+        - Longer promoted turns are kept as standalone segments
+        - Segments already marked as "orphan_fragment" are always treated as orphans
+        """
+        if not promoted_turns:
+            return primary_segments
+        
+        # Separate orphaned fragments from legitimate promoted turns
+        orphans: List[RawSegment] = []
+        legitimate_turns: List[RawSegment] = []
+        
+        for segment in promoted_turns:
+            # Segments already identified as orphan fragments go straight to orphans
+            if getattr(segment, 'classification_method', '') == 'orphan_fragment':
+                orphans.append(segment)
+            elif self._is_orphaned_fragment(segment, primary_segments):
+                orphans.append(segment)
+            else:
+                legitimate_turns.append(segment)
+        
+        # Log what we found
+        if orphans:
+            log_debug(f"Found {len(orphans)} orphaned fragments to merge with parent segments")
+            for orphan in orphans:
+                log_debug(f"  Orphan: '{orphan.text}' by {orphan.speaker} at {orphan.start:.1f}s")
+        
+        # Merge orphans into their nearest same-speaker segment
+        merged_segments = self._merge_orphans_into_segments(primary_segments, orphans)
+        
+        # Add legitimate promoted turns
+        all_segments = merged_segments + legitimate_turns
         all_segments.sort(key=lambda s: s.start)
+        
         return all_segments
+    
+    def _is_orphaned_fragment(
+        self,
+        segment: RawSegment,
+        primary_segments: List[RawSegment]
+    ) -> bool:
+        """
+        Determine if a segment is an orphaned fragment that should be merged.
+        
+        Orphaned fragments are:
+        - Very short (1-2 words)
+        - Appear during another speaker's extended turn (surrounded by other speaker's speech)
+        - NOT common backchannel words (those would have been classified as interjections)
+        
+        These typically occur in split-audio mode when a speaker's words get
+        timestamp misalignment and appear scattered during another speaker's turn.
+        """
+        # Only consider very short segments as orphans
+        if segment.word_count > 2:
+            return False
+        
+        # Find the surrounding context
+        segment_before = None
+        segment_after = None
+        
+        for ps in primary_segments:
+            if ps.end <= segment.start:
+                segment_before = ps
+            elif ps.start >= segment.end and segment_after is None:
+                segment_after = ps
+        
+        # Check if this segment is surrounded by another speaker's speech
+        if segment_before and segment_after:
+            # Both neighbors are from a different speaker
+            if (segment_before.speaker != segment.speaker and 
+                segment_after.speaker != segment.speaker and
+                segment_before.speaker == segment_after.speaker):
+                # This short segment is sandwiched between another speaker's turns
+                # It's likely an orphaned fragment
+                return True
+        
+        # Also check if this is a single-word segment that appears during
+        # another speaker's extended turn (even if not perfectly sandwiched)
+        if segment.word_count == 1:
+            # Find the dominant speaker in the time region around this segment
+            window_start = segment.start - 5.0
+            window_end = segment.end + 5.0
+            
+            other_speaker_words = 0
+            same_speaker_words = 0
+            
+            for ps in primary_segments:
+                # Check for overlap with window
+                if ps.end > window_start and ps.start < window_end:
+                    if ps.speaker == segment.speaker:
+                        same_speaker_words += ps.word_count
+                    else:
+                        other_speaker_words += ps.word_count
+            
+            # If the other speaker dominates this time region, it's likely an orphan
+            if other_speaker_words > 20 and same_speaker_words == 0:
+                return True
+        
+        return False
+    
+    def _merge_orphans_into_segments(
+        self,
+        primary_segments: List[RawSegment],
+        orphans: List[RawSegment]
+    ) -> List[RawSegment]:
+        """
+        Merge orphaned fragments into the nearest same-speaker segment.
+        
+        The orphan's words are appended to the segment that is closest in time
+        (preferring the segment that ends before the orphan starts).
+        """
+        if not orphans:
+            return primary_segments
+        
+        # Work with a copy
+        segments = list(primary_segments)
+        
+        for orphan in orphans:
+            # Find the best segment to merge into
+            best_segment = None
+            best_distance = float('inf')
+            best_idx = -1
+            
+            for idx, segment in enumerate(segments):
+                if segment.speaker != orphan.speaker:
+                    continue
+                
+                # Calculate distance (prefer segment that ends before orphan starts)
+                if segment.end <= orphan.start:
+                    distance = orphan.start - segment.end
+                else:
+                    distance = segment.start - orphan.end
+                    # Add penalty for merging "backwards" in time
+                    distance += 10.0
+                
+                if distance < best_distance:
+                    best_distance = distance
+                    best_segment = segment
+                    best_idx = idx
+            
+            if best_segment is not None:
+                # Merge orphan into the best segment
+                log_debug(f"Merging orphan '{orphan.text}' into segment ending at {best_segment.end:.1f}s")
+                
+                # Create merged segment
+                if best_segment.end <= orphan.start:
+                    # Orphan comes after - append words and extend end time
+                    merged = RawSegment(
+                        speaker=best_segment.speaker,
+                        start=best_segment.start,
+                        end=orphan.end,
+                        text=best_segment.text + " " + orphan.text,
+                        words=best_segment.words + orphan.words,
+                        is_interjection=False,
+                        interjection_confidence=0.0
+                    )
+                else:
+                    # Orphan comes before - prepend words and extend start time
+                    merged = RawSegment(
+                        speaker=best_segment.speaker,
+                        start=orphan.start,
+                        end=best_segment.end,
+                        text=orphan.text + " " + best_segment.text,
+                        words=orphan.words + best_segment.words,
+                        is_interjection=False,
+                        interjection_confidence=0.0
+                    )
+                
+                segments[best_idx] = merged
+            else:
+                # No same-speaker segment found - keep orphan as standalone
+                log_debug(f"No merge target found for orphan '{orphan.text}', keeping as standalone")
+                segments.append(orphan)
+        
+        return segments
 
     def _verify_with_llm(
         self,

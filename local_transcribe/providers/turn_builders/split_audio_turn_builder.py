@@ -7,6 +7,7 @@ This module implements a turn builder for split-audio mode that:
 2. Groups consecutive words by speaker into segments
 3. Classifies segments as primary turns or interjections using rules
 4. Assembles hierarchical turns with embedded interjections
+5. Returns flat turns for output writers
 
 This is the local (no LLM) version that uses heuristics and pattern matching.
 """
@@ -48,6 +49,8 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
     - Pattern matching (known interjection phrases)
     - Context (sandwiched between same-speaker segments)
     
+    The output is a flat list of Turn objects for compatibility with existing
+    output writers, but intermediate hierarchical data can be saved for analysis.
     """
 
     def __init__(self):
@@ -144,13 +147,24 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
                 "total_segments": len(segments)
             }
         )
-          
         
-        log_progress(f"Turn building complete: {} turns")
+        # Save intermediate hierarchical output if directory provided
+        if intermediate_dir:
+            self._save_intermediate_output(enriched, intermediate_dir)
+        
+        # Step 6: Convert to flat turns for output
+        include_interjections = kwargs.get('include_interjections_in_output', False)
+        if include_interjections:
+            flat_turns = enriched.to_flat_turns_with_interjections()
+        else:
+            flat_turns = enriched.to_flat_turns()
+        
+        log_progress(f"Turn building complete: {len(flat_turns)} turns")
         
         # Log summary
         self._log_summary(enriched)
         
+        return flat_turns
 
     def _update_config_from_kwargs(self, kwargs: Dict[str, Any]) -> None:
         """Update configuration from kwargs."""

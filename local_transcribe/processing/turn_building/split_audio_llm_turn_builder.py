@@ -649,12 +649,23 @@ class SplitAudioTurnBuilder:
         
         The orphan's words are appended to the segment that is closest in time
         (preferring the segment that ends before the orphan starts).
+        
+        Constraints:
+        - Maximum merge distance of 5 seconds to avoid merging distant fragments
+        - For distant merges (>3s), won't merge if it would cause the segment to 
+          overlap with another speaker's turn
+        - For close merges (<=3s), allow overlap as it's likely split-audio timing
+        - Unmerged orphans from the same speaker are combined into grouped segments
         """
         if not orphans:
             return primary_segments
         
+        MAX_MERGE_DISTANCE = 5.0  # Maximum seconds between segment and orphan
+        CLOSE_MERGE_THRESHOLD = 3.0  # Below this, allow overlaps (split-audio artifacts)
+        
         # Work with a copy
         segments = list(primary_segments)
+        unmerged_orphans: List[RawSegment] = []
         
         for orphan in orphans:
             # Find the best segment to merge into
@@ -669,10 +680,38 @@ class SplitAudioTurnBuilder:
                 # Calculate distance (prefer segment that ends before orphan starts)
                 if segment.end <= orphan.start:
                     distance = orphan.start - segment.end
+                    raw_distance = distance
+                    merge_direction = "forward"  # Extend segment forward in time
                 else:
                     distance = segment.start - orphan.end
-                    # Add penalty for merging "backwards" in time
-                    distance += 10.0
+                    raw_distance = distance
+                    merge_direction = "backward"  # Extend segment backward in time
+                    # Add small penalty for merging "backwards" in time (less natural)
+                    # but keep raw_distance for overlap threshold check
+                    distance += 1.0
+                
+                # Skip if too far away
+                if distance > MAX_MERGE_DISTANCE:
+                    continue
+                
+                # For distant merges, check if merging would cause overlap
+                # For close merges (based on raw distance), allow overlap 
+                # (likely split-audio timing artifacts)
+                if raw_distance > CLOSE_MERGE_THRESHOLD:
+                    if merge_direction == "forward":
+                        # Would extend segment to orphan.end
+                        would_overlap = self._would_overlap_other_speaker(
+                            segment.speaker, segment.end, orphan.end, segments
+                        )
+                    else:
+                        # Would extend segment start to orphan.start
+                        would_overlap = self._would_overlap_other_speaker(
+                            segment.speaker, orphan.start, segment.start, segments
+                        )
+                    
+                    if would_overlap:
+                        log_debug(f"Skipping distant merge of '{orphan.text}' - would overlap another speaker's turn")
+                        continue
                 
                 if distance < best_distance:
                     best_distance = distance
@@ -681,7 +720,7 @@ class SplitAudioTurnBuilder:
             
             if best_segment is not None:
                 # Merge orphan into the best segment
-                log_debug(f"Merging orphan '{orphan.text}' into segment ending at {best_segment.end:.1f}s")
+                log_debug(f"Merging orphan '{orphan.text}' into segment at {best_segment.start:.1f}-{best_segment.end:.1f}s (distance: {best_distance:.1f}s)")
                 
                 # Create merged segment
                 if best_segment.end <= orphan.start:
@@ -709,11 +748,172 @@ class SplitAudioTurnBuilder:
                 
                 segments[best_idx] = merged
             else:
-                # No same-speaker segment found - keep orphan as standalone
-                log_debug(f"No merge target found for orphan '{orphan.text}', keeping as standalone")
-                segments.append(orphan)
+                # Cannot merge - add to unmerged list
+                log_debug(f"Cannot merge orphan '{orphan.text}' at {orphan.start:.1f}s - adding to unmerged")
+                unmerged_orphans.append(orphan)
+        
+        # Group unmerged orphans by speaker and proximity
+        grouped_orphans = self._group_unmerged_orphans(unmerged_orphans)
+        
+        # Try to merge grouped orphans with a larger distance tolerance
+        final_unmerged: List[RawSegment] = []
+        for grouped in grouped_orphans:
+            merge_idx = self._try_merge_grouped_orphan(grouped, segments)
+            if merge_idx is not None:
+                # Merge the grouped orphan into the target segment
+                target = segments[merge_idx]
+                if target.end <= grouped.start:
+                    # Grouped comes after - append
+                    merged = RawSegment(
+                        speaker=target.speaker,
+                        start=target.start,
+                        end=grouped.end,
+                        text=target.text + " " + grouped.text,
+                        words=target.words + grouped.words,
+                        is_interjection=False,
+                        interjection_confidence=0.0
+                    )
+                else:
+                    # Grouped comes before - prepend
+                    merged = RawSegment(
+                        speaker=target.speaker,
+                        start=grouped.start,
+                        end=target.end,
+                        text=grouped.text + " " + target.text,
+                        words=grouped.words + target.words,
+                        is_interjection=False,
+                        interjection_confidence=0.0
+                    )
+                segments[merge_idx] = merged
+                log_debug(f"Merged grouped orphan '{grouped.text}' into segment at {target.start:.1f}-{target.end:.1f}s")
+            else:
+                # Keep as standalone
+                final_unmerged.append(grouped)
+        
+        segments.extend(final_unmerged)
         
         return segments
+    
+    def _would_overlap_other_speaker(
+        self,
+        speaker: str,
+        start: float,
+        end: float,
+        segments: List[RawSegment]
+    ) -> bool:
+        """
+        Check if the time range [start, end] would overlap with another speaker's segment.
+        """
+        for segment in segments:
+            if segment.speaker == speaker:
+                continue
+            # Check for overlap
+            if segment.start < end and segment.end > start:
+                return True
+        return False
+    
+    def _group_unmerged_orphans(
+        self,
+        orphans: List[RawSegment]
+    ) -> List[RawSegment]:
+        """
+        Group unmerged orphans from the same speaker that are close together.
+        
+        This combines scattered single words like "comfortable to be able to confide"
+        into a single segment instead of keeping them as separate micro-segments.
+        """
+        if not orphans:
+            return []
+        
+        # Sort by start time
+        orphans = sorted(orphans, key=lambda o: o.start)
+        
+        grouped: List[RawSegment] = []
+        current_group: List[RawSegment] = [orphans[0]]
+        
+        for orphan in orphans[1:]:
+            last_in_group = current_group[-1]
+            
+            # Group if same speaker and within 15 seconds
+            # (split-audio artifacts can be spread out quite a bit)
+            if (orphan.speaker == last_in_group.speaker and 
+                orphan.start - last_in_group.end < 15.0):
+                current_group.append(orphan)
+            else:
+                # Finalize current group and start new one
+                grouped.append(self._combine_orphan_group(current_group))
+                current_group = [orphan]
+        
+        # Don't forget the last group
+        if current_group:
+            grouped.append(self._combine_orphan_group(current_group))
+        
+        return grouped
+    
+    def _try_merge_grouped_orphan(
+        self,
+        grouped_orphan: RawSegment,
+        segments: List[RawSegment]
+    ) -> Optional[int]:
+        """
+        Try to merge a grouped orphan into an existing same-speaker segment.
+        
+        Uses a larger merge distance (15s) for grouped orphans since they 
+        represent reconstructed phrases that should be attached to a turn.
+        
+        Returns the index of the segment to merge into, or None if no merge possible.
+        """
+        MAX_GROUP_MERGE_DISTANCE = 15.0  # Larger distance for phrase groups
+        
+        best_idx = -1
+        best_distance = float('inf')
+        
+        for idx, segment in enumerate(segments):
+            if segment.speaker != grouped_orphan.speaker:
+                continue
+            
+            # Calculate distance to this segment
+            if segment.end <= grouped_orphan.start:
+                distance = grouped_orphan.start - segment.end
+            else:
+                # Orphan comes before segment (less common)
+                distance = segment.start - grouped_orphan.end
+            
+            if distance <= MAX_GROUP_MERGE_DISTANCE and distance < best_distance:
+                best_distance = distance
+                best_idx = idx
+        
+        return best_idx if best_idx >= 0 else None
+    
+    def _combine_orphan_group(self, orphans: List[RawSegment]) -> RawSegment:
+        """Combine a group of orphans into a single segment."""
+        if len(orphans) == 1:
+            return orphans[0]
+        
+        # Sort by start time
+        orphans = sorted(orphans, key=lambda o: o.start)
+        
+        all_words = []
+        all_text = []
+        for o in orphans:
+            all_words.extend(o.words)
+            all_text.append(o.text)
+        
+        combined = RawSegment(
+            speaker=orphans[0].speaker,
+            start=orphans[0].start,
+            end=orphans[-1].end,
+            text=" ".join(all_text),
+            words=all_words,
+            is_interjection=False,
+            interjection_confidence=0.0,
+            classification_method="grouped_orphans"
+        )
+        
+        log_debug(f"Combined {len(orphans)} orphans into: '{combined.text}' "
+                 f"by {combined.speaker} at {combined.start:.1f}-{combined.end:.1f}s")
+        
+        return combined
 
     def _verify_with_llm(
         self,

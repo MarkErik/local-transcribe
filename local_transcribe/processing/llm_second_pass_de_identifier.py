@@ -276,8 +276,21 @@ def second_pass_de_identify(
             start_idx=chunk['start_idx']
         )
         
-        modified_segments.extend(chunk_modified)
-        all_additional_replacements.extend(chunk_replacements)
+        # Skip overlap region for all chunks after the first one
+        # The overlap was included for LLM context but shouldn't be duplicated in output
+        if idx == 0:
+            modified_segments.extend(chunk_modified)
+            all_additional_replacements.extend(chunk_replacements)
+        else:
+            # Skip the first overlap_size segments (they were already added from previous chunk)
+            modified_segments.extend(chunk_modified[overlap_size:])
+            # Also filter replacements to exclude those in the overlap region
+            overlap_end_idx = chunk['start_idx'] + overlap_size
+            filtered_replacements = [
+                rep for rep in chunk_replacements 
+                if rep.get('word_index', 0) >= overlap_end_idx
+            ]
+            all_additional_replacements.extend(filtered_replacements)
         names_found.update(chunk_names)
         
         if chunk_replacements:
@@ -717,7 +730,10 @@ def _generate_word_diff(
     debug_dir: Path
 ) -> None:
     """
-    Generate word-by-word diff for failed validations.
+    Generate word-by-word diff for failed validations using sequence alignment.
+    
+    Uses difflib.SequenceMatcher to properly detect insertions, deletions,
+    and substitutions rather than simple index-by-index comparison.
     
     Args:
         chunk_idx: Chunk number
@@ -726,69 +742,150 @@ def _generate_word_diff(
         validation_result: Validation result dict
         debug_dir: Directory to save diff file
     """
+    import difflib
+    
     orig_words = original_text.split()
     llm_words = llm_text.split()
     
     chunk_num_str = f"{chunk_idx:03d}"
     diff_path = debug_dir / f"chunk_{chunk_num_str}_diff.txt"
     
+    # Use SequenceMatcher for proper alignment
+    matcher = difflib.SequenceMatcher(None, orig_words, llm_words)
+    opcodes = matcher.get_opcodes()
+    
     with open(diff_path, 'w', encoding='utf-8') as f:
-        f.write("=" * 60 + "\n")
-        f.write(f"CHUNK {chunk_idx} - WORD-BY-WORD DIFF (SECOND PASS)\n")
-        f.write("=" * 60 + "\n")
+        f.write("=" * 70 + "\n")
+        f.write(f"CHUNK {chunk_idx} - SEQUENCE-ALIGNED DIFF (SECOND PASS)\n")
+        f.write("=" * 70 + "\n")
         f.write(f"Validation failed: {validation_result.get('reason', 'unknown')}\n\n")
         
-        # Summary
-        missing = max(0, len(orig_words) - len(llm_words))
-        extra = max(0, len(llm_words) - len(orig_words))
-        f.write(f"Missing words: {missing}\n")
-        f.write(f"Extra words: {extra}\n\n")
+        # Summary statistics
+        f.write("SUMMARY\n")
+        f.write("-" * 70 + "\n")
+        f.write(f"Original word count: {len(orig_words)}\n")
+        f.write(f"LLM output word count: {len(llm_words)}\n")
+        f.write(f"Difference: {len(llm_words) - len(orig_words):+d} words\n\n")
         
-        # Word-by-word comparison
-        f.write("Word-by-word comparison:\n")
-        f.write("-" * 60 + "\n")
+        # Count operation types
+        insertions = []
+        deletions = []
+        replacements = []
+        valid_redactions = []  # Name → [REDACTED] changes
         
-        max_len = max(len(orig_words), len(llm_words))
-        differences = []
-        
-        for i in range(max_len):
-            orig_word = orig_words[i] if i < len(orig_words) else None
-            llm_word = llm_words[i] if i < len(llm_words) else None
-            
-            if orig_word is None:
-                f.write(f"[{i:03d}] ✗ EXTRA: \"{llm_word}\"\n")
-                differences.append((i, 'EXTRA', None, llm_word))
-            elif llm_word is None:
-                f.write(f"[{i:03d}] ✗ MISSING: \"{orig_word}\"\n")
-                differences.append((i, 'MISSING', orig_word, None))
-            elif orig_word != llm_word:
-                f.write(f"[{i:03d}] ✗ CHANGED: \"{orig_word}\" → \"{llm_word}\"\n")
-                differences.append((i, 'CHANGED', orig_word, llm_word))
-            else:
-                # Only show first/last few matches to keep file readable
-                if i < 5 or i >= max_len - 5:
-                    f.write(f"[{i:03d}] ✓ {orig_word} → {llm_word}\n")
-                elif i == 5:
-                    f.write(f"... ({max_len - 10} matching words omitted) ...\n")
-        
-        # Show context around differences
-        if differences:
-            f.write("\n" + "=" * 60 + "\n")
-            f.write("Context around differences:\n")
-            f.write("-" * 60 + "\n")
-            
-            for diff_idx, diff_type, orig, llm in differences[:10]:  # Show first 10 diffs
-                context_start = max(0, diff_idx - 3)
-                context_end = min(len(orig_words), diff_idx + 4)
+        for tag, i1, i2, j1, j2 in opcodes:
+            if tag == 'insert':
+                insertions.append((j1, j2, llm_words[j1:j2]))
+            elif tag == 'delete':
+                deletions.append((i1, i2, orig_words[i1:i2]))
+            elif tag == 'replace':
+                orig_slice = orig_words[i1:i2]
+                llm_slice = llm_words[j1:j2]
                 
-                f.write(f"\nPosition {diff_idx} ({diff_type}):\n")
-                f.write(f"  Original: \"{' '.join(orig_words[context_start:context_end])}\"\n")
-                
-                llm_context_end = min(len(llm_words), context_start + (context_end - context_start))
-                f.write(f"  LLM:      \"{' '.join(llm_words[context_start:llm_context_end])}\"\n")
-            
-            if len(differences) > 10:
-                f.write(f"\n... and {len(differences) - 10} more differences\n")
+                # Check if this is a valid 1:1 name redaction
+                if len(orig_slice) == len(llm_slice):
+                    for idx, (o, l) in enumerate(zip(orig_slice, llm_slice)):
+                        if l == '[REDACTED]' and o != '[REDACTED]':
+                            valid_redactions.append((i1 + idx, o))
+                        elif o != l:
+                            replacements.append((i1 + idx, o, l))
+                else:
+                    # Length mismatch - this is where the problem is
+                    replacements.append((i1, orig_slice, llm_slice))
+        
+        f.write(f"Valid name redactions: {len(valid_redactions)}\n")
+        f.write(f"Insertions (LLM added words): {len(insertions)}\n")
+        f.write(f"Deletions (LLM removed words): {len(deletions)}\n")
+        f.write(f"Replacements/Changes: {len(replacements)}\n\n")
+        
+        # Show valid redactions (these are good)
+        if valid_redactions:
+            f.write("=" * 70 + "\n")
+            f.write("VALID NAME REDACTIONS (Expected behavior)\n")
+            f.write("-" * 70 + "\n")
+            for pos, orig_word in valid_redactions:
+                context_start = max(0, pos - 2)
+                context_end = min(len(orig_words), pos + 3)
+                context = orig_words[context_start:context_end]
+                # Highlight the redacted word in context
+                rel_pos = pos - context_start
+                context_display = context.copy()
+                context_display[rel_pos] = f">>>{context_display[rel_pos]}<<<"
+                f.write(f"[{pos:03d}] \"{orig_word}\" → [REDACTED]\n")
+                f.write(f"       Context: {' '.join(context_display)}\n")
+            f.write("\n")
+        
+        # Show problematic changes
+        if deletions:
+            f.write("=" * 70 + "\n")
+            f.write("⚠️  DELETIONS (LLM removed these words - PROBLEMATIC)\n")
+            f.write("-" * 70 + "\n")
+            for i1, i2, deleted_words in deletions:
+                f.write(f"[{i1:03d}-{i2-1:03d}] DELETED {len(deleted_words)} word(s): \"{' '.join(deleted_words)}\"\n")
+                # Show context
+                context_start = max(0, i1 - 3)
+                context_end = min(len(orig_words), i2 + 3)
+                f.write(f"           Original context: \"{' '.join(orig_words[context_start:context_end])}\"\n")
+                # Show what LLM produced around this area
+                # Map original position to approximate LLM position
+                llm_approx_start = max(0, i1 - 3)
+                llm_approx_end = min(len(llm_words), i1 + 3)
+                f.write(f"           LLM at ~position: \"{' '.join(llm_words[llm_approx_start:llm_approx_end])}\"\n\n")
+        
+        if insertions:
+            f.write("=" * 70 + "\n")
+            f.write("⚠️  INSERTIONS (LLM added these words - PROBLEMATIC)\n")
+            f.write("-" * 70 + "\n")
+            for j1, j2, inserted_words in insertions:
+                f.write(f"[LLM pos {j1:03d}-{j2-1:03d}] INSERTED {len(inserted_words)} word(s): \"{' '.join(inserted_words)}\"\n")
+                # Show LLM context
+                context_start = max(0, j1 - 3)
+                context_end = min(len(llm_words), j2 + 3)
+                f.write(f"           LLM context: \"{' '.join(llm_words[context_start:context_end])}\"\n\n")
+        
+        if replacements:
+            f.write("=" * 70 + "\n")
+            f.write("⚠️  REPLACEMENTS/CHANGES (Not simple redactions)\n")
+            f.write("-" * 70 + "\n")
+            for item in replacements[:20]:  # Limit to first 20
+                if len(item) == 3 and isinstance(item[1], str):
+                    # Single word replacement
+                    pos, orig_word, llm_word = item
+                    f.write(f"[{pos:03d}] \"{orig_word}\" → \"{llm_word}\"\n")
+                else:
+                    # Multi-word replacement (length mismatch)
+                    pos, orig_slice, llm_slice = item
+                    if isinstance(orig_slice, list):
+                        f.write(f"[{pos:03d}] LENGTH MISMATCH:\n")
+                        f.write(f"        Original ({len(orig_slice)} words): \"{' '.join(orig_slice)}\"\n")
+                        f.write(f"        LLM ({len(llm_slice)} words):      \"{' '.join(llm_slice)}\"\n\n")
+            if len(replacements) > 20:
+                f.write(f"\n... and {len(replacements) - 20} more replacements\n")
+        
+        # Full operation log for detailed analysis
+        f.write("\n" + "=" * 70 + "\n")
+        f.write("FULL DIFF OPERATIONS (for detailed analysis)\n")
+        f.write("-" * 70 + "\n")
+        f.write("Legend: 'equal'=unchanged, 'replace'=modified, 'delete'=removed, 'insert'=added\n\n")
+        
+        for tag, i1, i2, j1, j2 in opcodes:
+            if tag == 'equal':
+                word_count = i2 - i1
+                if word_count <= 6:
+                    f.write(f"[EQUAL]  orig[{i1}:{i2}] = llm[{j1}:{j2}]: \"{' '.join(orig_words[i1:i2])}\"\n")
+                else:
+                    preview = ' '.join(orig_words[i1:i1+3]) + ' ... ' + ' '.join(orig_words[i2-2:i2])
+                    f.write(f"[EQUAL]  orig[{i1}:{i2}] = llm[{j1}:{j2}]: ({word_count} words) \"{preview}\"\n")
+            elif tag == 'replace':
+                f.write(f"[REPLACE] orig[{i1}:{i2}] → llm[{j1}:{j2}]:\n")
+                f.write(f"          - \"{' '.join(orig_words[i1:i2])}\"\n")
+                f.write(f"          + \"{' '.join(llm_words[j1:j2])}\"\n")
+            elif tag == 'delete':
+                f.write(f"[DELETE] orig[{i1}:{i2}]: \"{' '.join(orig_words[i1:i2])}\"\n")
+            elif tag == 'insert':
+                f.write(f"[INSERT] llm[{j1}:{j2}]: \"{' '.join(llm_words[j1:j2])}\"\n")
+        
+        f.write("\n" + "=" * 70 + "\n")
 
 
 def _save_second_pass_session_summary(debug_dir: Path, session_data: Dict) -> None:

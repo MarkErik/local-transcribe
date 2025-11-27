@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Shared base logic for split-audio mode turn builders.
+Shared base logic for turn builders.
 
 This module provides common functionality used by both the local (rule-based)
 and LLM-enhanced turn builders, including:
@@ -14,13 +14,13 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
-from local_transcribe.framework.plugin_interfaces import WordSegment, Turn
+from local_transcribe.framework.plugin_interfaces import WordSegment
 from local_transcribe.lib.program_logger import log_progress, log_debug
 from local_transcribe.providers.turn_builders.split_audio_data_structures import (
     RawSegment,
     InterjectionSegment,
     HierarchicalTurn,
-    EnrichedTranscript,
+    TranscriptFlow,
     TurnBuilderConfig
 )
 
@@ -668,13 +668,13 @@ def calculate_conversation_metrics(turns: List[HierarchicalTurn]) -> Dict[str, A
     }
 
 
-def build_enriched_transcript(
+def build_transcript_flow(
     turns: List[HierarchicalTurn],
     config: TurnBuilderConfig,
     metadata: Optional[Dict[str, Any]] = None
-) -> EnrichedTranscript:
+) -> TranscriptFlow:
     """
-    Build a complete EnrichedTranscript from hierarchical turns.
+    Build a complete TranscriptFlow from hierarchical turns.
     
     Args:
         turns: List of hierarchical turns
@@ -682,11 +682,11 @@ def build_enriched_transcript(
         metadata: Optional additional metadata
         
     Returns:
-        Complete EnrichedTranscript object
+        Complete TranscriptFlow object with metrics
     """
     conversation_metrics = calculate_conversation_metrics(turns)
     
-    return EnrichedTranscript(
+    return TranscriptFlow(
         turns=turns,
         metadata=metadata or {},
         speaker_statistics=conversation_metrics.get("speaker_statistics", {}),

@@ -379,7 +379,6 @@ PARTICIPANT: (15.17s) i mean basically i'm just very passionate about
 - **More readable transcripts:** Less fragmented output
 - **Context preservation:** Interjections shown in context
 - **Multiple formats:** Choose output style for different use cases
-- **Backward compatibility:** Can export as flat turns if needed
 
 ### For Developers
 - **Extensible structure:** Easy to add new interjection types
@@ -395,11 +394,9 @@ PARTICIPANT: (15.17s) i mean basically i'm just very passionate about
 - Multiple classification methods (rules + LLM)
 - Confidence scores for uncertain cases
 - User-configurable thresholds
-- Fallback to flat structure
-
 
 ## Conclusion
 
 This hierarchical approach represents a significant advancement in interview conversation transcription, moving beyond simple sequential turns to capture the rich dynamics of natural speech. By recognizing interjections and maintaining conversational flow, it provides more accurate and useful transcripts for research, analysis, and readability.
 
-The modular design allows for gradual implementation and testing, with clear fallback options and multiple output formats to ensure broad compatibility and adoption.
+The modular design allows for gradual implementation and testing, with clear fallback options and multiple output formats to ensure easily readability and adoption.

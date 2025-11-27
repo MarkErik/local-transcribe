@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """
-Data structures for hierarchical turn building in split-audio mode.
+Data structures for hierarchical turn building.
 
 This module defines the core data classes used for representing interview-style
 conversations with primary turns and interjections (brief acknowledgments,
 questions, and reactions that don't claim the conversational floor).
+
+The primary output format is TranscriptFlow, which preserves the full
+hierarchical structure of conversations including:
+- HierarchicalTurn: Primary speaking turns with embedded interjections
+- InterjectionSegment: Brief utterances that don't claim the floor
+- Conversation metrics and speaker statistics
 """
 
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
-from local_transcribe.framework.plugin_interfaces import WordSegment, Turn
+from local_transcribe.framework.plugin_interfaces import WordSegment
 
 
 @dataclass
@@ -149,15 +155,6 @@ class HierarchicalTurn:
         else:
             self.turn_type = "acknowledged"
     
-    def to_turn(self) -> Turn:
-        """Convert to a flat Turn object for output writers."""
-        return Turn(
-            speaker=self.primary_speaker,
-            start=self.start,
-            end=self.end,
-            text=self.text
-        )
-    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -176,72 +173,69 @@ class HierarchicalTurn:
 
 
 @dataclass
-class EnrichedTranscript:
+class TranscriptFlow:
     """
     Complete transcript with hierarchical structure and metrics.
     
-    This is the full representation of an interview conversation,
-    including all turns, interjections, and conversation-level statistics.
+    This is the primary output format for turn builders, representing the full
+    structure of an interview conversation including:
+    - Hierarchical turns with embedded interjections
+    - Conversation-level metrics
+    - Speaker statistics
+    
+    This format preserves the rich conversational dynamics rather than
+    flattening to a simple list of turns.
     """
     turns: List[HierarchicalTurn]
     metadata: Dict[str, Any] = field(default_factory=dict)
     speaker_statistics: Dict[str, Any] = field(default_factory=dict)
     conversation_metrics: Dict[str, Any] = field(default_factory=dict)
     
-    def to_flat_turns(self) -> List[Turn]:
-        """
-        Convert to a flat list of Turn objects for existing output writers.
-        
-        This flattens the hierarchical structure by converting each
-        HierarchicalTurn to a Turn, and optionally interleaving interjections.
-        """
-        flat_turns = []
-        for hturn in self.turns:
-            # Add the primary turn
-            flat_turns.append(hturn.to_turn())
-        return flat_turns
+    @property
+    def total_turns(self) -> int:
+        """Total number of primary turns."""
+        return len(self.turns)
     
-    def to_flat_turns_with_interjections(self) -> List[Turn]:
-        """
-        Convert to flat turns, interleaving interjections in chronological order.
-        
-        This produces a more detailed flat representation where interjections
-        appear as separate turns in their correct temporal position.
-        """
-        all_items = []
-        
-        for hturn in self.turns:
-            # Collect the primary turn and all its interjections
-            all_items.append(("turn", hturn.start, hturn))
-            for ij in hturn.interjections:
-                all_items.append(("interjection", ij.start, ij))
-        
-        # Sort by start time
-        all_items.sort(key=lambda x: x[1])
-        
-        # Convert to Turn objects
-        flat_turns = []
-        for item_type, _, item in all_items:
-            if item_type == "turn":
-                flat_turns.append(item.to_turn())
-            else:
-                # Interjection becomes a small turn
-                flat_turns.append(Turn(
-                    speaker=item.speaker,
-                    start=item.start,
-                    end=item.end,
-                    text=item.text
-                ))
-        
-        return flat_turns
+    @property
+    def total_interjections(self) -> int:
+        """Total number of interjections across all turns."""
+        return sum(len(t.interjections) for t in self.turns)
+    
+    @property
+    def speakers(self) -> List[str]:
+        """List of unique speakers in the transcript."""
+        speakers = set()
+        for turn in self.turns:
+            speakers.add(turn.primary_speaker)
+            for ij in turn.interjections:
+                speakers.add(ij.speaker)
+        return sorted(speakers)
+    
+    @property
+    def duration(self) -> float:
+        """Total duration of the transcript in seconds."""
+        if not self.turns:
+            return 0.0
+        return self.turns[-1].end - self.turns[0].start
+    
+    def get_turns_by_speaker(self, speaker: str) -> List[HierarchicalTurn]:
+        """Get all turns by a specific speaker."""
+        return [t for t in self.turns if t.primary_speaker == speaker]
+    
+    def get_interjections_by_speaker(self, speaker: str) -> List[InterjectionSegment]:
+        """Get all interjections by a specific speaker."""
+        interjections = []
+        for turn in self.turns:
+            interjections.extend([ij for ij in turn.interjections if ij.speaker == speaker])
+        return interjections
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
-            "turns": [turn.to_dict() for turn in self.turns],
             "metadata": self.metadata,
+            "conversation_metrics": self.conversation_metrics,
             "speaker_statistics": self.speaker_statistics,
-            "conversation_metrics": self.conversation_metrics
+            "turns": [turn.to_dict() for turn in self.turns]
         }
 
 

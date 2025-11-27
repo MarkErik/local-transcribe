@@ -7,7 +7,7 @@ This module implements a turn builder for split-audio mode that:
 2. Groups consecutive words by speaker into segments
 3. Classifies segments as primary turns or interjections using rules
 4. Assembles hierarchical turns with embedded interjections
-5. Returns flat turns for output writers
+5. Returns TranscriptFlow with full hierarchical structure
 
 This is the local (no LLM) version that uses heuristics and pattern matching.
 """
@@ -17,12 +17,12 @@ from pathlib import Path
 import json
 from datetime import datetime
 
-from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, Turn, registry
+from local_transcribe.framework.plugin_interfaces import TurnBuilderProvider, WordSegment, registry
 from local_transcribe.lib.program_logger import log_progress, log_debug, log_intermediate_save, get_output_context
 
 from local_transcribe.providers.turn_builders.split_audio_data_structures import (
     TurnBuilderConfig,
-    EnrichedTranscript,
+    TranscriptFlow,
     HierarchicalTurn
 )
 from local_transcribe.providers.turn_builders.split_audio_base import (
@@ -30,7 +30,7 @@ from local_transcribe.providers.turn_builders.split_audio_base import (
     group_by_speaker,
     classify_segments_rule_based,
     assemble_hierarchical_turns,
-    build_enriched_transcript
+    build_transcript_flow
 )
 
 
@@ -73,7 +73,7 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         self,
         words: List[WordSegment],
         **kwargs
-    ) -> List[Turn]:
+    ) -> TranscriptFlow:
         """
         Build turns from word segments with speaker assignments.
         
@@ -84,14 +84,13 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
                 - max_interjection_duration: Override default (2.0s)
                 - max_interjection_words: Override default (5)
                 - max_gap_to_merge_turns: Override default (3.0s)
-                - include_interjections_in_output: If True, interleave interjections (default: False)
             
         Returns:
-            List of Turn objects ready for output
+            TranscriptFlow with hierarchical turn structure
         """
         if not words:
             log_progress("No words provided to turn builder")
-            return []
+            return TranscriptFlow(turns=[], metadata={"builder": self.name, "error": "no_words"})
         
         # Update config from kwargs
         self._update_config_from_kwargs(kwargs)
@@ -135,9 +134,9 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         hierarchical_turns = assemble_hierarchical_turns(all_segments_classified, self.config)
         log_progress(f"Assembled {len(hierarchical_turns)} hierarchical turns")
         
-        # Step 5: Build enriched transcript with metrics
-        log_debug("Step 5: Building enriched transcript")
-        enriched = build_enriched_transcript(
+        # Step 5: Build TranscriptFlow with metrics
+        log_debug("Step 5: Building TranscriptFlow")
+        transcript_flow = build_transcript_flow(
             hierarchical_turns,
             self.config,
             metadata={
@@ -150,21 +149,14 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         
         # Save intermediate hierarchical output if directory provided
         if intermediate_dir:
-            self._save_intermediate_output(enriched, intermediate_dir)
+            self._save_intermediate_output(transcript_flow, intermediate_dir)
         
-        # Step 6: Convert to flat turns for output
-        include_interjections = kwargs.get('include_interjections_in_output', False)
-        if include_interjections:
-            flat_turns = enriched.to_flat_turns_with_interjections()
-        else:
-            flat_turns = enriched.to_flat_turns()
-        
-        log_progress(f"Turn building complete: {len(flat_turns)} turns")
+        log_progress(f"Turn building complete: {transcript_flow.total_turns} turns, {transcript_flow.total_interjections} interjections")
         
         # Log summary
-        self._log_summary(enriched)
+        self._log_summary(transcript_flow)
         
-        return flat_turns
+        return transcript_flow
 
     def _update_config_from_kwargs(self, kwargs: Dict[str, Any]) -> None:
         """Update configuration from kwargs."""
@@ -179,7 +171,7 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
         if 'low_confidence_threshold' in kwargs:
             self.config.low_confidence_threshold = kwargs['low_confidence_threshold']
 
-    def _save_intermediate_output(self, enriched: EnrichedTranscript, intermediate_dir: Path) -> None:
+    def _save_intermediate_output(self, transcript_flow: TranscriptFlow, intermediate_dir: Path) -> None:
         """Save intermediate hierarchical output for debugging/analysis."""
         try:
             if isinstance(intermediate_dir, str):
@@ -188,24 +180,24 @@ class SplitAudioTurnBuilderProvider(TurnBuilderProvider):
             turns_dir = intermediate_dir / "turns"
             turns_dir.mkdir(parents=True, exist_ok=True)
             
-            # Save full enriched transcript
-            enriched_file = turns_dir / "hierarchical_turns.json"
-            with open(enriched_file, 'w', encoding='utf-8') as f:
-                json.dump(enriched.to_dict(), f, indent=2, ensure_ascii=False)
-            log_intermediate_save(str(enriched_file), "Hierarchical turns saved to")
+            # Save full TranscriptFlow
+            flow_file = turns_dir / "transcript_flow.json"
+            with open(flow_file, 'w', encoding='utf-8') as f:
+                json.dump(transcript_flow.to_dict(), f, indent=2, ensure_ascii=False)
+            log_intermediate_save(str(flow_file), "TranscriptFlow saved to")
             
             # Save conversation metrics separately for easy access
             metrics_file = turns_dir / "conversation_metrics.json"
             with open(metrics_file, 'w', encoding='utf-8') as f:
-                json.dump(enriched.conversation_metrics, f, indent=2, ensure_ascii=False)
+                json.dump(transcript_flow.conversation_metrics, f, indent=2, ensure_ascii=False)
             log_intermediate_save(str(metrics_file), "Conversation metrics saved to")
             
         except Exception as e:
             log_debug(f"Failed to save intermediate output: {e}")
 
-    def _log_summary(self, enriched: EnrichedTranscript) -> None:
+    def _log_summary(self, transcript_flow: TranscriptFlow) -> None:
         """Log a summary of the turn building results."""
-        metrics = enriched.conversation_metrics
+        metrics = transcript_flow.conversation_metrics
         
         log_progress(f"Turn building summary:")
         log_progress(f"  Total turns: {metrics.get('total_turns', 0)}")

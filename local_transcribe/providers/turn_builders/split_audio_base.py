@@ -128,7 +128,7 @@ def detect_interjection_type(text: str, config: TurnBuilderConfig) -> Optional[s
         config: Configuration with pattern lists
         
     Returns:
-        "acknowledgment", "question", "reaction", or None if no pattern matches
+        "acknowledgment", "question", "reaction", "fragment", or None if no pattern matches
     """
     text_lower = text.lower().strip()
     
@@ -152,6 +152,12 @@ def detect_interjection_type(text: str, config: TurnBuilderConfig) -> Optional[s
         if pattern in text_clean or text_clean == pattern:
             return "reaction"
     
+    # Check fragment patterns (incomplete phrases)
+    if hasattr(config, 'fragment_patterns'):
+        for pattern in config.fragment_patterns:
+            if pattern in text_clean or text_clean == pattern:
+                return "fragment"
+    
     return None
 
 
@@ -169,6 +175,7 @@ def calculate_interjection_confidence(
     - Word count (few words = more likely interjection)
     - Pattern matching (known patterns = more likely)
     - Context (sandwiched between same speaker = more likely)
+    - Overlap (temporally overlapping with other speaker = more likely)
     
     Args:
         segment: The segment to analyze
@@ -182,39 +189,51 @@ def calculate_interjection_confidence(
     score = 0.0
     weights_used = 0.0
     
-    # 1. Duration score (weight: 0.25)
-    duration_weight = 0.25
+    # Get configurable thresholds with defaults
+    very_short_word_count = getattr(config, 'very_short_word_count', 2)
+    very_short_duration = getattr(config, 'very_short_duration', 1.0)
+    
+    # 1. Duration score (weight: 0.2)
+    duration_weight = 0.2
     if segment.duration < 0.5:
         score += duration_weight * 1.0
     elif segment.duration < 1.0:
-        score += duration_weight * 0.7
+        score += duration_weight * 0.8
+    elif segment.duration < 1.5:
+        score += duration_weight * 0.5
     elif segment.duration < config.max_interjection_duration:
         score += duration_weight * 0.3
     else:
-        # Too long - likely not an interjection
         score += duration_weight * 0.0
     weights_used += duration_weight
     
     # 2. Word count score (weight: 0.25)
     word_weight = 0.25
-    if segment.word_count <= 2:
+    if segment.word_count == 1:
         score += word_weight * 1.0
+    elif segment.word_count <= 2:
+        score += word_weight * 0.9
     elif segment.word_count <= 3:
         score += word_weight * 0.7
+    elif segment.word_count <= 4:
+        score += word_weight * 0.5
     elif segment.word_count <= config.max_interjection_words:
-        score += word_weight * 0.4
+        score += word_weight * 0.3
     else:
-        # Too many words - likely not an interjection
         score += word_weight * 0.0
     weights_used += word_weight
     
-    # 3. Pattern match score (weight: 0.3)
-    pattern_weight = 0.3
+    # 3. Pattern match score (weight: 0.2)
+    pattern_weight = 0.2
     interjection_type = detect_interjection_type(segment.text, config)
     if interjection_type:
         score += pattern_weight * 1.0
     else:
-        score += pattern_weight * 0.0
+        # Even without a pattern match, very short segments get partial credit
+        if segment.word_count <= very_short_word_count:
+            score += pattern_weight * 0.4
+        else:
+            score += pattern_weight * 0.0
     weights_used += pattern_weight
     
     # 4. Context score (weight: 0.2)
@@ -227,27 +246,50 @@ def calculate_interjection_confidence(
             context_score = 1.0
         # Check if sandwiched between different speakers (still could be interjection)
         elif prev_segment.speaker != segment.speaker and next_segment.speaker != segment.speaker:
-            context_score = 0.5
+            context_score = 0.6
     elif prev_segment:
-        # Only have previous context
         if prev_segment.speaker != segment.speaker:
-            context_score = 0.6
+            context_score = 0.5
     elif next_segment:
-        # Only have next context
         if next_segment.speaker != segment.speaker:
-            context_score = 0.6
+            context_score = 0.5
     
-    # Also consider gaps - interjections typically occur with small gaps
-    if segment.gap_before is not None and segment.gap_before < config.max_gap_before_interjection:
-        context_score = min(1.0, context_score + 0.2)
-    if segment.gap_after is not None and segment.gap_after < config.max_gap_before_interjection:
-        context_score = min(1.0, context_score + 0.2)
+    # Boost for small/negative gaps (indicates overlapping or rapid speech)
+    if segment.gap_before is not None:
+        if segment.gap_before < 0:  # Overlapping!
+            context_score = min(1.0, context_score + 0.4)
+        elif segment.gap_before < 0.3:
+            context_score = min(1.0, context_score + 0.2)
+    if segment.gap_after is not None:
+        if segment.gap_after < 0:  # Overlapping!
+            context_score = min(1.0, context_score + 0.4)
+        elif segment.gap_after < 0.3:
+            context_score = min(1.0, context_score + 0.2)
     
     score += context_weight * context_score
     weights_used += context_weight
     
+    # 5. Overlap detection score (weight: 0.15) - NEW
+    overlap_weight = 0.15
+    overlap_score = 0.0
+    
+    # Check for temporal overlap with adjacent segments from different speakers
+    if prev_segment and prev_segment.speaker != segment.speaker:
+        if segment.start < prev_segment.end:  # Overlaps with previous
+            overlap_score = max(overlap_score, 0.8)
+    if next_segment and next_segment.speaker != segment.speaker:
+        if segment.end > next_segment.start:  # Overlaps with next
+            overlap_score = max(overlap_score, 0.8)
+    
+    score += overlap_weight * overlap_score
+    weights_used += overlap_weight
+    
     # Normalize score
     final_score = score / weights_used if weights_used > 0 else 0.0
+    
+    # Boost for very short segments (high confidence these are interjections)
+    if segment.word_count <= very_short_word_count and segment.duration < very_short_duration:
+        final_score = min(1.0, final_score + 0.15)
     
     return (final_score, interjection_type or "unclear")
 
@@ -294,6 +336,25 @@ def classify_segments_rule_based(
             primary_segments.append(segment)
             continue
         
+        # Special case: very short segments (1-2 words) that overlap or are sandwiched
+        # are almost certainly interjections, even without pattern match
+        very_short_word_count = getattr(config, 'very_short_word_count', 2)
+        is_sandwiched = (
+            prev_seg and next_seg and 
+            prev_seg.speaker == next_seg.speaker and 
+            prev_seg.speaker != segment.speaker
+        )
+        has_overlap = (
+            (prev_seg and segment.start < prev_seg.end) or
+            (next_seg and segment.end > next_seg.start)
+        )
+        
+        if segment.word_count <= very_short_word_count and (is_sandwiched or has_overlap):
+            segment.is_interjection = True
+            segment.classification_method = "rule_very_short_contextual"
+            interjection_segments.append(segment)
+            continue
+        
         # Classification based on confidence
         if confidence >= config.high_confidence_threshold:
             segment.is_interjection = True
@@ -304,11 +365,16 @@ def classify_segments_rule_based(
             segment.classification_method = "rule_low_confidence"
             primary_segments.append(segment)
         else:
-            # Ambiguous - default to primary turn for rule-based
-            # (LLM version will handle these differently)
-            segment.is_interjection = False
-            segment.classification_method = "rule_ambiguous_default"
-            primary_segments.append(segment)
+            # Ambiguous case - use additional heuristics
+            # If it's short (<=3 words) and has any contextual signal, lean toward interjection
+            if segment.word_count <= 3 and (is_sandwiched or has_overlap or confidence >= 0.4):
+                segment.is_interjection = True
+                segment.classification_method = "rule_ambiguous_short"
+                interjection_segments.append(segment)
+            else:
+                segment.is_interjection = False
+                segment.classification_method = "rule_ambiguous_default"
+                primary_segments.append(segment)
     
     log_debug(f"Classified {len(primary_segments)} primary, {len(interjection_segments)} interjections")
     

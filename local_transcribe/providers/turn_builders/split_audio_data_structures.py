@@ -270,20 +270,30 @@ class TurnBuilderConfig:
         "yeah", "yea", "yep", "yes", "uh-huh", "uh huh", "mm-hmm",
         "mm hmm", "mhm", "right", "okay", "ok", "sure", "got it",
         "i see", "makes sense", "exactly", "absolutely", "definitely",
-        "totally", "true", "correct"
+        "totally", "true", "correct", "that", "this", "well", "so",
+        "like", "um", "uh", "ah", "oh", "hm", "mmm"
     ])
     question_patterns: List[str] = field(default_factory=lambda: [
         "what", "why", "how", "when", "where", "really", "huh",
-        "seriously", "is that right", "you think so"
+        "seriously", "is that right", "you think so", "you mean"
     ])
     reaction_patterns: List[str] = field(default_factory=lambda: [
         "wow", "oh", "ah", "hmm", "interesting", "cool", "nice",
-        "great", "amazing", "oh my", "no way", "whoa"
+        "great", "amazing", "oh my", "no way", "whoa", "sorry"
+    ])
+    # Incomplete/fragment patterns - very short utterances that are likely interjections
+    fragment_patterns: List[str] = field(default_factory=lambda: [
+        "like to", "to me", "is that", "this is", "kind of", "that's",
+        "i mean", "you know", "them", "to try", "try like", "like what"
     ])
     
     # Classification thresholds
-    high_confidence_threshold: float = 0.7  # Above this, classify with confidence
-    low_confidence_threshold: float = 0.3   # Below this, definitely not interjection
+    high_confidence_threshold: float = 0.55  # Above this, classify as interjection
+    low_confidence_threshold: float = 0.25   # Below this, definitely not interjection
+    
+    # Very short segment handling - segments this short are almost always interjections
+    very_short_word_count: int = 2  # Segments with <= this many words get boosted confidence
+    very_short_duration: float = 1.0  # Segments shorter than this get boosted confidence
     
     # LLM settings (for LLM-enhanced variant)
     llm_url: Optional[str] = None

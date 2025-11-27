@@ -227,4 +227,3 @@ def register_turn_builder_plugins():
 
 # Auto-register on import
 register_turn_builder_plugins()
-register_turn_builder_plugins()

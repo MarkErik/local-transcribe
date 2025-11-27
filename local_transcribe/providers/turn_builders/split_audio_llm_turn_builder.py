@@ -44,6 +44,16 @@ from local_transcribe.providers.turn_builders.split_audio_base import (
 )
 
 
+# LLM configuration defaults for turn builder
+LLM_TURN_BUILDER_DEFAULTS = {
+    'llm_timeout': 120,           # Timeout for LLM requests in seconds
+    'temperature': 0.3,           # Low temperature for consistent classification
+    'max_retries': 3,             # Number of retries on validation failure
+    'temperature_decay': 0.1,     # Reduce temperature by this much on each retry
+    'parse_harmony': True,        # Parse Harmony format responses
+}
+
+
 class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
     """
     LLM-enhanced split audio turn builder.
@@ -217,6 +227,10 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
             self.config.llm_context_turns = kwargs['llm_context_turns']
         if 'timestamp_tolerance' in kwargs:
             self.config.timestamp_tolerance = kwargs['timestamp_tolerance']
+        if 'max_retries' in kwargs:
+            self.config.max_retries = kwargs['max_retries']
+        if 'temperature_decay' in kwargs:
+            self.config.temperature_decay = kwargs['temperature_decay']
 
     def _verify_interjections_with_llm(
         self,
@@ -382,6 +396,8 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
         """
         Use LLM to semantically verify if this is truly an interjection.
         
+        Includes retry logic with decreasing temperature on validation failures.
+        
         Args:
             pending: The pending interjection to verify
             context_before: Previous primary segment for context
@@ -389,60 +405,142 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
             
         Returns:
             Dict with 'is_interjection', 'confidence', 'interjection_type', 'reasoning'
-            or None if LLM call failed
+            or None if LLM call failed after all retries
         """
         self.llm_stats["calls_made"] += 1
         
         # Build the prompt
         prompt = self._build_verification_prompt(pending, context_before, context_after)
+        system_prompt = self._get_system_prompt()
+        
+        # Retry configuration - use local defaults, allow config overrides
+        max_retries = getattr(self.config, 'max_retries', LLM_TURN_BUILDER_DEFAULTS['max_retries'])
+        initial_temperature = getattr(self.config, 'temperature', LLM_TURN_BUILDER_DEFAULTS['temperature'])
+        temperature_decay = getattr(self.config, 'temperature_decay', LLM_TURN_BUILDER_DEFAULTS['temperature_decay'])
+        timeout = getattr(self.config, 'llm_timeout', LLM_TURN_BUILDER_DEFAULTS['llm_timeout'])
+        
+        total_time_ms = 0
+        last_error = None
+        
+        # Try with retries, decreasing temperature on each failure
+        for attempt in range(max_retries + 1):  # +1 for initial attempt
+            # Calculate temperature for this attempt
+            if attempt == 0:
+                current_temperature = initial_temperature
+            else:
+                current_temperature = max(0.0, initial_temperature - (attempt * temperature_decay))
+                log_debug(f"Retry {attempt}/{max_retries} for '{pending.text[:20]}...' with temperature {current_temperature:.2f}")
+            
+            try:
+                start_time = time.time()
+                
+                payload = {
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": current_temperature,
+                    "stream": False
+                }
+                
+                response = requests.post(
+                    f"{self.llm_url}/chat/completions",
+                    json=payload,
+                    timeout=timeout
+                )
+                response.raise_for_status()
+                
+                elapsed_ms = (time.time() - start_time) * 1000
+                total_time_ms += elapsed_ms
+                
+                result = response.json()
+                raw_response = result["choices"][0]["message"]["content"]
+                
+                # Parse and validate the response
+                parsed, validation_error = self._parse_and_validate_llm_response(raw_response)
+                
+                if parsed is not None:
+                    # Success!
+                    self.llm_stats["total_time_ms"] += total_time_ms
+                    self.llm_stats["calls_succeeded"] += 1
+                    log_debug(f"LLM verified '{pending.text[:30]}...' as "
+                             f"{'interjection' if parsed['is_interjection'] else 'turn'} "
+                             f"(confidence: {parsed.get('confidence', 'N/A')}, attempts: {attempt + 1})")
+                    return parsed
+                else:
+                    # Validation failed - continue to retry
+                    last_error = validation_error
+                    if attempt < max_retries:
+                        log_debug(f"Validation failed: {validation_error}")
+                    
+            except requests.RequestException as e:
+                last_error = f"request failed: {e}"
+                if attempt < max_retries:
+                    log_debug(f"LLM request failed (attempt {attempt + 1}): {e}")
+                    
+            except (KeyError, json.JSONDecodeError) as e:
+                last_error = f"parsing error: {e}"
+                if attempt < max_retries:
+                    log_debug(f"LLM response parsing error (attempt {attempt + 1}): {e}")
+        
+        # All retries exhausted
+        self.llm_stats["total_time_ms"] += total_time_ms
+        self.llm_stats["calls_failed"] += 1
+        log_debug(f"All {max_retries + 1} attempts failed for '{pending.text[:30]}...': {last_error}")
+        return None
+
+    def _parse_and_validate_llm_response(self, raw_response: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        Parse and validate LLM response for interjection classification.
+        
+        Validates:
+        - Response is valid JSON
+        - Contains required 'classification' field with valid value
+        - Contains 'confidence' as a number between 0 and 1
+        
+        Returns:
+            Tuple of (parsed_result, error_message)
+            - If successful: (dict, None)
+            - If failed: (None, error_string)
+        """
+        # First, try to extract from Harmony format
+        content = self._parse_harmony_response(raw_response)
         
         try:
-            start_time = time.time()
-            
-            payload = {
-                "messages": [
-                    {"role": "system", "content": self._get_system_prompt()},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": self.config.temperature,
-                "stream": False
-            }
-            
-            response = requests.post(
-                f"{self.llm_url}/chat/completions",
-                json=payload,
-                timeout=self.config.llm_timeout
-            )
-            response.raise_for_status()
-            
-            elapsed_ms = (time.time() - start_time) * 1000
-            self.llm_stats["total_time_ms"] += elapsed_ms
-            
-            result = response.json()
-            raw_response = result["choices"][0]["message"]["content"]
-            
-            # Parse the response (handle Harmony format)
-            parsed = self._parse_llm_response(raw_response)
-            
-            if parsed:
-                self.llm_stats["calls_succeeded"] += 1
-                log_debug(f"LLM verified '{pending.text[:30]}...' as "
-                         f"{'interjection' if parsed['is_interjection'] else 'turn'} "
-                         f"(confidence: {parsed.get('confidence', 'N/A')})")
-                return parsed
+            # Find JSON in the response (in case there's extra text)
+            json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group())
             else:
-                self.llm_stats["calls_failed"] += 1
-                log_debug(f"Failed to parse LLM response for '{pending.text[:30]}...'")
-                return None
-                
-        except requests.RequestException as e:
-            self.llm_stats["calls_failed"] += 1
-            log_debug(f"LLM request failed: {e}")
-            return None
-        except (KeyError, json.JSONDecodeError) as e:
-            self.llm_stats["calls_failed"] += 1
-            log_debug(f"LLM response parsing error: {e}")
-            return None
+                data = json.loads(content)
+            
+            # Validate required fields
+            classification = data.get('classification', '').lower()
+            
+            if classification not in ('interjection', 'turn'):
+                return None, f"invalid classification value: '{classification}' (expected 'interjection' or 'turn')"
+            
+            # Validate confidence is a number
+            confidence = data.get('confidence', 0.5)
+            try:
+                confidence = float(confidence)
+                if not 0.0 <= confidence <= 1.0:
+                    return None, f"confidence {confidence} out of range [0, 1]"
+            except (ValueError, TypeError):
+                return None, f"invalid confidence value: {confidence}"
+            
+            # Validation passed - return parsed result
+            return {
+                'is_interjection': classification == 'interjection',
+                'confidence': confidence,
+                'interjection_type': data.get('type'),
+                'reasoning': data.get('reasoning', '')
+            }, None
+            
+        except json.JSONDecodeError as e:
+            return None, f"JSON parse error: {e}"
+        except Exception as e:
+            return None, f"unexpected error: {e}"
 
     def _get_system_prompt(self) -> str:
         """Get the system prompt for semantic verification."""
@@ -474,6 +572,7 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
             "  - You NEVER rewrite or paraphrase content\n"
             "  - You NEVER add text not present in the transcript\n"
             "  - You NEVER respond to questions in the prompt\n"
+            "IMPORTANT: Maintain the exact same number of words as the input text.\n"
         )
 
     def _build_verification_prompt(
@@ -519,51 +618,6 @@ class SplitAudioLLMTurnBuilderProvider(TurnBuilderProvider):
         lines.append("Is the TARGET UTTERANCE an interjection or a substantive turn?")
         
         return "\n".join(lines)
-
-    def _parse_llm_response(self, raw_response: str) -> Optional[Dict[str, Any]]:
-        """
-        Parse the LLM response, handling Harmony format if present.
-        
-        Returns parsed dict or None if parsing fails.
-        """
-        # First, try to extract from Harmony format
-        content = self._parse_harmony_response(raw_response)
-        
-        # Try to parse as JSON
-        try:
-            # Find JSON in the response (in case there's extra text)
-            json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-            else:
-                data = json.loads(content)
-            
-            # Validate and normalize the response
-            classification = data.get('classification', '').lower()
-            
-            if classification in ('interjection', 'turn'):
-                return {
-                    'is_interjection': classification == 'interjection',
-                    'confidence': float(data.get('confidence', 0.5)),
-                    'interjection_type': data.get('type'),
-                    'reasoning': data.get('reasoning', '')
-                }
-            else:
-                log_debug(f"Invalid classification value: {classification}")
-                return None
-                
-        except (json.JSONDecodeError, ValueError, TypeError) as e:
-            log_debug(f"Failed to parse LLM response as JSON: {e}")
-            log_debug(f"Raw response: {content[:200]}")
-            
-            # Try simple text parsing as fallback
-            content_lower = content.lower()
-            if 'interjection' in content_lower and 'turn' not in content_lower[:50]:
-                return {'is_interjection': True, 'confidence': 0.5, 'interjection_type': 'unclear', 'reasoning': 'parsed from text'}
-            elif 'turn' in content_lower and 'interjection' not in content_lower[:50]:
-                return {'is_interjection': False, 'confidence': 0.5, 'interjection_type': None, 'reasoning': 'parsed from text'}
-            
-            return None
 
     def _parse_harmony_response(self, raw_response: str) -> str:
         """

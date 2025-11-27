@@ -18,6 +18,7 @@ from local_transcribe.processing.llm_second_pass_de_identifier import (
     build_global_name_list,
     DiscoveredName
 )
+from local_transcribe.processing.turn_building import build_turns
 
 def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, base_name="", **kwargs):
     """Transcribe audio and return word segments with timestamps."""
@@ -278,7 +279,6 @@ def run_pipeline(args, api, root):
         transcriber_provider = providers.get('transcriber')
         aligner_provider = providers.get('aligner')
         diarization_provider = providers.get('diarization')
-        turn_builder_provider = providers.get('turn_builder')
         transcript_cleanup_provider = providers.get('transcript_cleanup')
         
     except ValueError as e:
@@ -322,8 +322,7 @@ def run_pipeline(args, api, root):
         if hasattr(args, 'diarization_provider') and args.diarization_provider:
             provider_info.append(f"Diarization: {args.diarization_provider}")
         provider_str = " | ".join(provider_info) if provider_info else "Default providers"
-        turn_builder_str = f" | Turn Builder: {turn_builder_provider.name}" if turn_builder_provider else ""
-        log_status(f"Mode: {mode} | System: {args.system.upper()} | {provider_str}{turn_builder_str} | Outputs: {', '.join(args.selected_outputs)}")
+        log_status(f"Mode: {mode} | System: {args.system.upper()} | {provider_str} | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
         if mode == "single_speaker_audio":
@@ -505,10 +504,10 @@ def run_pipeline(args, api, root):
                 log_intermediate_save(str(diarization_file), "Diarized word segments saved to")
 
                 # 4) Build turns
-                turn_kwargs = {}
+                turn_kwargs = {'intermediate_dir': paths["intermediate"]}
                 if hasattr(args, 'llm_turn_builder_url') and args.llm_turn_builder_url:
                     turn_kwargs['llm_url'] = args.llm_turn_builder_url
-                transcript = turn_builder_provider.build_turns(words_with_speakers, **turn_kwargs)
+                transcript = build_turns(words_with_speakers, mode=mode, **turn_kwargs)
                 # Save raw turns
                 json_turns_writer = api["registry"].get_output_writer("turns-json")
                 turns_file = paths["intermediate"] / "turns" / "raw_turns.json"
@@ -694,11 +693,11 @@ def run_pipeline(args, api, root):
                 else:
                     log_progress("No names discovered in first pass, skipping second pass")
             
-            # 3) Build and merge turns using the split_audio_turn_builder
-            turn_kwargs = {}
+            # 3) Build and merge turns using the turn building processor
+            turn_kwargs = {'intermediate_dir': paths["intermediate"]}
             if hasattr(args, 'llm_turn_builder_url') and args.llm_turn_builder_url:
                 turn_kwargs['llm_url'] = args.llm_turn_builder_url
-            transcript = turn_builder_provider.build_turns(all_words, **turn_kwargs)
+            transcript = build_turns(all_words, mode=mode, **turn_kwargs)
             
             # Save merged turns
             json_turns_writer = api["registry"].get_output_writer("turns-json")

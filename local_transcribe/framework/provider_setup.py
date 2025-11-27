@@ -80,10 +80,6 @@ class ProviderSetup:
             diarization_provider = self._setup_diarization_provider()
             providers['diarization'] = diarization_provider
         
-        # Setup turn builder
-        turn_builder_provider = self._setup_turn_builder_provider(mode)
-        providers['turn_builder'] = turn_builder_provider
-        
         return providers
     
     def _setup_transcriber_provider(self) -> Any:
@@ -133,20 +129,6 @@ class ProviderSetup:
             return self.registry.get_diarization_provider(self.args.diarization_provider)
         except ValueError as e:
             raise ValueError(f"Diarization provider setup failed: {e}")
-    
-    def _setup_turn_builder_provider(self, mode: str) -> Any:
-        """Setup turn builder provider based on mode."""
-        try:
-            if mode == "combined_audio":
-                turn_builder_name = "multi_speaker"
-            else:
-                # For split_audio mode, use the LLM-enhanced turn builder
-                turn_builder_name = getattr(self.args, 'turn_builder_provider', "split_audio_llm_turn_builder")
-            
-            return self.registry.get_turn_builder_provider(turn_builder_name)
-            
-        except ValueError as e:
-            raise ValueError(f"Turn builder provider setup failed: {e}")
     
     def _setup_transcript_cleanup_provider(self) -> Dict[str, Any]:
         """Setup transcript cleanup provider if specified."""

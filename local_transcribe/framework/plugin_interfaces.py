@@ -334,46 +334,6 @@ class UnifiedProvider(ABC):
         pass
 
 
-class TurnBuilderProvider(ABC):
-    """Abstract base class for turn building providers (grouping words into turns)."""
-
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Return the unique name of this turn builder provider."""
-        pass
-
-    @property
-    @abstractmethod
-    def short_name(self) -> str:
-        """Return a short display name for UI selection."""
-        pass
-
-    @property
-    @abstractmethod
-    def description(self) -> str:
-        """Return a human-readable description of this provider."""
-        pass
-
-    @abstractmethod
-    def build_turns(
-        self,
-        words: List[WordSegment],
-        **kwargs
-    ) -> List[Turn]:
-        """
-        Build conversation turns from word segments with speakers.
-
-        Args:
-            words: Word segments with speaker assignments
-            **kwargs: Provider-specific configuration options
-
-        Returns:
-            List of Turn objects grouped by speaker and timing
-        """
-        pass
-
-
 class TranscriptCleanupProvider(ABC):
     """Abstract base class for transcript cleanup providers (e.g., LLM-based cleaning)."""
 
@@ -502,7 +462,6 @@ class PluginRegistry:
         self._aligner_providers: Dict[str, AlignerProvider] = {}
         self._diarization_providers: Dict[str, DiarizationProvider] = {}
         self._unified_providers: Dict[str, UnifiedProvider] = {}
-        self._turn_builder_providers: Dict[str, TurnBuilderProvider] = {}
         self._transcript_cleanup_providers: Dict[str, TranscriptCleanupProvider] = {}
         self._word_writers: Dict[str, WordWriter] = {}
         self._output_writers: Dict[str, OutputWriter] = {}
@@ -522,10 +481,6 @@ class PluginRegistry:
     def register_unified_provider(self, provider: UnifiedProvider) -> None:
         """Register a unified provider."""
         self._unified_providers[provider.name] = provider
-
-    def register_turn_builder_provider(self, provider: TurnBuilderProvider) -> None:
-        """Register a turn builder provider."""
-        self._turn_builder_providers[provider.name] = provider
 
     def register_transcript_cleanup_provider(self, provider: TranscriptCleanupProvider) -> None:
         """Register a transcript cleanup provider."""
@@ -567,13 +522,6 @@ class PluginRegistry:
             raise ValueError(f"Unified provider '{name}' not found. Available: {available}")
         return self._unified_providers[name]
 
-    def get_turn_builder_provider(self, name: str) -> TurnBuilderProvider:
-        """Get a turn builder provider by name."""
-        if name not in self._turn_builder_providers:
-            available = list(self._turn_builder_providers.keys())
-            raise ValueError(f"Turn builder provider '{name}' not found. Available: {available}")
-        return self._turn_builder_providers[name]
-
     def get_transcript_cleanup_provider(self, name: str) -> TranscriptCleanupProvider:
         """Get a transcript cleanup provider by name."""
         if name not in self._transcript_cleanup_providers:
@@ -610,10 +558,6 @@ class PluginRegistry:
     def list_unified_providers(self) -> Dict[str, str]:
         """List all registered unified providers with their descriptions."""
         return {name: provider.description for name, provider in self._unified_providers.items()}
-
-    def list_turn_builder_providers(self) -> Dict[str, str]:
-        """List all registered turn builder providers with their descriptions."""
-        return {name: provider.description for name, provider in self._turn_builder_providers.items()}
 
     def list_transcript_cleanup_providers(self) -> Dict[str, str]:
         """List all registered transcript cleanup providers with their descriptions."""

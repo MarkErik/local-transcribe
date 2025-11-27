@@ -46,7 +46,7 @@ from local_transcribe.processing.turn_building.base import (
 
 # LLM configuration defaults for turn builder
 LLM_TURN_BUILDER_DEFAULTS = {
-    'llm_timeout': 120,           # Timeout for LLM requests in seconds
+    'llm_timeout': 180,           # Timeout for LLM requests in seconds (increased for large models)
     'temperature': 1.0,           # LLM temperature
     'max_retries': 3,             # Number of retries on validation failure
     'temperature_decay': 0.05,    # Reduce temperature by this much on each retry
@@ -243,7 +243,10 @@ class SplitAudioTurnBuilder:
         verified_interjections: List[InterjectionSegment] = []
         promoted_to_turns: List[RawSegment] = []
         
-        for pending in pending_interjections:
+        total_pending = len(pending_interjections)
+        llm_verification_count = 0
+        
+        for idx, pending in enumerate(pending_interjections):
             # Find surrounding context from primary segments
             context_before, context_after = self._find_context_for_interjection(
                 pending, primary_segments
@@ -254,6 +257,9 @@ class SplitAudioTurnBuilder:
             
             if needs_llm:
                 # Use LLM for semantic verification
+                llm_verification_count += 1
+                log_progress(f"LLM verification [{llm_verification_count}] ({idx+1}/{total_pending}): "
+                            f"'{pending.text[:30]}...' by {pending.speaker}")
                 llm_result = self._verify_with_llm(pending, context_before, context_after)
                 
                 if llm_result is not None:

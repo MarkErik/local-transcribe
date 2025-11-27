@@ -292,7 +292,7 @@ class TurnBuilderConfig:
     
     # LLM settings (for LLM-enhanced variant)
     llm_url: Optional[str] = None
-    llm_timeout: int = 120  # seconds
+    llm_timeout: int = 180  # seconds (increased for large models like gpt-oss-120b)
     llm_context_turns: int = 2  # How many surrounding turns to include in context
     llm_confidence_threshold: float = 0.5  # Use LLM if rule confidence is between low and high
     parse_harmony: bool = True  # Parse Harmony format responses

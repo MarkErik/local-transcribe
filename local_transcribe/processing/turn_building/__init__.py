@@ -21,11 +21,11 @@ from local_transcribe.processing.turn_building.data_structures import (
     TurnBuilderConfig
 )
 
-from local_transcribe.processing.turn_building.combined_audio import (
+from local_transcribe.processing.turn_building.combined_audio_turn_builder import (
     build_turns_combined_audio
 )
 
-from local_transcribe.processing.turn_building.split_audio_llm import (
+from local_transcribe.processing.turn_building.split_audio_llm_turn_builder import (
     build_turns_split_audio
 )
 

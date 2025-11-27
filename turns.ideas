@@ -351,19 +351,23 @@ PARTICIPANT: (15.17s) i mean basically i'm just very passionate about
 - Implement contextual analysis
 - Tune confidence thresholds
 
-### Phase 3: Output Formats
+### Phase 3: Integration & Testing
+- Integrate with existing pipeline
+- Comprehensive testing with various conversation types
+
+### Phase 4: Output Formats
 - Implement markdown output
 - Create HTML timeline visualization
 - Add dialogue script format
 - CLI options for format selection
 
-### Phase 4: Analysis & Metrics
+### Phase 5: Analysis & Metrics
 - Add conversation flow metrics
 - Implement speaker statistics
 - Create validation tools
 - Performance optimization
 
-### Phase 5: Integration & Testing
+### Phase 6: Second Round of Integration & Testing
 - Integrate with existing pipeline
 - Comprehensive testing with various conversation types
 

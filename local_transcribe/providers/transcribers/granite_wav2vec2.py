@@ -391,8 +391,8 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             self.logger.warning(f"Forced alignment failed ({e}), using fallback method")
             return self._fallback_token_alignment(emissions, tokens)
 
-    def _extract_token_boundaries(self, aligned_labels: torch.Tensor, tokens: List[str], 
-                                   token_ids: List[int], blank_id: int) -> List[tuple]:
+    def _extract_token_boundaries(self, aligned_labels: torch.Tensor, tokens: List[str],
+                                    token_ids: List[int], blank_id: int) -> List[tuple]:
         """Extract token boundaries from frame-level aligned labels."""
         token_timestamps = []
         aligned_labels_list = aligned_labels.tolist()
@@ -415,6 +415,7 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 if frame_start is None:
                     frame_start = frame_idx
             else:
+                # Handle case where we're in the middle of a token but encounter a different label
                 if frame_start is not None and current_token_idx < len(token_ids):
                     start_time = frame_start * 0.02 * 1000
                     end_time = frame_idx * 0.02 * 1000
@@ -423,9 +424,11 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                     current_token_idx += 1
                     frame_start = None
                     
+                    # Check if the new label matches the next expected token
                     if current_token_idx < len(token_ids) and label_id == token_ids[current_token_idx]:
                         frame_start = frame_idx
         
+        # Handle final token if still tracking
         if frame_start is not None and current_token_idx < len(token_ids):
             start_time = frame_start * 0.02 * 1000
             end_time = len(aligned_labels_list) * 0.02 * 1000

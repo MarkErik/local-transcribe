@@ -15,7 +15,7 @@ import subprocess
 import json
 import logging
 import sys
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 # Try to import from local_transcribe package, fall back to standalone if not available
 try:
@@ -332,20 +332,20 @@ class AudioCropper:
 
 @error_context(reraise=True)
 def crop_audio_files(file1: str | pathlib.Path,
-                    file2: str | pathlib.Path, 
+                    file2: Optional[str | pathlib.Path] = None, 
                     duration_minutes: Optional[float] = None,
                     output_dir: Optional[str | pathlib.Path] = None,
                     start_minutes: float = 0.0,
-                    end_minutes: Optional[float] = None) -> Tuple[pathlib.Path, pathlib.Path]:
+                    end_minutes: Optional[float] = None) -> List[pathlib.Path]:
     """
-    Convenience function to crop two audio files to the same duration or time range.
+    Convenience function to crop one or two audio files to the same duration or time range.
     
     Parameters
     ----------
     file1 : str | pathlib.Path
         Path to first audio file
-    file2 : str | pathlib.Path  
-        Path to second audio file
+    file2 : str | pathlib.Path, optional
+        Path to second audio file (optional)
     duration_minutes : float, optional
         Desired duration in minutes for both files (from start). Used when
         end_minutes is not provided.
@@ -358,8 +358,8 @@ def crop_audio_files(file1: str | pathlib.Path,
         
     Returns
     -------
-    Tuple[pathlib.Path, pathlib.Path]
-        Paths to the cropped output files
+    list[pathlib.Path]
+        List of paths to the cropped output files
         
     Raises
     ------
@@ -368,6 +368,9 @@ def crop_audio_files(file1: str | pathlib.Path,
         
     Examples
     --------
+    # Crop first 5 minutes of one file
+    crop_audio_files(file1, duration_minutes=5.0)
+    
     # Crop first 5 minutes of both files
     crop_audio_files(file1, file2, duration_minutes=5.0)
     
@@ -376,8 +379,13 @@ def crop_audio_files(file1: str | pathlib.Path,
     """
     cropper = AudioCropper()
     
-    # Check duration compatibility first
-    duration1, duration2 = cropper.check_duration_compatibility(file1, file2)
+    files = [file1]
+    if file2 is not None:
+        files.append(file2)
+    
+    # Check duration compatibility if two files
+    if file2 is not None:
+        duration1, duration2 = cropper.check_duration_compatibility(file1, file2)
     
     # Determine output directory
     if output_dir is None:
@@ -385,26 +393,26 @@ def crop_audio_files(file1: str | pathlib.Path,
     else:
         output_dir = pathlib.Path(output_dir)
     
-    # Generate output paths with descriptive names
-    file1_path = pathlib.Path(file1)
-    file2_path = pathlib.Path(file2)
+    output_paths = []
+    for file_path in files:
+        file_path_obj = pathlib.Path(file_path)
+        
+        if end_minutes is not None:
+            # Range-based naming: e.g., "file_cropped_4-12min.wav"
+            output_name = f"{file_path_obj.stem}_cropped_{start_minutes}-{end_minutes}min{file_path_obj.suffix}"
+        else:
+            # Traditional duration naming
+            output_name = f"{file_path_obj.stem}_cropped_{duration_minutes}min{file_path_obj.suffix}"
+        
+        output_path = output_dir / output_name
+        output_paths.append(output_path)
     
-    if end_minutes is not None:
-        # Range-based naming: e.g., "file_cropped_4-12min.wav"
-        output1 = output_dir / f"{file1_path.stem}_cropped_{start_minutes}-{end_minutes}min{file1_path.suffix}"
-        output2 = output_dir / f"{file2_path.stem}_cropped_{start_minutes}-{end_minutes}min{file2_path.suffix}"
-    else:
-        # Traditional duration naming
-        output1 = output_dir / f"{file1_path.stem}_cropped_{duration_minutes}min{file1_path.suffix}"
-        output2 = output_dir / f"{file2_path.stem}_cropped_{duration_minutes}min{file2_path.suffix}"
+    # Crop all files
+    for input_path, output_path in zip(files, output_paths):
+        cropper.crop_audio(input_path, output_path, duration_minutes=duration_minutes, 
+                           start_minutes=start_minutes, end_minutes=end_minutes)
     
-    # Crop both files
-    cropper.crop_audio(file1, output1, duration_minutes=duration_minutes, 
-                       start_minutes=start_minutes, end_minutes=end_minutes)
-    cropper.crop_audio(file2, output2, duration_minutes=duration_minutes,
-                       start_minutes=start_minutes, end_minutes=end_minutes)
-    
-    return output1, output2
+    return output_paths
 
 
 def main():
@@ -412,10 +420,13 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(
-        description="Crop two audio files to the same duration or time range",
+        description="Crop one or two audio files to the same duration or time range",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Crop first 5 minutes of one file
+  %(prog)s audio1.wav 5.0
+  
   # Crop first 5 minutes of both files
   %(prog)s audio1.wav audio2.wav 5.0
   
@@ -423,13 +434,14 @@ Examples:
   %(prog)s audio1.wav audio2.wav 4.0 12.0
   
   # Crop with output directory
+  %(prog)s /path/to/file1.mp3 10.5 --output-dir ./cropped
   %(prog)s /path/to/file1.mp3 /path/to/file2.mp3 10.5 --output-dir ./cropped
   %(prog)s /path/to/file1.mp3 /path/to/file2.mp3 2.0 8.5 --output-dir ./cropped
         """
     )
     
     parser.add_argument("file1", help="Path to first audio file")
-    parser.add_argument("file2", help="Path to second audio file")
+    parser.add_argument("file2", nargs='?', help="Path to second audio file (optional)")
     parser.add_argument(
         "time_args", 
         type=float, 
@@ -461,7 +473,7 @@ Examples:
         logging.getLogger().setLevel(logging.DEBUG)
     
     try:
-        output1, output2 = crop_audio_files(
+        output_paths = crop_audio_files(
             args.file1,
             args.file2,
             duration_minutes=duration_minutes,
@@ -471,8 +483,8 @@ Examples:
         )
         
         print(f"\n✓ Successfully cropped audio files:")
-        print(f"  {output1}")
-        print(f"  {output2}")
+        for path in output_paths:
+            print(f"  {path}")
         
     except AudioProcessingError as e:
         print(f"\n✗ Error: {e}", file=sys.stderr)

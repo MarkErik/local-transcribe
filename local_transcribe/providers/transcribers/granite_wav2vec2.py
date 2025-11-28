@@ -393,9 +393,21 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
 
     def _extract_token_boundaries(self, aligned_labels: torch.Tensor, tokens: List[str],
                                     token_ids: List[int], blank_id: int) -> List[tuple]:
-        """Extract token boundaries from frame-level aligned labels."""
+        """Extract token boundaries from frame-level aligned labels.
+        
+        Args:
+            aligned_labels: Frame-level alignment output from CTC forced alignment
+            tokens: List of token characters to align
+            token_ids: Corresponding token IDs for each token
+            blank_id: The CTC blank token ID
+            
+        Returns:
+            List of tuples: (token_char, start_time_ms, end_time_ms)
+        """
         token_timestamps = []
         aligned_labels_list = aligned_labels.tolist()
+        total_frames = len(aligned_labels_list)
+        total_duration_ms = total_frames * 0.02 * 1000  # 20ms per frame
         
         current_token_idx = 0
         frame_start = None
@@ -405,6 +417,10 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 if frame_start is not None and current_token_idx < len(token_ids):
                     start_time = frame_start * 0.02 * 1000
                     end_time = frame_idx * 0.02 * 1000
+                    
+                    # Bounds check: ensure end_time doesn't exceed audio duration
+                    end_time = min(end_time, total_duration_ms)
+                    
                     token_timestamps.append((tokens[current_token_idx], start_time, end_time))
                     
                     current_token_idx += 1
@@ -419,6 +435,10 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 if frame_start is not None and current_token_idx < len(token_ids):
                     start_time = frame_start * 0.02 * 1000
                     end_time = frame_idx * 0.02 * 1000
+                    
+                    # Bounds check
+                    end_time = min(end_time, total_duration_ms)
+                    
                     token_timestamps.append((tokens[current_token_idx], start_time, end_time))
                     
                     current_token_idx += 1
@@ -431,8 +451,35 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         # Handle final token if still tracking
         if frame_start is not None and current_token_idx < len(token_ids):
             start_time = frame_start * 0.02 * 1000
-            end_time = len(aligned_labels_list) * 0.02 * 1000
+            end_time = total_duration_ms  # Use total duration for final token
             token_timestamps.append((tokens[current_token_idx], start_time, end_time))
+            current_token_idx += 1
+        
+        # Validation: check if we missed any tokens
+        tokens_found = len(token_timestamps)
+        tokens_expected = len(tokens)
+        if tokens_found < tokens_expected:
+            missing_count = tokens_expected - tokens_found
+            self.logger.warning(
+                f"Token alignment incomplete: found {tokens_found}/{tokens_expected} tokens "
+                f"({missing_count} missing). Alignment quality may be degraded."
+            )
+            
+            # Fill in missing tokens with estimated timestamps at the end
+            if token_timestamps:
+                last_end_time = token_timestamps[-1][2]
+            else:
+                last_end_time = 0
+            
+            remaining_duration = total_duration_ms - last_end_time
+            remaining_tokens = tokens[current_token_idx:]
+            
+            if remaining_tokens and remaining_duration > 0:
+                time_per_missing = remaining_duration / len(remaining_tokens)
+                for i, token in enumerate(remaining_tokens):
+                    start_time = last_end_time + (i * time_per_missing)
+                    end_time = start_time + time_per_missing
+                    token_timestamps.append((token, start_time, end_time))
         
         return token_timestamps
 
@@ -462,8 +509,20 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         return token_timestamps
 
     def _chars_to_word_dicts(self, transcript: str, token_timestamps: List[tuple], 
-                             chunk_start_time: float, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Convert character-level token timestamps to word dicts with absolute timestamps."""
+                             chunk_start_time: float, speaker: Optional[str] = None,
+                             chunk_duration_ms: Optional[float] = None) -> List[Dict[str, Any]]:
+        """Convert character-level token timestamps to word dicts with absolute timestamps.
+        
+        Args:
+            transcript: The transcribed text
+            token_timestamps: List of (char, start_ms, end_ms) tuples from alignment
+            chunk_start_time: Absolute start time of this chunk in seconds
+            speaker: Optional speaker label
+            chunk_duration_ms: Optional chunk duration in ms for bounds checking
+            
+        Returns:
+            List of word dicts with "text", "start", "end", "speaker" keys
+        """
         words = transcript.split()
         if not words:
             return []
@@ -471,8 +530,13 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         if not token_timestamps:
             return self._simple_alignment_to_word_dicts(None, transcript, chunk_start_time, speaker)
         
+        # Calculate chunk duration from tokens if not provided
+        if chunk_duration_ms is None and token_timestamps:
+            chunk_duration_ms = max(t[2] for t in token_timestamps)  # Max end time
+        
         word_dicts = []
         token_idx = 0
+        fallback_count = 0
         
         for word in words:
             word_chars = [c for c in word.upper() if c.isalnum()]
@@ -508,11 +572,25 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 start_time = min(t[0] for t in word_token_times)
                 end_time = max(t[1] for t in word_token_times)
             else:
+                # Fallback: estimate timestamps based on previous word
+                fallback_count += 1
                 if word_dicts:
-                    start_time = word_dicts[-1]["end"] * 1000 - chunk_start_time * 1000
+                    # Previous word's end is in absolute seconds, convert back to chunk-relative ms
+                    prev_end_absolute = word_dicts[-1]["end"]  # in seconds
+                    start_time = (prev_end_absolute - chunk_start_time) * 1000  # chunk-relative ms
                 else:
                     start_time = 0
-                end_time = start_time + max(len(word) * 150, 200)
+                
+                # Estimate duration based on word length (roughly 150ms per character, min 200ms)
+                estimated_duration = max(len(word) * 150, 200)
+                end_time = start_time + estimated_duration
+                
+                # Bounds check: ensure we don't exceed chunk duration
+                if chunk_duration_ms is not None and end_time > chunk_duration_ms:
+                    end_time = chunk_duration_ms
+                    # Adjust start if needed to maintain some duration
+                    if end_time - start_time < 50:  # Minimum 50ms
+                        start_time = max(0, end_time - 50)
             
             # Convert to seconds and add chunk_start_time for absolute timestamps
             word_dicts.append({
@@ -521,6 +599,15 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 "end": end_time / 1000 + chunk_start_time,
                 "speaker": speaker
             })
+        
+        # Log warning if many words used fallback
+        if fallback_count > 0:
+            fallback_pct = (fallback_count / len(words)) * 100
+            if fallback_pct > 20:
+                self.logger.warning(
+                    f"Word alignment quality degraded: {fallback_count}/{len(words)} words "
+                    f"({fallback_pct:.1f}%) used fallback timestamps"
+                )
         
         return word_dicts
 
@@ -764,12 +851,27 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
     def _parse_textgrid_to_word_dicts(self, textgrid_path: pathlib.Path, original_transcript: str, 
                                        chunk_start_time: float = 0.0, chunk_end_time: float = 0.0, 
                                        speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Parse MFA TextGrid and return list of word dicts with timestamps."""
+        """Parse MFA TextGrid and return list of word dicts with timestamps.
+        
+        Args:
+            textgrid_path: Path to the TextGrid file
+            original_transcript: Original transcript text for word mapping
+            chunk_start_time: Absolute start time of the chunk in seconds
+            chunk_end_time: Absolute end time of the chunk in seconds
+            speaker: Optional speaker label
+            
+        Returns:
+            List of word dicts with "text", "start", "end", "speaker" keys
+        """
         word_dicts = []
 
         try:
             with open(textgrid_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
+            
+            if not lines:
+                self.logger.warning("TextGrid file is empty")
+                return self._simple_alignment_to_word_dicts(None, original_transcript, chunk_start_time, speaker)
             
             # Build mapping of normalized to original words
             original_words = original_transcript.split()
@@ -801,8 +903,9 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             if word_tier_end is None:
                 word_tier_end = len(lines)
 
-            # Parse intervals
+            # Parse intervals with improved error handling
             i = word_tier_start
+            parse_errors = 0
             while i < word_tier_end:
                 line = lines[i].strip()
                 if line.startswith('intervals ['):
@@ -820,9 +923,34 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                     text_line = lines[i].strip()
 
                     try:
+                        # Defensive parsing with explicit checks
+                        if '=' not in xmin_line:
+                            log_debug(f"Malformed xmin line: {xmin_line}")
+                            parse_errors += 1
+                            i += 1
+                            continue
+                        if '=' not in xmax_line:
+                            log_debug(f"Malformed xmax line: {xmax_line}")
+                            parse_errors += 1
+                            i += 1
+                            continue
+                        if '=' not in text_line:
+                            log_debug(f"Malformed text line: {text_line}")
+                            parse_errors += 1
+                            i += 1
+                            continue
+                        
                         start = float(xmin_line.split('=')[1].strip())
                         end = float(xmax_line.split('=')[1].strip())
-                        mfa_text = text_line.split('=')[1].strip().strip('"')
+                        
+                        # Handle text field which may contain '=' in the value
+                        text_parts = text_line.split('=', 1)  # Split only on first '='
+                        if len(text_parts) < 2:
+                            log_debug(f"Could not parse text from: {text_line}")
+                            parse_errors += 1
+                            i += 1
+                            continue
+                        mfa_text = text_parts[1].strip().strip('"')
 
                         if mfa_text and mfa_text not in ["", "<eps>", "sil", "sp", "spn"]:
                             normalized_key = mfa_text.lower()
@@ -841,10 +969,14 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                                 "end": end + chunk_start_time,
                                 "speaker": speaker
                             })
-                    except (ValueError, IndexError):
-                        pass
+                    except (ValueError, IndexError) as e:
+                        log_debug(f"Failed to parse interval at line {i}: {e}")
+                        parse_errors += 1
 
                 i += 1
+            
+            if parse_errors > 0:
+                self.logger.warning(f"TextGrid parsing had {parse_errors} errors")
 
         except Exception as e:
             self.logger.warning(f"Failed to parse TextGrid: {e}")
@@ -929,6 +1061,76 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 f.write("-" * 60 + "\n\n")
                 for word in data['words']:
                     f.write(f"[{word.get('start', 0):.2f}-{word.get('end', 0):.2f}] {word.get('text', '')}\n")
+
+    def _enforce_timestamp_monotonicity(self, chunks: List[Dict[str, Any]], 
+                                         verbose: bool = False) -> List[Dict[str, Any]]:
+        """
+        Post-process chunks to ensure timestamp monotonicity across all words.
+        
+        This fixes overlapping timestamps that can occur at chunk boundaries or due to
+        alignment errors. For each overlap, it adjusts timestamps by splitting the
+        difference between overlapping words.
+        
+        Args:
+            chunks: List of chunk dicts, each with "words" containing timestamped word dicts
+            verbose: Whether to log adjustment details
+            
+        Returns:
+            The same chunks list with adjusted timestamps (modified in place)
+        """
+        # Collect all words across chunks for sequential processing
+        all_words = []
+        for chunk in chunks:
+            all_words.extend(chunk.get("words", []))
+        
+        if not all_words:
+            return chunks
+        
+        overlap_count = 0
+        total_adjustment = 0.0
+        
+        for i in range(1, len(all_words)):
+            prev_word = all_words[i - 1]
+            curr_word = all_words[i]
+            
+            prev_end = prev_word.get("end", 0)
+            curr_start = curr_word.get("start", 0)
+            
+            if curr_start < prev_end:
+                # Overlap detected
+                overlap_count += 1
+                overlap_duration = prev_end - curr_start
+                total_adjustment += overlap_duration
+                
+                # Strategy: Split the difference - move both words' boundary to midpoint
+                midpoint = (prev_end + curr_start) / 2
+                
+                # Ensure midpoint is within reasonable bounds
+                # Don't let previous word's end go before its start
+                if midpoint < prev_word.get("start", 0):
+                    midpoint = prev_word.get("start", 0) + 0.01
+                
+                # Adjust timestamps
+                prev_word["end"] = midpoint
+                curr_word["start"] = midpoint
+                
+                # Also ensure current word's end is after its start
+                if curr_word.get("end", 0) <= curr_word["start"]:
+                    curr_word["end"] = curr_word["start"] + 0.02  # Minimum 20ms duration
+                
+                if verbose:
+                    log_debug(
+                        f"Fixed overlap between '{prev_word.get('text', '')}' and "
+                        f"'{curr_word.get('text', '')}': adjusted by {overlap_duration:.3f}s"
+                    )
+        
+        if overlap_count > 0:
+            self.logger.info(
+                f"Timestamp monotonicity: fixed {overlap_count} overlaps, "
+                f"total adjustment: {total_adjustment:.3f}s"
+            )
+        
+        return chunks
 
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs):
         """Not implemented - this provider requires alignment. Use transcribe_with_alignment()."""
@@ -1022,11 +1224,26 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             if len(chunk_wav) < min_chunk_samples:
                 if prev_chunk_wav is not None:
                     # Merge with previous chunk
-                    non_overlapping_part = chunk_wav[overlap_samples:]
+                    # Handle case where short chunk might be smaller than overlap
+                    if len(chunk_wav) > overlap_samples:
+                        non_overlapping_part = chunk_wav[overlap_samples:]
+                    else:
+                        # Chunk is very short, use all of it but log warning
+                        non_overlapping_part = chunk_wav
+                        self.logger.warning(
+                            f"Short final chunk ({len(chunk_wav)} samples) smaller than overlap "
+                            f"({overlap_samples} samples), using entire chunk"
+                        )
                     merged_tensor = torch.cat([torch.from_numpy(prev_chunk_wav), torch.from_numpy(non_overlapping_part)])
                     merged_wav = merged_tensor.numpy()
                     
-                    prev_chunk_start_time = chunks_with_timestamps[-1].get("chunk_start_time", chunk_start_time - (len(prev_chunk_wav) / sr))
+                    # Get previous chunk's start time - it should always be present
+                    if "chunk_start_time" not in chunks_with_timestamps[-1]:
+                        self.logger.warning("Previous chunk missing chunk_start_time, calculating from current position")
+                    prev_chunk_start_time = chunks_with_timestamps[-1].get(
+                        "chunk_start_time", 
+                        max(0, chunk_start_time - (len(prev_chunk_wav) / sr))  # Ensure non-negative
+                    )
                     prev_chunk_id = chunks_with_timestamps[-1]["chunk_id"]
                     
                     # Transcribe merged chunk
@@ -1129,6 +1346,9 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 break
             
             chunk_start = chunk_start + chunk_samples - overlap_samples
+        
+        # Post-process to ensure timestamp monotonicity across all chunks
+        chunks_with_timestamps = self._enforce_timestamp_monotonicity(chunks_with_timestamps, verbose=verbose)
         
         if verbose:
             total_words = sum(len(chunk["words"]) for chunk in chunks_with_timestamps)

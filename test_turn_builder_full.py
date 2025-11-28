@@ -81,7 +81,7 @@ def test_merge_word_streams(interviewer_words: List[WordSegment], participant_wo
     print("TEST 2: Merge Word Streams")
     print("="*60)
     
-    from local_transcribe.processing.turn_building.base import merge_word_streams
+    from local_transcribe.processing.turn_building.turn_building_base import merge_word_streams
     
     all_words = interviewer_words + participant_words
     print(f"  Combined words before merge: {len(all_words)}")
@@ -103,8 +103,8 @@ def test_smart_grouping(merged_words: List[WordSegment]):
     print("TEST 3: Smart Grouping with Interjection Detection")
     print("="*60)
     
-    from local_transcribe.processing.turn_building.base import smart_group_with_interjection_detection
-    from local_transcribe.processing.turn_building.data_structures import TurnBuilderConfig
+    from local_transcribe.processing.turn_building.turn_building_base import smart_group_with_interjection_detection
+    from local_transcribe.processing.turn_building.turn_building_data_structures import TurnBuilderConfig
     
     config = TurnBuilderConfig()
     
@@ -143,8 +143,8 @@ def test_single_llm_verification():
     print("TEST 4: Single LLM Verification Call")
     print("="*60)
     
-    from local_transcribe.processing.turn_building.base import PendingInterjection
-    from local_transcribe.processing.turn_building.data_structures import RawSegment, TurnBuilderConfig
+    from local_transcribe.processing.turn_building.turn_building_base import PendingInterjection
+    from local_transcribe.processing.turn_building.turn_building_data_structures import RawSegment, TurnBuilderConfig
     
     builder = SplitAudioTurnBuilder(llm_url=LLM_URL)
     
@@ -241,8 +241,8 @@ def test_needs_llm_verification():
     print("TEST 6: Needs LLM Verification Logic")
     print("="*60)
     
-    from local_transcribe.processing.turn_building.base import PendingInterjection, detect_interjection_type
-    from local_transcribe.processing.turn_building.data_structures import TurnBuilderConfig
+    from local_transcribe.processing.turn_building.turn_building_base import PendingInterjection, detect_interjection_type
+    from local_transcribe.processing.turn_building.turn_building_data_structures import TurnBuilderConfig
     
     builder = SplitAudioTurnBuilder(llm_url=LLM_URL)
     config = TurnBuilderConfig()

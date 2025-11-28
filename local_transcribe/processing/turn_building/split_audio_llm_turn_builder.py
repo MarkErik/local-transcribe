@@ -27,14 +27,14 @@ from datetime import datetime
 from local_transcribe.framework.plugin_interfaces import WordSegment
 from local_transcribe.lib.program_logger import log_progress, log_debug, log_intermediate_save
 
-from local_transcribe.processing.turn_building.data_structures import (
+from local_transcribe.processing.turn_building.turn_building_data_structures import (
     RawSegment,
     TurnBuilderConfig,
     TranscriptFlow,
     HierarchicalTurn,
     InterjectionSegment
 )
-from local_transcribe.processing.turn_building.base import (
+from local_transcribe.processing.turn_building.turn_building_base import (
     merge_word_streams,
     smart_group_with_interjection_detection,
     PendingInterjection,

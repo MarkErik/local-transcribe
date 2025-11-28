@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 from local_transcribe.framework.plugin_interfaces import WordSegment
 from local_transcribe.lib.program_logger import log_progress, log_debug
-from local_transcribe.processing.turn_building.data_structures import (
+from local_transcribe.processing.turn_building.turn_building_data_structures import (
     RawSegment,
     InterjectionSegment,
     HierarchicalTurn,

@@ -13,7 +13,7 @@ The main entry point is the `build_turns` function which automatically
 selects the appropriate processor based on the mode.
 """
 
-from local_transcribe.processing.turn_building.data_structures import (
+from local_transcribe.processing.turn_building.turn_building_data_structures import (
     RawSegment,
     InterjectionSegment,
     HierarchicalTurn,

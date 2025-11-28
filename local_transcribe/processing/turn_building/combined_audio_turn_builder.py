@@ -13,13 +13,13 @@ from datetime import datetime
 from local_transcribe.framework.plugin_interfaces import WordSegment
 from local_transcribe.lib.program_logger import log_progress, log_debug
 
-from local_transcribe.processing.turn_building.data_structures import (
+from local_transcribe.processing.turn_building.turn_building_data_structures import (
     TurnBuilderConfig,
     TranscriptFlow,
     HierarchicalTurn,
     RawSegment
 )
-from local_transcribe.processing.turn_building.base import (
+from local_transcribe.processing.turn_building.turn_building_base import (
     group_by_speaker,
     assemble_hierarchical_turns,
     build_transcript_flow

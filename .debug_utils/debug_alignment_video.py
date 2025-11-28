@@ -2,23 +2,30 @@
 """
 Debug video renderer for split audio mode alignment verification.
 
-This module creates a debug video that displays words one at a time as they are spoken,
-synchronized with their alignment timestamps. Useful for visually verifying how closely
-the forced alignment matches the actual audio.
+This standalone script creates a debug video that displays words one at a time 
+as they are spoken, synchronized with their alignment timestamps. Useful for 
+visually verifying how closely the forced alignment matches the actual audio.
 
 Words appear at their start time and remain visible for at least 100ms.
 Words spoken in rapid succession (less than 100ms apart) accumulate horizontally.
 When horizontal space is exhausted, words wrap to a new row below.
+
+Usage:
+    python debug_alignment_video.py <json_path> <audio_path> <output_path> [speaker_name]
+
+Example:
+    python debug_alignment_video.py words.json speaker_audio.wav output.mp4 "Participant"
 """
 
 from __future__ import annotations
 import subprocess
 import tempfile
 import os
+import json
+import argparse
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from dataclasses import dataclass
-from local_transcribe.framework.plugin_interfaces import WordSegment
 
 
 # Configuration constants
@@ -40,8 +47,16 @@ WORD_SPACING = 24  # Horizontal space between words
 MAX_ROWS = 6  # Maximum number of word rows before wrapping to top
 
 # Approximate character width for positioning (monospace assumption)
-# This is a rough estimate; actual width depends on font
 CHAR_WIDTH_ESTIMATE = FONT_SIZE * 0.6
+
+
+@dataclass
+class WordSegment:
+    """Represents a transcribed word with timing information."""
+    text: str
+    start: float
+    end: float
+    speaker: Optional[str] = None
 
 
 @dataclass
@@ -54,15 +69,6 @@ class DisplayWord:
     row: int  # Which row (0-indexed)
     group_id: int  # Words in same rapid-succession group share an ID
 
-
-@dataclass 
-class WordGroup:
-    """A group of words spoken in rapid succession."""
-    words: List[DisplayWord]
-    group_id: int
-    start: float  # When first word appears
-    end: float  # When last word's display_until expires
-    
 
 def estimate_word_width(text: str) -> int:
     """Estimate the pixel width of a word based on character count."""
@@ -138,26 +144,6 @@ def calculate_display_words(word_segments: List[WordSegment]) -> List[DisplayWor
         prev_word_start = word.start
     
     return display_words
-
-
-def get_visible_words_at_time(t: float, display_words: List[DisplayWord]) -> List[DisplayWord]:
-    """
-    Get all words that should be visible at time t.
-    
-    A word is visible if: word.start <= t < word.display_until
-    
-    Args:
-        t: Time in seconds
-        display_words: List of DisplayWord objects
-        
-    Returns:
-        List of DisplayWord objects visible at time t
-    """
-    visible = []
-    for word in display_words:
-        if word.start <= t < word.display_until:
-            visible.append(word)
-    return visible
 
 
 def generate_ass_subtitle(
@@ -253,13 +239,47 @@ def escape_ass_text(text: str) -> str:
     return text
 
 
+def load_word_segments_from_json(json_path: Path, speaker_name: str = "Speaker") -> List[WordSegment]:
+    """
+    Load word segments from a JSON file.
+    
+    The JSON file should have a 'words' array with objects containing:
+    - text: string
+    - start: float (seconds)
+    - end: float (seconds)
+    - speaker: string (optional)
+    
+    Args:
+        json_path: Path to JSON file with word segments
+        speaker_name: Default speaker name if not in JSON
+        
+    Returns:
+        List of WordSegment objects
+    """
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    words = data.get('words', data)  # Handle both {words: [...]} and [...]
+    
+    return [
+        WordSegment(
+            text=w['text'],
+            start=w['start'],
+            end=w['end'],
+            speaker=w.get('speaker', speaker_name)
+        )
+        for w in words
+    ]
+
+
 def render_debug_video(
     word_segments: List[WordSegment],
-    audio_path: str | Path,
-    output_path: str | Path,
+    audio_path: Path,
+    output_path: Path,
     speaker_name: str = "Unknown",
     width: int = VIDEO_WIDTH,
-    height: int = VIDEO_HEIGHT
+    height: int = VIDEO_HEIGHT,
+    verbose: bool = False
 ) -> None:
     """
     Create a debug video showing words appearing as they are spoken.
@@ -275,10 +295,8 @@ def render_debug_video(
         speaker_name: Name of the speaker for display
         width: Video width (default 1920)
         height: Video height (default 1080)
+        verbose: Print detailed progress
     """
-    audio_path = Path(audio_path)
-    output_path = Path(output_path)
-    
     if not word_segments:
         raise ValueError("No word segments provided")
     
@@ -288,8 +306,16 @@ def render_debug_video(
     # Calculate display words with positions
     display_words = calculate_display_words(word_segments)
     
+    if verbose:
+        print(f"  Processed {len(display_words)} words")
+        group_ids = set(w.group_id for w in display_words)
+        print(f"  Created {len(group_ids)} display groups")
+    
     # Get total duration from the last word
     total_duration = max(w.display_until for w in display_words)
+    
+    if verbose:
+        print(f"  Video duration: {total_duration:.1f}s")
     
     # Generate ASS subtitle content
     ass_content = generate_ass_subtitle(display_words, speaker_name, total_duration)
@@ -300,8 +326,10 @@ def render_debug_video(
         ass_path = f.name
     
     try:
+        if verbose:
+            print(f"  Running FFmpeg...")
+        
         # Build FFmpeg command
-        # Note: Using ass= filter for ASS subtitles (more precise than subtitles=)
         cmd = [
             "ffmpeg", "-y",
             "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={FRAME_RATE}",
@@ -317,7 +345,10 @@ def render_debug_video(
             str(output_path),
         ]
         
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        
+        if verbose:
+            print(f"  FFmpeg completed successfully")
         
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"FFmpeg failed: {e.stderr}") from e
@@ -328,113 +359,75 @@ def render_debug_video(
             os.unlink(ass_path)
 
 
-def render_debug_video_for_speaker(
-    word_segments: List[WordSegment],
-    audio_path: str | Path,
-    output_dir: str | Path,
-    speaker_name: str
-) -> Path:
-    """
-    Convenience function to render a debug video for a single speaker.
+def main():
+    """Main entry point for command line usage."""
+    parser = argparse.ArgumentParser(
+        description="Create a debug video showing words appearing as they are spoken, "
+                    "synchronized with alignment timestamps.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python debug_alignment_video.py words.json audio.wav output.mp4
+  python debug_alignment_video.py words.json audio.m4a video.mp4 --speaker "Participant"
+  python debug_alignment_video.py data.json audio.mp3 out.mp4 -v
+
+The JSON file should contain word segments with 'text', 'start', and 'end' fields.
+Supported formats:
+  {"words": [{"text": "hello", "start": 0.0, "end": 0.5}, ...]}
+  [{"text": "hello", "start": 0.0, "end": 0.5}, ...]
+"""
+    )
     
-    Creates output file named: {speaker_name}_debug_alignment.mp4
+    parser.add_argument("json_path", type=Path, help="Path to JSON file with word segments")
+    parser.add_argument("audio_path", type=Path, help="Path to audio file")
+    parser.add_argument("output_path", type=Path, help="Output MP4 file path")
+    parser.add_argument("--speaker", "-s", default="Speaker", help="Speaker name to display (default: Speaker)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Print detailed progress")
     
-    Args:
-        word_segments: List of WordSegment objects for this speaker
-        audio_path: Path to the speaker's audio file
-        output_dir: Directory to save the output video
-        speaker_name: Name of the speaker
+    args = parser.parse_args()
+    
+    # Validate inputs
+    if not args.json_path.exists():
+        print(f"Error: JSON file not found: {args.json_path}")
+        return 1
+    
+    if not args.audio_path.exists():
+        print(f"Error: Audio file not found: {args.audio_path}")
+        return 1
+    
+    print(f"Creating debug alignment video...")
+    print(f"  JSON: {args.json_path}")
+    print(f"  Audio: {args.audio_path}")
+    print(f"  Output: {args.output_path}")
+    print(f"  Speaker: {args.speaker}")
+    print()
+    
+    try:
+        # Load word segments
+        word_segments = load_word_segments_from_json(args.json_path, args.speaker)
+        print(f"Loaded {len(word_segments)} words from JSON")
         
-    Returns:
-        Path to the generated video file
-    """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Sanitize speaker name for filename
-    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in speaker_name)
-    output_path = output_dir / f"{safe_name}_debug_alignment.mp4"
-    
-    render_debug_video(
-        word_segments=word_segments,
-        audio_path=audio_path,
-        output_path=output_path,
-        speaker_name=speaker_name
-    )
-    
-    return output_path
-
-
-# Utility function for testing
-def create_test_video_from_json(
-    json_path: str | Path,
-    audio_path: str | Path,
-    output_path: str | Path,
-    speaker_name: str = "Test Speaker"
-) -> None:
-    """
-    Create a debug video from a JSON file containing word segments.
-    
-    The JSON file should have a 'words' array with objects containing:
-    - text: string
-    - start: float (seconds)
-    - end: float (seconds)
-    - speaker: string (optional)
-    
-    Args:
-        json_path: Path to JSON file with word segments
-        audio_path: Path to audio file
-        output_path: Output video path
-        speaker_name: Speaker name to display
-    """
-    import json
-    
-    json_path = Path(json_path)
-    with open(json_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    
-    words = data.get('words', data)  # Handle both {words: [...]} and [...]
-    
-    word_segments = [
-        WordSegment(
-            text=w['text'],
-            start=w['start'],
-            end=w['end'],
-            speaker=w.get('speaker', speaker_name)
+        # Create output directory if needed
+        args.output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Render the video
+        render_debug_video(
+            word_segments=word_segments,
+            audio_path=args.audio_path,
+            output_path=args.output_path,
+            speaker_name=args.speaker,
+            verbose=args.verbose
         )
-        for w in words
-    ]
-    
-    render_debug_video(
-        word_segments=word_segments,
-        audio_path=audio_path,
-        output_path=output_path,
-        speaker_name=speaker_name
-    )
+        
+        print()
+        print(f"Done! Video saved to: {args.output_path}")
+        print(f"  File size: {args.output_path.stat().st_size / 1024:.1f} KB")
+        return 0
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
 
 
 if __name__ == "__main__":
-    # Example usage for testing
-    import sys
-    
-    if len(sys.argv) < 4:
-        print("Usage: python video_renderer_debug_split_audio_mode.py <json_path> <audio_path> <output_path> [speaker_name]")
-        print("")
-        print("Creates a debug video showing words appearing as they are spoken,")
-        print("synchronized with alignment timestamps.")
-        sys.exit(1)
-    
-    json_path = sys.argv[1]
-    audio_path = sys.argv[2]
-    output_path = sys.argv[3]
-    speaker_name = sys.argv[4] if len(sys.argv) > 4 else "Speaker"
-    
-    print(f"Creating debug alignment video...")
-    print(f"  JSON: {json_path}")
-    print(f"  Audio: {audio_path}")
-    print(f"  Output: {output_path}")
-    print(f"  Speaker: {speaker_name}")
-    
-    create_test_video_from_json(json_path, audio_path, output_path, speaker_name)
-    
-    print(f"Done! Video saved to: {output_path}")
+    exit(main())

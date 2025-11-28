@@ -234,6 +234,7 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 token = os.getenv("HF_TOKEN")
                 
                 with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message=".*Some weights.*were not initialized.*")
                     warnings.filterwarnings("ignore", message=".*masked_spec_embed.*")
                     self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(
                         self.wav2vec2_model_name, local_files_only=True, token=token

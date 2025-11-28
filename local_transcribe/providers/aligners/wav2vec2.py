@@ -172,6 +172,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
                 
                 # Suppress the masked_spec_embed warning - it's only used during training, not inference
                 with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message=".*Some weights.*were not initialized.*")
                     warnings.filterwarnings("ignore", message=".*masked_spec_embed.*")
                     self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token)
                     self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.wav2vec2_model_name, local_files_only=True, token=token).to(self.device)

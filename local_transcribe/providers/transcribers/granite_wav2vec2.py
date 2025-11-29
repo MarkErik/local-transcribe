@@ -1064,7 +1064,8 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
 
     def _enforce_timestamp_monotonicity(self, chunks: List[Dict[str, Any]], 
                                          verbose: bool = False,
-                                         intermediate_dir: Optional[pathlib.Path] = None) -> List[Dict[str, Any]]:
+                                         intermediate_dir: Optional[pathlib.Path] = None,
+                                         audio_path: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Post-process chunks to ensure timestamp monotonicity across all words.
         
@@ -1076,6 +1077,7 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             chunks: List of chunk dicts, each with "words" containing timestamped word dicts
             verbose: Whether to log adjustment details
             intermediate_dir: Optional directory to save overlap fix details to a text file
+            audio_path: Optional path to the audio file, used for naming the overlap report
             
         Returns:
             The same chunks list with adjusted timestamps (modified in place)
@@ -1147,7 +1149,11 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             
             # Save detailed overlap fixes to file for auditing
             if intermediate_dir:
-                overlap_file = intermediate_dir / "overlap_fixes.txt"
+                if audio_path:
+                    audio_basename = pathlib.Path(audio_path).stem
+                    overlap_file = intermediate_dir / f"overlap_fixes_{audio_basename}.txt"
+                else:
+                    overlap_file = intermediate_dir / "overlap_fixes.txt"
                 try:
                     with open(overlap_file, 'w', encoding='utf-8') as f:
                         f.write("Overlap Fixes Report\n")
@@ -1387,7 +1393,7 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             chunk_start = chunk_start + chunk_samples - overlap_samples
         
         # Post-process to ensure timestamp monotonicity across all chunks
-        chunks_with_timestamps = self._enforce_timestamp_monotonicity(chunks_with_timestamps, verbose=verbose, intermediate_dir=intermediate_dir)
+        chunks_with_timestamps = self._enforce_timestamp_monotonicity(chunks_with_timestamps, verbose=verbose, intermediate_dir=intermediate_dir, audio_path=audio_path)
         
         if verbose:
             total_words = sum(len(chunk["words"]) for chunk in chunks_with_timestamps)

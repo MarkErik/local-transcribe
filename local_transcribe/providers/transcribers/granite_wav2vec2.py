@@ -1063,7 +1063,8 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                     f.write(f"[{word.get('start', 0):.2f}-{word.get('end', 0):.2f}] {word.get('text', '')}\n")
 
     def _enforce_timestamp_monotonicity(self, chunks: List[Dict[str, Any]], 
-                                         verbose: bool = False) -> List[Dict[str, Any]]:
+                                         verbose: bool = False,
+                                         intermediate_dir: Optional[pathlib.Path] = None) -> List[Dict[str, Any]]:
         """
         Post-process chunks to ensure timestamp monotonicity across all words.
         
@@ -1074,6 +1075,7 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         Args:
             chunks: List of chunk dicts, each with "words" containing timestamped word dicts
             verbose: Whether to log adjustment details
+            intermediate_dir: Optional directory to save overlap fix details to a text file
             
         Returns:
             The same chunks list with adjusted timestamps (modified in place)
@@ -1088,6 +1090,7 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         
         overlap_count = 0
         total_adjustment = 0.0
+        overlap_details = []
         
         for i in range(1, len(all_words)):
             prev_word = all_words[i - 1]
@@ -1118,6 +1121,18 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 if curr_word.get("end", 0) <= curr_word["start"]:
                     curr_word["end"] = curr_word["start"] + 0.02  # Minimum 20ms duration
                 
+                # Record details for auditing
+                overlap_details.append({
+                    "word_index": i,
+                    "prev_word": prev_word.get("text", ""),
+                    "curr_word": curr_word.get("text", ""),
+                    "original_prev_end": prev_end,
+                    "original_curr_start": curr_start,
+                    "overlap_duration": overlap_duration,
+                    "new_midpoint": midpoint,
+                    "adjustment": overlap_duration
+                })
+                
                 if verbose:
                     log_debug(
                         f"Fixed overlap between '{prev_word.get('text', '')}' and "
@@ -1129,6 +1144,30 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 f"Timestamp monotonicity: fixed {overlap_count} overlaps, "
                 f"total adjustment: {total_adjustment:.3f}s"
             )
+            
+            # Save detailed overlap fixes to file for auditing
+            if intermediate_dir:
+                overlap_file = intermediate_dir / "overlap_fixes.txt"
+                try:
+                    with open(overlap_file, 'w', encoding='utf-8') as f:
+                        f.write("Overlap Fixes Report\n")
+                        f.write("=" * 50 + "\n")
+                        f.write(f"Total overlaps fixed: {overlap_count}\n")
+                        f.write(f"Total adjustment time: {total_adjustment:.3f}s\n")
+                        f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                        
+                        f.write("Detailed Fixes:\n")
+                        f.write("-" * 50 + "\n")
+                        for detail in overlap_details:
+                            f.write(f"Word {detail['word_index']}: '{detail['prev_word']}' -> '{detail['curr_word']}'\n")
+                            f.write(f"  Original: prev_end={detail['original_prev_end']:.3f}s, curr_start={detail['original_curr_start']:.3f}s\n")
+                            f.write(f"  Overlap: {detail['overlap_duration']:.3f}s\n")
+                            f.write(f"  New midpoint: {detail['new_midpoint']:.3f}s\n")
+                            f.write(f"  Adjustment: {detail['adjustment']:.3f}s\n\n")
+                        
+                    self.logger.info(f"Overlap fix details saved to: {overlap_file}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to save overlap fix details: {e}")
         
         return chunks
 
@@ -1348,7 +1387,7 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             chunk_start = chunk_start + chunk_samples - overlap_samples
         
         # Post-process to ensure timestamp monotonicity across all chunks
-        chunks_with_timestamps = self._enforce_timestamp_monotonicity(chunks_with_timestamps, verbose=verbose)
+        chunks_with_timestamps = self._enforce_timestamp_monotonicity(chunks_with_timestamps, verbose=verbose, intermediate_dir=intermediate_dir)
         
         if verbose:
             total_words = sum(len(chunk["words"]) for chunk in chunks_with_timestamps)

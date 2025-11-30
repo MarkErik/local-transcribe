@@ -399,8 +399,8 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             
             segments.append(WordSegment(
                 text=word,
-                start=start_time / 1000,  # Convert to seconds
-                end=end_time / 1000,
+                start=round(start_time / 1000, 2),  # Convert to seconds
+                end=round(end_time / 1000, 2),
                 speaker=speaker
             ))
         
@@ -422,8 +422,8 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             
             segments.append(WordSegment(
                 text=word,
-                start=current_time / 1000,  # Convert ms to seconds
-                end=(current_time + word_duration) / 1000,
+                start=round(current_time / 1000, 2),  # Convert ms to seconds
+                end=round((current_time + word_duration) / 1000, 2),
                 speaker=speaker
             ))
             

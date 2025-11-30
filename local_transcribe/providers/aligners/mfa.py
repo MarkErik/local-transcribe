@@ -223,8 +223,8 @@ class MFAAlignerProvider(AlignerProvider):
                             
                             segments.append(WordSegment(
                                 text=original_text,
-                                start=start,
-                                end=end,
+                                start=round(start, 2),
+                                end=round(end, 2),
                                 speaker=speaker
                             ))
                     except (ValueError, IndexError) as e:
@@ -315,8 +315,8 @@ class MFAAlignerProvider(AlignerProvider):
         for word in words:
             segments.append(WordSegment(
                 text=word,
-                start=current_time,
-                end=current_time + word_duration,
+                start=round(current_time, 2),
+                end=round(current_time + word_duration, 2),
                 speaker=speaker
             ))
             current_time += word_duration

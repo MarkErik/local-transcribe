@@ -126,7 +126,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             compute_type = "float16" if self.device in ["cuda", "mps"] else "int8"
             model = whisperx.load_model(model_name, device=self.device, compute_type=compute_type)
             with torch.no_grad():
-                result = model.transcribe(audio, batch_size=16)
+                result = model.transcribe(audio, batch_size=16, language="en")
             log_debug(f"Transcription: {result['segments'][:2]}...")
             
             # Clean up transcription model

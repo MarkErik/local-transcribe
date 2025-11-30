@@ -275,7 +275,6 @@ def run_pipeline(args, api, root):
         providers = provider_setup.setup_providers(mode)
         
         # Extract individual providers for easier access
-        unified_provider = providers.get('unified')
         transcriber_provider = providers.get('transcriber')
         aligner_provider = providers.get('aligner')
         diarization_provider = providers.get('diarization')
@@ -299,7 +298,6 @@ def run_pipeline(args, api, root):
     # Compute capabilities for directory creation
     capabilities = {
         "mode": mode,
-        "unified": unified_provider is not None,
         "has_builtin_alignment": transcriber_provider.has_builtin_alignment if transcriber_provider else False,
         "aligner": aligner_provider is not None,
         "diarization": diarization_provider is not None
@@ -309,9 +307,7 @@ def run_pipeline(args, api, root):
     outdir = ensure_outdir(args.outdir)
     paths = api["ensure_session_dirs"](outdir, mode, speaker_files, capabilities)
 
-    if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
-        log_status(f"Mode: {mode} (combined_audio) | System: {args.system.upper()} | Provider: {args.unified_provider} | Outputs: {', '.join(args.selected_outputs)}")
-    elif mode == "single_speaker_audio":
+    if mode == "single_speaker_audio":
         log_status(f"Mode: {mode} | System: {args.system.upper()} | Transcriber: {args.transcriber_provider} | Outputs: CSV")
     else:
         provider_info = []
@@ -387,145 +383,121 @@ def run_pipeline(args, api, root):
             # 1) Standardize
             std_audio = standardize_audio(mixed_path, outdir, api)
 
-            if hasattr(args, 'processing_mode') and args.processing_mode == "unified":
-                # Use unified provider
-                from local_transcribe.lib.system_capability_utils import get_system_capability
-                device = get_system_capability()
-                
-                transcript = unified_provider.transcribe_and_diarize(
-                    str(std_audio),
-                    args.num_speakers,
-                    device=device,
-                    model=args.unified_model
-                )
-                
-                # Note: De-identification not supported in unified mode
-                if args.de_identify:
-                    log_status("Warning: De-identification not available in unified provider mode")
-                    log_progress("Unified providers return pre-built turns without word segments")
-                    log_progress("Use separate transcriber+aligner+diarization for de-identification support")
-                
-                # Save unified turns
-                json_turns_writer = api["registry"].get_output_writer("turns-json")
-                unified_file = paths["intermediate"] / "turns" / "unified_turns.json"
-                json_turns_writer.write(transcript, unified_file)
-                log_intermediate_save(str(unified_file), "Unified turns saved to")
-            else:
-                # 2) Transcription + alignment
-                words = transcribe_with_alignment(
-                    transcriber_provider,
-                    aligner_provider,
-                    str(std_audio),
-                    None,
-                    intermediate_dir=paths.get("intermediate"),
-                    base_name="",
-                    registry=api["registry"],
-                    transcriber_model=args.transcriber_model,
-                    output_format=getattr(args, 'output_format', 'stitched'),
-                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080'),
-                    stitching_method=getattr(args, 'stitching_method', 'local')
-                )
+            # 2) Transcription + alignment
+            words = transcribe_with_alignment(
+                transcriber_provider,
+                aligner_provider,
+                str(std_audio),
+                None,
+                intermediate_dir=paths.get("intermediate"),
+                base_name="",
+                registry=api["registry"],
+                transcriber_model=args.transcriber_model,
+                output_format=getattr(args, 'output_format', 'stitched'),
+                llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080'),
+                stitching_method=getattr(args, 'stitching_method', 'local')
+            )
 
-                # 2.5) De-identification (if enabled) - BEFORE diarization
-                if args.de_identify:
-                    log_progress("De-identifying word segments")
-                    
-                    # For combined_audio, second pass is less useful since there's only one transcript
-                    # But we still support it for consistency
-                    use_second_pass = getattr(args, 'de_identify_second_pass', False)
-                    
-                    result = de_identify_word_segments(
-                        words,
-                        intermediate_dir=paths["intermediate"],
-                        llm_url=args.llm_de_identifier_url,
-                        return_result_object=True,
-                        skip_audit_log=use_second_pass
-                    )
-                    words = result.segments
-                    first_pass_replacements = result.replacements
-                    
-                    log_progress(f"First pass complete: {len(result.discovered_names)} unique names found")
-                    
-                    # Save first-pass de-identified word segments
-                    json_word_writer = api["registry"].get_word_writer("word-segments-json")
-                    if use_second_pass:
-                        deidentified_file = paths["intermediate"] / "de_identification" / "word_segments_first_pass.json"
-                    else:
-                        deidentified_file = paths["intermediate"] / "de_identification" / "word_segments_deidentified.json"
-                    json_word_writer.write(words, deidentified_file)
-                    log_intermediate_save(str(deidentified_file), "De-identified word segments saved to")
-                    
-                    # Second pass (if enabled)
-                    if use_second_pass and result.discovered_names:
-                        log_progress("Running second pass on combined audio (single transcript mode)")
-                        
-                        # Build name list from first pass
-                        global_names = build_global_name_list({"combined": first_pass_replacements})
-                        
-                        if global_names:
-                            second_pass_result = second_pass_de_identify(
-                                words,
-                                global_names,
-                                intermediate_dir=paths["intermediate"],
-                                llm_url=args.llm_de_identifier_url,
-                                speaker_name=None,
-                                first_pass_replacements=first_pass_replacements
-                            )
-                            
-                            words = second_pass_result.segments
-                            
-                            # Save final de-identified segments
-                            final_file = paths["intermediate"] / "de_identification" / "word_segments_deidentified.json"
-                            json_word_writer.write(words, final_file)
-                            log_intermediate_save(str(final_file), "Final de-identified segments saved")
-                            
-                            if second_pass_result.additional_replacements:
-                                log_progress(f"Second pass found {len(second_pass_result.additional_replacements)} additional names")
-                    elif use_second_pass:
-                        log_progress("No names discovered in first pass, skipping second pass")
-                    
-                    log_progress("De-identification complete")
-
-                # 3) Diarize (assign speakers to words)
-                from local_transcribe.lib.system_capability_utils import get_system_capability
-                device = get_system_capability()
+            # 2.5) De-identification (if enabled) - BEFORE diarization
+            if args.de_identify:
+                log_progress("De-identifying word segments")
                 
-                words_with_speakers = diarization_provider.diarize(
-                    str(std_audio), 
-                    words, 
-                    args.num_speakers,
-                    device=device,
-                    models_dir=models_dir
+                # For combined_audio, second pass is less useful since there's only one transcript
+                # But we still support it for consistency
+                use_second_pass = getattr(args, 'de_identify_second_pass', False)
+                
+                result = de_identify_word_segments(
+                    words,
+                    intermediate_dir=paths["intermediate"],
+                    llm_url=args.llm_de_identifier_url,
+                    return_result_object=True,
+                    skip_audit_log=use_second_pass
                 )
-                # Save diarized segments
+                words = result.segments
+                first_pass_replacements = result.replacements
+                
+                log_progress(f"First pass complete: {len(result.discovered_names)} unique names found")
+                
+                # Save first-pass de-identified word segments
                 json_word_writer = api["registry"].get_word_writer("word-segments-json")
-                diarization_file = paths["intermediate"] / "diarization" / "diarized_word_segments.json"
-                json_word_writer.write(words_with_speakers, diarization_file)
-                log_intermediate_save(str(diarization_file), "Diarized word segments saved to")
+                if use_second_pass:
+                    deidentified_file = paths["intermediate"] / "de_identification" / "word_segments_first_pass.json"
+                else:
+                    deidentified_file = paths["intermediate"] / "de_identification" / "word_segments_deidentified.json"
+                json_word_writer.write(words, deidentified_file)
+                log_intermediate_save(str(deidentified_file), "De-identified word segments saved to")
+                
+                # Second pass (if enabled)
+                if use_second_pass and result.discovered_names:
+                    log_progress("Running second pass on combined audio (single transcript mode)")
+                    
+                    # Build name list from first pass
+                    global_names = build_global_name_list({"combined": first_pass_replacements})
+                    
+                    if global_names:
+                        second_pass_result = second_pass_de_identify(
+                            words,
+                            global_names,
+                            intermediate_dir=paths["intermediate"],
+                            llm_url=args.llm_de_identifier_url,
+                            speaker_name=None,
+                            first_pass_replacements=first_pass_replacements
+                        )
+                        
+                        words = second_pass_result.segments
+                        
+                        # Save final de-identified segments
+                        final_file = paths["intermediate"] / "de_identification" / "word_segments_deidentified.json"
+                        json_word_writer.write(words, final_file)
+                        log_intermediate_save(str(final_file), "Final de-identified segments saved")
+                        
+                        if second_pass_result.additional_replacements:
+                            log_progress(f"Second pass found {len(second_pass_result.additional_replacements)} additional names")
+                elif use_second_pass:
+                    log_progress("No names discovered in first pass, skipping second pass")
+                
+                log_progress("De-identification complete")
 
-                # 4) Build turns
-                turn_kwargs = {'intermediate_dir': paths["intermediate"]}
-                if hasattr(args, 'llm_turn_builder_url') and args.llm_turn_builder_url:
-                    turn_kwargs['llm_url'] = args.llm_turn_builder_url
-                transcript = build_turns(words_with_speakers, mode=mode, **turn_kwargs)
-                # Save raw turns
-                json_turns_writer = api["registry"].get_output_writer("turns-json")
-                turns_file = paths["intermediate"] / "turns" / "raw_turns.json"
-                json_turns_writer.write(transcript, turns_file)
-                log_intermediate_save(str(turns_file), "Raw turns saved to")
-    
-                # Assign speaker names if interactive
-                transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
-    
-                # Write raw outputs including video (this is the only place video should be generated)
-                raw_dir = paths["root"] / "Transcript_Raw"
-                raw_dir.mkdir(parents=True, exist_ok=True)
-                log_status(f"Writing raw outputs to {raw_dir}")
-                output_manager = OutputManager.get_instance(api["registry"])
-                # For combined_audio mode, pass the single standardized audio file
-                audio_config = std_audio if mode == "combined_audio" else None
-                log_progress(f"Writing raw outputs with formats: {args.selected_outputs}")
-                output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, audio_config, generate_video=True, word_segments=words_with_speakers)
+            # 3) Diarize (assign speakers to words)
+            from local_transcribe.lib.system_capability_utils import get_system_capability
+            device = get_system_capability()
+            
+            words_with_speakers = diarization_provider.diarize(
+                str(std_audio), 
+                words, 
+                args.num_speakers,
+                device=device,
+                models_dir=models_dir
+            )
+            # Save diarized segments
+            json_word_writer = api["registry"].get_word_writer("word-segments-json")
+            diarization_file = paths["intermediate"] / "diarization" / "diarized_word_segments.json"
+            json_word_writer.write(words_with_speakers, diarization_file)
+            log_intermediate_save(str(diarization_file), "Diarized word segments saved to")
+
+            # 4) Build turns
+            turn_kwargs = {'intermediate_dir': paths["intermediate"]}
+            if hasattr(args, 'llm_turn_builder_url') and args.llm_turn_builder_url:
+                turn_kwargs['llm_url'] = args.llm_turn_builder_url
+            transcript = build_turns(words_with_speakers, mode=mode, **turn_kwargs)
+            # Save raw turns
+            json_turns_writer = api["registry"].get_output_writer("turns-json")
+            turns_file = paths["intermediate"] / "turns" / "raw_turns.json"
+            json_turns_writer.write(transcript, turns_file)
+            log_intermediate_save(str(turns_file), "Raw turns saved to")
+
+            # Assign speaker names if interactive
+            transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
+
+            # Write raw outputs including video (this is the only place video should be generated)
+            raw_dir = paths["root"] / "Transcript_Raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            log_status(f"Writing raw outputs to {raw_dir}")
+            output_manager = OutputManager.get_instance(api["registry"])
+            # For combined_audio mode, pass the single standardized audio file
+            audio_config = std_audio if mode == "combined_audio" else None
+            log_progress(f"Writing raw outputs with formats: {args.selected_outputs}")
+            output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, audio_config, generate_video=True, word_segments=words_with_speakers)
 
             # 5) Prepare transcript for LLM processing
             log_status("Preparing transcript for LLM processing")

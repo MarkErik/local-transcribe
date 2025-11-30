@@ -71,15 +71,6 @@ def handle_plugin_listing(api):
     for name, desc in api["registry"].list_transcript_cleanup_providers().items():
         print(f"  {name}: {desc}")
 
-    print("\nUnified Providers:")
-    for name, desc in api["registry"].list_unified_providers().items():
-        print(f"  {name}: {desc}")
-        # Show available models if provider supports multiple
-        provider = api["registry"].get_unified_provider(name)
-        available_models = provider.get_available_models()
-        if len(available_models) > 1:
-            print(f"    Available models: {', '.join(available_models)}")
-
     print("\nOutput Writers:")
     for name, desc in api["registry"].list_output_writers().items():
         print(f"  {name}: {desc}")

@@ -8,7 +8,7 @@ def ensure_session_dirs(output_dir: str | pathlib.Path, mode: str, speaker_files
     Mode can be 'combined_audio' or 'split_audio'.
     For split_audio, speaker_files dict maps speaker names to file paths.
     Creates Intermediate_Outputs subdirectories based on plugin capabilities.
-    capabilities: dict with keys 'mode', 'unified', 'has_builtin_alignment', 'aligner', 'diarization'
+    capabilities: dict with keys 'mode', 'has_builtin_alignment', 'aligner', 'diarization'
     """
     root = pathlib.Path(output_dir).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -34,7 +34,6 @@ def _compute_needed_intermediate_dirs(capabilities: dict) -> set[str]:
     """
     needed = set()
     mode = capabilities.get("mode", "")
-    unified = capabilities.get("unified", False)
     has_builtin_alignment = capabilities.get("has_builtin_alignment", False)
     aligner = capabilities.get("aligner", False)
     diarization = capabilities.get("diarization", False)
@@ -45,20 +44,16 @@ def _compute_needed_intermediate_dirs(capabilities: dict) -> set[str]:
         # Add de_identification for all modes
         needed.add("de_identification")
     elif mode == "combined_audio":
-        if unified:
-            # Unified: only turns
-            needed.add("turns")
-        else:
-            # Separate providers
-            if not has_builtin_alignment:
-                needed.add("transcription")
-            if aligner:
-                needed.add("alignment")
-            if has_builtin_alignment:
-                needed.add("transcription_alignment")
-            if diarization:
-                needed.add("diarization")
-            needed.add("turns")
+        # Separate providers
+        if not has_builtin_alignment:
+            needed.add("transcription")
+        if aligner:
+            needed.add("alignment")
+        if has_builtin_alignment:
+            needed.add("transcription_alignment")
+        if diarization:
+            needed.add("diarization")
+        needed.add("turns")
         # Add de_identification for all modes
         needed.add("de_identification")
     elif mode == "split_audio":

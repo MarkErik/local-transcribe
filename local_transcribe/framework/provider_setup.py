@@ -26,9 +26,6 @@ class ProviderSetup:
         # Check for single_speaker_audio mode
         if mode == "single_speaker_audio":
             providers.update(self._setup_single_speaker_audio_providers())
-        # Check if using unified processing mode
-        elif hasattr(self.args, 'processing_mode') and self.args.processing_mode == "unified":
-            providers.update(self._setup_unified_provider())
         else:
             providers.update(self._setup_separate_processing_providers(mode))
         
@@ -36,21 +33,6 @@ class ProviderSetup:
         providers.update(self._setup_transcript_cleanup_provider())
         
         return providers
-    
-    def _setup_unified_provider(self) -> Dict[str, Any]:
-        """Setup unified provider for unified processing mode."""
-        try:
-            unified_provider = self.registry.get_unified_provider(self.args.unified_provider)
-            
-            # Set default model if not specified
-            if not hasattr(self.args, 'unified_model') or self.args.unified_model is None:
-                available_models = unified_provider.get_available_models()
-                self.args.unified_model = available_models[0] if available_models else None
-            
-            return {'unified': unified_provider}
-            
-        except ValueError as e:
-            raise ValueError(f"Unified provider setup failed: {e}")
     
     def _setup_single_speaker_audio_providers(self) -> Dict[str, Any]:
         """Setup providers for single_speaker_audio mode (only pure transcribers)."""
@@ -171,31 +153,22 @@ class ProviderSetup:
                 pass
             return providers
         
-        if hasattr(self.args, 'processing_mode') and self.args.processing_mode == "unified":
-            # For unified mode, we only need the unified provider
-            try:
-                unified_provider = self.registry.get_unified_provider(self.args.unified_provider)
-                providers['unified'] = unified_provider
-            except ValueError:
-                # If provider setup fails, return empty dict - will be handled by main pipeline
-                pass
-        else:
-            # For separate processing mode, we need transcriber, aligner (if needed), and diarization
-            try:
-                transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
-                providers['transcriber'] = transcriber_provider
-                
-                # Add aligner if transcriber doesn't have built-in alignment
-                if not transcriber_provider.has_builtin_alignment:
-                    aligner_provider = self.registry.get_aligner_provider(self.args.aligner_provider)
-                    providers['aligner'] = aligner_provider
-                
-                # Diarization is always needed for model download check
-                diarization_provider = self.registry.get_diarization_provider(self.args.diarization_provider)
-                providers['diarization'] = diarization_provider
-                
-            except ValueError:
-                # If provider setup fails, return empty dict - will be handled by main pipeline
-                pass
+        # For separate processing mode, we need transcriber, aligner (if needed), and diarization
+        try:
+            transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
+            providers['transcriber'] = transcriber_provider
+            
+            # Add aligner if transcriber doesn't have built-in alignment
+            if not transcriber_provider.has_builtin_alignment:
+                aligner_provider = self.registry.get_aligner_provider(self.args.aligner_provider)
+                providers['aligner'] = aligner_provider
+            
+            # Diarization is always needed for model download check
+            diarization_provider = self.registry.get_diarization_provider(self.args.diarization_provider)
+            providers['diarization'] = diarization_provider
+            
+        except ValueError:
+            # If provider setup fails, return empty dict - will be handled by main pipeline
+            pass
         
         return providers

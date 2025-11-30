@@ -263,77 +263,6 @@ class DiarizationProvider(ABC):
         pass
 
 
-class UnifiedProvider(ABC):
-    """Abstract base class for unified ASR + diarization providers."""
-
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Return the unique name of this unified provider."""
-        pass
-
-    @property
-    @abstractmethod
-    def description(self) -> str:
-        """Return a human-readable description of this provider."""
-        pass
-
-    @property
-    @abstractmethod
-    def short_name(self) -> str:
-        """Return a short display name for UI selection."""
-        pass
-
-    @abstractmethod
-    def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
-        """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs).
-
-        Args:
-            selected_model: The selected model name, if any. If None, return default models.
-        """
-        pass
-
-    def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
-        """Preload the specified models to cache. Default implementation does nothing."""
-        pass
-
-    def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
-        """Ensure the specified models are available, downloading if necessary. Default implementation does nothing."""
-        pass
-
-    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
-        """Check which models are available offline without downloading. Returns list of missing model identifiers."""
-        # Default implementation assumes all models are missing if not overridden
-        return models
-
-    @abstractmethod
-    def get_available_models(self) -> List[str]:
-        """Return a list of available model names for this provider."""
-        pass
-
-    @abstractmethod
-    def transcribe_and_diarize(
-        self,
-        audio_path: str,
-        num_speakers: int,
-        device: Optional[str] = None,
-        **kwargs
-    ) -> List[Turn]:
-        """
-        Transcribe audio file with word-level timestamps and perform speaker diarization.
-
-        Args:
-            audio_path: Path to the audio file
-            num_speakers: Number of speakers expected in the audio
-            device: Device to use for processing (cuda/mps/cpu). If None, uses global config.
-            **kwargs: Provider-specific configuration options
-
-        Returns:
-            List of Turn objects with speaker assignments, timing, and text
-        """
-        pass
-
-
 class TranscriptCleanupProvider(ABC):
     """Abstract base class for transcript cleanup providers (e.g., LLM-based cleaning)."""
 
@@ -461,7 +390,6 @@ class PluginRegistry:
         self._transcriber_providers: Dict[str, TranscriberProvider] = {}
         self._aligner_providers: Dict[str, AlignerProvider] = {}
         self._diarization_providers: Dict[str, DiarizationProvider] = {}
-        self._unified_providers: Dict[str, UnifiedProvider] = {}
         self._transcript_cleanup_providers: Dict[str, TranscriptCleanupProvider] = {}
         self._word_writers: Dict[str, WordWriter] = {}
         self._output_writers: Dict[str, OutputWriter] = {}
@@ -477,10 +405,6 @@ class PluginRegistry:
     def register_diarization_provider(self, provider: DiarizationProvider) -> None:
         """Register a diarization provider."""
         self._diarization_providers[provider.name] = provider
-
-    def register_unified_provider(self, provider: UnifiedProvider) -> None:
-        """Register a unified provider."""
-        self._unified_providers[provider.name] = provider
 
     def register_transcript_cleanup_provider(self, provider: TranscriptCleanupProvider) -> None:
         """Register a transcript cleanup provider."""
@@ -515,13 +439,6 @@ class PluginRegistry:
             raise ValueError(f"Diarization provider '{name}' not found. Available: {available}")
         return self._diarization_providers[name]
 
-    def get_unified_provider(self, name: str) -> UnifiedProvider:
-        """Get a unified provider by name."""
-        if name not in self._unified_providers:
-            available = list(self._unified_providers.keys())
-            raise ValueError(f"Unified provider '{name}' not found. Available: {available}")
-        return self._unified_providers[name]
-
     def get_transcript_cleanup_provider(self, name: str) -> TranscriptCleanupProvider:
         """Get a transcript cleanup provider by name."""
         if name not in self._transcript_cleanup_providers:
@@ -554,10 +471,6 @@ class PluginRegistry:
     def list_diarization_providers(self) -> Dict[str, str]:
         """List all registered diarization providers with their descriptions."""
         return {name: provider.description for name, provider in self._diarization_providers.items()}
-
-    def list_unified_providers(self) -> Dict[str, str]:
-        """List all registered unified providers with their descriptions."""
-        return {name: provider.description for name, provider in self._unified_providers.items()}
 
     def list_transcript_cleanup_providers(self) -> Dict[str, str]:
         """List all registered transcript cleanup providers with their descriptions."""

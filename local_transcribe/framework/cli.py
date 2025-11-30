@@ -58,7 +58,6 @@ def show_defaults():
     print("\nConfiguration:")
     print("  - Number of Speakers: 2")
     print("  - Output Formats: All available formats")
-    print("  - Processing Mode: Unified for single audio, Separate for multiple audio")
     print("  - Single Speaker Audio: Disabled (use -s to enable)")
     print("  - Chunking (Granite): Always enabled")
     print("  - Stitching Method (Granite): local (default) or llm available")
@@ -78,8 +77,6 @@ def select_provider(registry, provider_type):
         providers = registry._aligner_providers
     elif provider_type == "diarization":
         providers = registry._diarization_providers
-    elif provider_type == "unified":
-        providers = registry._unified_providers
     elif provider_type == "transcript_cleanup":
         providers = registry._transcript_cleanup_providers
     else:
@@ -329,15 +326,21 @@ def interactive_prompt(args, api):
         # Fallback for when audio files aren't set yet
         mode = "combined_audio"
 
-    # Check if unified mode and offer processing type choice
-    unified_providers = registry.list_unified_providers()
-    if unified_providers and hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
-        print("Processing Modes:")
-        print("  1. Unified Provider (Transcription + Diarization in one step) [Default]")
-        print("  2. Separate Providers (Transcription then Diarization)")
+    # Select transcriber provider
+    transcriber_providers = registry.list_transcriber_providers()
+    args.transcriber_provider = select_provider(registry, "transcriber")
+
+    # Model selection for transcriber provider
+    transcriber_provider = registry.get_transcriber_provider(args.transcriber_provider)
+    available_models = transcriber_provider.get_available_models()
+    if len(available_models) > 1:
+        print(f"\nAvailable models for {args.transcriber_provider}:")
+        for i, model in enumerate(available_models, 1):
+            default_marker = " [Default]" if i == 1 else ""
+            print(f"  {i}. {model}{default_marker}")
         
         while True:
-            choice_input = input("\nSelect processing mode (number) [Default: 1]: ").strip()
+            choice_input = input(f"\nSelect model (number) [Default: 1]: ").strip()
             if not choice_input:
                 choice = 1
             else:
@@ -347,197 +350,100 @@ def interactive_prompt(args, api):
                     print("Error: Please enter a valid number.")
                     continue
             
-            if choice == 1:
-                args.processing_mode = "unified"
-                is_default = True
+            if 1 <= choice <= len(available_models):
+                args.transcriber_model = available_models[choice - 1]
+                is_default = choice == 1
+                default_marker = " [Default]" if is_default else ""
+                print(f"✓ Selected: {args.transcriber_model}{default_marker}")
                 break
-            elif choice == 2:
-                args.processing_mode = "separate"
-                is_default = False
+            else:
+                print("Error: Please enter a number from the list.")
+    else:
+        args.transcriber_model = available_models[0] if available_models else None
+        if args.transcriber_model:
+            print(f"✓ Selected: {args.transcriber_model} [Default]")
+
+    # Granite-specific options
+    if args.transcriber_provider == "granite":
+        # Always use chunking, but ask for stitcher method
+        print(f"\nGranite Stitching Options:")
+        print(f"  1. Local: Intelligent local overlap detection [Default]")
+        print(f"  2. LLM: External AI server for intelligent chunk merging (requires LLM server)")
+        
+        while True:
+            choice = input(f"\nSelect stitching method (number) [Default: 1]: ").strip()
+            if choice in ['1', '']:
+                args.output_format = 'chunked'
+                args.stitching_method = "local"
+                print("✓ Selected: Local intelligent stitching [Default]")
+                break
+            elif choice == '2':
+                args.output_format = 'chunked'
+                args.stitching_method = "llm"
+                # Prompt for LLM URL
+                default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
+                llm_url = input(f"LLM server URL [Default: {default_url}]: ").strip()
+                if not llm_url:
+                    llm_url = default_url
+                    is_default = True
+                else:
+                    # Add http:// if not present
+                    if not llm_url.startswith(('http://', 'https://')):
+                        llm_url = f"http://{llm_url}"
+                    is_default = False
+                args.llm_stitcher_url = llm_url
+                default_marker = " [Default]" if is_default else ""
+                print(f"✓ Selected: LLM stitching with URL: {llm_url}{default_marker}")
                 break
             else:
                 print("Error: Please enter 1 or 2.")
-        
-        mode_name = "Unified Provider" if args.processing_mode == "unified" else "Separate Providers"
+
+    # Check if aligner is needed
+    if not transcriber_provider.has_builtin_alignment:
+        # Select aligner provider
+        aligner_providers = registry.list_aligner_providers()
+        args.aligner_provider = select_provider(registry, "aligner")
+    else:
+        args.aligner_provider = None
+
+    # Select diarization provider (only needed for combined audio mode)
+    if mode == "combined_audio":
+        diarization_providers = registry.list_diarization_providers()
+        args.diarization_provider = select_provider(registry, "diarization")
+    else:
+        args.diarization_provider = None
+
+    # Prompt for LLM turn builder URL in split audio mode
+    if mode == "split_audio":
+        default_url = getattr(args, 'llm_turn_builder_url', 'http://0.0.0.0:8080')
+        llm_url = input(f"\nLLM server URL for turn building [Default: {default_url}]: ").strip()
+        if not llm_url:
+            llm_url = default_url
+            is_default = True
+        else:
+            # Add http:// if not present
+            if not llm_url.startswith(('http://', 'https://')):
+                llm_url = f"http://{llm_url}"
+            is_default = False
+        args.llm_turn_builder_url = llm_url
         default_marker = " [Default]" if is_default else ""
-        print(f"✓ Selected: {mode_name}{default_marker}")
-    else:
-        args.processing_mode = "separate"  # For multi-file, always separate
-        print("✓ Selected: Separate Providers [Default]")
+        print(f"✓ Selected: LLM turn builder URL: {llm_url}{default_marker}")
 
-    if args.processing_mode == "unified":
-        # Select unified provider
-        unified_providers = registry.list_unified_providers()
-        args.unified_provider = select_provider(registry, "unified")
-
-        # Model selection for unified provider
-        unified_provider = registry.get_unified_provider(args.unified_provider)
-        available_models = unified_provider.get_available_models()
-        if len(available_models) > 1:
-            print(f"\nAvailable models for {args.unified_provider}:")
-            for i, model in enumerate(available_models, 1):
-                default_marker = " [Default]" if i == 1 else ""
-                print(f"  {i}. {model}{default_marker}")
-            
-            while True:
-                choice_input = input(f"\nSelect model (number) [Default: 1]: ").strip()
-                if not choice_input:
-                    choice = 1
-                else:
-                    try:
-                        choice = int(choice_input)
-                    except ValueError:
-                        print("Error: Please enter a valid number.")
-                        continue
-                
-                if 1 <= choice <= len(available_models):
-                    args.unified_model = available_models[choice - 1]
-                    is_default = choice == 1
+    # Number of speakers
+    if hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
+        while True:
+            try:
+                num_speakers = int(input("\nNumber of speakers expected in the audio [Default: 2]: ").strip())
+                if num_speakers > 0:
+                    args.num_speakers = num_speakers
+                    is_default = num_speakers == 2
                     default_marker = " [Default]" if is_default else ""
-                    print(f"✓ Selected: {args.unified_model}{default_marker}")
+                    print(f"✓ Selected: {num_speakers} speakers{default_marker}")
                     break
                 else:
-                    print("Error: Please enter a number from the list.")
-        else:
-            args.unified_model = available_models[0] if available_models else None
-            if args.unified_model:
-                print(f"✓ Selected: {args.unified_model} [Default]")
-
-        # Number of speakers (for unified providers)
-        if hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
-            while True:
-                try:
-                    num_speakers = int(input("\nNumber of speakers expected in the audio [Default: 2]: ").strip())
-                    if num_speakers > 0:
-                        args.num_speakers = num_speakers
-                        is_default = num_speakers == 2
-                        default_marker = " [Default]" if is_default else ""
-                        print(f"✓ Selected: {num_speakers} speakers{default_marker}")
-                        break
-                    else:
-                        print("Error: Please enter a positive number.")
-                except ValueError:
-                    print("Error: Please enter a valid number.")
-
-    else:
-        # Select transcriber provider
-        transcriber_providers = registry.list_transcriber_providers()
-        args.transcriber_provider = select_provider(registry, "transcriber")
-
-        # Model selection for transcriber provider
-        transcriber_provider = registry.get_transcriber_provider(args.transcriber_provider)
-        available_models = transcriber_provider.get_available_models()
-        if len(available_models) > 1:
-            print(f"\nAvailable models for {args.transcriber_provider}:")
-            for i, model in enumerate(available_models, 1):
-                default_marker = " [Default]" if i == 1 else ""
-                print(f"  {i}. {model}{default_marker}")
-            
-            while True:
-                choice_input = input(f"\nSelect model (number) [Default: 1]: ").strip()
-                if not choice_input:
-                    choice = 1
-                else:
-                    try:
-                        choice = int(choice_input)
-                    except ValueError:
-                        print("Error: Please enter a valid number.")
-                        continue
-                
-                if 1 <= choice <= len(available_models):
-                    args.transcriber_model = available_models[choice - 1]
-                    is_default = choice == 1
-                    default_marker = " [Default]" if is_default else ""
-                    print(f"✓ Selected: {args.transcriber_model}{default_marker}")
-                    break
-                else:
-                    print("Error: Please enter a number from the list.")
-        else:
-            args.transcriber_model = available_models[0] if available_models else None
-            if args.transcriber_model:
-                print(f"✓ Selected: {args.transcriber_model} [Default]")
-
-        # Granite-specific options
-        if args.transcriber_provider == "granite":
-            # Always use chunking, but ask for stitcher method
-            print(f"\nGranite Stitching Options:")
-            print(f"  1. Local: Intelligent local overlap detection [Default]")
-            print(f"  2. LLM: External AI server for intelligent chunk merging (requires LLM server)")
-            
-            while True:
-                choice = input(f"\nSelect stitching method (number) [Default: 1]: ").strip()
-                if choice in ['1', '']:
-                    args.output_format = 'chunked'
-                    args.stitching_method = "local"
-                    print("✓ Selected: Local intelligent stitching [Default]")
-                    break
-                elif choice == '2':
-                    args.output_format = 'chunked'
-                    args.stitching_method = "llm"
-                    # Prompt for LLM URL
-                    default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
-                    llm_url = input(f"LLM server URL [Default: {default_url}]: ").strip()
-                    if not llm_url:
-                        llm_url = default_url
-                        is_default = True
-                    else:
-                        # Add http:// if not present
-                        if not llm_url.startswith(('http://', 'https://')):
-                            llm_url = f"http://{llm_url}"
-                        is_default = False
-                    args.llm_stitcher_url = llm_url
-                    default_marker = " [Default]" if is_default else ""
-                    print(f"✓ Selected: LLM stitching with URL: {llm_url}{default_marker}")
-                    break
-                else:
-                    print("Error: Please enter 1 or 2.")
-
-        # Check if aligner is needed
-        if not transcriber_provider.has_builtin_alignment:
-            # Select aligner provider
-            aligner_providers = registry.list_aligner_providers()
-            args.aligner_provider = select_provider(registry, "aligner")
-        else:
-            args.aligner_provider = None
-
-        # Select diarization provider (only needed for combined audio in separate mode)
-        if mode == "combined_audio":
-            diarization_providers = registry.list_diarization_providers()
-            args.diarization_provider = select_provider(registry, "diarization")
-        else:
-            args.diarization_provider = None
-
-        # Prompt for LLM turn builder URL in split audio mode
-        if mode == "split_audio":
-            default_url = getattr(args, 'llm_turn_builder_url', 'http://0.0.0.0:8080')
-            llm_url = input(f"\nLLM server URL for turn building [Default: {default_url}]: ").strip()
-            if not llm_url:
-                llm_url = default_url
-                is_default = True
-            else:
-                # Add http:// if not present
-                if not llm_url.startswith(('http://', 'https://')):
-                    llm_url = f"http://{llm_url}"
-                is_default = False
-            args.llm_turn_builder_url = llm_url
-            default_marker = " [Default]" if is_default else ""
-            print(f"✓ Selected: LLM turn builder URL: {llm_url}{default_marker}")
-
-        # Number of speakers
-        if hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:
-            while True:
-                try:
-                    num_speakers = int(input("\nNumber of speakers expected in the audio [Default: 2]: ").strip())
-                    if num_speakers > 0:
-                        args.num_speakers = num_speakers
-                        is_default = num_speakers == 2
-                        default_marker = " [Default]" if is_default else ""
-                        print(f"✓ Selected: {num_speakers} speakers{default_marker}")
-                        break
-                    else:
-                        print("Error: Please enter a positive number.")
-                except ValueError:
-                    print("Error: Please enter a valid number.")
+                    print("Error: Please enter a positive number.")
+            except ValueError:
+                print("Error: Please enter a valid number.")
 
     # Transcript cleanup provider (optional)
     transcript_cleanup_providers = registry.list_transcript_cleanup_providers()
@@ -622,20 +528,17 @@ def interactive_prompt(args, api):
             args.selected_outputs = list(filtered_writers.keys())
             print("✓ Selected: All output formats [Default]")
 
-    if args.processing_mode == "unified":
-        print(f"\nSelected: Unified={args.unified_provider} ({args.unified_model}), Outputs={args.selected_outputs}")
-    else:
-        provider_info = []
-        if hasattr(args, 'transcriber_provider') and args.transcriber_provider:
-            provider_info.append(f"Transcriber={args.transcriber_provider}")
-        if hasattr(args, 'aligner_provider') and args.aligner_provider:
-            provider_info.append(f"Aligner={args.aligner_provider}")
-        if hasattr(args, 'diarization_provider') and args.diarization_provider:
-            provider_info.append(f"Diarization={args.diarization_provider}")
-        if hasattr(args, 'turn_builder_provider') and args.turn_builder_provider:
-            provider_info.append(f"Turn Builder={args.turn_builder_provider}")
-            if hasattr(args, 'transcript_cleanup_provider') and args.transcript_cleanup_provider:
-                provider_info.append(f"Transcript Cleanup={args.transcript_cleanup_provider}")
-        provider_str = ", ".join(provider_info) if provider_info else "Default providers"
-        print(f"\nSelected: {provider_str}, Outputs={args.selected_outputs}")
+    provider_info = []
+    if hasattr(args, 'transcriber_provider') and args.transcriber_provider:
+        provider_info.append(f"Transcriber={args.transcriber_provider}")
+    if hasattr(args, 'aligner_provider') and args.aligner_provider:
+        provider_info.append(f"Aligner={args.aligner_provider}")
+    if hasattr(args, 'diarization_provider') and args.diarization_provider:
+        provider_info.append(f"Diarization={args.diarization_provider}")
+    if hasattr(args, 'turn_builder_provider') and args.turn_builder_provider:
+        provider_info.append(f"Turn Builder={args.turn_builder_provider}")
+    if hasattr(args, 'transcript_cleanup_provider') and args.transcript_cleanup_provider:
+        provider_info.append(f"Transcript Cleanup={args.transcript_cleanup_provider}")
+    provider_str = ", ".join(provider_info) if provider_info else "Default providers"
+    print(f"\nSelected: {provider_str}, Outputs={args.selected_outputs}")
     return args

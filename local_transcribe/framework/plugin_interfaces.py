@@ -225,7 +225,7 @@ class DiarizationProvider(ABC):
         """Return a list of model identifiers required by this provider (e.g., Hugging Face repo IDs). Default empty."""
         return []
 
-    def preload_models(self, models: List[str]) -> None:
+    def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload the specified models to cache. Default implementation does nothing."""
         pass
 

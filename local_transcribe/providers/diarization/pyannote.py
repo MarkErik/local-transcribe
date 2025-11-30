@@ -15,8 +15,34 @@ from local_transcribe.lib.system_capability_utils import get_system_capability, 
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
 
+class ModelNotFoundError(FileNotFoundError):
+    """Raised when a required model is not found in the cache."""
+    pass
+
+
+class ModelDownloadError(Exception):
+    """Raised when model download fails."""
+    pass
+
+
+class AudioLoadError(Exception):
+    """Raised when audio file cannot be loaded."""
+    pass
+
+
 class PyAnnoteDiarizationProvider(DiarizationProvider):
     """Diarization provider using pyannote.audio models."""
+
+    # Default model used by this provider
+    DEFAULT_MODEL = "pyannote/speaker-diarization-community-1"
+
+    def _get_cache_dir(self, models_dir: pathlib.Path) -> pathlib.Path:
+        """Get the cache directory for pyannote models."""
+        return models_dir / "diarization" / "pyannote"
+
+    def _model_name_to_hf_format(self, model: str) -> str:
+        """Convert model name to HuggingFace cache directory format."""
+        return model.replace("/", "--")
 
     @property
     def name(self) -> str:
@@ -35,63 +61,37 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
 
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         # Return the actual HuggingFace model ID that needs to be downloaded
-        return ["pyannote/speaker-diarization-community-1"]
+        return [self.DEFAULT_MODEL]
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload pyannote models to cache."""
         import sys
         
-        # DEBUG: Log environment state before download attempt
-        log_debug(f"HF_HUB_OFFLINE before setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
-        log_debug(f"HF_HOME: {os.environ.get('HF_HOME')}")
-        log_debug(f"HF_TOKEN: {'***' if os.environ.get('HF_TOKEN') else 'NOT SET'}")
-        
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
         os.environ["HF_HUB_OFFLINE"] = "0"
-        
-        # DEBUG: Confirm environment variable was set
-        log_debug(f"HF_HUB_OFFLINE after setting to 0: {os.environ.get('HF_HUB_OFFLINE')}")
 
         # Force reload of huggingface_hub modules to pick up new environment
-        log_debug(f"Reloading huggingface_hub modules...")
         modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
         for module_name in modules_to_reload:
             del sys.modules[module_name]
-            log_debug(f"Reloaded {module_name}")
+
+        # Get token from environment once
+        token = os.getenv("HF_TOKEN", "")
 
         try:
             from huggingface_hub import snapshot_download
             
             for model in models:
-                if model == "pyannote/speaker-diarization-community-1":
-                    # Define cache directory first (consistent with other providers)
-                    cache_dir = models_dir / "diarization" / "pyannote"
+                if model == self.DEFAULT_MODEL:
+                    cache_dir = self._get_cache_dir(models_dir)
                     cache_dir.mkdir(parents=True, exist_ok=True)
                     
-                    # Get token from environment
-                    token = os.getenv("HF_TOKEN", "")
-                    
-                    log_debug(f"Attempting to download pyannote model to cache_dir: {cache_dir}")
-                    log_debug(f"Using HF_TOKEN: {'***' if token else 'NOT SET'}")
-                    
-                    # Use snapshot_download like other working providers
-                    snapshot_download(model, cache_dir=str(cache_dir), token=token)
+                    snapshot_download(model, cache_dir=str(cache_dir), token=token if token else None)
                     log_completion(f"{model} downloaded successfully.")
-                    
-                    # DEBUG: Check what was actually created
-                    if cache_dir.exists():
-                        log_debug(f"After download, cache directory contents: {list(cache_dir.iterdir())}")
                 else:
                     self.logger.warning(f"Unknown model {model}, skipping download")
         except Exception as e:
-            log_debug(f"Download failed with error: {e}")
-            log_debug(f"Error type: {type(e)}")
-
-            # Additional debug: Check environment at time of error
-            log_debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
-            log_debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
-
-            raise Exception(f"Failed to download {model}: {e}")
+            raise ModelDownloadError(f"Failed to download {model}: {e}") from e
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
 
@@ -102,14 +102,11 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which pyannote models are available offline without downloading."""
         missing_models = []
-        
-        # Use the same cache directory structure as download
-        cache_dir = models_dir / "diarization" / "pyannote"
+        cache_dir = self._get_cache_dir(models_dir)
         
         for model in models:
-            if model == "pyannote/speaker-diarization-community-1":
-                # Convert model name to HuggingFace cache directory format
-                hf_model_name = model.replace("/", "--")
+            if model == self.DEFAULT_MODEL:
+                hf_model_name = self._model_name_to_hf_format(model)
                 model_dir = cache_dir / f"models--{hf_model_name}"
                 
                 # Check for snapshots directory (this is the standard HF structure)
@@ -137,20 +134,36 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             words: Word segments from transcription
             num_speakers: Number of speakers expected in the audio
             device: Device to use (cuda/mps/cpu). If None, uses global config.
-            **kwargs: Provider-specific options
+            **kwargs: Provider-specific options. Must include 'models_dir' (pathlib.Path).
+        
+        Raises:
+            ValueError: If models_dir is not provided or invalid
         """
-        # For now, use the direct assignment method
-        return self._assign_speakers_to_words(audio_path, words, num_speakers, kwargs.get('models_dir'))
+        models_dir = kwargs.get('models_dir')
+        if models_dir is None:
+            raise ValueError("models_dir is required for PyAnnote diarization")
+        if not isinstance(models_dir, pathlib.Path):
+            models_dir = pathlib.Path(models_dir)
+        
+        return self._assign_speakers_to_words(audio_path, words, num_speakers, models_dir)
     
 
     def _load_waveform_mono_32f(self, audio_path: str) -> tuple[torch.Tensor, int]:
         """
         Load audio as float32 and return (waveform [1, T], sample_rate).
+        
+        Raises:
+            AudioLoadError: If audio file cannot be read or is invalid
         """
-        data, sr = sf.read(audio_path, dtype="float32", always_2d=False)
+        try:
+            data, sr = sf.read(audio_path, dtype="float32", always_2d=False)
+        except sf.SoundFileError as e:
+            raise AudioLoadError(f"Cannot read audio file '{audio_path}': {e}") from e
+        except Exception as e:
+            raise AudioLoadError(f"Unexpected error loading audio file '{audio_path}': {e}") from e
 
         if data.size == 0:
-            raise ValueError(f"Audio file is empty: {audio_path}")
+            raise AudioLoadError(f"Audio file is empty: {audio_path}")
 
         # Ensure mono
         if getattr(data, "ndim", 1) > 1:
@@ -163,7 +176,14 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
     def _assign_speakers_to_words(self, audio_path: str, words: List[WordSegment], num_speakers: int, models_dir: pathlib.Path) -> List[WordSegment]:
         """
         Diarize audio and assign speakers to words by majority overlap.
+        
+        Raises:
+            ValueError: If audio_path doesn't exist or words is empty
+            ModelNotFoundError: If the model is not found in cache
+            AudioLoadError: If audio cannot be loaded
         """
+        import gc
+        
         # Suppress warnings
         warnings.filterwarnings("ignore")
 
@@ -173,58 +193,54 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         if not words:
             raise ValueError("No words provided for diarization")
 
-        # Get token from environment (pyannote/huggingface hub will automatically read it)
+        # Get token from environment once
         token = os.getenv("HF_TOKEN", "")
 
-        # Use the same cache directory structure as download
-        cache_dir = models_dir / "diarization" / "pyannote"
-        
-        # Convert model name to HuggingFace cache directory format
-        hf_model_name = "pyannote--speaker-diarization-community-1".replace("/", "--")
+        # Find model snapshot directory
+        cache_dir = self._get_cache_dir(models_dir)
+        hf_model_name = self._model_name_to_hf_format(self.DEFAULT_MODEL)
         model_dir = cache_dir / f"models--{hf_model_name}"
         
-        # Find the latest snapshot directory (like other providers do)
         snapshots_dir = model_dir / "snapshots"
         if not snapshots_dir.exists() or not any(snapshots_dir.iterdir()):
-            raise FileNotFoundError(f"PyAnnote model not found at {model_dir}. Please run with --download-models first.")
+            raise ModelNotFoundError(f"PyAnnote model not found at {model_dir}. Please run with --download-models first.")
         
-        # Get the latest snapshot directory
         snapshot_dirs = [p for p in snapshots_dir.iterdir() if p.is_dir()]
         if not snapshot_dirs:
-            raise FileNotFoundError(f"No snapshots found in {snapshots_dir}")
+            raise ModelNotFoundError(f"No snapshots found in {snapshots_dir}")
         
         latest_snapshot_dir = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
-        log_debug(f"Loading pyannote model from: {latest_snapshot_dir}")
 
-        # Get token from environment
-        token = os.getenv("HF_TOKEN", "")
+        # Initialize variables for cleanup tracking
+        pipeline = None
+        waveform = None
+        diarization = None
         
-        log_debug(f"Loading pyannote model with token: {'***' if token else 'NOT SET'}")
-        
-        # Load pipeline from the specific snapshot directory
-        pipeline = Pipeline.from_pretrained(
-            str(latest_snapshot_dir),
-            token=token if token else None
-        )
-        # Move to GPU if available and supported
-        device = get_system_capability()
-        if device != "cpu":
-            try:
-                if device == "cuda" and torch.cuda.is_available():
-                    pipeline.to(torch.device("cuda"))
-                    log_progress("PyAnnote using CUDA device")
-                elif device == "mps" and torch.backends.mps.is_available():
-                    pipeline.to(torch.device("mps"))
-                    log_progress("PyAnnote using MPS device")
-                else:
-                    self.logger.warning(f"Warning: {device} not available, using CPU for PyAnnote")
-            except Exception as e:
-                self.logger.warning(f"Warning: Could not move PyAnnote pipeline to {device}, using CPU: {e}")
-
-        # Load waveform
-        waveform, sample_rate = self._load_waveform_mono_32f(audio_path)
-
         try:
+            # Load pipeline from the specific snapshot directory
+            pipeline = Pipeline.from_pretrained(
+                str(latest_snapshot_dir),
+                token=token if token else None
+            )
+            
+            # Move to GPU if available and supported
+            device = get_system_capability()
+            if device != "cpu":
+                try:
+                    if device == "cuda" and torch.cuda.is_available():
+                        pipeline.to(torch.device("cuda"))
+                        log_progress("PyAnnote using CUDA device")
+                    elif device == "mps" and torch.backends.mps.is_available():
+                        pipeline.to(torch.device("mps"))
+                        log_progress("PyAnnote using MPS device")
+                    else:
+                        self.logger.warning(f"Warning: {device} not available, using CPU for PyAnnote")
+                except Exception as e:
+                    self.logger.warning(f"Warning: Could not move PyAnnote pipeline to {device}, using CPU: {e}")
+
+            # Load waveform
+            waveform, sample_rate = self._load_waveform_mono_32f(audio_path)
+
             # Run diarization with no_grad to prevent gradient accumulation
             with torch.no_grad():
                 diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate, "num_speakers": num_speakers})
@@ -254,15 +270,14 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             
         finally:
             # Clean up tensors and memory
-            if 'waveform' in locals():
+            if waveform is not None:
                 del waveform
-            if 'pipeline' in locals():
+            if pipeline is not None:
                 del pipeline
-            if 'diarization' in locals():
+            if diarization is not None:
                 del diarization
             
             # Force garbage collection and empty cache
-            import gc
             gc.collect()
             
             # Clear GPU cache

@@ -237,6 +237,25 @@ def _build_hierarchical_turns(
         nonlocal merged_segment_count
         
         if not current_primary_words:
+            # No primary content - convert pending interjections to standalone turns
+            for ij in pending_interjections:
+                standalone_turn = HierarchicalTurn(
+                    turn_id=turn_id_counter,
+                    primary_speaker=ij.speaker,
+                    start=ij.start,
+                    end=ij.end,
+                    text=ij.text,
+                    words=ij.words.copy(),
+                    interjections=[]
+                )
+                turns.append(standalone_turn)
+                audit_log.log(
+                    "interjection_to_standalone",
+                    f"Converted interjection to standalone turn: '{ij.text}'",
+                    {"turn_id": turn_id_counter, "speaker": ij.speaker, "word_count": ij.word_count}
+                )
+                turn_id_counter += 1
+            pending_interjections = []
             return
         
         # Create the turn
@@ -251,20 +270,17 @@ def _build_hierarchical_turns(
             interjections=[]
         )
         
-        # Attach pending interjections that belong to this turn
+        # Attach ALL pending interjections to this turn
+        # They occurred during/before this turn and need to be preserved
+        attached_interjections = []
         for ij in pending_interjections:
-            # Interjection belongs to this turn if:
-            # 1. It's from a different speaker, AND
-            # 2. It falls within or near this turn's time range
-            if ij.speaker != turn.primary_speaker:
-                # Check if interjection is temporally associated with this turn
-                # (during the turn or in a small gap after)
-                if ij.start >= turn.start - 0.5 and ij.end <= turn.end + 1.0:
-                    turn.interjections.append(ij)
-                    audit_log.log_interjection_attached(
-                        ij, turn.turn_id,
-                        f"During turn ({turn.start:.2f}-{turn.end:.2f})"
-                    )
+            # Attach interjection to this turn
+            turn.interjections.append(ij)
+            attached_interjections.append(ij)
+            audit_log.log_interjection_attached(
+                ij, turn.turn_id,
+                f"Attached to turn ({turn.start:.2f}-{turn.end:.2f}), interjection at {ij.start:.2f}"
+            )
         
         # Sort interjections by start time
         turn.interjections.sort(key=lambda x: x.start)
@@ -368,18 +384,38 @@ def _build_hierarchical_turns(
     finalize_current_turn()
     
     # Handle any remaining interjections that weren't attached
-    # (these would be at the very end of the transcript)
-    if pending_interjections and turns:
-        last_turn = turns[-1]
-        for ij in pending_interjections:
-            if ij.speaker != last_turn.primary_speaker:
+    # (these would be at the very end of the transcript after all primary segments)
+    if pending_interjections:
+        if turns:
+            # Attach to the last turn
+            last_turn = turns[-1]
+            for ij in pending_interjections:
                 last_turn.interjections.append(ij)
                 audit_log.log_interjection_attached(
                     ij, last_turn.turn_id,
-                    "Attached to final turn (orphaned interjection)"
+                    "Attached to final turn (trailing interjection)"
                 )
-        last_turn.interjections.sort(key=lambda x: x.start)
-        last_turn.recalculate_metrics()
+            last_turn.interjections.sort(key=lambda x: x.start)
+            last_turn.recalculate_metrics()
+        else:
+            # No turns exist - create standalone turns from interjections
+            for ij in pending_interjections:
+                standalone_turn = HierarchicalTurn(
+                    turn_id=turn_id_counter,
+                    primary_speaker=ij.speaker,
+                    start=ij.start,
+                    end=ij.end,
+                    text=ij.text,
+                    words=ij.words.copy(),
+                    interjections=[]
+                )
+                turns.append(standalone_turn)
+                audit_log.log(
+                    "interjection_to_standalone",
+                    f"Converted trailing interjection to standalone turn: '{ij.text}'",
+                    {"turn_id": turn_id_counter, "speaker": ij.speaker}
+                )
+                turn_id_counter += 1
     
     audit_log.log(
         "build_turns_complete",

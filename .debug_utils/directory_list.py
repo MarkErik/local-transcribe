@@ -12,8 +12,8 @@ def list_models_directory():
     """List all files and directories in the models directory recursively."""
     # Get the project root (parent of .debug-utils)
     project_root = Path(__file__).parent.parent
-    models_dir = project_root / "models"
-    
+    models_dir = project_root / ".models"
+
     print(f"Contents of {models_dir} (recursive):")
     print("=" * 60)
     
@@ -37,7 +37,7 @@ def list_models_directory():
                 indent = "  " * indent_level
                 print(f"{indent}{relative_root.name}/")
             else:
-                print("models/")
+                print(".models/")
                 indent = ""
             
             # Print files in current directory

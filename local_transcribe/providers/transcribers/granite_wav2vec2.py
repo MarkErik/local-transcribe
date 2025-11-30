@@ -766,7 +766,7 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         
         # Setup MFA models directory if needed
         if self.mfa_models_dir is None:
-            models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models")))
+            models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / ".models")))
             self.mfa_models_dir = models_root / "aligners" / "mfa"
             self.mfa_models_dir.mkdir(parents=True, exist_ok=True)
         

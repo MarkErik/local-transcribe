@@ -15,7 +15,7 @@ uv.lock
 
 # Some directories
 data/
-models/
+.models/
 test/
 
 # Input and Output Data

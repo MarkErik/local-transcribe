@@ -43,7 +43,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 1
 
     root = repo_root_from_here()
-    models_dir = root / "models"
+    models_dir = root / ".models"
     set_offline_env(models_dir)
     ensure_models_exist(models_dir)
     api = import_pipeline_modules(root)

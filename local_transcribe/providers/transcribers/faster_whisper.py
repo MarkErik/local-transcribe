@@ -11,7 +11,7 @@ from local_transcribe.framework.plugin_interfaces import TranscriberProvider, Wo
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
 
-# CT2 (faster-whisper) repos to search locally under ./models/transcribers/ct2/...
+# CT2 (faster-whisper) repos to search locally under ./.models/transcribers/ct2/...
 _CT2_REPO_CHOICES: dict[str, list[str]] = {
     "medium.en": [
         "Systran/faster-whisper-medium.en",
@@ -43,9 +43,9 @@ def _ctranslate_device() -> str:
 
 def _latest_snapshot_dir_any(cache_root: pathlib.Path, repo_ids: list[str]) -> pathlib.Path:
     """
-    Given cache_root=./models/transcribers/ct2 and a list of repo_ids, return the newest
+    Given cache_root=./.models/transcribers/ct2 and a list of repo_ids, return the newest
     model directory that exists locally:
-      ./models/transcribers/ct2/models--ORG--REPO/snapshots/<rev>/
+      ./.models/transcribers/ct2/models--ORG--REPO/snapshots/<rev>/
     """
     for repo_id in repo_ids:
         safe = f"models--{repo_id.replace('/', '--')}"
@@ -179,7 +179,7 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
             raise ValueError(f"Audio file not found: {audio_path}")
 
         # Resolve local CT2 model snapshot directory
-        models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models"))).resolve()
+        models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / ".models"))).resolve()
         ct2_cache = models_root / "transcribers" / "ct2"
 
         local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[transcriber_model])
@@ -228,7 +228,7 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
             raise ValueError(f"Audio file not found: {audio_path}")
 
         # Resolve local CT2 model snapshot directory
-        models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / "models"))).resolve()
+        models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / ".models"))).resolve()
         ct2_cache = models_root / "transcribers" / "ct2"
 
         local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[transcriber_model])

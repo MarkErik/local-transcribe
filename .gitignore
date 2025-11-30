@@ -29,7 +29,7 @@ examples/
 
 
 # Models
-models/
+.models/
 
 # Secrets
 .env

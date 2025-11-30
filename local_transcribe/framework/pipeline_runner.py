@@ -195,7 +195,7 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
 def run_pipeline(args, api, root):
     from local_transcribe.lib.environment import ensure_file, ensure_outdir
 
-    models_dir = root / "models"
+    models_dir = root / ".models"
 
     # Determine mode and speaker mapping
     if hasattr(args, 'single_speaker_audio') and args.single_speaker_audio:

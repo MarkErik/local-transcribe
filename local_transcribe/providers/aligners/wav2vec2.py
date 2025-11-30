@@ -84,7 +84,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         from huggingface_hub import snapshot_download
 
         try:
-            # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+            # Use XDG_CACHE_HOME as the base (which is set to .models/.xdg)
             xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
             if xdg_cache_home:
                 models_root = pathlib.Path(xdg_cache_home)
@@ -119,7 +119,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         """Check which Wav2Vec2 models are available offline without downloading."""
         missing_models = []
         
-        # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+        # Use XDG_CACHE_HOME as the base (which is set to .models/.xdg)
         xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
         if xdg_cache_home:
             models_root = pathlib.Path(xdg_cache_home)
@@ -154,7 +154,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
     def _load_wav2vec2_model(self):
         """Load the Wav2Vec2 model for alignment if not already loaded."""
         if self.wav2vec2_model is None:
-            # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+            # Use XDG_CACHE_HOME as the base (which is set to .models/.xdg)
             xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
             if xdg_cache_home:
                 models_root = pathlib.Path(xdg_cache_home)

@@ -9,7 +9,7 @@ for long audio files with intelligent stitching.
 Installation:
     brew install whisper-cpp
 
-Models should be placed in: models/transcribers/whisper_cpp/
+Models should be placed in: .models/transcribers/whisper_cpp/
 Download GGML models from: https://huggingface.co/ggerganov/whisper.cpp
 """
 
@@ -354,7 +354,7 @@ class WhisperCppTranscriberProvider(TranscriberProvider):
             self.overlap_seconds = kwargs['overlap_seconds']
         
         # Find model path
-        models_dir = pathlib.Path("models") / "transcribers" / "whisper_cpp"
+        models_dir = pathlib.Path(".models") / "transcribers" / "whisper_cpp"
         model_path = models_dir / model_filename
         
         if not model_path.exists():

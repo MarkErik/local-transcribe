@@ -134,7 +134,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         missing_models = []
         for model in models:
             if model in self.model_mapping.values():  # Check if it's a valid Granite model
-                # Use XDG_CACHE_HOME as the base (which is set to models/.xdg)
+                # Use XDG_CACHE_HOME as the base (which is set to .models/.xdg)
                 xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
                 if xdg_cache_home:
                     models_root = pathlib.Path(xdg_cache_home)
@@ -159,7 +159,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         if self.model is None:
             model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-8b"])
             
-            # Use XDG_CACHE_HOME as the base (which is set to models/.xdg), falling back to standard HuggingFace cache
+            # Use XDG_CACHE_HOME as the base (which is set to .models/.xdg), falling back to standard HuggingFace cache
             xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
             if xdg_cache_home:
                 models_root = pathlib.Path(xdg_cache_home)

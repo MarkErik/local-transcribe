@@ -39,7 +39,6 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload pyannote models to cache."""
-        import os
         import sys
         
         # DEBUG: Log environment state before download attempt
@@ -142,18 +141,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         """
         # For now, use the direct assignment method
         return self._assign_speakers_to_words(audio_path, words, num_speakers, kwargs.get('models_dir'))
-
-        # Convert to Turn
-        turns = [
-            Turn(
-                speaker=t['speaker'],
-                start=t['start'],
-                end=t['end'],
-                text=t['text']
-            )
-            for t in turns_dicts
-        ]
-        return turns
+    
 
     def _load_waveform_mono_32f(self, audio_path: str) -> tuple[torch.Tensor, int]:
         """
@@ -185,10 +173,8 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         if not words:
             raise ValueError("No words provided for diarization")
 
-        # Ensure pyannote/huggingface hub will read token from env
+        # Get token from environment (pyannote/huggingface hub will automatically read it)
         token = os.getenv("HF_TOKEN", "")
-        if token:
-            os.environ.setdefault("HF_TOKEN", token)
 
         # Use the same cache directory structure as download
         cache_dir = models_dir / "diarization" / "pyannote"

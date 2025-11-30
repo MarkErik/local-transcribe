@@ -7,7 +7,7 @@ into conversational turns with interjection detection.
 
 Available processors:
 - build_turns_combined_audio: For single audio files with diarization
-- build_turns_split_audio: turn builder for split audio mode
+- build_turns_split_audio: turn builder for split audio mode (not yet implemented)
 
 The main entry point is the `build_turns` function which automatically
 selects the appropriate processor based on the mode.
@@ -25,9 +25,35 @@ from local_transcribe.processing.turn_building.combined_audio_turn_builder impor
     build_turns_combined_audio
 )
 
-from local_transcribe.processing.turn_building.split_audio_turn_builder import (
-    build_turns_split_audio
+from local_transcribe.processing.turn_building.turn_building_base import (
+    TurnBuildingAuditLog,
+    normalize_word_timestamps,
+    group_words_by_speaker,
+    classify_segments,
+    classify_interjection_type,
+    is_potential_interjection,
+    calculate_interrupt_level,
+    raw_segment_to_interjection
 )
+
+
+def build_turns_split_audio(words, **kwargs) -> TranscriptFlow:
+    """
+    Build conversation turns from split audio word segments.
+    
+    NOTE: This is a placeholder. Split audio mode turn building
+    is not yet implemented. For now, it delegates to combined audio mode.
+    
+    Args:
+        words: List of WordSegment with speaker assignments
+        **kwargs: Configuration options
+    
+    Returns:
+        TranscriptFlow with hierarchical turn structure
+    """
+    from local_transcribe.lib.program_logger import get_logger
+    get_logger().warning("Split audio turn building not yet implemented, using combined audio mode")
+    return build_turns_combined_audio(words, **kwargs)
 
 
 __all__ = [
@@ -42,6 +68,15 @@ __all__ = [
     'HierarchicalTurn',
     'TranscriptFlow',
     'TurnBuilderConfig',
+    # Base utilities
+    'TurnBuildingAuditLog',
+    'normalize_word_timestamps',
+    'group_words_by_speaker',
+    'classify_segments',
+    'classify_interjection_type',
+    'is_potential_interjection',
+    'calculate_interrupt_level',
+    'raw_segment_to_interjection',
 ]
 
 
@@ -51,14 +86,14 @@ def build_turns(words, mode: str, **kwargs) -> TranscriptFlow:
     
     This is the main entry point for turn building. It automatically
     selects the appropriate processor based on the mode:
-    - "combined_audio": Uses simple rule-based turn building
-    - "split_audio":turn building with interjection detection
+    - "combined_audio": Uses rule-based turn building with interjection detection
+    - "split_audio": Turn building for split audio mode (delegates to combined for now)
     
     Args:
         words: List of WordSegment with speaker assignments
         mode: Processing mode - "combined_audio" or "split_audio"
         **kwargs: Additional configuration options including:
-            - intermediate_dir: Path for intermediate files
+            - intermediate_dir: Path for intermediate files and audit logs
             - max_interjection_duration: Max duration for interjections (default: 2.0s)
             - max_interjection_words: Max word count for interjections (default: 5)
             - max_gap_to_merge_turns: Max gap to merge same-speaker turns (default: 3.0s)

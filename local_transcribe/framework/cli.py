@@ -31,7 +31,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     
     p.add_argument("--llm-stitcher-url", default="http://0.0.0.0:8080", help="URL for LLM stitcher provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
     p.add_argument("--llm-de-identifier-url", default="http://0.0.0.0:8080", help="URL for LLM personal information de-identifier processor (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
-    p.add_argument("--llm-turn-builder-url", default="http://0.0.0.0:8080", help="URL for LLM turn builder (used in split audio mode) [Default: http://0.0.0.0:8080]")
     p.add_argument("--llm-transcript-cleanup-url", default="http://0.0.0.0:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
 
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
@@ -617,22 +616,6 @@ def interactive_prompt(args, api):
         args.diarization_provider = select_provider(registry, "diarization")
     else:
         args.diarization_provider = None
-
-    # Prompt for LLM turn builder URL in split audio mode
-    if mode == "split_audio":
-        default_url = getattr(args, 'llm_turn_builder_url', 'http://0.0.0.0:8080')
-        llm_url = input(f"\nLLM server URL for turn building [Default: {default_url}]: ").strip()
-        if not llm_url:
-            llm_url = default_url
-            is_default = True
-        else:
-            # Add http:// if not present
-            if not llm_url.startswith(('http://', 'https://')):
-                llm_url = f"http://{llm_url}"
-            is_default = False
-        args.llm_turn_builder_url = llm_url
-        default_marker = " [Default]" if is_default else ""
-        print(f"✓ Selected: LLM turn builder URL: {llm_url}{default_marker}")
 
     # Number of speakers
     if hasattr(args, 'audio_files') and args.audio_files and len(args.audio_files) == 1:

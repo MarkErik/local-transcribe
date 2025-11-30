@@ -11,6 +11,11 @@ This proposal introduces a fundamental rethinking of interview conversation tran
 This approach better represents real conversational patterns, especially in interviews, discussions, and multi-party conversations where speakers frequently interject brief acknowledgments, questions, or reactions.
 And because we want to designed this to support the interview-style, where people may think for a bit before answering a question, but then talk for quite a while as another person listens.
 
+
+Our program supports both split audio files, where each speaker has their own audio file, and the combined audio mode, where all speakers are in one audio file.
+
+So we should have different approaches for split audio mode, and combined audio mode.
+
 ## Core Concept
 
 Traditional turn-based transcription treats every speaker change as a new turn, leading to fragmented output:
@@ -129,32 +134,7 @@ def is_potential_interjection(word_segment: WordSegment, context: List[WordSegme
     return False
 ```
 
-### Phase 2: LLM Classification
-
-For ambiguous cases, use LLM to classify interjections:
-
-```
-PROMPT: "Analyze this utterance in conversation context:
-
-Context before: '[previous 3 turns]'
-Target utterance: '[speaker] at [time]: "[text]"'
-Context after: '[next 3 turns]'
-
-Is this utterance:
-1. A full conversational turn that claims the floor?
-2. An interjection/acknowledgment that doesn't interrupt the flow?
-3. An overlapping interruption?
-
-Consider:
-- Length and complexity
-- Position relative to other speakers
-- Semantic relationship to surrounding speech
-- Typical conversational patterns
-
-Respond with: classification, confidence (0-1), and reasoning.
-```
-
-### Phase 3: Contextual Integration
+### Phase 2: Contextual Integration
 
 Attach interjections to appropriate primary turns:
 
@@ -190,7 +170,6 @@ def attach_interjections_to_turns(turns: List[ConversationTurn], interjections: 
 1. **Group consecutive words by speaker**
 2. **Identify natural boundaries:**
    - Significant pauses (> 2 seconds)
-   - Topic shifts (LLM analysis)
    - Speaker changes (unless interjection)
 3. **Merge turns separated only by interjections**
 
@@ -346,28 +325,23 @@ PARTICIPANT: (15.17s) i mean basically i'm just very passionate about
 - Create turn reconstruction algorithm
 - Add JSON output format
 
-### Phase 2: LLM Integration
-- Add LLM-based interjection classification
-- Implement contextual analysis
-- Tune confidence thresholds
-
-### Phase 3: Integration & Testing
+### Phase 2: Integration & Testing
 - Integrate with existing pipeline
 - Comprehensive testing with various conversation types
 
-### Phase 4: Output Formats
+### Phase 3: Output Formats
 - Implement markdown output
 - Create HTML timeline visualization
 - Add dialogue script format
 - CLI options for format selection
 
-### Phase 5: Analysis & Metrics
+### Phase 4: Analysis & Metrics
 - Add conversation flow metrics
 - Implement speaker statistics
 - Create validation tools
 - Performance optimization
 
-### Phase 6: Second Round of Integration & Testing
+### Phase 5: Second Round of Integration & Testing
 - Integrate with existing pipeline
 - Comprehensive testing with various conversation types
 
@@ -395,7 +369,7 @@ PARTICIPANT: (15.17s) i mean basically i'm just very passionate about
 ### Challenge 1: Subjective Classification
 **Issue:** What constitutes an interjection vs. a full turn?
 **Mitigation:**
-- Multiple classification methods (rules + LLM)
+- Multiple classification methods
 - Confidence scores for uncertain cases
 - User-configurable thresholds
 

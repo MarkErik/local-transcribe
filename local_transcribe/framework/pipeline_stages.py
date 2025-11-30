@@ -114,9 +114,6 @@ class TurnBuildingStage(PipelineStage):
         if context.get_intermediate_dir():
             turn_kwargs['intermediate_dir'] = context.get_intermediate_dir()
         
-        if hasattr(context.args, 'llm_turn_builder_url') and context.args.llm_turn_builder_url:
-            turn_kwargs['llm_url'] = context.args.llm_turn_builder_url
-        
         # Build turns
         transcript = build_turns(context.diarized_segments, mode=context.mode, **turn_kwargs)
         

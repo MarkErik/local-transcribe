@@ -477,8 +477,6 @@ def run_pipeline(args, api, root):
 
             # 4) Build turns
             turn_kwargs = {'intermediate_dir': paths["intermediate"]}
-            if hasattr(args, 'llm_turn_builder_url') and args.llm_turn_builder_url:
-                turn_kwargs['llm_url'] = args.llm_turn_builder_url
             transcript = build_turns(words_with_speakers, mode=mode, **turn_kwargs)
             # Save raw turns
             json_turns_writer = api["registry"].get_output_writer("turns-json")
@@ -667,8 +665,6 @@ def run_pipeline(args, api, root):
             
             # 3) Build and merge turns using the turn building processor
             turn_kwargs = {'intermediate_dir': paths["intermediate"]}
-            if hasattr(args, 'llm_turn_builder_url') and args.llm_turn_builder_url:
-                turn_kwargs['llm_url'] = args.llm_turn_builder_url
             transcript = build_turns(all_words, mode=mode, **turn_kwargs)
             
             # Save merged turns

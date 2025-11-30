@@ -30,7 +30,11 @@ class WhisperXUnifiedProvider(UnifiedProvider):
 
     @property
     def device(self):
-        return get_system_capability()
+        # WhisperX does not support MPS, so use CPU if MPS is selected
+        global_device = get_system_capability()
+        if global_device == "mps":
+            return "cpu"
+        return global_device
 
     @property
     def name(self) -> str:
@@ -60,13 +64,15 @@ class WhisperXUnifiedProvider(UnifiedProvider):
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload WhisperX models to cache."""
+        # Use CPU for downloading to avoid device compatibility issues
+        download_device = "cpu"
         for model in models:
             if model in self.model_mapping.values():
                 # Preload Whisper model
-                whisperx.load_model(model, device=self.device, download_root=str(models_dir / "asr"))
+                whisperx.load_model(model, device=download_device, download_root=str(models_dir / "asr"))
             elif model.startswith("WAV2VEC2"):
                 # Preload alignment model
-                whisperx.load_align_model("en", device=self.device, download_root=str(models_dir / "asr"))
+                whisperx.load_align_model("en", device=download_device, download_root=str(models_dir / "asr"))
             elif "speaker-diarization" in model:
                 # Preload diarization model (requires HF token)
                 from pyannote.audio import Pipeline

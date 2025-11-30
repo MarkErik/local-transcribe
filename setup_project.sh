@@ -32,9 +32,15 @@ echo "🔧 Patching whisperx for pyannote-audio 4.x compatibility…"
 WHISPERX_DIR=".venv/lib/python3.12/site-packages/whisperx"
 if [[ -d "$WHISPERX_DIR" ]]; then
   # pyannote-audio 4.x renamed 'use_auth_token' to 'token'
-  "${SED_INPLACE[@]}" 's/use_auth_token=use_auth_token)/token=use_auth_token)/g' \
+  # Patch all occurrences where use_auth_token is passed as a keyword argument
+  "${SED_INPLACE[@]}" 's/use_auth_token=use_auth_token/token=use_auth_token/g' \
     "$WHISPERX_DIR/vads/pyannote.py" \
     "$WHISPERX_DIR/diarize.py" 2>/dev/null || true
+  "${SED_INPLACE[@]}" 's/use_auth_token=None/token=None/g' \
+    "$WHISPERX_DIR/vads/pyannote.py" \
+    "$WHISPERX_DIR/asr.py" 2>/dev/null || true
+  "${SED_INPLACE[@]}" 's/use_auth_token=hf_token/token=hf_token/g' \
+    "$WHISPERX_DIR/transcribe.py" 2>/dev/null || true
   echo "✅ whisperx patched"
 else
   echo "⚠️  whisperx not found, skipping patch"

@@ -79,7 +79,8 @@ class WhisperXUnifiedProvider(UnifiedProvider):
                 from pyannote.audio import Pipeline
                 cache_dir = models_dir / "diarization"
                 cache_dir.mkdir(parents=True, exist_ok=True)
-                Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", cache_dir=str(cache_dir))
+                hf_token = os.environ.get("HF_TOKEN")
+                Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=hf_token, cache_dir=str(cache_dir))
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
@@ -145,7 +146,7 @@ class WhisperXUnifiedProvider(UnifiedProvider):
             clear_device_cache()
 
             # 3. Assign speaker labels
-            diarize_model = whisperx.DiarizationPipeline(use_auth_token=os.getenv("HF_TOKEN"), device=self.device)
+            diarize_model = whisperx.DiarizationPipeline(token=os.getenv("HF_TOKEN"), device=self.device)
             with torch.no_grad():
                 diarize_segments = diarize_model(audio, num_speakers=num_speakers)
                 result = whisperx.assign_word_speakers(diarize_segments, result)

@@ -38,6 +38,14 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
     p.add_argument("--show-defaults", action="store_true", help="Show all default values and exit.")
 
+    # Pipeline re-entry arguments
+    p.add_argument("--from-diarized-json", metavar="JSON_FILE", help="Resume pipeline from a corrected diarized word segments JSON file. Starts from turn-building stage.")
+    p.add_argument("--audio-for-video", metavar="AUDIO_FILE", help="Original audio file path for video generation when resuming from checkpoint.")
+    p.add_argument("--mode", choices=["combined_audio", "split_audio"], help="Pipeline mode. Overrides mode detected from checkpoint metadata.")
+    p.add_argument("--speaker-map", metavar="MAPPING", help="Speaker name mapping for re-entry (e.g., 'SPEAKER_00=Interviewer,SPEAKER_01=Participant')")
+    p.add_argument("--dry-run", action="store_true", help="Validate checkpoint and show what stages would run without executing.")
+    p.add_argument("--list-stages", action="store_true", help="List available pipeline stages and exit.")
+
     args = p.parse_args(argv)
 
     return args
@@ -68,6 +76,203 @@ def show_defaults():
     print("  - LLM Transcript Cleanup URL: http://0.0.0.0:8080")
     
     print("\nNote: Some defaults may be overridden by system capabilities or provider availability.")
+
+
+def list_stages():
+    """Display available pipeline stages."""
+    from local_transcribe.framework.pipeline_context import get_stage_order, get_stage_descriptions
+    
+    print("\n=== Pipeline Stages ===")
+    print("\nStages execute in the following order:\n")
+    
+    stages = get_stage_order()
+    descriptions = get_stage_descriptions()
+    
+    for i, stage in enumerate(stages, 1):
+        desc = descriptions.get(stage, "No description")
+        print(f"  {i}. {stage}")
+        print(f"     {desc}")
+    
+    print("\n--- Re-entry Points ---")
+    print("\nCurrently supported re-entry points:")
+    print("  • turn_building - Resume from corrected diarized JSON file")
+    print("                    Use: --from-diarized-json <file>")
+    
+    print("\nExample usage:")
+    print("  # Resume from corrected diarization with interactive prompts")
+    print("  python main.py -o ./output --from-diarized-json ./corrected.json -i")
+    print("")
+    print("  # Dry run to validate checkpoint")
+    print("  python main.py -o ./output --from-diarized-json ./corrected.json --dry-run")
+
+
+def interactive_reentry_prompt(args, api, checkpoint_result):
+    """
+    Interactive prompts specific to pipeline re-entry.
+    
+    Only prompts for configuration needed from the re-entry point onward.
+    
+    Args:
+        args: Parsed command line arguments
+        api: Pipeline API dictionary
+        checkpoint_result: Loaded checkpoint result
+        
+    Returns:
+        Updated args namespace
+    """
+    from local_transcribe.lib.speaker_mapper import (
+        create_speaker_mapping_interactive,
+        detect_speakers_in_segments
+    )
+    
+    registry = api["registry"]
+    
+    print("\n" + "=" * 60)
+    print("PIPELINE RE-ENTRY - INTERACTIVE MODE")
+    print("=" * 60)
+    
+    print(f"\nResuming from: {args.from_diarized_json}")
+    print(f"Output directory: {args.outdir}")
+    
+    # 1. Speaker name assignment
+    print("\n" + "-" * 40)
+    print("STEP 1: Speaker Name Assignment")
+    print("-" * 40)
+    
+    response = input("\nWould you like to assign names to speakers? [Y/n]: ").strip().lower()
+    if response != 'n':
+        mode = getattr(args, 'mode', None) or checkpoint_result.metadata.get('mode', 'combined_audio')
+        speaker_mapping = create_speaker_mapping_interactive(
+            checkpoint_result.segments,
+            mode,
+            show_samples=True
+        )
+        args.speaker_mapping = speaker_mapping
+    else:
+        args.speaker_mapping = {}
+        print("  ✓ Keeping original speaker IDs")
+    
+    # 2. Output format selection
+    print("\n" + "-" * 40)
+    print("STEP 2: Output Format Selection")
+    print("-" * 40)
+    
+    output_writers = registry.list_output_writers()
+    # Filter out SRT as it's handled internally by video
+    filtered_writers = {name: desc for name, desc in output_writers.items()
+                       if name not in ['srt']}
+    
+    print("\nAvailable Output Formats:")
+    for i, (name, desc) in enumerate(filtered_writers.items(), 1):
+        print(f"  {i}. {name}: {desc}")
+    
+    print("\nEnter numbers separated by commas (e.g., 1,3,5), or press Enter for all formats [Default: all]:")
+    choice = input("Select output formats: ").strip()
+    
+    if not choice:
+        args.selected_outputs = list(filtered_writers.keys())
+        print("  ✓ Selected: All output formats [Default]")
+    else:
+        try:
+            indices = [int(x.strip()) - 1 for x in choice.split(',') if x.strip()]
+            valid_indices = [i for i in indices if 0 <= i < len(filtered_writers)]
+            args.selected_outputs = [list(filtered_writers.keys())[i] for i in valid_indices]
+            if not args.selected_outputs:
+                print("  Error: No valid choices, selecting all.")
+                args.selected_outputs = list(filtered_writers.keys())
+            else:
+                print(f"  ✓ Selected: {', '.join(args.selected_outputs)}")
+        except ValueError:
+            print("  Error: Invalid input, selecting all.")
+            args.selected_outputs = list(filtered_writers.keys())
+    
+    # 3. Video generation (if video is in selected outputs)
+    if 'video' in args.selected_outputs:
+        print("\n" + "-" * 40)
+        print("STEP 3: Video Generation")
+        print("-" * 40)
+        
+        if not args.audio_for_video:
+            print("\nVideo output requires the original audio file.")
+            audio_path = input("Enter path to audio file (or press Enter to skip video): ").strip()
+            if audio_path:
+                args.audio_for_video = audio_path
+                print(f"  ✓ Audio for video: {audio_path}")
+            else:
+                # Remove video from outputs
+                args.selected_outputs = [o for o in args.selected_outputs if o != 'video']
+                print("  ✓ Video output skipped")
+        else:
+            print(f"  ✓ Using audio file: {args.audio_for_video}")
+    
+    # 4. Transcript cleanup (optional)
+    print("\n" + "-" * 40)
+    print("STEP 4: Transcript Cleanup (Optional)")
+    print("-" * 40)
+    
+    transcript_cleanup_providers = registry.list_transcript_cleanup_providers()
+    if transcript_cleanup_providers:
+        print("\nTranscript Cleanup Providers (optional LLM-based transcript cleaning):")
+        print("  0. None (skip cleanup) [Default]")
+        for i, (name, desc) in enumerate(transcript_cleanup_providers.items(), 1):
+            print(f"  {i}. {name}: {desc}")
+        
+        while True:
+            try:
+                choice_input = input("\nSelect transcript cleanup provider (number) [Default: 0]: ").strip()
+                
+                if not choice_input:
+                    choice = 0
+                else:
+                    choice = int(choice_input)
+                
+                if choice == 0:
+                    args.transcript_cleanup_provider = None
+                    print("  ✓ Selected: None [Default]")
+                    break
+                elif 1 <= choice <= len(transcript_cleanup_providers):
+                    args.transcript_cleanup_provider = list(transcript_cleanup_providers.keys())[choice - 1]
+                    
+                    # If remote provider, ask for URL
+                    if args.transcript_cleanup_provider == "llm_transcript_cleanup":
+                        default_url = getattr(args, 'llm_transcript_cleanup_url', 'http://0.0.0.0:8080')
+                        url = input(f"Enter LLM server URL [Default: {default_url}]: ").strip()
+                        if url:
+                            if not url.startswith(('http://', 'https://')):
+                                url = f"http://{url}"
+                            args.llm_transcript_cleanup_url = url
+                        else:
+                            args.llm_transcript_cleanup_url = default_url
+                    
+                    print(f"  ✓ Selected: {args.transcript_cleanup_provider}")
+                    break
+                else:
+                    print("  Error: Please enter a number from the list.")
+            except ValueError:
+                print("  Error: Please enter a valid number.")
+    else:
+        args.transcript_cleanup_provider = None
+        print("  No transcript cleanup providers available.")
+    
+    # Summary
+    print("\n" + "=" * 60)
+    print("CONFIGURATION SUMMARY")
+    print("=" * 60)
+    print(f"\n  Checkpoint: {args.from_diarized_json}")
+    print(f"  Output directory: {args.outdir}")
+    print(f"  Mode: {getattr(args, 'mode', 'auto-detected')}")
+    print(f"  Output formats: {', '.join(args.selected_outputs)}")
+    if args.audio_for_video:
+        print(f"  Audio for video: {args.audio_for_video}")
+    if args.transcript_cleanup_provider:
+        print(f"  Transcript cleanup: {args.transcript_cleanup_provider}")
+    if hasattr(args, 'speaker_mapping') and args.speaker_mapping:
+        print(f"  Speaker mapping: {len(args.speaker_mapping)} speakers renamed")
+    
+    print("\n" + "=" * 60)
+    
+    return args
+
 
 def select_provider(registry, provider_type):
     """Helper to select a provider from registry."""

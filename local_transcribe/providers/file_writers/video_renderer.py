@@ -2,9 +2,73 @@
 from __future__ import annotations
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Union, Optional, Any
 from local_transcribe.framework.plugin_interfaces import OutputWriter, Turn, WordSegment
 from local_transcribe.framework import registry
+
+
+def _extract_turns_as_dicts(transcript: Any) -> List[Dict]:
+    """
+    Extract turns as dictionaries from various transcript formats.
+    
+    Handles:
+    - TranscriptFlow (new hierarchical format)
+    - List of Turn objects
+    - List of HierarchicalTurn objects
+    - List of dictionaries
+    
+    Returns list of dicts with 'speaker', 'start', 'end', 'text' keys.
+    """
+    # Handle TranscriptFlow
+    if hasattr(transcript, 'turns') and hasattr(transcript, 'metadata'):
+        # This is a TranscriptFlow object
+        turns = transcript.turns
+        result = []
+        for t in turns:
+            # HierarchicalTurn uses primary_speaker
+            speaker = getattr(t, 'primary_speaker', None) or getattr(t, 'speaker', 'Unknown')
+            result.append({
+                "speaker": speaker,
+                "start": t.start,
+                "end": t.end,
+                "text": t.text
+            })
+        return result
+    
+    # Handle list of turns
+    if isinstance(transcript, list):
+        result = []
+        for t in transcript:
+            if isinstance(t, dict):
+                result.append(t)
+            elif hasattr(t, 'primary_speaker'):
+                # HierarchicalTurn
+                result.append({
+                    "speaker": t.primary_speaker,
+                    "start": t.start,
+                    "end": t.end,
+                    "text": t.text
+                })
+            elif hasattr(t, 'speaker'):
+                # Turn object
+                result.append({
+                    "speaker": t.speaker,
+                    "start": t.start,
+                    "end": t.end,
+                    "text": t.text
+                })
+            else:
+                # Unknown format, try to extract what we can
+                result.append({
+                    "speaker": str(getattr(t, 'speaker', getattr(t, 'primary_speaker', 'Unknown'))),
+                    "start": float(getattr(t, 'start', 0)),
+                    "end": float(getattr(t, 'end', 0)),
+                    "text": str(getattr(t, 'text', ''))
+                })
+        return result
+    
+    # Fallback - return empty list
+    return []
 
 
 def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Union[str, Path, Dict[str, str]], width: int = 1920, height: int = 1080, word_segments: Optional[List[WordSegment]] = None):
@@ -223,11 +287,11 @@ class VideoWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".mp4"]
     
-    def write(self, turns: List[Turn], output_path: str, word_segments: Optional[List[WordSegment]] = None, **kwargs) -> None:
+    def write(self, turns: Any, output_path: str, word_segments: Optional[List[WordSegment]] = None, **kwargs) -> None:
         """Write MP4 video with subtitles.
         
         Args:
-            turns: List of conversation turns
+            turns: List of conversation turns (or TranscriptFlow)
             output_path: Output MP4 file path
             word_segments: Optional word segments for detailed subtitle timing
             **kwargs: Additional arguments including 'audio_config'
@@ -244,7 +308,7 @@ class VideoWriter(OutputWriter):
             write_srt(cues, srt_path)
         else:
             # Fallback to turn-based subtitles
-            turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
+            turn_dicts = _extract_turns_as_dicts(turns)
             write_srt(turn_dicts, srt_path)
         
         try:

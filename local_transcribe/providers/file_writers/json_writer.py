@@ -1,10 +1,74 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Union, Optional, Any
 from pathlib import Path
 import json
 
 from local_transcribe.framework.plugin_interfaces import OutputWriter, WordWriter, Turn, registry, WordSegment
+
+
+def _extract_turns_as_dicts(transcript: Any) -> List[Dict]:
+    """
+    Extract turns as dictionaries from various transcript formats.
+    
+    Handles:
+    - TranscriptFlow (new hierarchical format)
+    - List of Turn objects
+    - List of HierarchicalTurn objects
+    - List of dictionaries
+    
+    Returns list of dicts with 'speaker', 'start', 'end', 'text' keys.
+    """
+    # Handle TranscriptFlow
+    if hasattr(transcript, 'turns') and hasattr(transcript, 'metadata'):
+        # This is a TranscriptFlow object
+        turns = transcript.turns
+        result = []
+        for t in turns:
+            # HierarchicalTurn uses primary_speaker
+            speaker = getattr(t, 'primary_speaker', None) or getattr(t, 'speaker', 'Unknown')
+            result.append({
+                "speaker": speaker,
+                "start": t.start,
+                "end": t.end,
+                "text": t.text
+            })
+        return result
+    
+    # Handle list of turns
+    if isinstance(transcript, list):
+        result = []
+        for t in transcript:
+            if isinstance(t, dict):
+                result.append(t)
+            elif hasattr(t, 'primary_speaker'):
+                # HierarchicalTurn
+                result.append({
+                    "speaker": t.primary_speaker,
+                    "start": t.start,
+                    "end": t.end,
+                    "text": t.text
+                })
+            elif hasattr(t, 'speaker'):
+                # Turn object
+                result.append({
+                    "speaker": t.speaker,
+                    "start": t.start,
+                    "end": t.end,
+                    "text": t.text
+                })
+            else:
+                # Unknown format, try to extract what we can
+                result.append({
+                    "speaker": str(getattr(t, 'speaker', getattr(t, 'primary_speaker', 'Unknown'))),
+                    "start": float(getattr(t, 'start', 0)),
+                    "end": float(getattr(t, 'end', 0)),
+                    "text": str(getattr(t, 'text', ''))
+                })
+        return result
+    
+    # Fallback - return empty list
+    return []
 
 
 def write_word_segments_json(words: List[Union[WordSegment, Dict]], path: str | Path) -> None:
@@ -45,32 +109,33 @@ def write_word_segments_json(words: List[Union[WordSegment, Dict]], path: str | 
     path.write_text(json.dumps(json_data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def write_turns_json(turns: List[Union[Turn, Dict]], path: str | Path) -> None:
-    """Write turn-level results as JSON with timing and speaker information."""
+def write_turns_json(transcript: Any, path: str | Path) -> None:
+    """Write turn-level results as JSON with timing and speaker information.
+    
+    Handles TranscriptFlow (with full hierarchical structure) or legacy Turn lists.
+    """
     path = Path(path)
     
-    # Convert Turn objects to dictionaries for JSON serialization
+    # Check if this is a TranscriptFlow with full structure
+    if hasattr(transcript, 'to_dict') and hasattr(transcript, 'metadata'):
+        # TranscriptFlow - write full hierarchical structure
+        json_data = transcript.to_dict()
+        path.write_text(json.dumps(json_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return
+    
+    # Legacy format - extract turns as dicts
+    turns = _extract_turns_as_dicts(transcript)
+    
+    # Convert to turn data format
     turn_data = []
     for t in turns:
-        if hasattr(t, 'speaker'):
-            # Turn object
-            turn_dict = {
-                "speaker": t.speaker,
-                "start": t.start,
-                "end": t.end,
-                "text": t.text,
-                "word_count": len(t.text.split()) if t.text else 0
-            }
-        else:
-            # Dictionary
-            turn_dict = {
-                "speaker": t.get("speaker", "Unknown"),
-                "start": t.get("start", 0),
-                "end": t.get("end", 0),
-                "text": t.get("text", ""),
-                "word_count": len(t.get("text", "").split()) if t.get("text") else 0
-            }
-        
+        turn_dict = {
+            "speaker": t.get("speaker", "Unknown"),
+            "start": t.get("start", 0),
+            "end": t.get("end", 0),
+            "text": t.get("text", ""),
+            "word_count": len(t.get("text", "").split()) if t.get("text") else 0
+        }
         turn_data.append(turn_dict)
     
     # Create the JSON structure
@@ -118,10 +183,9 @@ class TurnsJsonWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".json"]
 
-    def write(self, turns: List[Turn], output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
-        # Convert Turn to dict for compatibility
-        turn_dicts = [{"speaker": t.speaker, "start": t.start, "end": t.end, "text": t.text} for t in turns]
-        write_turns_json(turn_dicts, output_path)
+    def write(self, turns: Any, output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
+        # Handles both TranscriptFlow and legacy Turn lists
+        write_turns_json(turns, output_path)
 
 
 # Register the file_writers

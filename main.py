@@ -33,14 +33,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         show_defaults()
         return 0
 
-    # Early validation for required args
-    if not args.list_plugins:
-        if not args.outdir:
-            print("Error: -o/--outdir is required")
-            return 1
-        if not hasattr(args, 'audio_files') or not args.audio_files:
-            print("Error: Must provide --audio-files (-a)")
-            return 1
+    # Handle list-stages flag (doesn't require other args)
+    if args.list_stages:
+        from local_transcribe.framework.cli import list_stages
+        list_stages()
+        return 0
 
     root = repo_root_from_here()
     models_dir = root / ".models"
@@ -52,6 +49,30 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.list_plugins:
         handle_plugin_listing(api)
         return 0
+
+    # Handle pipeline re-entry from checkpoint
+    if hasattr(args, 'from_diarized_json') and args.from_diarized_json:
+        from local_transcribe.framework.pipeline_reentry import (
+            run_pipeline_from_checkpoint,
+            check_reentry_requirements
+        )
+        
+        # Validate re-entry requirements
+        requirements_met, error_msg = check_reentry_requirements(args)
+        if not requirements_met:
+            print(f"Error: {error_msg}")
+            return 1
+        
+        # Run re-entry pipeline
+        return run_pipeline_from_checkpoint(args, api, root)
+
+    # Early validation for required args (full pipeline mode)
+    if not args.outdir:
+        print("Error: -o/--outdir is required")
+        return 1
+    if not hasattr(args, 'audio_files') or not args.audio_files:
+        print("Error: Must provide --audio-files (-a) or --from-diarized-json")
+        return 1
 
     if args.interactive:
         args = interactive_prompt(args, api)

@@ -17,8 +17,72 @@ from local_transcribe.framework.plugin_interfaces import Turn
 logger = logging.getLogger(__name__)
 
 
+def _extract_turns_from_transcript(transcript: Any) -> List[Dict]:
+    """
+    Extract turns as dictionaries from various transcript formats.
+    
+    Handles:
+    - TranscriptFlow (new hierarchical format)
+    - List of Turn objects
+    - List of HierarchicalTurn objects
+    - List of dictionaries
+    
+    Returns list of dicts with 'speaker', 'start', 'end', 'text' keys.
+    """
+    # Handle TranscriptFlow
+    if hasattr(transcript, 'turns') and hasattr(transcript, 'metadata'):
+        # This is a TranscriptFlow object
+        turns = transcript.turns
+        result = []
+        for t in turns:
+            # HierarchicalTurn uses primary_speaker
+            speaker = getattr(t, 'primary_speaker', None) or getattr(t, 'speaker', 'Unknown')
+            result.append({
+                "speaker": speaker,
+                "start": t.start,
+                "end": t.end,
+                "text": t.text
+            })
+        return result
+    
+    # Handle list of turns
+    if isinstance(transcript, list):
+        result = []
+        for t in transcript:
+            if isinstance(t, dict):
+                result.append(t)
+            elif hasattr(t, 'primary_speaker'):
+                # HierarchicalTurn
+                result.append({
+                    "speaker": t.primary_speaker,
+                    "start": t.start,
+                    "end": t.end,
+                    "text": t.text
+                })
+            elif hasattr(t, 'speaker'):
+                # Turn object
+                result.append({
+                    "speaker": t.speaker,
+                    "start": t.start,
+                    "end": t.end,
+                    "text": t.text
+                })
+            else:
+                # Unknown format, try to extract what we can
+                result.append({
+                    "speaker": str(getattr(t, 'speaker', getattr(t, 'primary_speaker', 'Unknown'))),
+                    "start": float(getattr(t, 'start', 0)),
+                    "end": float(getattr(t, 'end', 0)),
+                    "text": str(getattr(t, 'text', ''))
+                })
+        return result
+    
+    # Fallback - return empty list
+    return []
+
+
 def prepare_transcript_for_llm(
-    turns: List[Turn],
+    transcript: Any,
     max_words_per_segment: int = 500,
     preparation_mode: str = "basic",
     standardize_speakers: bool = True,
@@ -29,7 +93,7 @@ def prepare_transcript_for_llm(
     Prepare transcript for LLM processing by applying various text transformations.
     
     Args:
-        turns: List of Turn objects representing the conversation
+        transcript: TranscriptFlow or List of Turn objects representing the conversation
         max_words_per_segment: Maximum words allowed in a segment before splitting
         standardize_speakers: Whether to standardize speaker labels
         normalize_whitespace: Whether to normalize whitespace in the transcript
@@ -41,6 +105,9 @@ def prepare_transcript_for_llm(
         - 'segments': List of text segments ready for LLM processing
         - 'stats': Statistics about the preparation process
     """
+    # Extract turns from transcript (handles TranscriptFlow and legacy formats)
+    turns = _extract_turns_from_transcript(transcript)
+    
     logger.info(f"Preparing {len(turns)} turns for LLM processing in {preparation_mode} mode")
     
     # Validate preparation mode

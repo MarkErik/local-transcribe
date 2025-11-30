@@ -72,9 +72,25 @@ class OutputManager:
             csv_writer = self._registry.get_output_writer("csv")
             csv_writer.write(transcript, merged_dir / "transcript.csv", word_segments=word_segments)
 
+        # Markdown - now uses annotated markdown format
         if 'markdown' in selected_formats:
             markdown_writer = self._registry.get_output_writer("markdown")
             markdown_writer.write(transcript, merged_dir / "transcript.md", word_segments=word_segments)
+
+        # Annotated Markdown (explicit) - same as markdown but with explicit name
+        if 'annotated-markdown' in selected_formats:
+            annotated_md_writer = self._registry.get_output_writer("annotated-markdown")
+            annotated_md_writer.write(transcript, merged_dir / "transcript.annotated.md", word_segments=word_segments)
+
+        # Dialogue Script format
+        if 'dialogue-script' in selected_formats:
+            script_writer = self._registry.get_output_writer("dialogue-script")
+            script_writer.write(transcript, merged_dir / "transcript.script.txt", word_segments=word_segments)
+
+        # Interactive HTML Timeline
+        if 'html-timeline' in selected_formats:
+            html_writer = self._registry.get_output_writer("html-timeline")
+            html_writer.write(transcript, merged_dir / "transcript_timeline.html", word_segments=word_segments)
 
         if 'turns-json' in selected_formats:
             json_turns_writer = self._registry.get_output_writer("turns-json")

@@ -23,7 +23,7 @@ from local_transcribe.lib.program_logger import log_progress, log_status, log_de
 # Configuration defaults
 SECOND_PASS_DEFAULTS = {
     'chunk_size': 400,            # Words per chunk
-    'overlap_size': 75,           # Words of overlap between chunks
+    'overlap_size': 70,           # Words of overlap between chunks
     'min_final_chunk': 200,       # Min words for final chunk
     'llm_timeout': 300,           # Seconds
     'temperature': 1.0,           # Temperature for LLM

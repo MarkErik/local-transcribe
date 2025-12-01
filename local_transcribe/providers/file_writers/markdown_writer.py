@@ -12,6 +12,7 @@ from typing import List, Optional, Any
 from pathlib import Path
 
 from local_transcribe.framework.plugin_interfaces import OutputWriter, registry, WordSegment
+from local_transcribe.processing.turn_building.turn_building_data_structures import TranscriptFlow
 
 # Import the new annotated markdown writer
 from local_transcribe.providers.file_writers.annotated_markdown_writer import write_annotated_markdown
@@ -37,7 +38,7 @@ class MarkdownWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".md"]
 
-    def write(self, turns: Any, output_path: str, word_segments: Optional[List[WordSegment]] = None, **kwargs) -> None:
+    def write(self, turns: TranscriptFlow, output_path: str, word_segments: Optional[List[WordSegment]] = None, **kwargs) -> None:
         """
         Write transcript to Markdown format.
         

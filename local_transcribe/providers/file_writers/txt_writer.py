@@ -3,70 +3,27 @@ from __future__ import annotations
 from typing import List, Dict, Union, Optional, Any
 from pathlib import Path
 from local_transcribe.framework.plugin_interfaces import WordSegment
+from local_transcribe.processing.turn_building.turn_building_data_structures import TranscriptFlow
 
 
-def _extract_turns_as_dicts(transcript: Any) -> List[Dict]:
+def _extract_turns_as_dicts(transcript_flow: TranscriptFlow) -> List[Dict]:
     """
-    Extract turns as dictionaries from various transcript formats.
-    
-    Handles:
-    - TranscriptFlow (new hierarchical format)
-    - List of Turn objects
-    - List of HierarchicalTurn objects
-    - List of dictionaries
+    Extract turns as dictionaries from TranscriptFlow.
     
     Returns list of dicts with 'speaker', 'start', 'end', 'text' keys.
     """
-    # Handle TranscriptFlow
-    if hasattr(transcript, 'turns') and hasattr(transcript, 'metadata'):
-        # This is a TranscriptFlow object
-        turns = transcript.turns
-        result = []
-        for t in turns:
-            # HierarchicalTurn uses primary_speaker
-            speaker = getattr(t, 'primary_speaker', None) or getattr(t, 'speaker', 'Unknown')
-            result.append({
-                "speaker": speaker,
-                "start": t.start,
-                "end": t.end,
-                "text": t.text
-            })
-        return result
-    
-    # Handle list of turns
-    if isinstance(transcript, list):
-        result = []
-        for t in transcript:
-            if isinstance(t, dict):
-                result.append(t)
-            elif hasattr(t, 'primary_speaker'):
-                # HierarchicalTurn
-                result.append({
-                    "speaker": t.primary_speaker,
-                    "start": t.start,
-                    "end": t.end,
-                    "text": t.text
-                })
-            elif hasattr(t, 'speaker'):
-                # Turn object
-                result.append({
-                    "speaker": t.speaker,
-                    "start": t.start,
-                    "end": t.end,
-                    "text": t.text
-                })
-            else:
-                # Unknown format, try to extract what we can
-                result.append({
-                    "speaker": str(getattr(t, 'speaker', getattr(t, 'primary_speaker', 'Unknown'))),
-                    "start": float(getattr(t, 'start', 0)),
-                    "end": float(getattr(t, 'end', 0)),
-                    "text": str(getattr(t, 'text', ''))
-                })
-        return result
-    
-    # Fallback - return empty list
-    return []
+    turns = transcript_flow.turns
+    result = []
+    for t in turns:
+        # HierarchicalTurn uses primary_speaker
+        speaker = t.primary_speaker
+        result.append({
+            "speaker": speaker,
+            "start": t.start,
+            "end": t.end,
+            "text": t.text
+        })
+    return result
 
 
 def _fmt_ts(t: float) -> str:
@@ -142,7 +99,7 @@ def write_word_segments(words: List[Union[WordSegment, Dict]], path: str | Path)
 
 
 # Plugin classes
-from local_transcribe.framework.plugin_interfaces import OutputWriter, WordWriter, Turn, registry, WordSegment
+from local_transcribe.framework.plugin_interfaces import OutputWriter, WordWriter, registry, WordSegment
 from typing import List
 
 
@@ -176,8 +133,8 @@ class TimestampedTextWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".txt"]
 
-    def write(self, turns: Any, output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
-        # Extract turns as dicts from any supported format
+    def write(self, turns: TranscriptFlow, output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
+        # Extract turns as dicts from TranscriptFlow
         turn_dicts = _extract_turns_as_dicts(turns)
         write_timestamped_txt(turn_dicts, output_path)
 
@@ -195,8 +152,8 @@ class PlainTextWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".txt"]
 
-    def write(self, turns: Any, output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
-        # Extract turns as dicts from any supported format
+    def write(self, turns: TranscriptFlow, output_path: str, word_segments: Optional[List[WordSegment]] = None) -> None:
+        # Extract turns as dicts from TranscriptFlow
         turn_dicts = _extract_turns_as_dicts(turns)
         write_plain_txt(turn_dicts, output_path)
 

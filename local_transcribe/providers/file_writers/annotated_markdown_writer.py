@@ -12,6 +12,7 @@ from typing import List, Optional, Any
 from pathlib import Path
 
 from local_transcribe.framework.plugin_interfaces import OutputWriter, registry, WordSegment
+from local_transcribe.processing.turn_building.turn_building_data_structures import TranscriptFlow
 from local_transcribe.providers.file_writers.format_utils import (
     format_timestamp,
     format_duration,
@@ -22,7 +23,7 @@ from local_transcribe.providers.file_writers.format_utils import (
 )
 
 
-def write_annotated_markdown(transcript: Any, path: str | Path) -> None:
+def write_annotated_markdown(transcript: TranscriptFlow, path: str | Path) -> None:
     """
     Write a TranscriptFlow as annotated Markdown with interjections inline.
     
@@ -151,12 +152,12 @@ class AnnotatedMarkdownWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".md"]
     
-    def write(self, turns: Any, output_path: str, word_segments: Optional[List[WordSegment]] = None, **kwargs) -> None:
+    def write(self, turns: TranscriptFlow, output_path: str, word_segments: Optional[List[WordSegment]] = None, **kwargs) -> None:
         """
         Write transcript to annotated Markdown format.
         
         Args:
-            turns: TranscriptFlow object (or legacy format, which will be handled gracefully)
+            turns: TranscriptFlow object with hierarchical turn structure
             output_path: Path to write the output file
             word_segments: Optional word segments (not used for this format)
             **kwargs: Additional options

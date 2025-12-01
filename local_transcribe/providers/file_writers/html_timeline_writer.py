@@ -13,6 +13,7 @@ from pathlib import Path
 import json
 
 from local_transcribe.framework.plugin_interfaces import OutputWriter, registry, WordSegment
+from local_transcribe.processing.turn_building.turn_building_data_structures import TranscriptFlow
 from local_transcribe.providers.file_writers.format_utils import (
     format_timestamp,
     format_duration,
@@ -26,7 +27,7 @@ from local_transcribe.providers.file_writers.format_utils import (
 )
 
 
-def write_html_timeline(transcript: Any, path: str | Path) -> None:
+def write_html_timeline(transcript: TranscriptFlow, path: str | Path) -> None:
     """
     Write a TranscriptFlow as an interactive HTML timeline.
     
@@ -744,7 +745,7 @@ class HtmlTimelineWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".html"]
     
-    def write(self, turns: Any, output_path: str, word_segments: Optional[List[WordSegment]] = None, **kwargs) -> None:
+    def write(self, turns: TranscriptFlow, output_path: str, word_segments: Optional[List[WordSegment]] = None, **kwargs) -> None:
         """
         Write transcript to interactive HTML timeline.
         

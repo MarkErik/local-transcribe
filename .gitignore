@@ -16,6 +16,7 @@ data/
 test/
 out/
 examples/
+samples/
 *.wav
 *.mp3
 *.txt
@@ -26,6 +27,7 @@ examples/
 *.m4a
 *.json
 *.mp4
+*.html
 
 
 # Models

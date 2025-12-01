@@ -718,7 +718,8 @@ def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
 
     Checks:
     - Word count must be exactly the same (name replacement preserves word count)
-    - No changes other than name replacement
+    - No changes other than name replacement with [REDACTED]
+    - Non-redacted words must match the original exactly (case-insensitive)
     
     Returns:
         Dict with 'passed' (bool), 'reason' (str), 'details' (dict)
@@ -743,7 +744,7 @@ def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
         }
 
     # Check that [REDACTED] appears in reasonable quantity (not everything replaced)
-    if redacted_count > len(orig_words) * 0.5:
+    if redacted_count > len(orig_words) * 0.1:
         log_progress(f"Validation failed: too many replacements ({redacted_count} out of {len(orig_words)} words)")
         return {
             'passed': False,
@@ -753,6 +754,31 @@ def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
                 'processed_word_count': len(proc_words),
                 'redacted_count': redacted_count,
                 'redacted_percentage': (redacted_count / len(orig_words)) * 100
+            }
+        }
+
+    # Check position-wise that non-redacted words match the original (case-insensitive)
+    mismatches = []
+    for i in range(len(orig_words)):
+        if proc_words[i] == "[REDACTED]":
+            continue  # Redaction is allowed
+        if orig_words[i].lower() != proc_words[i].lower():
+            mismatches.append({
+                'index': i,
+                'original': orig_words[i],
+                'processed': proc_words[i]
+            })
+
+    if mismatches:
+        log_progress(f"Validation failed: word mismatches at {len(mismatches)} positions")
+        return {
+            'passed': False,
+            'reason': f'word mismatches at {len(mismatches)} positions',
+            'details': {
+                'original_word_count': len(orig_words),
+                'processed_word_count': len(proc_words),
+                'redacted_count': redacted_count,
+                'mismatches': mismatches
             }
         }
 

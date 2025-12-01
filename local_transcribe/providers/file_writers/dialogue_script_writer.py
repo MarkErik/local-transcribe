@@ -15,7 +15,6 @@ import textwrap
 from local_transcribe.framework.plugin_interfaces import OutputWriter, registry, WordSegment
 from local_transcribe.processing.turn_building.turn_building_data_structures import TranscriptFlow
 from local_transcribe.providers.file_writers.format_utils import (
-    format_timestamp,
     format_duration,
     format_speaker_name
 )
@@ -40,8 +39,6 @@ def write_dialogue_script(transcript: TranscriptFlow, path: str | Path) -> None:
     
     # Configuration
     LINE_WIDTH = 75
-    SPEAKER_WIDTH = 12
-    INDENT = " " * SPEAKER_WIDTH
     SEPARATOR = "-" * LINE_WIDTH
     
     # Extract data from TranscriptFlow
@@ -88,13 +85,13 @@ def write_dialogue_script(transcript: TranscriptFlow, path: str | Path) -> None:
             # Turn with interjections - need to interleave them in the text
             _write_turn_with_interjections(
                 lines, speaker_label, start, text, interjections,
-                LINE_WIDTH, SPEAKER_WIDTH, INDENT
+                LINE_WIDTH
             )
         else:
             # Simple turn without interjections
             _write_simple_turn(
                 lines, speaker_label, start, text,
-                LINE_WIDTH, SPEAKER_WIDTH, INDENT
+                LINE_WIDTH
             )
         
         lines.append("")
@@ -110,28 +107,13 @@ def _write_simple_turn(
     speaker: str,
     start: float,
     text: str,
-    line_width: int,
-    speaker_width: int,
-    indent: str
+    line_width: int
 ) -> None:
     """Write a simple turn without interjections."""
-    # First line: SPEAKER: (timestamp) text...
-    timestamp = f"({start:.2f}s)"
-    first_line_prefix = f"{speaker}: {timestamp} "
-    
-    # Calculate remaining width for text on first line
-    first_line_text_width = line_width - len(first_line_prefix)
-    
-    # Wrap the text
-    wrapped = textwrap.wrap(text, width=line_width - len(indent))
-    
-    if wrapped:
-        # First line with speaker and timestamp
-        lines.append(f"{speaker}: {timestamp} {wrapped[0]}")
-        
-        # Subsequent lines with indent
-        for line in wrapped[1:]:
-            lines.append(f"{indent}{line}")
+    lines.append(f"{speaker}:")
+    content = f"({start:.2f}s) {text}"
+    wrapped = textwrap.wrap(content, width=line_width, initial_indent="\t", subsequent_indent="\t")
+    lines.extend(wrapped)
 
 
 def _write_turn_with_interjections(
@@ -140,9 +122,7 @@ def _write_turn_with_interjections(
     start: float,
     text: str,
     interjections: List[Any],
-    line_width: int,
-    speaker_width: int,
-    indent: str
+    line_width: int
 ) -> None:
     """
     Write a turn with interjections interleaved in the text flow.
@@ -154,19 +134,13 @@ def _write_turn_with_interjections(
     # Sort interjections by start time
     sorted_interjections = sorted(interjections, key=lambda x: getattr(x, 'start', 0))
     
-    # First line: SPEAKER: (timestamp) text...
-    timestamp = f"({start:.2f}s)"
+    # First line: SPEAKER:
+    lines.append(f"{speaker}:")
     
     # Wrap the main text
-    wrapped = textwrap.wrap(text, width=line_width - len(indent))
-    
-    if wrapped:
-        # First line with speaker and timestamp
-        lines.append(f"{speaker}: {timestamp} {wrapped[0]}")
-        
-        # Subsequent lines with indent
-        for line in wrapped[1:]:
-            lines.append(f"{indent}{line}")
+    content = f"({start:.2f}s) {text}"
+    wrapped = textwrap.wrap(content, width=line_width, initial_indent="\t", subsequent_indent="\t")
+    lines.extend(wrapped)
     
     # Add interjections
     lines.append("")
@@ -175,8 +149,9 @@ def _write_turn_with_interjections(
         ij_start = getattr(ij, 'start', 0)
         ij_text = getattr(ij, 'text', '')
         
-        interjection_line = f"{indent}[{ij_speaker}: ({ij_start:.2f}s) {ij_text}]"
-        lines.append(interjection_line)
+        ij_content = f"[{ij_speaker}: ({ij_start:.2f}s) {ij_text}]"
+        wrapped_ij = textwrap.wrap(ij_content, width=line_width, initial_indent="\t\t", subsequent_indent="\t\t")
+        lines.extend(wrapped_ij)
 
 
 class DialogueScriptWriter(OutputWriter):

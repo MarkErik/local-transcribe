@@ -68,15 +68,10 @@ class OutputManager:
             plain_writer = self._registry.get_output_writer("plain-txt")
             plain_writer.write(transcript, merged_dir / "transcript.txt", word_segments=word_segments)
 
-        # Markdown - now uses annotated markdown format
+        # Annotated Markdown format with hierarchical turn structure
         if 'markdown' in selected_formats:
-            markdown_writer = self._registry.get_output_writer("markdown")
-            markdown_writer.write(transcript, merged_dir / "transcript.md", word_segments=word_segments)
-
-        # Annotated Markdown (explicit) - same as markdown but with explicit name
-        if 'annotated-markdown' in selected_formats:
-            annotated_md_writer = self._registry.get_output_writer("annotated-markdown")
-            annotated_md_writer.write(transcript, merged_dir / "transcript.annotated.md", word_segments=word_segments)
+            annotated_md_writer = self._registry.get_output_writer("markdown")
+            annotated_md_writer.write(transcript, merged_dir / "transcript.md", word_segments=word_segments)
 
         # Dialogue Script format
         if 'dialogue-script' in selected_formats:

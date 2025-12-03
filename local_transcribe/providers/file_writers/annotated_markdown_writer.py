@@ -142,7 +142,7 @@ class AnnotatedMarkdownWriter(OutputWriter):
     
     @property
     def name(self) -> str:
-        return "annotated-markdown"
+        return "markdown"
     
     @property
     def description(self) -> str:

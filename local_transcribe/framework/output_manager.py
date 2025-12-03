@@ -68,10 +68,6 @@ class OutputManager:
             plain_writer = self._registry.get_output_writer("plain-txt")
             plain_writer.write(transcript, merged_dir / "transcript.txt", word_segments=word_segments)
 
-        if 'csv' in selected_formats:
-            csv_writer = self._registry.get_output_writer("csv")
-            csv_writer.write(transcript, merged_dir / "transcript.csv", word_segments=word_segments)
-
         # Markdown - now uses annotated markdown format
         if 'markdown' in selected_formats:
             markdown_writer = self._registry.get_output_writer("markdown")

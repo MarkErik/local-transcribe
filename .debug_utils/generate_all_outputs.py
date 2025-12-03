@@ -22,10 +22,6 @@ from local_transcribe.providers.file_writers.txt_writer import (
     write_plain_txt,
     _extract_turns_as_dicts as txt_extract_turns
 )
-from local_transcribe.providers.file_writers.csv_writer import (
-    write_conversation_csv,
-    _extract_turns_as_dicts as csv_extract_turns
-)
 from local_transcribe.providers.file_writers.json_writer import (
     _extract_turns_as_dicts as json_extract_turns
 )
@@ -120,13 +116,7 @@ def main():
     write_plain_txt(turns_for_txt, plain_txt_path)
     print(f"✓ Plain TXT: {plain_txt_path}")
     
-    # 8. Conversation CSV
-    csv_path = output_dir / "transcript.csv"
-    turns_for_csv = csv_extract_turns(transcript_flow)
-    write_conversation_csv(turns_for_csv, csv_path)
-    print(f"✓ Conversation CSV: {csv_path}")
-    
-    # 9. Word segments JSON (original format with words)
+    # 8. Word segments JSON (original format with words)
     word_segments_path = output_dir / "word_segments.json"
     with open(word_segments_path, 'w') as f:
         json.dump({
@@ -161,8 +151,7 @@ def main():
 5. transcript_timeline.html  - Interactive HTML timeline visualization
 6. transcript_timestamped.txt- Simple text with [HH:MM:SS.mmm] timestamps
 7. transcript_plain.txt      - Clean text with speaker labels, no timestamps
-8. transcript.csv            - CSV with speaker and text columns
-9. word_segments.json        - Original word-level segments with timing
+8. word_segments.json        - Original word-level segments with timing
 """)
 
 

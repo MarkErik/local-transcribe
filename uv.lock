@@ -703,6 +703,7 @@ dependencies = [
     { name = "requests" },
     { name = "rich" },
     { name = "sentence-transformers" },
+    { name = "silero-vad" },
     { name = "soundfile" },
     { name = "textgrid" },
     { name = "torch" },
@@ -737,6 +738,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.31.0" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "sentence-transformers", specifier = ">=5.1.2" },
+    { name = "silero-vad", specifier = ">=6.2.0" },
     { name = "soundfile", specifier = ">=0.13.1" },
     { name = "textgrid", specifier = ">=1.5" },
     { name = "torch", specifier = ">=2.9.1" },
@@ -844,6 +846,7 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/94/a3/32c4c05d8967591e2a1a1e7e3fc9cece8821f5aea8ac8f3bcfdb203f4722/mlx-0.30.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:11fbae58b1e992afdec6709d5e281932871a0138582a794cdcc82ff895a28670", size = 554567, upload-time = "2025-11-20T16:45:12.73Z" },
     { url = "https://files.pythonhosted.org/packages/aa/b3/b6143f1c078fbc873e40e624dc428a3ada240721001414955f584afa866d/mlx-0.30.0-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:fc1994a4c9e60ccfe2ab9211c846be2ef7abc6fc3e53e1addb2cdf7468f61e7b", size = 554566, upload-time = "2025-11-20T01:16:41.877Z" },
     { url = "https://files.pythonhosted.org/packages/96/cb/aec36297ef76b4b190cc6d4cea1ed995b458bbc21cb91c58b0862f8cae7d/mlx-0.30.0-cp312-cp312-macosx_26_0_arm64.whl", hash = "sha256:a9f30c5c94b30b65f026162e91256473187e1de57c13dcc2aedb2fc33c07f2c1", size = 554593, upload-time = "2025-11-20T05:33:25.312Z" },
+    { url = "https://files.pythonhosted.org/packages/40/d3/575eee4ef4b5f3dad9076a78f287affe046fd32b3bdba7a2e0af31f0d9d3/mlx-0.30.0-cp312-cp312-manylinux_2_35_aarch64.whl", hash = "sha256:f88d11e2719fdab08dbe68c9666003c8644ccd01dff973bc86e949cc16195eac", size = 612086, upload-time = "2025-12-01T15:23:42.317Z" },
     { url = "https://files.pythonhosted.org/packages/23/37/b5dd68da0e79e258f5d6a0e9f5fd4f9e5452e92c20b13b64948a965ea429/mlx-0.30.0-cp312-cp312-manylinux_2_35_x86_64.whl", hash = "sha256:1c4a2f5285bdd585aa6485a4fb5759ebc2721ba9381404ff867c136e84764e9b", size = 653994, upload-time = "2025-11-20T01:16:43.492Z" },
 ]
 
@@ -1848,6 +1851,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/18/5d/3bf57dcd21979b887f014ea83c24ae194cfcd12b9e0fda66b957c69d1fca/setuptools-80.9.0.tar.gz", hash = "sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c", size = 1319958, upload-time = "2025-05-27T00:56:51.443Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl", hash = "sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922", size = 1201486, upload-time = "2025-05-27T00:56:49.664Z" },
+]
+
+[[package]]
+name = "silero-vad"
+version = "6.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "onnxruntime" },
+    { name = "packaging" },
+    { name = "torch" },
+    { name = "torchaudio" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/00/4d/0a03f56a4946114c8fa25bd66cafe75bd5807fb73c3bfad2a7603597c4d1/silero_vad-6.2.0.tar.gz", hash = "sha256:27f90e994bc57fdf3d0d1a25f70f65d81854c11974a4f911f7e61792e7a893fd", size = 14569087, upload-time = "2025-11-06T08:39:09.333Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9e/76/12cbd574562511a8914731436b6c584112186bb6bf149e9f952af4940146/silero_vad-6.2.0-py3-none-any.whl", hash = "sha256:8a31f1e58e73cdc20820d842f757e678e0ae1b0ee1cb7b8aa50f20f8fd7f7638", size = 6118499, upload-time = "2025-11-06T08:39:07.856Z" },
 ]
 
 [[package]]

@@ -1018,16 +1018,20 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
+        print(f"DEBUG: ensure_models_available called for granite_vad_mfa with models_dir={models_dir}")
         self.models_dir = models_dir
         self.preload_models(models, models_dir)
         
         # Also preload the VAD model
         log_progress("Preloading VAD segmentation model...")
         try:
+            print(f"DEBUG: About to initialize VAD segmenter with models_dir={self.models_dir}")
             self._init_vad_segmenter()
+            print(f"DEBUG: VAD segmenter initialized, calling preload_models")
             self.vad_segmenter.preload_models()
             log_completion("VAD model preloaded successfully")
         except Exception as e:
+            print(f"DEBUG: Failed to preload VAD model: {e}")
             log_progress(f"Failed to preload VAD model: {e}")
             raise
 

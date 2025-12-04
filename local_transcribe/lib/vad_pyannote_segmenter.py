@@ -154,9 +154,11 @@ class VADSegmenter:
     
     def preload_models(self) -> None:
         """Preload the VAD model to cache."""
+        print(f"DEBUG: VAD preload_models called, models_dir={self.models_dir}")
         import sys
         
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        print(f"DEBUG: HF_HUB_OFFLINE was {offline_mode}, setting to 0")
         os.environ["HF_HUB_OFFLINE"] = "0"
         
         # Force reload of huggingface_hub modules to pick up new environment
@@ -166,19 +168,25 @@ class VADSegmenter:
         
         # Get token from environment once
         token = os.getenv("HF_TOKEN", "")
+        print(f"DEBUG: HF_TOKEN present: {bool(token)}")
         
         try:
             from huggingface_hub import snapshot_download
             
             cache_dir = self._get_cache_dir()
             cache_dir.mkdir(parents=True, exist_ok=True)
+            print(f"DEBUG: VAD cache_dir={cache_dir}")
+            print(f"DEBUG: Calling snapshot_download for {self.DEFAULT_MODEL}")
             
             snapshot_download(self.DEFAULT_MODEL, cache_dir=str(cache_dir), token=token if token else None)
+            print(f"DEBUG: snapshot_download completed")
             log_completion(f"VAD model {self.DEFAULT_MODEL} downloaded successfully.")
             
         except Exception as e:
+            print(f"DEBUG: snapshot_download failed: {e}")
             raise Exception(f"Failed to download VAD model {self.DEFAULT_MODEL}: {e}")
         finally:
+            print(f"DEBUG: Restoring HF_HUB_OFFLINE to {offline_mode}")
             os.environ["HF_HUB_OFFLINE"] = offline_mode
     
     def get_vad_scores(

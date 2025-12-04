@@ -20,13 +20,15 @@ from local_transcribe.processing.llm_second_pass_de_identifier import (
 )
 from local_transcribe.processing.turn_building import build_turns
 
-def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, base_name="", **kwargs):
+def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, base_name="", models_dir=None, **kwargs):
     """Transcribe audio and return word segments with timestamps."""
     from local_transcribe.lib.system_capability_utils import get_system_capability
     
     # Add role to kwargs so it's passed to providers
     kwargs['role'] = role
     kwargs['intermediate_dir'] = intermediate_dir
+    if models_dir:
+        kwargs['models_dir'] = models_dir
     
     # Get device from global config to pass explicitly
     device = get_system_capability()
@@ -391,6 +393,7 @@ def run_pipeline(args, api, root):
                 None,
                 intermediate_dir=paths.get("intermediate"),
                 base_name="",
+                models_dir=models_dir,
                 registry=api["registry"],
                 transcriber_model=args.transcriber_model,
                 output_format=getattr(args, 'output_format', 'stitched'),

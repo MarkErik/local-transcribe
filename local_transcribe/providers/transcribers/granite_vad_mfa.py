@@ -53,6 +53,7 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
         self.max_segment_duration = 45.0
         self.merge_threshold = 45.0
         self.vad_segmenter = None
+        self.models_dir = None
         
         # MFA configuration
         self.mfa_models_dir = None
@@ -184,7 +185,8 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
             self.vad_segmenter = VADSegmenter(
                 max_segment_duration=self.max_segment_duration,
                 merge_threshold=self.merge_threshold,
-                device=self.device
+                device=self.device,
+                models_dir=self.models_dir
             )
 
     def _get_mfa_command(self):
@@ -900,6 +902,11 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
         """
         log_progress("Starting transcription with VAD segmentation + Granite + MFA")
         
+        # Extract models_dir from kwargs if provided
+        models_dir = kwargs.get('models_dir')
+        if models_dir:
+            self.models_dir = pathlib.Path(models_dir)
+        
         # Check if DEBUG logging is enabled and setup debug directory
         from local_transcribe.lib.program_logger import get_output_context
         debug_enabled = get_output_context().should_log("DEBUG")
@@ -1011,13 +1018,18 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
+        self.models_dir = models_dir
         self.preload_models(models, models_dir)
         
         # Also preload the VAD model
         log_progress("Preloading VAD segmentation model...")
-        self._init_vad_segmenter()
-        self.vad_segmenter._load_model()
-        log_completion("VAD model preloaded successfully")
+        try:
+            self._init_vad_segmenter()
+            self.vad_segmenter.preload_models()
+            log_completion("VAD model preloaded successfully")
+        except Exception as e:
+            log_progress(f"Failed to preload VAD model: {e}")
+            raise
 
 
 def register_transcriber_plugins():

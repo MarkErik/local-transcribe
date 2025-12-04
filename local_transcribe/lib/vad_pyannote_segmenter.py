@@ -49,6 +49,9 @@ class VADSegmenter:
     intelligently at natural speech boundaries.
     """
     
+    # Default model used by this segmenter
+    DEFAULT_MODEL = "pyannote/segmentation-3.0"
+    
     def __init__(
         self,
         onset_threshold: float = 0.767,
@@ -57,7 +60,8 @@ class VADSegmenter:
         min_duration_off: float = 0.067,
         max_segment_duration: float = 45.0,
         merge_threshold: float = 45.0,
-        device: Optional[str] = None
+        device: Optional[str] = None,
+        models_dir: Optional[pathlib.Path] = None
     ):
         """
         Initialize the VAD segmenter.
@@ -70,6 +74,7 @@ class VADSegmenter:
             max_segment_duration: Maximum segment duration for ASR in seconds
             merge_threshold: Maximum duration for merged segments in seconds
             device: Device to run VAD model on ('cpu', 'cuda', 'mps')
+            models_dir: Directory where models are cached
         """
         self.logger = get_logger()
         self.onset_threshold = onset_threshold
@@ -79,10 +84,21 @@ class VADSegmenter:
         self.max_segment_duration = max_segment_duration
         self.merge_threshold = merge_threshold
         self.device = device
+        self.models_dir = models_dir
         
         # Model state
         self._model = None
         self._inference = None
+    
+    def _get_cache_dir(self) -> pathlib.Path:
+        """Get the cache directory for VAD models."""
+        if self.models_dir is None:
+            raise ValueError("models_dir must be provided to VADSegmenter")
+        return self.models_dir / "vad" / "pyannote"
+    
+    def _model_name_to_hf_format(self, model: str) -> str:
+        """Convert model name to HuggingFace cache directory format."""
+        return model.replace("/", "--")
     
     def _load_model(self):
         """Load the pyannote VAD/segmentation model."""
@@ -91,26 +107,32 @@ class VADSegmenter:
         
         log_progress("Loading pyannote VAD model...")
         
-        import os
-        import sys
+        # Get token from environment
+        token = os.getenv("HF_TOKEN", "")
         
-        # Temporarily disable offline mode (same pattern as pyannote diarization provider)
-        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
-        os.environ["HF_HUB_OFFLINE"] = "0"
+        # Find model snapshot directory
+        cache_dir = self._get_cache_dir()
+        hf_model_name = self._model_name_to_hf_format(self.DEFAULT_MODEL)
+        model_dir = cache_dir / f"models--{hf_model_name}"
         
-        # Force reload of huggingface_hub modules to pick up new environment
-        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
-        for module_name in modules_to_reload:
-            del sys.modules[module_name]
+        snapshots_dir = model_dir / "snapshots"
+        if not snapshots_dir.exists() or not any(snapshots_dir.iterdir()):
+            raise FileNotFoundError(f"VAD model not found at {model_dir}. Please ensure models are downloaded first.")
+        
+        snapshot_dirs = [p for p in snapshots_dir.iterdir() if p.is_dir()]
+        if not snapshot_dirs:
+            raise FileNotFoundError(f"No snapshots found in {snapshots_dir}")
+        
+        latest_snapshot_dir = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
         
         try:
-            from pyannote.audio import Model, Inference
+            from pyannote.audio import Model
             
-            # Use segmentation model which provides speech scores
-            model_name = "pyannote/segmentation-3.0"
-            token = os.getenv("HF_TOKEN")
-            
-            self._model = Model.from_pretrained(model_name, use_auth_token=token, local_files_only=True)
+            # Load model from the specific snapshot directory
+            self._model = Model.from_pretrained(
+                str(latest_snapshot_dir),
+                use_auth_token=token if token else None
+            )
             
             if self.device:
                 device = torch.device(self.device)
@@ -129,8 +151,34 @@ class VADSegmenter:
         except Exception as e:
             self.logger.error(f"Failed to load pyannote VAD model: {e}")
             raise
+    
+    def preload_models(self) -> None:
+        """Preload the VAD model to cache."""
+        import sys
+        
+        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        os.environ["HF_HUB_OFFLINE"] = "0"
+        
+        # Force reload of huggingface_hub modules to pick up new environment
+        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
+        for module_name in modules_to_reload:
+            del sys.modules[module_name]
+        
+        # Get token from environment once
+        token = os.getenv("HF_TOKEN", "")
+        
+        try:
+            from huggingface_hub import snapshot_download
+            
+            cache_dir = self._get_cache_dir()
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            
+            snapshot_download(self.DEFAULT_MODEL, cache_dir=str(cache_dir), token=token if token else None)
+            log_completion(f"VAD model {self.DEFAULT_MODEL} downloaded successfully.")
+            
+        except Exception as e:
+            raise Exception(f"Failed to download VAD model {self.DEFAULT_MODEL}: {e}")
         finally:
-            # Restore original offline mode setting
             os.environ["HF_HUB_OFFLINE"] = offline_mode
     
     def get_vad_scores(

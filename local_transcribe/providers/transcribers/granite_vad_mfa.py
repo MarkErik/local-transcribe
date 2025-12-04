@@ -88,6 +88,12 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
     def get_required_vad_models(self) -> List[str]:
         """Return required VAD models."""
         return ["pyannote/segmentation-3.0"]
+    
+    def get_all_required_models(self, selected_model: Optional[str] = None) -> List[str]:
+        """Return all required models including VAD models."""
+        models = self.get_required_models(selected_model)
+        models.extend(self.get_required_vad_models())
+        return models
 
     def get_available_models(self) -> List[str]:
         return list(self.model_mapping.keys())

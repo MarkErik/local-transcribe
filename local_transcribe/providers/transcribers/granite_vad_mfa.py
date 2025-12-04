@@ -164,6 +164,39 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
             return self.vad_segmenter.check_models_available_offline()
         except Exception:
             return False
+    
+    def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which models are available offline."""
+        missing_models = []
+        
+        # Check Granite models
+        granite_missing = self._check_granite_models_offline(models, models_dir)
+        missing_models.extend(granite_missing)
+        
+        # Check VAD models
+        if not self.check_vad_models_available_offline(models_dir):
+            missing_models.extend(self.get_required_vad_models())
+        
+        return missing_models
+    
+    def _check_granite_models_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
+        """Check which Granite models are available offline."""
+        missing_models = []
+        for model in models:
+            if model in self.model_mapping.values():
+                xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+                if xdg_cache_home:
+                    models_root = pathlib.Path(xdg_cache_home)
+                else:
+                    models_root = pathlib.Path.home() / ".cache" / "huggingface"
+                
+                hub_dir = models_root / "huggingface" / "hub"
+                hf_model_name = model.replace("/", "--")
+                model_dir = hub_dir / f"models--{hf_model_name}"
+                
+                if not model_dir.exists() or not any(model_dir.rglob("*.bin")) and not any(model_dir.rglob("*.safetensors")):
+                    missing_models.append(model)
+        return missing_models
 
     def _load_granite_model(self):
         """Load the Granite model if not already loaded."""
@@ -1038,17 +1071,25 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
         self.models_dir = models_dir
-        self.preload_models(models, models_dir)
         
-        # Also preload the VAD model
-        log_progress("Preloading VAD segmentation model...")
-        try:
-            self._init_vad_segmenter()
-            self.vad_segmenter.preload_models()
-            log_completion("VAD model preloaded successfully")
-        except Exception as e:
-            log_progress(f"Failed to preload VAD model: {e}")
-            raise
+        # Separate Granite models from VAD models
+        granite_models = [m for m in models if m in self.model_mapping.values()]
+        vad_models = [m for m in models if m in self.get_required_vad_models()]
+        
+        # Preload Granite models
+        if granite_models:
+            self.preload_models(granite_models, models_dir)
+        
+        # Preload VAD models
+        if vad_models or not vad_models:  # Always preload VAD models for this provider
+            log_progress("Preloading VAD segmentation model...")
+            try:
+                self._init_vad_segmenter()
+                self.vad_segmenter.preload_models()
+                log_completion("VAD model preloaded successfully")
+            except Exception as e:
+                log_progress(f"Failed to preload VAD model: {e}")
+                raise
 
 
 def register_transcriber_plugins():

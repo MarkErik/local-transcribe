@@ -29,7 +29,7 @@ from transformers import LogitsProcessorList, RepetitionPenaltyLogitsProcessor
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
-from local_transcribe.lib.vad_segmenter import VADSegmenter
+from local_transcribe.lib.vad_pyannote_segmenter import VADSegmenter
 
 
 class GraniteVADMFATranscriberProvider(TranscriberProvider):

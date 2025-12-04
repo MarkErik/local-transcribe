@@ -15,6 +15,8 @@ This approach ensures chunks start/end at natural speech boundaries rather than 
 
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
+import os
+import pathlib
 import numpy as np
 import torch
 import torchaudio
@@ -127,6 +129,7 @@ class VADSegmenter:
         
         try:
             from pyannote.audio import Model
+            from pyannote.audio import Inference
             
             # Load model from the specific snapshot directory
             self._model = Model.from_pretrained(
@@ -154,11 +157,9 @@ class VADSegmenter:
     
     def preload_models(self) -> None:
         """Preload the VAD model to cache."""
-        print(f"DEBUG: VAD preload_models called, models_dir={self.models_dir}")
         import sys
         
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
-        print(f"DEBUG: HF_HUB_OFFLINE was {offline_mode}, setting to 0")
         os.environ["HF_HUB_OFFLINE"] = "0"
         
         # Force reload of huggingface_hub modules to pick up new environment
@@ -168,26 +169,36 @@ class VADSegmenter:
         
         # Get token from environment once
         token = os.getenv("HF_TOKEN", "")
-        print(f"DEBUG: HF_TOKEN present: {bool(token)}")
         
         try:
             from huggingface_hub import snapshot_download
             
             cache_dir = self._get_cache_dir()
             cache_dir.mkdir(parents=True, exist_ok=True)
-            print(f"DEBUG: VAD cache_dir={cache_dir}")
-            print(f"DEBUG: Calling snapshot_download for {self.DEFAULT_MODEL}")
             
             snapshot_download(self.DEFAULT_MODEL, cache_dir=str(cache_dir), token=token if token else None)
-            print(f"DEBUG: snapshot_download completed")
             log_completion(f"VAD model {self.DEFAULT_MODEL} downloaded successfully.")
             
         except Exception as e:
-            print(f"DEBUG: snapshot_download failed: {e}")
             raise Exception(f"Failed to download VAD model {self.DEFAULT_MODEL}: {e}")
         finally:
-            print(f"DEBUG: Restoring HF_HUB_OFFLINE to {offline_mode}")
             os.environ["HF_HUB_OFFLINE"] = offline_mode
+    
+    def check_models_available_offline(self) -> bool:
+        """Check if VAD model is available offline without downloading."""
+        try:
+            cache_dir = self._get_cache_dir()
+            hf_model_name = self._model_name_to_hf_format(self.DEFAULT_MODEL)
+            model_dir = cache_dir / f"models--{hf_model_name}"
+            
+            # Check for snapshots directory (this is the standard HF structure)
+            snapshots_dir = model_dir / "snapshots"
+            if not snapshots_dir.exists() or not any(snapshots_dir.iterdir()):
+                return False
+                
+            return True
+        except Exception:
+            return False
     
     def get_vad_scores(
         self,

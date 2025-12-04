@@ -84,6 +84,10 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
         if selected_model and selected_model in self.model_mapping:
             return [self.model_mapping[selected_model]]
         return [self.model_mapping["granite-8b"]]
+    
+    def get_required_vad_models(self) -> List[str]:
+        """Return required VAD models."""
+        return ["pyannote/segmentation-3.0"]
 
     def get_available_models(self) -> List[str]:
         return list(self.model_mapping.keys())
@@ -145,6 +149,15 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
                 if not model_dir.exists() or not any(model_dir.rglob("*.bin")) and not any(model_dir.rglob("*.safetensors")):
                     missing_models.append(model)
         return missing_models
+    
+    def check_vad_models_available_offline(self, models_dir: pathlib.Path) -> bool:
+        """Check if VAD models are available offline."""
+        try:
+            self.models_dir = models_dir
+            self._init_vad_segmenter()
+            return self.vad_segmenter.check_models_available_offline()
+        except Exception:
+            return False
 
     def _load_granite_model(self):
         """Load the Granite model if not already loaded."""
@@ -1018,20 +1031,16 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
 
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
-        print(f"DEBUG: ensure_models_available called for granite_vad_mfa with models_dir={models_dir}")
         self.models_dir = models_dir
         self.preload_models(models, models_dir)
         
         # Also preload the VAD model
         log_progress("Preloading VAD segmentation model...")
         try:
-            print(f"DEBUG: About to initialize VAD segmenter with models_dir={self.models_dir}")
             self._init_vad_segmenter()
-            print(f"DEBUG: VAD segmenter initialized, calling preload_models")
             self.vad_segmenter.preload_models()
             log_completion("VAD model preloaded successfully")
         except Exception as e:
-            print(f"DEBUG: Failed to preload VAD model: {e}")
             log_progress(f"Failed to preload VAD model: {e}")
             raise
 

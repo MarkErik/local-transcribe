@@ -110,7 +110,7 @@ class VADSegmenter:
             model_name = "pyannote/segmentation-3.0"
             token = os.getenv("HF_TOKEN")
             
-            self._model = Model.from_pretrained(model_name, use_auth_token=token)
+            self._model = Model.from_pretrained(model_name, use_auth_token=token, local_files_only=True)
             
             if self.device:
                 device = torch.device(self.device)

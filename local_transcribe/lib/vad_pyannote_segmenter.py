@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torchaudio
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion
+from local_transcribe.lib.environment import *  # Load environment variables
 
 
 @dataclass
@@ -106,19 +107,21 @@ class VADSegmenter:
             from pyannote.audio import Model, Inference
             
             # Use segmentation model which provides speech scores
-            model_name = "pyannote/segmentation"
+            model_name = "pyannote/segmentation-3.0"
             token = os.getenv("HF_TOKEN")
             
             self._model = Model.from_pretrained(model_name, use_auth_token=token)
             
             if self.device:
-                self._model = self._model.to(self.device)
+                device = torch.device(self.device)
+                self._model = self._model.to(device)
             
             # Create inference object for processing
+            device = torch.device(self.device) if self.device else torch.device("cpu")
             self._inference = Inference(
                 self._model,
                 window="whole",
-                device=self.device if self.device else "cpu"
+                device=device
             )
             
             log_completion("Pyannote VAD model loaded successfully")
@@ -155,26 +158,22 @@ class VADSegmenter:
         else:
             waveform_tensor = torch.from_numpy(waveform).float()
         
-        # Run inference
-        scores = self._inference({"waveform": waveform_tensor, "sample_rate": sample_rate})
-        
-        # scores is a SlidingWindowFeature with shape (num_frames, num_classes)
-        # For segmentation model, typically:
-        # - Index 0: non-speech
-        # - Index 1: speech (or multiple speaker indices)
-        # We want the max over speech classes (indices 1+) or just sum them
-        
-        score_data = scores.data
-        frame_hop = scores.sliding_window.step
-        
-        # Get speech probability (sum of all speaker classes, or max)
-        # The segmentation model outputs probabilities for each speaker slot
-        if score_data.shape[1] > 1:
-            # Sum all non-silence classes (usually indices 1, 2, 3 for speakers)
-            # Or take max to get "any speech" probability
-            speech_scores = np.max(score_data[:, :], axis=1)  # Max across all classes
-        else:
-            speech_scores = score_data[:, 0]
+        # For segmentation-3.0, use raw model inference and apply softmax
+        with torch.no_grad():
+            logits = self._model(waveform_tensor)
+            # Apply softmax to get probabilities
+            import torch.nn.functional as F
+            probabilities = F.softmax(logits, dim=-1)
+            
+            # For segmentation-3.0: class 0 is non-speech
+            # Speech probability = 1 - non-speech probability
+            speech_scores = 1.0 - probabilities[0, :, 0].cpu().numpy()
+            
+            # Frame hop: model processes 10s audio into ~56 frames, so ~10/56 ≈ 0.179s per frame
+            # But let's calculate based on audio duration
+            audio_duration = len(waveform) / sample_rate
+            num_frames = speech_scores.shape[0]
+            frame_hop = audio_duration / num_frames
         
         log_debug(f"VAD scores computed: {len(speech_scores)} frames at {frame_hop:.4f}s hop")
         

@@ -112,28 +112,13 @@ class VADSegmenter:
         # Get token from environment
         token = os.getenv("HF_TOKEN", "")
         
-        # Find model snapshot directory
-        cache_dir = self._get_cache_dir()
-        hf_model_name = self._model_name_to_hf_format(self.DEFAULT_MODEL)
-        model_dir = cache_dir / f"models--{hf_model_name}"
-        
-        snapshots_dir = model_dir / "snapshots"
-        if not snapshots_dir.exists() or not any(snapshots_dir.iterdir()):
-            raise FileNotFoundError(f"VAD model not found at {model_dir}. Please ensure models are downloaded first.")
-        
-        snapshot_dirs = [p for p in snapshots_dir.iterdir() if p.is_dir()]
-        if not snapshot_dirs:
-            raise FileNotFoundError(f"No snapshots found in {snapshots_dir}")
-        
-        latest_snapshot_dir = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
-        
         try:
             from pyannote.audio import Model
             from pyannote.audio import Inference
             
-            # Load model from the specific snapshot directory
+            # Try loading from HuggingFace hub first (will use local cache if available)
             self._model = Model.from_pretrained(
-                str(latest_snapshot_dir),
+                self.DEFAULT_MODEL,
                 use_auth_token=token if token else None
             )
             
@@ -152,8 +137,46 @@ class VADSegmenter:
             log_completion("Pyannote VAD model loaded successfully")
             
         except Exception as e:
-            self.logger.error(f"Failed to load pyannote VAD model: {e}")
-            raise
+            # If loading from hub fails, try local cache
+            try:
+                # Find model snapshot directory
+                cache_dir = self._get_cache_dir()
+                hf_model_name = self._model_name_to_hf_format(self.DEFAULT_MODEL)
+                model_dir = cache_dir / f"models--{hf_model_name}"
+                
+                snapshots_dir = model_dir / "snapshots"
+                if not snapshots_dir.exists() or not any(snapshots_dir.iterdir()):
+                    raise FileNotFoundError(f"VAD model not found at {model_dir}. Please ensure models are downloaded first.")
+                
+                snapshot_dirs = [p for p in snapshots_dir.iterdir() if p.is_dir()]
+                if not snapshot_dirs:
+                    raise FileNotFoundError(f"No snapshots found in {snapshots_dir}")
+                
+                latest_snapshot_dir = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
+                
+                # Load model from the specific snapshot directory
+                self._model = Model.from_pretrained(
+                    str(latest_snapshot_dir),
+                    use_auth_token=token if token else None
+                )
+                
+                if self.device:
+                    device = torch.device(self.device)
+                    self._model = self._model.to(device)
+                
+                # Create inference object for processing
+                device = torch.device(self.device) if self.device else torch.device("cpu")
+                self._inference = Inference(
+                    self._model,
+                    window="whole",
+                    device=device
+                )
+                
+                log_completion("Pyannote VAD model loaded successfully from local cache")
+                
+            except Exception as local_e:
+                self.logger.error(f"Failed to load pyannote VAD model from both hub and local cache: {e}, {local_e}")
+                raise
     
     def preload_models(self) -> None:
         """Preload the VAD model to cache."""

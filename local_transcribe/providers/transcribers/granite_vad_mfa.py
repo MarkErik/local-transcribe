@@ -1012,6 +1012,12 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Ensure models are available by preloading them."""
         self.preload_models(models, models_dir)
+        
+        # Also preload the VAD model
+        log_progress("Preloading VAD segmentation model...")
+        self._init_vad_segmenter()
+        self.vad_segmenter._load_model()
+        log_completion("VAD model preloaded successfully")
 
 
 def register_transcriber_plugins():

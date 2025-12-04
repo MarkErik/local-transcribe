@@ -28,6 +28,8 @@ samples/
 *.json
 *.mp4
 *.html
+*.pdf
+
 
 
 # Models
@@ -39,4 +41,5 @@ samples/
 # Mac
 .DS_Store
 
+#used to keep track of debugging issues
 issue

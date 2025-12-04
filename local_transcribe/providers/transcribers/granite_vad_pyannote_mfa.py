@@ -64,15 +64,15 @@ class GraniteVADMFATranscriberProvider(TranscriberProvider):
 
     @property
     def name(self) -> str:
-        return "granite_vad_mfa"
+        return "granite_vad_pyannote_mfa"
 
     @property
     def short_name(self) -> str:
-        return "Granite + VAD + MFA"
+        return "Granite + VAD (Pyannote) + MFA"
 
     @property
     def description(self) -> str:
-        return "IBM Granite transcription with VAD-based segmentation and MFA alignment (produces continuous timestamped output)"
+        return "IBM Granite transcription with Pyannote VAD-based segmentation and MFA alignment (produces continuous timestamped output)"
 
     @property
     def has_builtin_alignment(self) -> bool:

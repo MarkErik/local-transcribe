@@ -90,9 +90,20 @@ class VADSegmenter:
         
         log_progress("Loading pyannote VAD model...")
         
+        import os
+        import sys
+        
+        # Temporarily disable offline mode (same pattern as pyannote diarization provider)
+        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
+        os.environ["HF_HUB_OFFLINE"] = "0"
+        
+        # Force reload of huggingface_hub modules to pick up new environment
+        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
+        for module_name in modules_to_reload:
+            del sys.modules[module_name]
+        
         try:
             from pyannote.audio import Model, Inference
-            import os
             
             # Use segmentation model which provides speech scores
             model_name = "pyannote/segmentation"
@@ -115,6 +126,9 @@ class VADSegmenter:
         except Exception as e:
             self.logger.error(f"Failed to load pyannote VAD model: {e}")
             raise
+        finally:
+            # Restore original offline mode setting
+            os.environ["HF_HUB_OFFLINE"] = offline_mode
     
     def get_vad_scores(
         self,

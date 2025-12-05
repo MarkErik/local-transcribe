@@ -7,12 +7,6 @@ This plugin combines:
 - Granite's transcription capabilities
 - Montreal Forced Aligner for precise word-level timestamps
 
-Unlike the Pyannote VAD implementation, this plugin uses Silero VAD which offers:
-- Lightweight model (~2MB vs ~50MB+)
-- No authentication token required (MIT license)
-- Highly tunable parameters for accuracy optimization
-- Trained on 6000+ languages
-
 The integrated stitcher produces continuous WordSegments output, requiring no downstream stitching.
 Debug mode saves individual segment transcripts when DEBUG logging is enabled.
 """
@@ -52,7 +46,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         self.model = None
         self.tokenizer = None
         
-        # VAD configuration (accuracy-optimized defaults for Silero)
+        # VAD configuration (custom)
         self.vad_threshold = 0.4
         self.min_speech_duration_ms = 300
         self.min_silence_duration_ms = 150

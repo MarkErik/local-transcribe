@@ -62,7 +62,7 @@ class SileroVADSegmenter:
         Initialize the Silero VAD segmenter.
         
         Args:
-            threshold: Speech probability threshold (lower = more sensitive).
+            threshold: Speech probability threshold.
             neg_threshold: Threshold to exit speech state. If None, uses threshold - 0.15.
             min_speech_duration_ms: Minimum speech segment duration in milliseconds.
             min_silence_duration_ms: Minimum silence duration to end speech segment.

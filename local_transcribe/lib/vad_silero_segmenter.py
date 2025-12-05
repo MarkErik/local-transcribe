@@ -6,9 +6,8 @@ This module implements intelligent audio segmentation based on Voice Activity De
 using Silero's lightweight but highly accurate VAD model. The segmentation strategy uses:
 
 1. Neural VAD scoring via Silero's `get_speech_timestamps()` function
-2. Configurable thresholds optimized for accuracy
-3. Maximum segment duration enforcement with intelligent splitting
-4. Optional merging of short adjacent segments
+2. Maximum segment duration enforcement with intelligent splitting
+3. Optional merging of short adjacent segments
 
 Key advantages of Silero VAD:
 - Lightweight (~2MB model)
@@ -70,7 +69,7 @@ class SileroVADSegmenter:
         Initialize the Silero VAD segmenter.
         
         Args:
-            threshold: Speech probability threshold (lower = more sensitive). Default 0.4 for accuracy.
+            threshold: Speech probability threshold (lower = more sensitive).
             neg_threshold: Threshold to exit speech state. If None, uses threshold - 0.15.
             min_speech_duration_ms: Minimum speech segment duration in milliseconds.
             min_silence_duration_ms: Minimum silence duration to end speech segment.
@@ -82,7 +81,7 @@ class SileroVADSegmenter:
         """
         self.logger = get_logger()
         
-        # VAD parameters (accuracy-optimized defaults)
+        # VAD parameters
         self.threshold = threshold
         self.neg_threshold = neg_threshold if neg_threshold is not None else (threshold - 0.15)
         self.min_speech_duration_ms = min_speech_duration_ms
@@ -542,7 +541,7 @@ def create_silero_vad_segmenter(
     max_segment_duration: float = 45.0,
     merge_threshold: float = 45.0,
     device: Optional[str] = None,
-    accuracy_optimized: bool = True,
+    custom_settings: bool = True,
     **kwargs
 ) -> SileroVADSegmenter:
     """
@@ -552,14 +551,14 @@ def create_silero_vad_segmenter(
         max_segment_duration: Maximum segment duration for ASR
         merge_threshold: Maximum duration for merged segments
         device: Device for VAD model
-        accuracy_optimized: If True, use accuracy-optimized parameters
+        custom_settings: If True, use custom parameters
         **kwargs: Additional parameters passed to SileroVADSegmenter
         
     Returns:
         Configured SileroVADSegmenter instance
     """
-    if accuracy_optimized:
-        # Accuracy-optimized defaults
+    if custom_settings:
+        # custom settings
         defaults = {
             "threshold": 0.4,
             "min_speech_duration_ms": 300,

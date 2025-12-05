@@ -46,14 +46,6 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         self.model = None
         self.tokenizer = None
         
-        # VAD configuration (custom)
-        self.vad_threshold = 0.4
-        self.min_speech_duration_ms = 300
-        self.min_silence_duration_ms = 150
-        self.speech_pad_ms = 50
-        self.max_segment_duration = 45.0
-        self.merge_threshold = 45.0
-        
         # Segmenter instance
         self.vad_segmenter = None
         self.models_dir = None
@@ -199,12 +191,6 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         """Initialize the Silero VAD segmenter if not already done."""
         if self.vad_segmenter is None:
             self.vad_segmenter = SileroVADSegmenter(
-                threshold=self.vad_threshold,
-                min_speech_duration_ms=self.min_speech_duration_ms,
-                min_silence_duration_ms=self.min_silence_duration_ms,
-                speech_pad_ms=self.speech_pad_ms,
-                max_segment_duration=self.max_segment_duration,
-                merge_threshold=self.merge_threshold,
                 device=self.device if self.device != "mps" else "cpu",  # Silero works best on CPU for MPS
                 models_dir=self.models_dir
             )

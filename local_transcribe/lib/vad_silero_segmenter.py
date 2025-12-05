@@ -26,7 +26,8 @@ import os
 import pathlib
 import numpy as np
 import torch
-from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion
+from datetime import datetime
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion, get_output_context, get_output_context
 
 
 @dataclass
@@ -215,6 +216,8 @@ class SileroVADSegmenter:
                 return_seconds=True
             )
             
+            log_debug(f"Split mode: segment {segment.start:.2f}-{segment.end:.2f}s, found {len(inner_timestamps)} internal speech regions")
+            
             if len(inner_timestamps) <= 1:
                 # No good split points found, split at midpoint
                 mid_time = segment.start + (segment.duration / 2)
@@ -314,7 +317,8 @@ class SileroVADSegmenter:
     def segment_audio(
         self,
         waveform: np.ndarray,
-        sample_rate: int = 16000
+        sample_rate: int = 16000,
+        debug_file_path: Optional[str] = None
     ) -> List[Tuple[float, float]]:
         """
         Full VAD segmentation pipeline.
@@ -322,6 +326,7 @@ class SileroVADSegmenter:
         Args:
             waveform: Audio waveform as numpy array (mono)
             sample_rate: Sample rate of the audio (must be 8000 or 16000)
+            debug_file_path: Optional path to write debug information to a text file
             
         Returns:
             List of (start_sec, end_sec) tuples representing speech segments
@@ -347,6 +352,28 @@ class SileroVADSegmenter:
         
         audio_duration = len(audio_tensor) / sample_rate
         
+        # Debug logging setup
+        debug_enabled = get_output_context().should_log("DEBUG") and debug_file_path is not None
+        debug_lines = []
+        
+        if debug_enabled:
+            debug_lines.append("=" * 80)
+            debug_lines.append("SILERO VAD SEGMENTATION DEBUG LOG")
+            debug_lines.append("=" * 80)
+            debug_lines.append(f"Timestamp: {datetime.now().isoformat()}")
+            debug_lines.append(f"Audio duration: {audio_duration:.3f} seconds")
+            debug_lines.append(f"Sample rate: {sample_rate} Hz")
+            debug_lines.append("")
+            debug_lines.append("VAD Parameters:")
+            debug_lines.append(f"  threshold: {self.threshold}")
+            debug_lines.append(f"  neg_threshold: {self.neg_threshold}")
+            debug_lines.append(f"  min_speech_duration_ms: {self.min_speech_duration_ms}")
+            debug_lines.append(f"  min_silence_duration_ms: {self.min_silence_duration_ms}")
+            debug_lines.append(f"  speech_pad_ms: {self.speech_pad_ms}")
+            debug_lines.append(f"  max_segment_duration: {self.max_segment_duration}")
+            debug_lines.append(f"  merge_threshold: {self.merge_threshold}")
+            debug_lines.append("")
+        
         # Get speech timestamps using Silero's built-in function
         try:
             speech_timestamps = self._get_speech_timestamps(
@@ -364,11 +391,38 @@ class SileroVADSegmenter:
             self.logger.error(f"Silero VAD failed: {e}")
             # Return entire audio as single segment on failure
             log_debug("VAD failed, returning full audio as single segment")
+            if debug_enabled:
+                debug_lines.append("VAD PROCESSING FAILED")
+                debug_lines.append(f"Error: {e}")
+                debug_lines.append("")
+                debug_lines.append("FALLBACK: Returning full audio as single segment")
+                debug_lines.append(f"Full audio segment: 0.000 - {audio_duration:.3f}")
+                debug_lines.append("")
+                debug_lines.append("NON-SPEECH REGIONS:")
+                debug_lines.append("  (No speech detected - entire audio is non-speech)")
+                self._write_debug_file(debug_file_path, debug_lines)
             return [(0.0, audio_duration)]
+        
+        if debug_enabled:
+            debug_lines.append("RAW SILERO SPEECH TIMESTAMPS:")
+            if speech_timestamps:
+                for i, ts in enumerate(speech_timestamps):
+                    debug_lines.append(f"  Segment {i+1}: {ts['start']:.3f} - {ts['end']:.3f} ({ts['end']-ts['start']:.3f}s)")
+            else:
+                debug_lines.append("  No speech timestamps returned")
+            debug_lines.append("")
         
         if not speech_timestamps:
             # No speech detected - return the whole audio as one segment
             log_debug("No speech segments detected by VAD, using full audio")
+            if debug_enabled:
+                debug_lines.append("NO SPEECH DETECTED")
+                debug_lines.append("FALLBACK: Returning full audio as single segment")
+                debug_lines.append(f"Full audio segment: 0.000 - {audio_duration:.3f}")
+                debug_lines.append("")
+                debug_lines.append("NON-SPEECH REGIONS:")
+                debug_lines.append("  (No speech detected - entire audio is non-speech)")
+                self._write_debug_file(debug_file_path, debug_lines)
             return [(0.0, audio_duration)]
         
         # Convert to SileroVADSegment objects
@@ -376,6 +430,12 @@ class SileroVADSegmenter:
             SileroVADSegment(ts['start'], ts['end'])
             for ts in speech_timestamps
         ]
+        
+        if debug_enabled:
+            debug_lines.append("INITIAL SPEECH SEGMENTS (after Silero VAD):")
+            for i, seg in enumerate(segments):
+                debug_lines.append(f"  Segment {i+1}: {seg.start:.3f} - {seg.end:.3f} ({seg.duration:.3f}s)")
+            debug_lines.append("")
         
         log_debug(f"Silero VAD detected {len(segments)} initial speech segments")
         
@@ -386,12 +446,24 @@ class SileroVADSegmenter:
                 self._split_long_segment(seg, audio_tensor, sample_rate)
             )
         
+        if debug_enabled:
+            debug_lines.append("AFTER SPLITTING LONG SEGMENTS:")
+            for i, seg in enumerate(constrained_segments):
+                debug_lines.append(f"  Segment {i+1}: {seg.start:.3f} - {seg.end:.3f} ({seg.duration:.3f}s)")
+            debug_lines.append("")
+        
         if len(constrained_segments) != len(segments):
             log_debug(f"Split long segments: {len(segments)} -> {len(constrained_segments)} segments")
         
         # Optionally merge short adjacent segments
         if self.merge_threshold > 0:
             constrained_segments = self._merge_short_segments(constrained_segments)
+        
+        if debug_enabled:
+            debug_lines.append("AFTER MERGING SHORT SEGMENTS:")
+            for i, seg in enumerate(constrained_segments):
+                debug_lines.append(f"  Segment {i+1}: {seg.start:.3f} - {seg.end:.3f} ({seg.duration:.3f}s)")
+            debug_lines.append("")
         
         # Convert to time tuples
         time_segments = [seg.to_tuple() for seg in constrained_segments]
@@ -403,12 +475,51 @@ class SileroVADSegmenter:
             f"{total_speech:.1f}s speech / {audio_duration:.1f}s total"
         )
         
+        if debug_enabled:
+            debug_lines.append("FINAL SPEECH SEGMENTS:")
+            for i, (start, end) in enumerate(time_segments):
+                debug_lines.append(f"  Segment {i+1}: {start:.3f} - {end:.3f} ({end-start:.3f}s)")
+            debug_lines.append("")
+            debug_lines.append("NON-SPEECH REGIONS:")
+            if time_segments:
+                # Before first segment
+                if time_segments[0][0] > 0:
+                    debug_lines.append(f"  0.000 - {time_segments[0][0]:.3f} ({time_segments[0][0]:.3f}s silence)")
+                # Between segments
+                for i in range(len(time_segments) - 1):
+                    gap_start = time_segments[i][1]
+                    gap_end = time_segments[i + 1][0]
+                    gap_duration = gap_end - gap_start
+                    debug_lines.append(f"  {gap_start:.3f} - {gap_end:.3f} ({gap_duration:.3f}s silence)")
+                # After last segment
+                if time_segments[-1][1] < audio_duration:
+                    debug_lines.append(f"  {time_segments[-1][1]:.3f} - {audio_duration:.3f} ({audio_duration - time_segments[-1][1]:.3f}s silence)")
+            else:
+                debug_lines.append("  (No speech segments - entire audio is non-speech)")
+            debug_lines.append("")
+            debug_lines.append("SUMMARY:")
+            debug_lines.append(f"  Total audio duration: {audio_duration:.3f}s")
+            debug_lines.append(f"  Total speech duration: {total_speech:.3f}s")
+            debug_lines.append(f"  Speech percentage: {(total_speech/audio_duration*100):.1f}%" if audio_duration > 0 else "  Speech percentage: N/A")
+            debug_lines.append(f"  Number of speech segments: {len(time_segments)}")
+            self._write_debug_file(debug_file_path, debug_lines)
+        
         return time_segments
+    
+    def _write_debug_file(self, debug_file_path: str, lines: List[str]) -> None:
+        """Write debug information to a text file."""
+        try:
+            with open(debug_file_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines))
+            log_debug(f"Debug information written to {debug_file_path}")
+        except Exception as e:
+            self.logger.warning(f"Failed to write debug file {debug_file_path}: {e}")
     
     def segment_audio_from_file(
         self,
         audio_path: str,
-        target_sample_rate: int = 16000
+        target_sample_rate: int = 16000,
+        debug_file_path: Optional[str] = None
     ) -> List[Tuple[float, float]]:
         """
         Convenience method to segment audio directly from a file path.
@@ -416,6 +527,7 @@ class SileroVADSegmenter:
         Args:
             audio_path: Path to audio file
             target_sample_rate: Target sample rate (audio will be resampled if needed)
+            debug_file_path: Optional path to write debug information to a text file
             
         Returns:
             List of (start_sec, end_sec) tuples representing speech segments
@@ -423,7 +535,7 @@ class SileroVADSegmenter:
         import librosa
         
         waveform, sr = librosa.load(audio_path, sr=target_sample_rate, mono=True)
-        return self.segment_audio(waveform, sr)
+        return self.segment_audio(waveform, sr, debug_file_path)
 
 
 def create_silero_vad_segmenter(

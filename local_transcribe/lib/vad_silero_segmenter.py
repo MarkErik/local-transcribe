@@ -50,7 +50,7 @@ class SileroVADSegmenter:
         self,
         threshold: float = 0.4,
         neg_threshold: Optional[float] = None,
-        min_speech_duration_ms: int = 300,
+        min_speech_duration_ms: int = 250,
         min_silence_duration_ms: int = 150,
         speech_pad_ms: int = 50,
         max_segment_duration: float = 45.0,

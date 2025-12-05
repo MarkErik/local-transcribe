@@ -3,18 +3,11 @@
 VAD-based audio segmentation using Silero VAD.
 
 This module implements intelligent audio segmentation based on Voice Activity Detection (VAD)
-using Silero's lightweight but highly accurate VAD model. The segmentation strategy uses:
+using the SileroVAD model. The segmentation strategy uses:
 
 1. Neural VAD scoring via Silero's `get_speech_timestamps()` function
 2. Maximum segment duration enforcement with intelligent splitting
 3. Optional merging of short adjacent segments
-
-Key advantages of Silero VAD:
-- Lightweight (~2MB model)
-- No authentication required (MIT license)
-- Trained on 6000+ languages
-- Highly tunable parameters
-- Direct timestamp output (no post-processing needed)
 
 This approach ensures chunks start/end at natural speech boundaries rather than arbitrary time points.
 """

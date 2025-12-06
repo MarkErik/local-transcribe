@@ -62,6 +62,11 @@ def main():
         project_root = pathlib.Path(__file__).parent
         models_dir = project_root / ".models"
 
+        # Set environment variables to fix model loading and tokenizers warning
+        import os
+        os.environ["HF_HOME"] = str(models_dir / "transcribers" / "granite")
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
         # Ensure models are available
         print("Ensuring models are available...")
         required_models = provider.get_required_models(selected_model="granite-2b")

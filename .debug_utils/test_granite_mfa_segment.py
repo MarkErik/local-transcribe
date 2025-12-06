@@ -9,6 +9,12 @@ import pathlib
 import tempfile
 import os
 import argparse
+import sys
+
+# Add the project root to Python path for local imports
+project_root = pathlib.Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from local_transcribe.lib.audio_cropper import AudioCropper
 from local_transcribe.providers.transcribers.granite_mfa import GraniteMFATranscriberProvider
 from local_transcribe.lib.system_capability_utils import set_system_capability
@@ -16,8 +22,8 @@ from local_transcribe.lib.system_capability_utils import set_system_capability
 def main():
     parser = argparse.ArgumentParser(description="Test script for granite+mfa transcription")
     parser.add_argument('--audio', required=True, help='Path to the audio file to transcribe')
-    parser.add_argument('--start-time', type=float, help='Start time in seconds')
-    parser.add_argument('--end-time', type=float, help='End time in seconds')
+    parser.add_argument('--start', '--start-time', type=float, help='Start time in seconds')
+    parser.add_argument('--end', '--end-time', type=float, help='End time in seconds')
     parser.add_argument('--chunk-length-seconds', type=float, default=10.0, help='Chunk length in seconds (default: 10.0)')
     parser.add_argument('--model', choices=['2b', '8b'], default='2b', help='Model size to use: 2b or 8b (default: 2b)')
     parser.add_argument('--out-file', default='granite_mfa_test_results.txt', help='Output file for results (default: granite_mfa_test_results.txt)')
@@ -35,8 +41,8 @@ def main():
     print(f"Full audio duration: {full_duration:.2f}s")
 
     # Segment to transcribe (in seconds)
-    start_seconds = args.start_time
-    end_seconds = args.end_time
+    start_seconds = args.start
+    end_seconds = args.end
     chunk_length_seconds = args.chunk_length_seconds
     model_size = args.model
     out_file = args.out_file

@@ -123,6 +123,14 @@ def main():
             role=None  # No specific role for this test
         )
 
+        # Adjust timestamps if we cropped the audio
+        if start_seconds is not None:
+            for chunk in result:
+                chunk["chunk_start_time"] += start_seconds
+                for word in chunk["words"]:
+                    word["start"] += start_seconds
+                    word["end"] += start_seconds
+
         # Collect results for output file
         output_lines = []
         output_lines.append("Transcription Results:")
@@ -149,6 +157,9 @@ def main():
                 full_text += word["text"] + " "
 
         output_lines.append(f"\nFull transcript: {full_text.strip()}")
+
+        # Print to console
+        print('\n'.join(output_lines))
 
         # Write to output file
         with open(out_file, 'w') as f:

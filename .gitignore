@@ -29,7 +29,7 @@ samples/
 *.mp4
 *.html
 *.pdf
-
+*.TextGrid
 
 
 # Models

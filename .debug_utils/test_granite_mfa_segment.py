@@ -27,6 +27,7 @@ def main():
     parser.add_argument('--chunk-length-seconds', type=float, default=10.0, help='Chunk length in seconds (default: 10.0)')
     parser.add_argument('--model', choices=['2b', '8b'], default='2b', help='Model size to use: 2b or 8b (default: 2b)')
     parser.add_argument('--out-file', default='granite_mfa_test_results.txt', help='Output file for results (default: granite_mfa_test_results.txt)')
+    parser.add_argument('--intermediate-dir', default=None, help='Directory to save intermediate debug files (optional)')
     args = parser.parse_args()
 
     # Set system capability to MPS for GPU acceleration
@@ -117,10 +118,16 @@ def main():
 
         # Transcribe with alignment using the selected granite model (smaller for MPS)
         print(f"Starting transcription with {model_name} + MFA...")
+        # Pass the intermediate_dir if provided so the provider can save debug outputs
+        kwargs = {}
+        if args.intermediate_dir:
+            kwargs['intermediate_dir'] = pathlib.Path(args.intermediate_dir)
+
         result = provider.transcribe_with_alignment(
             audio_path=audio_to_transcribe,
             transcriber_model=model_name,
-            role=None  # No specific role for this test
+            role=None,  # No specific role for this test
+            **kwargs
         )
 
         # Adjust timestamps if we cropped the audio

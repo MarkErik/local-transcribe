@@ -283,7 +283,32 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 new_tokens, add_special_tokens=False, skip_special_tokens=True
             )
 
-            cleaned_text = self._clean_transcription_output(output_text[0].strip(), verbose=kwargs.get('verbose', False))
+            pre_clean_text = output_text[0].strip()
+            cleaned_text = self._clean_transcription_output(pre_clean_text, verbose=kwargs.get('verbose', False))
+
+            # Optional debug saving when intermediate_dir is provided in kwargs
+            try:
+                debug_dir = kwargs.get('intermediate_dir')
+                chunk_num = kwargs.get('chunk_num', None)
+                if debug_dir:
+                    import json
+                    debug_path = pathlib.Path(debug_dir)
+                    debug_path.mkdir(parents=True, exist_ok=True)
+                    chunk_id = f"{chunk_num or 'unknown'}"
+                    debug_json = debug_path / f"chunk_{chunk_id}_granite_model_debug.json"
+                    debug_obj = {
+                        'wav_length_samples': len(wav),
+                        'num_input_tokens': int(num_input_tokens) if 'num_input_tokens' in locals() else None,
+                        'model_outputs_shape': list(model_outputs.shape) if 'model_outputs' in locals() else None,
+                        'new_tokens_shape': list(new_tokens.shape) if 'new_tokens' in locals() else None,
+                        'pre_clean_text': pre_clean_text,
+                        'cleaned_text': cleaned_text
+                    }
+                    with open(debug_json, 'w', encoding='utf-8') as df:
+                        json.dump(debug_obj, df, indent=2, ensure_ascii=False)
+            except Exception:
+                # Never fail transcription due to debug save errors
+                pass
 
             return cleaned_text
             
@@ -1064,7 +1089,10 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                     prev_chunk_id = chunks_with_timestamps[-1]["chunk_id"]
                     
                     # Transcribe merged chunk
-                    chunk_text = self._transcribe_single_chunk(merged_wav, **kwargs)
+                    local_kwargs = dict(kwargs)
+                    local_kwargs['chunk_num'] = prev_chunk_id
+                    local_kwargs['intermediate_dir'] = debug_dir
+                    chunk_text = self._transcribe_single_chunk(merged_wav, **local_kwargs)
                     
                     # Save Granite output for debug (merged chunk)
                     if debug_dir:
@@ -1113,7 +1141,10 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                     }
             else:
                 # Normal chunk processing
-                chunk_text = self._transcribe_single_chunk(chunk_wav, **kwargs)
+                local_kwargs = dict(kwargs)
+                local_kwargs['chunk_num'] = chunk_num
+                local_kwargs['intermediate_dir'] = debug_dir
+                chunk_text = self._transcribe_single_chunk(chunk_wav, **local_kwargs)
                 
                 # Save Granite output for debug
                 if debug_dir:

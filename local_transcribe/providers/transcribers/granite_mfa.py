@@ -42,7 +42,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         self.model = None
         self.chunk_length_seconds = 60.0
         self.overlap_seconds = 4.0
-        self.min_chunk_seconds = 7.0
+        self.min_chunk_seconds = 5.0
         
         # MFA configuration
         self.mfa_models_dir = None

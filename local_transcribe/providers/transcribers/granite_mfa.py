@@ -288,11 +288,11 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
             # Optional debug saving when intermediate_dir is provided in kwargs
             try:
-                debug_dir = kwargs.get('intermediate_dir')
+                intermediate_dir = kwargs.get('intermediate_dir')
                 chunk_num = kwargs.get('chunk_num', None)
-                if debug_dir:
+                if intermediate_dir:
                     import json
-                    debug_path = pathlib.Path(debug_dir)
+                    debug_path = pathlib.Path(intermediate_dir)
                     debug_path.mkdir(parents=True, exist_ok=True)
                     chunk_id = f"{chunk_num or 'unknown'}"
                     debug_json = debug_path / f"chunk_{chunk_id}_granite_model_debug.json"
@@ -1000,8 +1000,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         """
         log_progress("Starting transcription with alignment using Granite + MFA")
         
-        # Check if DEBUG logging is enabled and setup debug directory
-        from local_transcribe.lib.program_logger import get_output_context
+        # Setup debug directory if DEBUG logging is enabled and intermediate_dir is provided
         debug_enabled = get_output_context().should_log("DEBUG")
         debug_dir = None
         intermediate_dir = kwargs.get('intermediate_dir')
@@ -1091,7 +1090,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                     # Transcribe merged chunk
                     local_kwargs = dict(kwargs)
                     local_kwargs['chunk_num'] = prev_chunk_id
-                    local_kwargs['intermediate_dir'] = debug_dir
+                    local_kwargs['intermediate_dir'] = intermediate_dir
                     chunk_text = self._transcribe_single_chunk(merged_wav, **local_kwargs)
                     
                     # Save Granite output for debug (merged chunk)
@@ -1143,7 +1142,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 # Normal chunk processing
                 local_kwargs = dict(kwargs)
                 local_kwargs['chunk_num'] = chunk_num
-                local_kwargs['intermediate_dir'] = debug_dir
+                local_kwargs['intermediate_dir'] = intermediate_dir
                 chunk_text = self._transcribe_single_chunk(chunk_wav, **local_kwargs)
                 
                 # Save Granite output for debug

@@ -301,6 +301,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                         'num_input_tokens': int(num_input_tokens) if 'num_input_tokens' in locals() else None,
                         'model_outputs_shape': list(model_outputs.shape) if 'model_outputs' in locals() else None,
                         'new_tokens_shape': list(new_tokens.shape) if 'new_tokens' in locals() else None,
+                        'new_token_ids': new_tokens.tolist() if 'new_tokens' in locals() else None,
                         'pre_clean_text': pre_clean_text,
                         'cleaned_text': cleaned_text
                     }

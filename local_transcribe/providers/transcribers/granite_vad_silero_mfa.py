@@ -7,7 +7,7 @@ This plugin combines:
 - Granite's transcription capabilities
 - Montreal Forced Aligner for precise word-level timestamps
 
-The integrated stitcher produces continuous WordSegments output, requiring no downstream stitching.
+The integrated stitcher produces continuous WordSegments output.
 Debug mode saves individual segment transcripts when DEBUG logging is enabled.
 """
 
@@ -308,7 +308,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 new_tokens, add_special_tokens=False, skip_special_tokens=True
             )
 
-            cleaned_text = self._clean_transcription_output(output_text[0].strip(), verbose=kwargs.get('verbose', False))
+            cleaned_text = self._clean_transcription_output(output_text[0].strip())
 
             return cleaned_text
             
@@ -328,13 +328,13 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             gc.collect()
             clear_device_cache()
 
-    def _clean_transcription_output(self, text: str, verbose: bool = False) -> str:
+    def _clean_transcription_output(self, text: str) -> str:
         """Clean the transcription output by removing dialogue markers and quotation marks."""
-        if verbose:
-            user_count = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
-            assistant_count = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
-            assistant_short_count = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
-            total_removed = user_count + assistant_count + assistant_short_count
+        # Count labels before removal for debug logging
+        user_count = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
+        assistant_count = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
+        assistant_short_count = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
+        total_removed = user_count + assistant_count + assistant_short_count
         
         text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
@@ -346,8 +346,9 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         text = re.sub(r'\s+', ' ', text).strip()
         
-        if verbose and 'total_removed' in locals() and total_removed > 0:
-            self.logger.info(f"Removed {total_removed} labels from segment transcript.")
+        # Log count if any labels were removed
+        if total_removed > 0:
+            log_debug(f"Removed {total_removed} labels from segment transcript.")
         
         return text
 
@@ -949,8 +950,6 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         log_progress(f"Audio duration: {duration:.1f}s")
         
-        verbose = kwargs.get('verbose', False)
-        
         # Step 1: Silero VAD segmentation
         log_progress("Running Silero VAD segmentation...")
         debug_file_path = debug_dir / "vad_segmentation_debug.txt" if debug_dir else None
@@ -1026,8 +1025,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         # Step 3: Stitch all segments into continuous output
         result = self._stitch_vad_segments(all_segment_words)
         
-        if verbose:
-            log_completion(f"Transcription complete: {len(result)} words from {len(vad_segments)} Silero VAD segments")
+        if debug_enabled:
+            log_debug(f"Transcription complete: {len(result)} words from {len(vad_segments)} Silero VAD segments")
         
         return result
 

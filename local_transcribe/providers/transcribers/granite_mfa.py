@@ -1008,10 +1008,16 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)
         duration = len(wav) / sr
         
+        # Allow short audio by adjusting chunk_length_seconds if needed
         if duration < self.chunk_length_seconds:
-            raise ValueError(
-                f"Audio duration ({duration:.1f}s) is shorter than minimum chunk length ({self.chunk_length_seconds}s)"
-            )
+            if duration >= self.min_chunk_seconds:
+                # Adjust chunk length to process entire audio as one chunk
+                self.chunk_length_seconds = duration + 0.1  # Slightly larger than duration
+                log_progress(f"Audio duration ({duration:.1f}s) shorter than chunk length, processing as single chunk")
+            else:
+                raise ValueError(
+                    f"Audio duration ({duration:.1f}s) is shorter than minimum chunk length ({self.min_chunk_seconds}s)"
+                )
         
         verbose = kwargs.get('verbose', False)
         

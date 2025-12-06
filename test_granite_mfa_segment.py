@@ -53,8 +53,8 @@ def main():
         # Initialize the transcriber
         provider = GraniteMFATranscriberProvider()
 
-        # Adjust chunk settings for short audio
-        provider.chunk_length_seconds = 2.0  # Very short for testing
+        # Adjust chunk settings for short audio - process as single chunk
+        provider.chunk_length_seconds = 10.0  # Larger than audio duration to process as one chunk
         provider.overlap_seconds = 0.0
         provider.min_chunk_seconds = 0.5  # Allow very short chunks
 

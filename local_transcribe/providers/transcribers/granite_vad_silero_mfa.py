@@ -715,6 +715,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             
             if g_idx is not None and m_idx is not None:
                 if pending_granite_words:
+                    self.logger.warning(f"MFA dropped {len(pending_granite_words)} word(s): {pending_granite_words}. Using interpolated timestamps.")
                     current_start = word_dicts[m_idx]["start"]
                     interpolated = self._interpolate_timestamps(
                         last_end_time, current_start, 
@@ -759,6 +760,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 i += 1
         
         if pending_granite_words:
+            self.logger.warning(f"MFA dropped {len(pending_granite_words)} word(s) at end of segment: {pending_granite_words}. Using interpolated timestamps.")
             interpolated = self._interpolate_timestamps(
                 last_end_time, segment_end_time,
                 len(pending_granite_words), pending_granite_words, speaker

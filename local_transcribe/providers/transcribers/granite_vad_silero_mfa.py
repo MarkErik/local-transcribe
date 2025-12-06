@@ -436,6 +436,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                     
                     return word_dicts
                 else:
+                    self.logger.warning("MFA alignment completed but no TextGrid file was produced. Falling back to simple alignment.")
                     return self._simple_alignment_to_word_dicts(segment_wav, segment_transcript, segment_start_time, speaker)
 
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:

@@ -352,7 +352,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         return text
 
-    def _align_segment_with_mfa(self, segment_wav, segment_transcript: str, segment_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _align_segment_with_mfa(self, segment_wav, segment_transcript: str, segment_start_time: float = 0.0, speaker: Optional[str] = None, debug_dir: Optional[pathlib.Path] = None, segment_num: Optional[int] = None) -> List[Dict[str, Any]]:
         """Align a single segment using MFA and return timestamped words.
         
         Args:
@@ -425,7 +425,16 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 )
 
                 if textgrid_file.exists():
-                    return self._parse_textgrid_to_word_dicts(textgrid_file, segment_transcript, segment_start_time, segment_end_time, speaker)
+                    word_dicts = self._parse_textgrid_to_word_dicts(textgrid_file, segment_transcript, segment_start_time, segment_end_time, speaker)
+                    
+                    # Save TextGrid content for debugging if debug mode is enabled
+                    if debug_dir and segment_num is not None:
+                        textgrid_content = textgrid_file.read_text(encoding='utf-8')
+                        textgrid_debug_path = debug_dir / f"segment_{segment_num:03d}_textgrid.TextGrid"
+                        textgrid_debug_path.write_text(textgrid_content, encoding='utf-8')
+                        log_debug(f"Saved TextGrid for segment {segment_num} to {textgrid_debug_path}")
+                    
+                    return word_dicts
                 else:
                     return self._simple_alignment_to_word_dicts(segment_wav, segment_transcript, segment_start_time, speaker)
 
@@ -1009,7 +1018,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 continue
             
             # Align segment with MFA
-            timestamped_words = self._align_segment_with_mfa(segment_wav, segment_text, seg_start, role)
+            timestamped_words = self._align_segment_with_mfa(segment_wav, segment_text, seg_start, role, debug_dir, segment_num)
             
             if debug_dir:
                 self._save_debug_segment(debug_dir, segment_num, "mfa_output", {

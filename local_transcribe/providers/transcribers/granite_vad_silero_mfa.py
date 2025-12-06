@@ -974,11 +974,11 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             vad_info = {
                 "vad_engine": "silero",
                 "vad_params": {
-                    "threshold": self.vad_threshold,
-                    "min_speech_duration_ms": self.min_speech_duration_ms,
-                    "min_silence_duration_ms": self.min_silence_duration_ms,
-                    "speech_pad_ms": self.speech_pad_ms,
-                    "max_segment_duration": self.max_segment_duration,
+                    "threshold": self.vad_segmenter.threshold,
+                    "min_speech_duration_ms": self.vad_segmenter.min_speech_duration_ms,
+                    "min_silence_duration_ms": self.vad_segmenter.min_silence_duration_ms,
+                    "speech_pad_ms": self.vad_segmenter.speech_pad_ms,
+                    "max_segment_duration": self.vad_segmenter.max_segment_duration,
                 },
                 "total_segments": len(vad_segments),
                 "audio_duration": duration,

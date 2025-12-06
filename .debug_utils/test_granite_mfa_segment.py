@@ -19,6 +19,7 @@ def main():
     parser.add_argument('--start-time', type=float, help='Start time in seconds')
     parser.add_argument('--end-time', type=float, help='End time in seconds')
     parser.add_argument('--chunk-length-seconds', type=float, default=10.0, help='Chunk length in seconds (default: 10.0)')
+    parser.add_argument('--model', choices=['2b', '8b'], default='2b', help='Model size to use: 2b or 8b (default: 2b)')
     parser.add_argument('--out-file', default='granite_mfa_test_results.txt', help='Output file for results (default: granite_mfa_test_results.txt)')
     args = parser.parse_args()
 
@@ -37,7 +38,10 @@ def main():
     start_seconds = args.start_time
     end_seconds = args.end_time
     chunk_length_seconds = args.chunk_length_seconds
+    model_size = args.model
     out_file = args.out_file
+
+    model_name = f"granite-{model_size}"
 
     audio_to_transcribe = None
     cropped_audio_path = None
@@ -98,18 +102,18 @@ def main():
 
         # Ensure models are available
         print("Ensuring models are available...")
-        required_models = provider.get_required_models(selected_model="granite-2b")
+        required_models = provider.get_required_models(selected_model=model_name)
         print(f"Required models: {required_models}")
         provider.ensure_models_available(required_models, models_dir)
 
         # Set up MFA models directory
         provider.mfa_models_dir = models_dir / "aligners" / "mfa"
 
-        # Transcribe with alignment using granite-2b model (smaller for MPS)
-        print("Starting transcription with granite-2b + MFA...")
+        # Transcribe with alignment using the selected granite model (smaller for MPS)
+        print(f"Starting transcription with {model_name} + MFA...")
         result = provider.transcribe_with_alignment(
             audio_path=audio_to_transcribe,
-            transcriber_model="granite-2b",
+            transcriber_model=model_name,
             role=None  # No specific role for this test
         )
 

@@ -286,9 +286,15 @@ class AudioCropper:
             
             cmd.extend([
                 "-t", str(target_duration_seconds),  # Duration to record/copy
-                "-c", "copy",  # Copy streams without re-encoding for speed
-                str(output_path)
             ])
+            
+            # Choose appropriate codec based on output format
+            if output_path.suffix.lower() == '.wav':
+                cmd.extend(["-c:a", "pcm_s16le"])  # PCM 16-bit for WAV
+            else:
+                cmd.extend(["-c", "copy"])  # Copy streams for other formats
+            
+            cmd.append(str(output_path))
             
             self.logger.info(f"Running ffmpeg command: {' '.join(cmd)}")
             

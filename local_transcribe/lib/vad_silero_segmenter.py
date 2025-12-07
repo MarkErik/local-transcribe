@@ -478,10 +478,10 @@ class SileroVADSegmenter:
             gap = next_segment.start_time - current_combined.end_time
             
             if gap <= config.micro_pause_threshold:
-                # Always combine micro-pauses
+                # Always combine micro-pauses (0.1-0.5s)
                 current_combined.segments.append(next_segment)
             elif gap >= config.natural_boundary_threshold:
-                # Never combine natural boundaries
+                # Never combine topic change boundaries (5s+)
                 final_combined.append(current_combined)
                 current_combined = CombinedSegment([next_segment])
             else:
@@ -489,7 +489,7 @@ class SileroVADSegmenter:
                 combined_duration = next_segment.end_time - current_combined.start_time
                 
                 if gap <= config.thinking_pause_threshold:
-                    # Combine thinking pauses with context evaluation
+                    # Combine thinking pauses (0.5-2s) with context evaluation
                     if combined_duration <= config.max_segment_duration:
                         current_combined.segments.append(next_segment)
                     else:

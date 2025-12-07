@@ -308,13 +308,16 @@ def second_pass_de_identify(
     
     # Create combined audit log
     if intermediate_dir:
+        # Extract all words from segments for context
+        all_words = [seg.text for seg in segments]
         _create_combined_audit_log(
             first_pass_replacements or [],
             all_additional_replacements,
             intermediate_dir,
             speaker_name=speaker_name,
             total_words=len(segments),
-            global_names=global_names
+            global_names=global_names,
+            all_words=all_words
         )
     
     log_progress(f"Second pass complete: {len(all_additional_replacements)} additional names replaced")
@@ -991,16 +994,57 @@ def _save_second_pass_session_summary(debug_dir: Path, session_data: Dict) -> No
         f.write("=" * 60 + "\n")
 
 
+def _extract_context_words(all_words: List[str], word_index: int, before: int = 5, after: int = 3) -> str:
+    """
+    Extract context words around a specific word index.
+    
+    Args:
+        all_words: List of all words in the text
+        word_index: Index of the target word
+        before: Number of words to include before the target
+        after: Number of words to include after the target
+        
+    Returns:
+        String with context words, with the target word highlighted
+    """
+    if not all_words or word_index < 0 or word_index >= len(all_words):
+        return ""
+    
+    # Calculate start and end indices
+    start_idx = max(0, word_index - before)
+    end_idx = min(len(all_words), word_index + after + 1)
+    
+    # Extract context words
+    context_words = all_words[start_idx:end_idx]
+    
+    # Highlight the target word
+    if word_index >= start_idx and word_index < end_idx:
+        target_pos = word_index - start_idx
+        context_words[target_pos] = f">>>{context_words[target_pos]}<<<"
+    
+    return " ".join(context_words)
+
+
 def _create_combined_audit_log(
     first_pass_replacements: List[Dict],
     second_pass_replacements: List[Dict],
     intermediate_dir: Path,
     speaker_name: Optional[str] = None,
     total_words: int = 0,
-    global_names: Optional[List[DiscoveredName]] = None
+    global_names: Optional[List[DiscoveredName]] = None,
+    all_words: Optional[List[str]] = None
 ) -> None:
     """
     Create combined audit log with both first and second pass replacements.
+    
+    Args:
+        first_pass_replacements: List of first pass replacement dictionaries
+        second_pass_replacements: List of second pass replacement dictionaries
+        intermediate_dir: Directory to save audit log
+        speaker_name: Optional speaker name for filename
+        total_words: Total number of words processed
+        global_names: Optional list of global names searched for
+        all_words: Optional list of all words for context extraction
     """
     de_id_dir = intermediate_dir / "de_identification"
     de_id_dir.mkdir(parents=True, exist_ok=True)
@@ -1041,11 +1085,31 @@ def _create_combined_audit_log(
                     seconds = ts % 60
                     ts_str = f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
                     original = rep.get('original', 'unknown')
-                    f.write(f"[{ts_str}] \"{original}\" → [REDACTED]\n")
+                    
+                    # Add context if all_words is provided
+                    if all_words:
+                        context = _extract_context_words(all_words, rep['word_index'])
+                        if context:
+                            f.write(f"[{ts_str}] \"{original}\" → [REDACTED]\n")
+                            f.write(f"    Context: {context}\n")
+                        else:
+                            f.write(f"[{ts_str}] \"{original}\" → [REDACTED]\n")
+                    else:
+                        f.write(f"[{ts_str}] \"{original}\" → [REDACTED]\n")
                 else:
                     original = rep.get('original', 'unknown')
                     word_idx = rep.get('word_index', '?')
-                    f.write(f"[word {word_idx}] \"{original}\" → [REDACTED]\n")
+                    
+                    # Add context if all_words is provided
+                    if all_words:
+                        context = _extract_context_words(all_words, rep['word_index'])
+                        if context:
+                            f.write(f"[word {word_idx}] \"{original}\" → [REDACTED]\n")
+                            f.write(f"    Context: {context}\n")
+                        else:
+                            f.write(f"[word {word_idx}] \"{original}\" → [REDACTED]\n")
+                    else:
+                        f.write(f"[word {word_idx}] \"{original}\" → [REDACTED]\n")
         
         f.write("\n")
         
@@ -1067,12 +1131,32 @@ def _create_combined_audit_log(
                     ts_str = f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
                     original = rep.get('original', 'unknown')
                     matched = rep.get('matched_from_list', original)
-                    f.write(f"[{ts_str}] \"{original}\" → [REDACTED] (matched: {matched})\n")
+                    
+                    # Add context if all_words is provided
+                    if all_words:
+                        context = _extract_context_words(all_words, rep['word_index'])
+                        if context:
+                            f.write(f"[{ts_str}] \"{original}\" → [REDACTED] (matched: {matched})\n")
+                            f.write(f"    Context: {context}\n")
+                        else:
+                            f.write(f"[{ts_str}] \"{original}\" → [REDACTED] (matched: {matched})\n")
+                    else:
+                        f.write(f"[{ts_str}] \"{original}\" → [REDACTED] (matched: {matched})\n")
                 else:
                     original = rep.get('original', 'unknown')
                     word_idx = rep.get('word_index', '?')
                     matched = rep.get('matched_from_list', original)
-                    f.write(f"[word {word_idx}] \"{original}\" → [REDACTED] (matched: {matched})\n")
+                    
+                    # Add context if all_words is provided
+                    if all_words:
+                        context = _extract_context_words(all_words, rep['word_index'])
+                        if context:
+                            f.write(f"[word {word_idx}] \"{original}\" → [REDACTED] (matched: {matched})\n")
+                            f.write(f"    Context: {context}\n")
+                        else:
+                            f.write(f"[word {word_idx}] \"{original}\" → [REDACTED] (matched: {matched})\n")
+                    else:
+                        f.write(f"[word {word_idx}] \"{original}\" → [REDACTED] (matched: {matched})\n")
         
         f.write("\n" + "=" * 60 + "\n")
         f.write("SUMMARY\n")

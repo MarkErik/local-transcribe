@@ -221,12 +221,15 @@ def de_identify_word_segments(
     
     # Create audit log (only if not using second pass - second pass creates combined log)
     if intermediate_dir and not kwargs.get('skip_audit_log', False):
+        # Extract all words from segments for context
+        all_words = [seg.text for seg in segments]
         _create_audit_log(
             all_replacements,
             intermediate_dir,
             speaker_name=speaker_name,
             total_words=len(segments),
-            mode='word_segments'
+            mode='word_segments',
+            all_words=all_words
         )
     
     log_progress(f"De-identification complete: {len(all_replacements)} names replaced with [REDACTED]")
@@ -405,7 +408,8 @@ def de_identify_text(
             intermediate_dir,
             speaker_name=None,
             total_words=len(words),
-            mode='text_only'
+            mode='text_only',
+            all_words=words
         )
     
     log_progress(f"De-identification complete: {len(all_replacements)} names replaced with [REDACTED]")
@@ -869,12 +873,44 @@ def _merge_text_chunks(processed_chunks: List[Dict], overlap_size: int) -> str:
     return " ".join(merged_words)
 
 
+def _extract_context_words(all_words: List[str], word_index: int, before: int = 5, after: int = 3) -> str:
+    """
+    Extract context words around a specific word index.
+    
+    Args:
+        all_words: List of all words in the text
+        word_index: Index of the target word
+        before: Number of words to include before the target
+        after: Number of words to include after the target
+        
+    Returns:
+        String with context words, with the target word highlighted
+    """
+    if not all_words or word_index < 0 or word_index >= len(all_words):
+        return ""
+    
+    # Calculate start and end indices
+    start_idx = max(0, word_index - before)
+    end_idx = min(len(all_words), word_index + after + 1)
+    
+    # Extract context words
+    context_words = all_words[start_idx:end_idx]
+    
+    # Highlight the target word
+    if word_index >= start_idx and word_index < end_idx:
+        target_pos = word_index - start_idx
+        context_words[target_pos] = f">>>{context_words[target_pos]}<<<"
+    
+    return " ".join(context_words)
+
+
 def _create_audit_log(
     replacements: List[Dict],
     intermediate_dir: Path,
     speaker_name: Optional[str] = None,
     total_words: int = 0,
-    mode: str = 'word_segments'
+    mode: str = 'word_segments',
+    all_words: Optional[List[str]] = None
 ) -> None:
     """
     Create audit log file documenting all name replacements.
@@ -885,6 +921,7 @@ def _create_audit_log(
         speaker_name: Optional speaker name for filename
         total_words: Total number of words processed
         mode: 'word_segments' or 'text_only'
+        all_words: Optional list of all words for context extraction
     """
     # Create de_identification subdirectory
     de_id_dir = intermediate_dir / "de_identification"
@@ -928,11 +965,32 @@ def _create_audit_log(
                     
                     original_word = rep.get('original', 'unknown')
                     speaker_str = f", speaker: {rep['speaker']}" if rep['speaker'] else ""
-                    f.write(f"[{ts_str}] [REDACTED] (word:\"{original_word}\", word_index: {rep['word_index']}{speaker_str})\n")
+                    
+                    # Add context if all_words is provided
+                    context = ""
+                    if all_words:
+                        context = _extract_context_words(all_words, rep['word_index'])
+                        if context:
+                            f.write(f"[{ts_str}] [REDACTED] (word:\"{original_word}\", word_index: {rep['word_index']}{speaker_str})\n")
+                            f.write(f"    Context: {context}\n")
+                        else:
+                            f.write(f"[{ts_str}] [REDACTED] (word:\"{original_word}\", word_index: {rep['word_index']}{speaker_str})\n")
+                    else:
+                        f.write(f"[{ts_str}] [REDACTED] (word:\"{original_word}\", word_index: {rep['word_index']}{speaker_str})\n")
                 else:
                     # Text only mode
                     original_word = rep.get('original', 'unknown')
-                    f.write(f"[word_index: {rep['word_index']}] [REDACTED] (word:\"{original_word}\")\n")
+                    
+                    # Add context if all_words is provided
+                    if all_words:
+                        context = _extract_context_words(all_words, rep['word_index'])
+                        if context:
+                            f.write(f"[word_index: {rep['word_index']}] [REDACTED] (word:\"{original_word}\")\n")
+                            f.write(f"    Context: {context}\n")
+                        else:
+                            f.write(f"[word_index: {rep['word_index']}] [REDACTED] (word:\"{original_word}\")\n")
+                    else:
+                        f.write(f"[word_index: {rep['word_index']}] [REDACTED] (word:\"{original_word}\")\n")
             
             f.write("\n" + "=" * 50 + "\n")
             f.write("Summary:\n")

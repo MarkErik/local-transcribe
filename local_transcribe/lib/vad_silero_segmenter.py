@@ -13,7 +13,7 @@ This approach ensures chunks start/end at natural speech boundaries rather than 
 """
 
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Callable
 import os
 import pathlib
 import numpy as np
@@ -170,9 +170,9 @@ class SileroVADSegmenter:
         self.models_dir = models_dir
         
         # Model state
-        self._model = None
-        self._get_speech_timestamps = None
-        self._read_audio = None
+        self._model: Optional[Any] = None
+        self._get_speech_timestamps: Optional[Callable[..., Any]] = None
+        self._read_audio: Optional[Callable[..., Any]] = None
         
         # Initialize combination config
         if combination_config is None:
@@ -210,13 +210,19 @@ class SileroVADSegmenter:
             # Fallback to torch.hub
             log_debug("silero-vad package not available, falling back to torch.hub")
             try:
-                self._model, utils = torch.hub.load(
+                self._model = torch.hub.load(
                     repo_or_dir='snakers4/silero-vad',
                     model='silero_vad',
                     force_reload=False,
                     trust_repo=True
                 )
-                (self._get_speech_timestamps, _, self._read_audio, _, _) = utils
+                utils = torch.hub.load(
+                    repo_or_dir='snakers4/silero-vad',
+                    model='utils',
+                    force_reload=False,
+                    trust_repo=True
+                )
+                (self._get_speech_timestamps, _, self._read_audio, _, _) = utils  # type: ignore
                 
                 log_completion("Silero VAD model loaded successfully (via torch.hub)")
                 
@@ -538,7 +544,7 @@ class SileroVADSegmenter:
         # We'll run VAD on the segment with stricter parameters to find internal silences
         try:
             # Get timestamps within the segment
-            inner_timestamps = self._get_speech_timestamps(
+            inner_timestamps = self._get_speech_timestamps(  # type: ignore
                 segment_audio,
                 self._model,
                 threshold=self.threshold + 0.1,  # Slightly stricter for internal splits
@@ -671,7 +677,7 @@ class SileroVADSegmenter:
         
         # Get speech timestamps using Silero's built-in function
         try:
-            speech_timestamps = self._get_speech_timestamps(
+            speech_timestamps = self._get_speech_timestamps(  # type: ignore
                 audio_tensor,
                 self._model,
                 threshold=self.threshold,

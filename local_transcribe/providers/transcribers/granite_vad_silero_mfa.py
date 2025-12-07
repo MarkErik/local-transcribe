@@ -251,14 +251,14 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             self.logger.error(f"Failed to check/download MFA models: {e}")
             raise
 
-    def _transcribe_single_segment(self, wav, **kwargs) -> str:
+    def _transcribe_single_segment(self, wav, sample_rate=16000, **kwargs) -> str:
         """Transcribe a single audio segment using Granite."""
         log_progress("Transcribing audio segment with Granite")
         try:
             wav_tensor = torch.from_numpy(wav).unsqueeze(0)
             
-            # Calculate segment duration from wav array
-            segment_duration = len(wav) / 16000.0  # Assuming 16kHz sample rate
+            # Calculate segment duration from wav array using provided sample rate
+            segment_duration = len(wav) / sample_rate
 
             chat = [
                 {
@@ -1016,7 +1016,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             segment_wav = wav[start_sample:end_sample]
             
             # Transcribe segment with Granite
-            segment_text = self._transcribe_single_segment(segment_wav, **kwargs)
+            segment_text = self._transcribe_single_segment(segment_wav, sample_rate=sr, **kwargs)
             
             if debug_dir:
                 self._save_debug_segment(debug_dir, segment_num, "granite_output", {

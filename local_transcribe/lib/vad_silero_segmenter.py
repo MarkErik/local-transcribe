@@ -129,7 +129,8 @@ class SileroVADSegmenter:
         speech_pad_ms: int = 50,
         device: Optional[str] = None,
         models_dir: Optional[pathlib.Path] = None,
-        combination_config: Optional[SegmentCombinationConfig] = None
+        combination_config: Optional[SegmentCombinationConfig] = None,
+        max_segment_duration: float = 30.0
     ):
         """
         Initialize the Silero VAD segmenter.
@@ -140,10 +141,10 @@ class SileroVADSegmenter:
             min_speech_duration_ms: Minimum speech segment duration in milliseconds.
             min_silence_duration_ms: Minimum silence duration to end speech segment.
             speech_pad_ms: Padding added to each side of speech segments.
-            max_segment_duration: Maximum segment duration for ASR in seconds.
-            merge_threshold: Maximum duration for merged segments in seconds.
             device: Device to run VAD model on ('cpu', 'cuda', 'mps'). Auto-detected if None.
             models_dir: Directory where models are cached (for consistency with other providers).
+            combination_config: Configuration for segment combination and splitting.
+            max_segment_duration: Maximum segment duration before splitting.
         """
         self.logger = get_logger()
         
@@ -154,7 +155,6 @@ class SileroVADSegmenter:
         self.min_silence_duration_ms = min_silence_duration_ms
         self.speech_pad_ms = speech_pad_ms
         self.max_segment_duration = max_segment_duration
-        self.merge_threshold = merge_threshold
         
         # Device configuration
         if device is None:
@@ -609,43 +609,6 @@ class SileroVADSegmenter:
             return self._split_long_segment(left, audio, sample_rate) + \
                    self._split_long_segment(right, audio, sample_rate)
     
-    def _merge_short_segments(
-        self,
-        segments: List[VADSegment]
-    ) -> List[VADSegment]:
-        """
-        Merge adjacent segments if their combined duration is below merge_threshold.
-        
-        Args:
-            segments: List of segments sorted by start time
-            
-        Returns:
-            List of merged segments
-        """
-        if not segments or len(segments) <= 1:
-            return segments
-        
-        merged = []
-        current = segments[0]
-        
-        for next_seg in segments[1:]:
-            # Calculate combined duration including the gap
-            combined_duration = next_seg.end - current.start
-            
-            if combined_duration <= self.merge_threshold:
-                # Merge: extend current to include next
-                current = VADSegment(current.start_time, next_seg.end_time, next_seg.end_time - current.start_time)
-            else:
-                merged.append(current)
-                current = next_seg
-        
-        merged.append(current)
-        
-        merge_count = len(segments) - len(merged)
-        if merge_count > 0:
-            log_debug(f"Merge phase: {len(segments)} -> {len(merged)} segments ({merge_count} merges)")
-        
-        return merged
     
     def segment_audio(
         self,
@@ -704,7 +667,6 @@ class SileroVADSegmenter:
             debug_lines.append(f"  min_silence_duration_ms: {self.min_silence_duration_ms}")
             debug_lines.append(f"  speech_pad_ms: {self.speech_pad_ms}")
             debug_lines.append(f"  max_segment_duration: {self.max_segment_duration}")
-            debug_lines.append(f"  merge_threshold: {self.merge_threshold}")
             debug_lines.append("")
         
         # Get speech timestamps using Silero's built-in function
@@ -733,7 +695,8 @@ class SileroVADSegmenter:
                 debug_lines.append("")
                 debug_lines.append("NON-SPEECH REGIONS:")
                 debug_lines.append("  (No speech detected - entire audio is non-speech)")
-                self._write_debug_file(debug_file_path, debug_lines)
+                if debug_file_path:
+                    self._write_debug_file(debug_file_path, debug_lines)
             return [(0.0, audio_duration)]
         
         if debug_enabled:
@@ -755,12 +718,13 @@ class SileroVADSegmenter:
                 debug_lines.append("")
                 debug_lines.append("NON-SPEECH REGIONS:")
                 debug_lines.append("  (No speech detected - entire audio is non-speech)")
-                self._write_debug_file(debug_file_path, debug_lines)
+                if debug_file_path:
+                    self._write_debug_file(debug_file_path, debug_lines)
             return [(0.0, audio_duration)]
         
-        # Convert to SileroVADSegment objects
+        # Convert to VADSegment objects
         segments = [
-            SileroVADSegment(ts['start'], ts['end'])
+            VADSegment(ts['start'], ts['end'], ts['end'] - ts['start'])
             for ts in speech_timestamps
         ]
         
@@ -772,34 +736,38 @@ class SileroVADSegmenter:
         
         log_debug(f"Silero VAD detected {len(segments)} initial speech segments")
         
-        # Apply maximum segment duration constraint
-        constrained_segments = []
-        for seg in segments:
-            constrained_segments.extend(
-                self._split_long_segment(seg, audio_tensor, sample_rate)
-            )
+        # Apply the new combination and splitting approach
+        combined_segments = self._initial_combination(segments, self.combination_config)
         
         if debug_enabled:
-            debug_lines.append("AFTER SPLITTING LONG SEGMENTS:")
-            for i, seg in enumerate(constrained_segments):
-                debug_lines.append(f"  Segment {i+1}: {seg.start:.3f} - {seg.end:.3f} ({seg.duration:.3f}s)")
+            debug_lines.append("AFTER INITIAL COMBINATION:")
+            for i, seg in enumerate(combined_segments):
+                debug_lines.append(f"  Segment {i+1}: {seg.start:.3f} - {seg.end:.3f} ({seg.duration:.3f}s) [{seg.get_segment_count()} original segments]")
             debug_lines.append("")
         
-        if len(constrained_segments) != len(segments):
-            log_debug(f"Split long segments: {len(segments)} -> {len(constrained_segments)} segments")
-        
-        # Optionally merge short adjacent segments
-        if self.merge_threshold > 0:
-            constrained_segments = self._merge_short_segments(constrained_segments)
+        # Apply enhanced splitting for long segments
+        final_segments = self._split_long_segments_enhanced(combined_segments, self.combination_config)
         
         if debug_enabled:
-            debug_lines.append("AFTER MERGING SHORT SEGMENTS:")
-            for i, seg in enumerate(constrained_segments):
-                debug_lines.append(f"  Segment {i+1}: {seg.start:.3f} - {seg.end:.3f} ({seg.duration:.3f}s)")
+            debug_lines.append("AFTER ENHANCED SPLITTING:")
+            for i, seg in enumerate(final_segments):
+                debug_lines.append(f"  Segment {i+1}: {seg.start:.3f} - {seg.end:.3f} ({seg.duration:.3f}s) [{seg.get_segment_count()} original segments]")
             debug_lines.append("")
+        
+        # Check for remaining long segments and perform second pass if needed
+        long_segments = [seg for seg in final_segments if seg.duration > self.combination_config.max_segment_duration]
+        if long_segments:
+            log_debug(f"Found {len(long_segments)} segments still exceeding max duration, applying second-pass splitting")
+            final_segments = self._split_long_segments_second_pass(final_segments, self.combination_config)
+            
+            if debug_enabled:
+                debug_lines.append("AFTER SECOND-PASS SPLITTING:")
+                for i, seg in enumerate(final_segments):
+                    debug_lines.append(f"  Segment {i+1}: {seg.start:.3f} - {seg.end:.3f} ({seg.duration:.3f}s) [{seg.get_segment_count()} original segments]")
+                debug_lines.append("")
         
         # Convert to time tuples
-        time_segments = [seg.to_tuple() for seg in constrained_segments]
+        time_segments = [seg.to_tuple() for seg in final_segments]
         
         # Log summary
         total_speech = sum(end - start for start, end in time_segments)
@@ -835,7 +803,8 @@ class SileroVADSegmenter:
             debug_lines.append(f"  Total speech duration: {total_speech:.3f}s")
             debug_lines.append(f"  Speech percentage: {(total_speech/audio_duration*100):.1f}%" if audio_duration > 0 else "  Speech percentage: N/A")
             debug_lines.append(f"  Number of speech segments: {len(time_segments)}")
-            self._write_debug_file(debug_file_path, debug_lines)
+            if debug_file_path:
+                self._write_debug_file(debug_file_path, debug_lines)
         
         return time_segments
     
@@ -868,12 +837,11 @@ class SileroVADSegmenter:
         import librosa
         
         waveform, sr = librosa.load(audio_path, sr=target_sample_rate, mono=True)
-        return self.segment_audio(waveform, sr, debug_file_path)
+        return self.segment_audio(waveform, int(sr), debug_file_path)
 
 
 def create_silero_vad_segmenter(
     max_segment_duration: float = 45.0,
-    merge_threshold: float = 45.0,
     device: Optional[str] = None,
     custom_settings: bool = True,
     **kwargs
@@ -883,7 +851,6 @@ def create_silero_vad_segmenter(
     
     Args:
         max_segment_duration: Maximum segment duration for ASR
-        merge_threshold: Maximum duration for merged segments
         device: Device for VAD model
         custom_settings: If True, use custom parameters
         **kwargs: Additional parameters passed to SileroVADSegmenter
@@ -905,7 +872,6 @@ def create_silero_vad_segmenter(
     
     return SileroVADSegmenter(
         max_segment_duration=max_segment_duration,
-        merge_threshold=merge_threshold,
         device=device,
         **kwargs
     )

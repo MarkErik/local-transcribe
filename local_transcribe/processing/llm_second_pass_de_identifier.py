@@ -233,7 +233,7 @@ def second_pass_de_identify(
             )
         
         # Send to LLM with name list
-        processed_text, response_time_ms, validation_result, raw_response = _process_chunk_second_pass(
+        processed_text, response_time_ms, validation_result, raw_response, attempt_logs = _process_chunk_second_pass(
             chunk['text'],
             name_list_str,
             chunk_redacted_count,
@@ -244,20 +244,28 @@ def second_pass_de_identify(
         # Save output for debug - parse Harmony format for readable output
         if debug_dir:
             parse_harmony = kwargs.get('parse_harmony', SECOND_PASS_DEFAULTS['parse_harmony'])
-            if parse_harmony and raw_response is not None:
-                debug_response = _parse_harmony_response(raw_response)
-            else:
-                debug_response = raw_response if raw_response is not None else processed_text
-            _save_second_pass_debug(
-                chunk_num,
-                chunk_data,
-                debug_response,
-                validation_result,
-                debug_dir,
-                response_time_ms=response_time_ms,
-                mode='output',
-                original_text=chunk['text']
-            )
+            for attempt in attempt_logs or []:
+                raw_response = attempt.get('raw_response')
+                attempt_validation = attempt.get('validation_result')
+                attempt_response_time = attempt.get('response_time_ms')
+                attempt_number = attempt.get('attempt')
+                if raw_response is None and attempt.get('processed_text') is None:
+                    continue
+                if parse_harmony and raw_response is not None:
+                    debug_response = _parse_harmony_response(raw_response)
+                else:
+                    debug_response = raw_response if raw_response is not None else attempt.get('processed_text', processed_text)
+                _save_second_pass_debug(
+                    chunk_num,
+                    chunk_data,
+                    debug_response,
+                    attempt_validation,
+                    debug_dir,
+                    response_time_ms=attempt_response_time,
+                    mode='output',
+                    original_text=chunk['text'],
+                    attempt_idx=attempt_number
+                )
         
         # Track validation results
         if validation_result and validation_result['passed']:
@@ -408,14 +416,19 @@ def _process_chunk_second_pass(
     expected_redacted_count: int,
     llm_url: str,
     **kwargs
-) -> Tuple[str, Optional[float], Optional[Dict], Optional[str]]:
+) -> Tuple[str, Optional[float], Optional[Dict], Optional[str], List[Dict[str, Any]]]:
     """
     Process a chunk with LLM using the targeted name list prompt.
     
     Includes retry logic with decreasing temperature on validation failures.
     
     Returns:
-        Tuple of (processed_text, response_time_ms, validation_result, raw_response)
+        Tuple of (processed_text, response_time_ms, validation_result, raw_response, attempt_logs)
+        - processed_text: The text to use (either LLM response if valid, or original text as fallback)
+        - response_time_ms: Time taken for LLM request (total across all attempts)
+        - validation_result: Dict with validation info (includes retry information)
+        - raw_response: The actual LLM response from final attempt (for debugging)
+        - attempt_logs: Per-attempt metadata including raw/processed responses for debug logging
     """
     if not llm_url.startswith(('http://', 'https://')):
         llm_url = f'http://{llm_url}'
@@ -430,6 +443,7 @@ def _process_chunk_second_pass(
     
     # Track all attempts for debugging
     all_attempts = []
+    attempt_logs: List[Dict[str, Any]] = []
     total_response_time_ms = 0
     last_raw_response = None
     last_validation_result = None
@@ -489,7 +503,11 @@ def _process_chunk_second_pass(
             attempt_info['validation_passed'] = validation_result['passed']
             attempt_info['validation_reason'] = validation_result.get('reason', '')
             attempt_info['response_time_ms'] = response_time_ms
+            attempt_info['raw_response'] = raw_response
+            attempt_info['processed_text'] = processed_text
+            attempt_info['validation_result'] = validation_result
             all_attempts.append(attempt_info)
+            attempt_logs.append(attempt_info)
             
             if validation_result['passed']:
                 # Success! Add retry info to validation result
@@ -507,6 +525,7 @@ def _process_chunk_second_pass(
             log_progress(f"Second pass LLM request failed (attempt {attempt + 1}): {e}")
             attempt_info['error'] = f'request failed: {e}'
             all_attempts.append(attempt_info)
+            attempt_logs.append(attempt_info)
             last_validation_result = {'passed': False, 'reason': f'request failed: {e}', 'details': {}}
             # Continue to next retry
             
@@ -514,6 +533,7 @@ def _process_chunk_second_pass(
             log_progress(f"Second pass LLM response parsing error (attempt {attempt + 1}): {e}")
             attempt_info['error'] = f'parsing error: {e}'
             all_attempts.append(attempt_info)
+            attempt_logs.append(attempt_info)
             last_validation_result = {'passed': False, 'reason': f'parsing error: {e}', 'details': {}}
             # Continue to next retry
     
@@ -526,7 +546,7 @@ def _process_chunk_second_pass(
     final_validation_result['total_attempts'] = max_retries + 1
     final_validation_result['all_attempts_failed'] = True
     
-    return text, total_response_time_ms, final_validation_result, last_raw_response
+    return text, total_response_time_ms, final_validation_result, last_raw_response, attempt_logs
 
 
 def _get_second_pass_system_prompt(name_list_str: str) -> str:
@@ -698,7 +718,8 @@ def _save_second_pass_debug(
     debug_dir: Path,
     response_time_ms: Optional[float] = None,
     mode: str = 'input',
-    original_text: Optional[str] = None
+    original_text: Optional[str] = None,
+    attempt_idx: Optional[int] = None
 ) -> None:
     """Save debug files for second pass.
     
@@ -711,6 +732,7 @@ def _save_second_pass_debug(
         response_time_ms: Response time in milliseconds
         mode: 'input' or 'output'
         original_text: Original input text for diff generation (optional, uses chunk_data['text'] if not provided)
+        attempt_idx: Attempt number for per-retry logging (None for single-attempt legacy behavior)
     """
     debug_dir.mkdir(parents=True, exist_ok=True)
     chunk_num_str = f"{chunk_idx:03d}"
@@ -751,19 +773,24 @@ def _save_second_pass_debug(
             'text': llm_response
         }
         
+        if attempt_idx is not None:
+            json_data['attempt_number'] = attempt_idx
+        
         if validation_result:
             json_data['validation_passed'] = validation_result.get('passed', False)
             json_data['validation_reason'] = validation_result.get('reason', '')
             json_data['validation_details'] = validation_result.get('details', {})
         
-        json_path = debug_dir / f"chunk_{chunk_num_str}_output.json"
+        attempt_suffix = f"_{attempt_idx}" if attempt_idx is not None else ""
+        json_path = debug_dir / f"chunk_{chunk_num_str}{attempt_suffix}_output.json"
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(json_data, f, indent=2, ensure_ascii=False)
         
-        txt_path = debug_dir / f"chunk_{chunk_num_str}_output.txt"
+        txt_path = debug_dir / f"chunk_{chunk_num_str}{attempt_suffix}_output.txt"
         with open(txt_path, 'w', encoding='utf-8') as f:
             f.write("=" * 60 + "\n")
-            f.write(f"CHUNK {chunk_idx} - SECOND PASS OUTPUT\n")
+            title_suffix = f" (attempt {attempt_idx})" if attempt_idx is not None else ""
+            f.write(f"CHUNK {chunk_idx} - SECOND PASS OUTPUT{title_suffix}\n")
             f.write("=" * 60 + "\n")
             if response_time_ms:
                 f.write(f"Response time: {response_time_ms/1000:.2f}s\n")

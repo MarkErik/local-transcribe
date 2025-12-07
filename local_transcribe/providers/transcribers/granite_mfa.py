@@ -23,7 +23,7 @@ from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from transformers import LogitsProcessorList, RepetitionPenaltyLogitsProcessor
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
-from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug, get_output_context
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
 
 class GraniteMFATranscriberProvider(TranscriberProvider):
@@ -42,7 +42,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         self.model = None
         self.chunk_length_seconds = 60.0
         self.overlap_seconds = 4.0
-        self.min_chunk_seconds = 5.0
+        self.min_chunk_seconds = 7.0
         
         # MFA configuration
         self.mfa_models_dir = None
@@ -283,33 +283,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                 new_tokens, add_special_tokens=False, skip_special_tokens=True
             )
 
-            pre_clean_text = output_text[0].strip()
-            cleaned_text = self._clean_transcription_output(pre_clean_text, verbose=kwargs.get('verbose', False))
-
-            # Optional debug saving when intermediate_dir is provided in kwargs
-            try:
-                intermediate_dir = kwargs.get('intermediate_dir')
-                chunk_num = kwargs.get('chunk_num', None)
-                if intermediate_dir:
-                    import json
-                    debug_path = pathlib.Path(intermediate_dir)
-                    debug_path.mkdir(parents=True, exist_ok=True)
-                    chunk_id = f"{chunk_num or 'unknown'}"
-                    debug_json = debug_path / f"chunk_{chunk_id}_granite_model_debug.json"
-                    debug_obj = {
-                        'wav_length_samples': len(wav),
-                        'num_input_tokens': int(num_input_tokens) if 'num_input_tokens' in locals() else None,
-                        'model_outputs_shape': list(model_outputs.shape) if 'model_outputs' in locals() else None,
-                        'new_tokens_shape': list(new_tokens.shape) if 'new_tokens' in locals() else None,
-                        'new_token_ids': new_tokens.tolist() if 'new_tokens' in locals() else None,
-                        'pre_clean_text': pre_clean_text,
-                        'cleaned_text': cleaned_text
-                    }
-                    with open(debug_json, 'w', encoding='utf-8') as df:
-                        json.dump(debug_obj, df, indent=2, ensure_ascii=False)
-            except Exception:
-                # Never fail transcription due to debug save errors
-                pass
+            cleaned_text = self._clean_transcription_output(output_text[0].strip(), verbose=kwargs.get('verbose', False))
 
             return cleaned_text
             
@@ -1001,7 +975,8 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         """
         log_progress("Starting transcription with alignment using Granite + MFA")
         
-        # Setup debug directory if DEBUG logging is enabled and intermediate_dir is provided
+        # Check if DEBUG logging is enabled and setup debug directory
+        from local_transcribe.lib.program_logger import get_output_context
         debug_enabled = get_output_context().should_log("DEBUG")
         debug_dir = None
         intermediate_dir = kwargs.get('intermediate_dir')
@@ -1033,16 +1008,10 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)
         duration = len(wav) / sr
         
-        # Allow short audio by adjusting chunk_length_seconds if needed
         if duration < self.chunk_length_seconds:
-            if duration >= self.min_chunk_seconds:
-                # Adjust chunk length to process entire audio as one chunk
-                self.chunk_length_seconds = duration + 0.1  # Slightly larger than duration
-                log_progress(f"Audio duration ({duration:.1f}s) shorter than chunk length, processing as single chunk")
-            else:
-                raise ValueError(
-                    f"Audio duration ({duration:.1f}s) is shorter than minimum chunk length ({self.min_chunk_seconds}s)"
-                )
+            raise ValueError(
+                f"Audio duration ({duration:.1f}s) is shorter than minimum chunk length ({self.chunk_length_seconds}s)"
+            )
         
         verbose = kwargs.get('verbose', False)
         
@@ -1089,10 +1058,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                     prev_chunk_id = chunks_with_timestamps[-1]["chunk_id"]
                     
                     # Transcribe merged chunk
-                    local_kwargs = dict(kwargs)
-                    local_kwargs['chunk_num'] = prev_chunk_id
-                    local_kwargs['intermediate_dir'] = intermediate_dir
-                    chunk_text = self._transcribe_single_chunk(merged_wav, **local_kwargs)
+                    chunk_text = self._transcribe_single_chunk(merged_wav, **kwargs)
                     
                     # Save Granite output for debug (merged chunk)
                     if debug_dir:
@@ -1141,10 +1107,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                     }
             else:
                 # Normal chunk processing
-                local_kwargs = dict(kwargs)
-                local_kwargs['chunk_num'] = chunk_num
-                local_kwargs['intermediate_dir'] = intermediate_dir
-                chunk_text = self._transcribe_single_chunk(chunk_wav, **local_kwargs)
+                chunk_text = self._transcribe_single_chunk(chunk_wav, **kwargs)
                 
                 # Save Granite output for debug
                 if debug_dir:

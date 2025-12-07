@@ -256,6 +256,9 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         log_progress("Transcribing audio segment with Granite")
         try:
             wav_tensor = torch.from_numpy(wav).unsqueeze(0)
+            
+            # Calculate segment duration from wav array
+            segment_duration = len(wav) / 16000.0  # Assuming 16kHz sample rate
 
             chat = [
                 {
@@ -279,15 +282,24 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 return_tensors="pt",
             ).to(self.device)
 
-            repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(
-                penalty=3.0,
-                prompt_ignore_length=model_inputs["input_ids"].shape[-1],
-            )
+            # Adjust parameters based on segment duration
+            if segment_duration < 8.0:
+                # For segments less than 8 seconds: reduce max_new_tokens and exclude logits_processor
+                max_new_tokens = 192
+                logits_processor = None
+            else:
+                # For segments 8 seconds or longer: use current settings
+                max_new_tokens = 256
+                repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(
+                    penalty=3.0,
+                    prompt_ignore_length=model_inputs["input_ids"].shape[-1],
+                )
+                logits_processor = [repetition_penalty_processor]
 
             with torch.no_grad():
                 model_outputs = self.model.generate(
                     **model_inputs,
-                    max_new_tokens=256,
+                    max_new_tokens=max_new_tokens,
                     num_beams=4,
                     do_sample=False,
                     min_length=1,
@@ -295,7 +307,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                     length_penalty=1.0,
                     temperature=1.0,
                     early_stopping=True,
-                    logits_processor=[repetition_penalty_processor],
+                    logits_processor=logits_processor,
                     bos_token_id=self.tokenizer.bos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     pad_token_id=self.tokenizer.pad_token_id,

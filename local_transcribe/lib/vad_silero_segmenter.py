@@ -12,14 +12,20 @@ using the SileroVAD model. The segmentation strategy uses:
 This approach ensures chunks start/end at natural speech boundaries rather than arbitrary time points.
 """
 
+import re
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Any, Callable
 import pathlib
 import numpy as np
 import torch
 import csv
+import logging
 from datetime import datetime
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion, get_output_context, log_intermediate_save
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -275,14 +281,19 @@ class SileroVADSegmenter:
         if split_index > 1:
             # Add context from previous gap
             prev_gap = segment.segments[split_index - 1].start_time - segment.segments[split_index - 2].end_time
-            context_score += max(0, (gap - prev_gap)) * 0.1
+            context_score += (gap - prev_gap) * 0.1  # Reward if this gap is larger than previous
         
         if split_index < len(segment.segments) - 1:
             # Add context from next gap
             next_gap = segment.segments[split_index + 1].start_time - segment.segments[split_index].end_time
-            context_score += max(0, (gap - next_gap)) * 0.1
+            context_score += (gap - next_gap) * 0.1  # Reward if this gap is larger than next
         
-        return balance_score + gap_score + context_score
+        context_score = max(0, context_score) * 0.3  # 30% weight for context, ensure non-negative
+        
+        # Total score
+        total_score = balance_score + gap_score + context_score
+        
+        return total_score
     
     def _find_best_split_points(
         self,
@@ -310,16 +321,18 @@ class SileroVADSegmenter:
         
         # Select best split points, ensuring they're not too close to each other
         selected_splits = []
-        last_split = -1
+        last_split_idx = 0
         
-        for split_index, gap, score, first_duration, second_duration in potential_splits:
-            if split_index - last_split >= config.min_split_segment_duration:
-                selected_splits.append(split_index)
-                last_split = split_index
+        for split_idx, gap, score, first_duration, second_duration in potential_splits:
+            if len(selected_splits) >= config.max_splits_per_segment:
+                break
                 
-                # Limit number of splits per segment
-                if len(selected_splits) >= config.max_splits_per_segment:
-                    break
+            # Ensure this split is not too close to the previous one
+            if split_idx - last_split_idx >= 2:  # At least 2 segments between splits
+                # Check if this split creates segments of reasonable length
+                if first_duration >= config.min_split_segment_duration and second_duration >= config.min_split_segment_duration:
+                    selected_splits.append(split_idx)
+                    last_split_idx = split_idx
         
         return selected_splits
     
@@ -344,18 +357,18 @@ class SileroVADSegmenter:
                 final_segments.append(segment)
                 continue
             
-            # Split the segment at identified points
+            # Split the segment at the identified points
+            original_segments = segment.segments
             split_groups = []
-            current_group = [segment.segments[0]]
+            current_group = [original_segments[0]]
             
-            for i in range(1, len(segment.segments)):
+            for i in range(1, len(original_segments) + 1):
                 if i in split_points:
                     # Finalize current group and start new one
-                    if current_group:
-                        split_groups.append(current_group)
-                    current_group = [segment.segments[i]]
-                else:
-                    current_group.append(segment.segments[i])
+                    split_groups.append(current_group)
+                    current_group = [original_segments[i]]
+                elif i < len(original_segments):
+                    current_group.append(original_segments[i])
             
             # Add the last group
             if current_group:
@@ -408,18 +421,19 @@ class SileroVADSegmenter:
                             recursively_split_segments.append(current_segment)
                             continue
                         
-                        # Split the segment and add parts back to queue if needed
+                        # Split the segment
+                        original_segments = current_segment.segments
                         split_groups = []
-                        current_group = [current_segment.segments[0]]
+                        current_group = [original_segments[0]]
                         
-                        for i in range(1, len(current_segment.segments)):
+                        for i in range(1, len(original_segments) + 1):
                             if i in split_points:
-                                # Finalize current group and start new one
+                                # Finalize current group and add to results
                                 if current_group:
                                     split_groups.append(current_group)
-                                current_group = [current_segment.segments[i]]
-                            else:
-                                current_group.append(current_segment.segments[i])
+                                current_group = [original_segments[i]] if i < len(original_segments) else []
+                            elif i < len(original_segments):
+                                current_group.append(original_segments[i])
                         
                         # Add the last group
                         if current_group:
@@ -439,6 +453,51 @@ class SileroVADSegmenter:
         
         return final_segments
     
+    def should_combine_segments(self, prev_segment: VADSegment, current_segment: VADSegment,
+                              gap: float, config: SegmentCombinationConfig) -> bool:
+        """
+        Determine if two consecutive segments should be combined based on gap and context.
+        
+        Args:
+            prev_segment: The previous segment
+            current_segment: The current segment
+            gap: Time gap between segments (current_segment.start_time - prev_segment.end_time)
+            config: Configuration parameters
+            
+        Returns:
+            True if segments should be combined, False otherwise
+        """
+        # Rule 1: Micro-pauses (0.1-0.5s) - always combine
+        if gap < config.micro_pause_threshold:
+            return True
+        
+        # Rule 2: Topic change boundaries (5s+) - never combine
+        if gap >= config.natural_boundary_threshold:
+            return False
+        
+        # Rule 3: Short disfluency handling
+        # If segment < 0.5s and adjacent to other segments, combine
+        if (prev_segment.duration < config.disfluency_threshold or
+            current_segment.duration < config.disfluency_threshold):
+            # Check if there's enough context to preserve disfluencies
+            context_duration = prev_segment.duration + current_segment.duration
+            if context_duration >= config.min_disfluency_context:
+                return True
+        
+        # Rule 4: Thinking pauses (0.5-2s) - combine with context evaluation
+        if gap < config.thinking_pause_threshold:
+            # Additional heuristic: if both segments are short, combine them
+            if prev_segment.duration < 3.0 and current_segment.duration < 3.0:
+                return True
+            
+            # If the gap is small relative to segment lengths, combine
+            avg_segment_duration = (prev_segment.duration + current_segment.duration) / 2
+            if gap < avg_segment_duration * 0.5:  # Gap is less than half the average segment duration
+                return True
+        
+        # Default: don't combine
+        return False
+
     def _initial_combination(
         self,
         segments: List[VADSegment],
@@ -451,53 +510,36 @@ class SileroVADSegmenter:
         # Sort segments chronologically
         sorted_segments = sorted(segments, key=lambda x: x.start_time)
         
-        # Handle overlapping segments
         combined_segments = []
-        for new_segment in sorted_segments:
-            if combined_segments and new_segment.start_time < combined_segments[-1].end_time:
-                # Overlapping segment detected - merge with previous
-                log_debug(f"Overlapping segment detected: {new_segment.start_time}-{new_segment.end_time} "
-                         f"overlaps with {combined_segments[-1].start_time}-{combined_segments[-1].end_time}")
-                
-                # Merge overlapping segments by extending the end time
-                last_segment = combined_segments[-1]
-                last_segment.end_time = max(last_segment.end_time, new_segment.end_time)
-                last_segment.duration = last_segment.end_time - last_segment.start_time
-            else:
-                combined_segments.append(new_segment)
+        current_group = [sorted_segments[0]]
         
-        # Combine segments based on gap analysis
-        final_combined = []
-        current_combined = CombinedSegment([combined_segments[0]])
+        logger.info(f"Starting combination of {len(sorted_segments)} segments")
         
-        for next_segment in combined_segments[1:]:
-            gap = next_segment.start_time - current_combined.end_time
+        for i in range(1, len(sorted_segments)):
+            previous_segment = sorted_segments[i-1]
+            current_segment = sorted_segments[i]
             
-            if gap <= config.micro_pause_threshold:
-                # Always combine micro-pauses (0.1-0.5s)
-                current_combined.segments.append(next_segment)
-            elif gap >= config.natural_boundary_threshold:
-                # Never combine topic change boundaries (5s+)
-                final_combined.append(current_combined)
-                current_combined = CombinedSegment([next_segment])
+            # Calculate gap between segments
+            gap = current_segment.start_time - previous_segment.end_time
+            
+            # Determine if segments should be combined
+            should_combine = self.should_combine_segments(
+                current_group[-1], current_segment, gap, config
+            )
+            
+            if should_combine:
+                current_group.append(current_segment)
             else:
-                # Handle thinking pauses and disfluencies
-                if gap <= config.thinking_pause_threshold:
-                    # Check for disfluency handling
-                    if (next_segment.duration <= config.disfluency_threshold and
-                        current_combined.duration >= config.min_disfluency_context):
-                        # Combine short disfluency with sufficient context
-                        current_combined.segments.append(next_segment)
-                    else:
-                        # Regular thinking pause - combine with context evaluation
-                        current_combined.segments.append(next_segment)
-                else:
-                    # Keep separate for larger gaps
-                    final_combined.append(current_combined)
-                    current_combined = CombinedSegment([next_segment])
+                # Finalize current group and start new one
+                combined_segments.append(CombinedSegment(current_group))
+                current_group = [current_segment]
         
-        final_combined.append(current_combined)
-        return final_combined
+        # Add the last group
+        if current_group:
+            combined_segments.append(CombinedSegment(current_group))
+        
+        logger.info(f"Combined into {len(combined_segments)} segments")
+        return combined_segments
     
     def segment_audio(
         self,
@@ -627,17 +669,35 @@ class SileroVADSegmenter:
         
         log_debug(f"Silero VAD detected {len(segments)} initial speech segments")
         
-        # Apply the new combination and splitting approach
+        # Apply the combination and splitting approach
         combined_segments = self._initial_combination(segments, self.combination_config)
+        
+        # Handle long segments by splitting if necessary
+        final_segments = self._split_long_segments_enhanced(combined_segments, self.combination_config)
+        
+        # Check if we still have segments longer than 30s and perform second pass if needed
+        long_segments = [seg for seg in final_segments if seg.duration > self.combination_config.max_segment_duration]
+        if long_segments:
+            logger.info(f"Found {len(long_segments)} segments still longer than {self.combination_config.max_segment_duration}s after first pass")
+            logger.info("Performing second pass with relaxed gap thresholds...")
+            
+            # Perform second pass with relaxed thresholds
+            final_segments = self._split_long_segments_second_pass(final_segments, self.combination_config)
+            
+            # Check if we still have long segments after second pass
+            remaining_long_segments = [seg for seg in final_segments if seg.duration > self.combination_config.max_segment_duration]
+            if remaining_long_segments:
+                logger.warning(f"Still have {len(remaining_long_segments)} segments longer than {self.combination_config.max_segment_duration}s after second pass")
+                for seg in remaining_long_segments:
+                    logger.warning(f"  Segment: {seg.start_time:.3f} - {seg.end_time:.3f} ({seg.duration:.3f}s)")
+        
+        logger.info(f"Final result: {len(final_segments)} segments after splitting")
         
         if debug_enabled:
             debug_lines.append("AFTER INITIAL COMBINATION:")
             for i, seg in enumerate(combined_segments):
                 debug_lines.append(f"  Segment {i+1}: {seg.start:.3f} - {seg.end:.3f} ({seg.duration:.3f}s) [{seg.get_segment_count()} original segments]")
             debug_lines.append("")
-        
-        # Apply enhanced splitting for long segments
-        final_segments = self._split_long_segments_enhanced(combined_segments, self.combination_config)
         
         if debug_enabled:
             debug_lines.append("AFTER ENHANCED SPLITTING:")
@@ -648,7 +708,7 @@ class SileroVADSegmenter:
         # Check for remaining long segments and perform second pass if needed
         long_segments = [seg for seg in final_segments if seg.duration > self.combination_config.max_segment_duration]
         if long_segments:
-            log_debug(f"Found {len(long_segments)} segments still exceeding max duration, applying second-pass splitting")
+            logger.debug(f"Found {len(long_segments)} segments still exceeding max duration, applying second-pass splitting")
             final_segments = self._split_long_segments_second_pass(final_segments, self.combination_config)
             
             if debug_enabled:

@@ -13,13 +13,12 @@ This approach ensures chunks start/end at natural speech boundaries rather than 
 """
 
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Dict, Any, Callable
-import os
+from typing import List, Tuple, Optional, Any, Callable
 import pathlib
 import numpy as np
 import torch
 from datetime import datetime
-from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion, get_output_context, get_output_context
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion, get_output_context
 
 
 @dataclass
@@ -274,7 +273,8 @@ class SileroVADSegmenter:
         context_score = 0.0
         if split_index > 1:
             # Add context from previous gap
-            context_score += max(0, (gap - config.min_gap_for_tertiary_split)) * 0.1
+            prev_gap = segment.segments[split_index - 1].start_time - segment.segments[split_index - 2].end_time
+            context_score += max(0, (gap - prev_gap)) * 0.1
         
         if split_index < len(segment.segments) - 1:
             # Add context from next gap
@@ -347,13 +347,13 @@ class SileroVADSegmenter:
             split_groups = []
             current_group = [segment.segments[0]]
             
-            for i in range(1, len(segment.segments) + 1):
+            for i in range(1, len(segment.segments)):
                 if i in split_points:
-                    # Finalize current group and add to results
+                    # Finalize current group and start new one
                     if current_group:
                         split_groups.append(current_group)
-                    current_group = [segment.segments[i]] if i < len(segment.segments) else []
-                elif i < len(segment.segments):
+                    current_group = [segment.segments[i]]
+                else:
                     current_group.append(segment.segments[i])
             
             # Add the last group
@@ -363,12 +363,7 @@ class SileroVADSegmenter:
             # Convert groups to CombinedSegments
             for group in split_groups:
                 if group:
-                    new_segment = CombinedSegment(group)
-                    if new_segment.duration > config.max_segment_duration:
-                        # Recursively split if still too long
-                        final_segments.extend(self._split_long_segments_enhanced([new_segment], config))
-                    else:
-                        final_segments.append(new_segment)
+                    final_segments.append(CombinedSegment(group))
         
         return final_segments
     
@@ -416,13 +411,13 @@ class SileroVADSegmenter:
                         split_groups = []
                         current_group = [current_segment.segments[0]]
                         
-                        for i in range(1, len(current_segment.segments) + 1):
+                        for i in range(1, len(current_segment.segments)):
                             if i in split_points:
-                                # Finalize current group and add to results
+                                # Finalize current group and start new one
                                 if current_group:
                                     split_groups.append(current_group)
-                                current_group = [current_segment.segments[i]] if i < len(current_segment.segments) else []
-                            elif i < len(current_segment.segments):
+                                current_group = [current_segment.segments[i]]
+                            else:
                                 current_group.append(current_segment.segments[i])
                         
                         # Add the last group
@@ -485,136 +480,23 @@ class SileroVADSegmenter:
                 final_combined.append(current_combined)
                 current_combined = CombinedSegment([next_segment])
             else:
-                # Check for thinking pauses and disfluencies
-                combined_duration = next_segment.end_time - current_combined.start_time
-                
+                # Handle thinking pauses and disfluencies
                 if gap <= config.thinking_pause_threshold:
-                    # Combine thinking pauses (0.5-2s) with context evaluation
-                    if combined_duration <= config.max_segment_duration:
+                    # Check for disfluency handling
+                    if (next_segment.duration <= config.disfluency_threshold and
+                        current_combined.duration >= config.min_disfluency_context):
+                        # Combine short disfluency with sufficient context
                         current_combined.segments.append(next_segment)
                     else:
-                        final_combined.append(current_combined)
-                        current_combined = CombinedSegment([next_segment])
+                        # Regular thinking pause - combine with context evaluation
+                        current_combined.segments.append(next_segment)
                 else:
-                    # Check for disfluencies
-                    if (current_combined.duration <= config.disfluency_threshold or
-                        next_segment.duration <= config.disfluency_threshold):
-                        # Short segments might be disfluencies - combine with context
-                        if combined_duration <= config.max_segment_duration:
-                            current_combined.segments.append(next_segment)
-                        else:
-                            final_combined.append(current_combined)
-                            current_combined = CombinedSegment([next_segment])
-                    else:
-                        # Keep separate
-                        final_combined.append(current_combined)
-                        current_combined = CombinedSegment([next_segment])
+                    # Keep separate for larger gaps
+                    final_combined.append(current_combined)
+                    current_combined = CombinedSegment([next_segment])
         
         final_combined.append(current_combined)
         return final_combined
-    
-    def _split_long_segment(
-        self,
-        segment: VADSegment,
-        audio: torch.Tensor,
-        sample_rate: int
-    ) -> List[VADSegment]:
-        """
-        Split a segment that exceeds max_segment_duration.
-        
-        Uses VAD probabilities to find the best split point at a silence region.
-        
-        Args:
-            segment: The segment to potentially split
-            audio: Full audio tensor
-            sample_rate: Audio sample rate
-            
-        Returns:
-            List of segments (original if short enough, or split segments)
-        """
-        if segment.duration <= self.max_segment_duration:
-            return [segment]
-        
-        # Extract segment audio
-        start_sample = int(segment.start * sample_rate)
-        end_sample = int(segment.end * sample_rate)
-        segment_audio = audio[start_sample:end_sample]
-        
-        # Get speech probabilities for this segment to find silence points
-        # We'll run VAD on the segment with stricter parameters to find internal silences
-        try:
-            # Get timestamps within the segment
-            inner_timestamps = self._get_speech_timestamps(  # type: ignore
-                segment_audio,
-                self._model,
-                threshold=self.threshold + 0.1,  # Slightly stricter for internal splits
-                sampling_rate=sample_rate,
-                min_speech_duration_ms=100,  # Shorter minimum to find more boundaries
-                min_silence_duration_ms=50,   # Find shorter silences
-                speech_pad_ms=10,
-                return_seconds=True
-            )
-            
-            log_debug(f"Split mode: segment {segment.start:.2f}-{segment.end:.2f}s, found {len(inner_timestamps)} internal speech regions")
-            
-            if len(inner_timestamps) <= 1:
-                # No good split points found, split at midpoint
-                mid_time = segment.start + (segment.duration / 2)
-                return [
-                    VADSegment(segment.start_time, mid_time, mid_time - segment.start_time),
-                    VADSegment(mid_time, segment.end_time, segment.end_time - mid_time)
-                ]
-            
-            # Find split points at boundaries between detected speech regions
-            result_segments = []
-            current_start = segment.start
-            accumulated_duration = 0.0
-            
-            for i, ts in enumerate(inner_timestamps):
-                speech_start = segment.start + ts['start']
-                speech_end = segment.start + ts['end']
-                speech_duration = speech_end - speech_start
-                
-                if accumulated_duration + speech_duration > self.max_segment_duration and accumulated_duration > 0:
-                    # Create segment up to before this speech region
-                    result_segments.append(VADSegment(current_start, speech_start, speech_start - current_start))
-                    current_start = speech_start
-                    accumulated_duration = speech_duration
-                else:
-                    accumulated_duration += speech_duration
-                    if i < len(inner_timestamps) - 1:
-                        # Add gap to next speech region
-                        next_start = segment.start + inner_timestamps[i + 1]['start']
-                        accumulated_duration += (next_start - speech_end)
-            
-            # Add final segment
-            if current_start < segment.end:
-                result_segments.append(VADSegment(current_start, segment.end_time, segment.end_time - current_start))
-            
-            # Recursively split any still-too-long segments
-            final_segments = []
-            for seg in result_segments:
-                if seg.duration > self.max_segment_duration:
-                    # Simple midpoint split for remaining long segments
-                    mid_time = seg.start + (seg.duration / 2)
-                    final_segments.append(VADSegment(seg.start_time, mid_time, mid_time - seg.start_time))
-                    final_segments.append(VADSegment(mid_time, seg.end_time, seg.end_time - mid_time))
-                else:
-                    final_segments.append(seg)
-            
-            return final_segments
-            
-        except Exception as e:
-            log_debug(f"Error splitting segment: {e}, using midpoint split")
-            # Fallback to simple midpoint split
-            mid_time = segment.start + (segment.duration / 2)
-            left = VADSegment(segment.start_time, mid_time, mid_time - segment.start_time)
-            right = VADSegment(mid_time, segment.end_time, segment.end_time - mid_time)
-            
-            # Recursively handle if still too long
-            return self._split_long_segment(left, audio, sample_rate) + \
-                   self._split_long_segment(right, audio, sample_rate)
-    
     
     def segment_audio(
         self,

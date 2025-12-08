@@ -977,7 +977,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         # Step 1: Silero VAD segmentation
         log_progress("Running Silero VAD segmentation...")
         debug_file_path = debug_dir / "vad_segmentation_debug.txt" if debug_dir else None
-        vad_segments = self.vad_segmenter.segment_audio(wav, sr, debug_file_path=str(debug_file_path) if debug_file_path else None)
+        csv_audit_path = debug_dir / "vad_segments_audit.csv" if debug_dir else None
+        vad_segments = self.vad_segmenter.segment_audio(wav, sr, debug_file_path=str(debug_file_path) if debug_file_path else None, csv_audit_path=str(csv_audit_path) if csv_audit_path else None)
         
         log_progress(f"Silero VAD produced {len(vad_segments)} segments")
         

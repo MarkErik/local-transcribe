@@ -17,8 +17,9 @@ from typing import List, Tuple, Optional, Any, Callable
 import pathlib
 import numpy as np
 import torch
+import csv
 from datetime import datetime
-from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion, get_output_context
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion, get_output_context, log_intermediate_save
 
 
 @dataclass
@@ -502,7 +503,8 @@ class SileroVADSegmenter:
         self,
         waveform: np.ndarray,
         sample_rate: int = 16000,
-        debug_file_path: Optional[str] = None
+        debug_file_path: Optional[str] = None,
+        csv_audit_path: Optional[str] = None
     ) -> List[Tuple[float, float]]:
         """
         Full VAD segmentation pipeline.
@@ -511,6 +513,7 @@ class SileroVADSegmenter:
             waveform: Audio waveform as numpy array (mono)
             sample_rate: Sample rate of the audio (must be 8000 or 16000)
             debug_file_path: Optional path to write debug information to a text file
+            csv_audit_path: Optional path to write CSV audit information
             
         Returns:
             List of (start_sec, end_sec) tuples representing speech segments
@@ -657,6 +660,14 @@ class SileroVADSegmenter:
         # Convert to time tuples
         time_segments = [seg.to_tuple() for seg in final_segments]
         
+        # Save CSV audit if requested
+        if csv_audit_path and final_segments:
+            try:
+                self.save_combined_segments_csv(final_segments, csv_audit_path)
+                log_debug(f"CSV audit saved to {csv_audit_path}")
+            except Exception as e:
+                log_debug(f"Failed to save CSV audit: {e}")
+        
         # Log summary
         total_speech = sum(end - start for start, end in time_segments)
         log_completion(
@@ -709,7 +720,8 @@ class SileroVADSegmenter:
         self,
         audio_path: str,
         target_sample_rate: int = 16000,
-        debug_file_path: Optional[str] = None
+        debug_file_path: Optional[str] = None,
+        csv_audit_path: Optional[str] = None
     ) -> List[Tuple[float, float]]:
         """
         Convenience method to segment audio directly from a file path.
@@ -718,6 +730,7 @@ class SileroVADSegmenter:
             audio_path: Path to audio file
             target_sample_rate: Target sample rate (audio will be resampled if needed)
             debug_file_path: Optional path to write debug information to a text file
+            csv_audit_path: Optional path to write CSV audit information
             
         Returns:
             List of (start_sec, end_sec) tuples representing speech segments
@@ -725,7 +738,67 @@ class SileroVADSegmenter:
         import librosa
         
         waveform, sr = librosa.load(audio_path, sr=target_sample_rate, mono=True)
-        return self.segment_audio(waveform, int(sr), debug_file_path)
+        return self.segment_audio(waveform, int(sr), debug_file_path, csv_audit_path)
+    
+    def save_combined_segments_csv(self, segments: List[CombinedSegment], output_path: str) -> None:
+        """
+        Save combined segments to a CSV file with detailed audit information.
+        
+        Args:
+            segments: List of CombinedSegment objects
+            output_path: Path to save the CSV file
+        """
+        try:
+            with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Write header
+                writer.writerow(['Segment Number', 'Combined Segment', 'Individual Segments', 'Gap Between'])
+                
+                # Write data
+                for i, segment in enumerate(segments, 1):
+                    # Calculate gap for combined segment (gap from previous combined segment)
+                    if i == 1:
+                        combined_gap = ""  # No gap for first segment
+                    else:
+                        prev_segment = segments[i-2]
+                        combined_gap = f"{segment.start_time - prev_segment.end_time:.3f}s"
+                    
+                    # First row: segment number and combined segment info
+                    combined_info = f"{segment.start_time:.3f} - {segment.end_time:.3f} ({segment.duration:.3f}s)"
+                    writer.writerow([i, combined_info, '', combined_gap])
+                    
+                    # Subsequent rows: individual segments that make up this combined segment
+                    # Use the original segment numbers from the VADSegment objects
+                    for j, original_seg in enumerate(segment.segments):
+                        # Use the original segment number
+                        individual_info = f"{original_seg.original_number} - {original_seg.start_time:.3f} - {original_seg.end_time:.3f} ({original_seg.duration:.3f}s)"
+                        
+                        # Calculate gap for individual segment
+                        if j == 0:
+                            if i == 1:
+                                individual_gap = ""  # No gap for first individual segment in first combined segment
+                            else:
+                                # Gap from previous combined segment's last individual segment
+                                prev_combined_segment = segments[i-2]
+                                last_individual_seg = prev_combined_segment.segments[-1]
+                                individual_gap = f"{original_seg.start_time - last_individual_seg.end_time:.3f}s"
+                        else:
+                            # Gap from previous individual segment in the same combined segment
+                            prev_individual_seg = segment.segments[j-1]
+                            individual_gap = f"{original_seg.start_time - prev_individual_seg.end_time:.3f}s"
+                        
+                        writer.writerow(['', '', individual_info, individual_gap])
+                    
+                    # Add empty row for readability between combined segments
+                    writer.writerow([])
+                    
+            log_debug(f"Saved combined segments CSV to {output_path}")
+            log_intermediate_save(output_path, "VAD segments CSV audit")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving CSV to {output_path}: {str(e)}")
+            raise
 
 
 def create_silero_vad_segmenter(

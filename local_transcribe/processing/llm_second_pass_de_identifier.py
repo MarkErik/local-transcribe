@@ -514,7 +514,7 @@ def _process_chunk_second_pass(
                 validation_result['attempts'] = all_attempts
                 validation_result['total_attempts'] = attempt + 1
                 validation_result['final_temperature'] = current_temperature
-                return processed_text, total_response_time_ms, validation_result, raw_response
+                return processed_text, total_response_time_ms, validation_result, raw_response, attempt_logs
             else:
                 last_validation_result = validation_result
                 if attempt < max_retries:

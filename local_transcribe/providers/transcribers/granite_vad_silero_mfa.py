@@ -11,10 +11,13 @@ The integrated stitcher produces continuous WordSegments output.
 Debug mode saves individual segment transcripts when DEBUG logging is enabled.
 """
 
-from typing import List, Optional, Dict, Any
+from logging import Logger
+from typing import List, Optional, Dict, Any, Tuple, Union
 import os
 import pathlib
 import re
+from numpy import dtype
+from numpy.typing import NDArray
 import torch
 import librosa
 import tempfile
@@ -32,29 +35,29 @@ from local_transcribe.lib.vad_silero_segmenter import SileroVADSegmenter
 class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     """Combined transcriber+aligner using IBM Granite + Silero VAD segmentation + MFA alignment."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = get_logger()
         self.logger.info("Initializing Granite VAD (Silero) MFA Transcriber Provider")
         
         # Granite configuration
-        self.model_mapping = {
+        self.model_mapping: Dict[str, str] = {
             "granite-2b": "ibm-granite/granite-speech-3.3-2b",
             "granite-8b": "ibm-granite/granite-speech-3.3-8b"
         }
-        self.selected_model = None
-        self.processor = None
-        self.model = None
-        self.tokenizer = None
+        self.selected_model: Optional[str] = None
+        self.processor: Optional[Any] = None
+        self.model: Optional[Any] = None
+        self.tokenizer: Optional[Any] = None
         
         # Segmenter instance
-        self.vad_segmenter = None
-        self.models_dir = None
+        self.vad_segmenter: Optional[SileroVADSegmenter] = None
+        self.models_dir: Optional[pathlib.Path] = None
         
         # MFA configuration
-        self.mfa_models_dir = None
+        self.mfa_models_dir = None  # type: ignore
 
     @property
-    def device(self):
+    def device(self) -> str:
         return get_system_capability()
 
     @property
@@ -88,7 +91,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         self.logger.info("Starting model preload for Granite models")
         import sys
 
-        cache_dir = models_dir / "transcribers" / "granite"
+        cache_dir: pathlib.Path = models_dir / "transcribers" / "granite"
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
@@ -127,7 +130,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         missing_models = []
         
         # Check Granite models
-        granite_missing = self._check_granite_models_offline(models, models_dir)
+        granite_missing: List[str] = self._check_granite_models_offline(models, models_dir)
         missing_models.extend(granite_missing)
         
         # Note: Silero VAD doesn't require pre-download check as it's auto-downloaded via torch.hub
@@ -146,35 +149,37 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 else:
                     models_root = pathlib.Path.home() / ".cache" / "huggingface"
                 
-                hub_dir = models_root / "huggingface" / "hub"
-                hf_model_name = model.replace("/", "--")
-                model_dir = hub_dir / f"models--{hf_model_name}"
+                hub_dir: pathlib.Path = models_root / "huggingface" / "hub"
+                hf_model_name: str = model.replace("/", "--")
+                model_dir: pathlib.Path = hub_dir / f"models--{hf_model_name}"
                 
-                if not model_dir.exists() or not any(model_dir.rglob("*.bin")) and not any(model_dir.rglob("*.safetensors")):
+                if not model_dir.exists() or (not any(model_dir.rglob("*.bin")) and not any(model_dir.rglob("*.safetensors"))):
                     missing_models.append(model)
         return missing_models
 
-    def _load_granite_model(self):
+    def _load_granite_model(self) -> None:
         """Load the Granite model if not already loaded."""
         log_progress("Loading Granite model...")
         if self.model is None:
-            model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-8b"])
+            model_name = self.model_mapping.get(self.selected_model or "granite-8b")
+            if model_name is None:
+                raise ValueError(f"Invalid model selected: {self.selected_model}")
             
-            xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+            xdg_cache_home: str | None = os.environ.get("XDG_CACHE_HOME")
             if xdg_cache_home:
                 models_root = pathlib.Path(xdg_cache_home)
             else:
-                models_root = pathlib.Path.home() / ".cache" / "huggingface"
+                models_root: pathlib.Path = pathlib.Path.home() / ".cache" / "huggingface"
             
-            cache_dir = models_root / "huggingface" / "hub"
+            cache_dir: pathlib.Path = models_root / "huggingface" / "hub"
 
             try:
-                token = os.getenv("HF_TOKEN")
+                token: str | None = os.getenv("HF_TOKEN")
                 self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=True, token=token)
-                self.tokenizer = self.processor.tokenizer
+                self.tokenizer = self.processor.tokenizer  # type: ignore
 
                 log_progress(f"Loading Granite model on device: {self.device}")
-                self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                self.model = AutoModelForSpeechSeq2Seq.from_pretrained(  # type: ignore
                     model_name, 
                     local_files_only=True, 
                     token=token
@@ -187,7 +192,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                     log_debug(f"Cache directory contents: {list(cache_dir.iterdir())}")
                 raise e
 
-    def _init_vad_segmenter(self):
+    def _init_vad_segmenter(self) -> None:
         """Initialize the Silero VAD segmenter if not already done."""
         if self.vad_segmenter is None:
             self.vad_segmenter = SileroVADSegmenter(
@@ -195,27 +200,27 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 models_dir=self.models_dir
             )
 
-    def _get_mfa_command(self):
+    def _get_mfa_command(self) -> str:
         """Get the MFA command, checking local environment first."""
-        project_root = pathlib.Path(__file__).parent.parent.parent.parent
-        local_mfa_env = project_root / ".mfa_env" / "bin" / "mfa"
+        project_root: pathlib.Path = pathlib.Path(__file__).parent.parent.parent.parent
+        local_mfa_env: pathlib.Path = project_root / ".mfa_env" / "bin" / "mfa"
         
         if local_mfa_env.exists():
             return str(local_mfa_env)
         
         return "mfa"
 
-    def _ensure_mfa_models(self):
+    def _ensure_mfa_models(self) -> None:
         """Ensure MFA acoustic model and dictionary are downloaded."""
         log_progress("Ensuring MFA models are available...")
         log_progress(f"Checking MFA models in {self.mfa_models_dir}")
-        env = os.environ.copy()
+        env: Dict[str, str] = os.environ.copy()
         env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
 
-        mfa_cmd = self._get_mfa_command()
+        mfa_cmd: str = self._get_mfa_command()
         
         try:
-            result = subprocess.run(
+            result: subprocess.CompletedProcess[str] = subprocess.run(
                 [mfa_cmd, "model", "list", "acoustic"],
                 capture_output=True,
                 text=True,
@@ -231,7 +236,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                     env=env
                 )
 
-            result = subprocess.run(
+            result: subprocess.CompletedProcess[str] = subprocess.run(
                 [mfa_cmd, "model", "list", "dictionary"],
                 capture_output=True,
                 text=True,
@@ -251,16 +256,16 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             self.logger.error(f"Failed to check/download MFA models: {e}")
             raise
 
-    def _transcribe_single_segment(self, wav, sample_rate=16000, **kwargs) -> str:
+    def _transcribe_single_segment(self, wav: NDArray[Any], sample_rate: int = 16000, **kwargs) -> str:
         """Transcribe a single audio segment using Granite."""
         log_progress("Transcribing audio segment with Granite")
         try:
-            wav_tensor = torch.from_numpy(wav).unsqueeze(0)
+            wav_tensor: torch.Tensor = torch.from_numpy(wav).unsqueeze(0)
             
             # Calculate segment duration from wav array using provided sample rate
-            segment_duration = len(wav) / sample_rate
+            segment_duration: float = len(wav) / sample_rate
 
-            chat = [
+            chat: List[Dict[str, str]] = [
                 {
                     "role": "system",
                     "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: December 9, 2025.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
@@ -273,11 +278,13 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 }
             ]
 
-            text = self.tokenizer.apply_chat_template(
+            text = self.tokenizer.apply_chat_template(  # type: ignore
                 chat, tokenize=False, add_generation_prompt=True
             )
 
-            model_inputs = self.processor(
+            if self.processor is None:
+                raise RuntimeError("Granite processor not loaded")
+            model_inputs = self.processor.__call__(
                 text,
                 wav_tensor,
                 device=self.device,
@@ -306,7 +313,9 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 logits_processor = [repetition_penalty_processor]
 
             with torch.no_grad():
-                model_outputs = self.model.generate(
+                if self.model is None:
+                    raise RuntimeError("Granite model not loaded")
+                model_outputs = self.model.generate.__call__(
                     **model_inputs,
                     max_new_tokens=max_new_tokens,
                     num_beams=4,
@@ -317,19 +326,21 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                     temperature=1.0,
                     early_stopping=True,
                     logits_processor=logits_processor,
-                    bos_token_id=self.tokenizer.bos_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.pad_token_id,
+                    bos_token_id=self.tokenizer.bos_token_id if self.tokenizer else None,
+                    eos_token_id=self.tokenizer.eos_token_id if self.tokenizer else None,
+                    pad_token_id=self.tokenizer.pad_token_id if self.tokenizer else None,
                 )
 
             num_input_tokens = model_inputs["input_ids"].shape[-1]
-            new_tokens = torch.unsqueeze(model_outputs[0, num_input_tokens:], dim=0)
+            new_tokens: torch.Tensor = torch.unsqueeze(model_outputs[0, num_input_tokens:], dim=0)
 
+            if self.tokenizer is None:
+                raise RuntimeError("Granite tokenizer not loaded")
             output_text = self.tokenizer.batch_decode(
                 new_tokens, add_special_tokens=False, skip_special_tokens=True
             )
 
-            cleaned_text = self._clean_transcription_output(output_text[0].strip())
+            cleaned_text: str = self._clean_transcription_output(output_text[0].strip())
 
             return cleaned_text
             
@@ -352,10 +363,10 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     def _clean_transcription_output(self, text: str) -> str:
         """Clean the transcription output by removing dialogue markers and quotation marks."""
         # Count labels before removal for debug logging
-        user_count = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
-        assistant_count = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
-        assistant_short_count = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
-        total_removed = user_count + assistant_count + assistant_short_count
+        user_count: int = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
+        assistant_count: int = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
+        assistant_short_count: int = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
+        total_removed: int = user_count + assistant_count + assistant_short_count
         
         text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
@@ -373,7 +384,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         return text
 
-    def _align_segment_with_mfa(self, segment_wav, segment_transcript: str, segment_start_time: float = 0.0, speaker: Optional[str] = None, debug_dir: Optional[pathlib.Path] = None, segment_num: Optional[int] = None) -> List[Dict[str, Any]]:
+    def _align_segment_with_mfa(self, segment_wav: NDArray[Any], segment_transcript: str, segment_start_time: float = 0.0, speaker: Optional[str] = None, debug_dir: Optional[pathlib.Path] = None, segment_num: Optional[int] = None) -> List[Dict[str, Any]]:
         """Align a single segment using MFA and return timestamped words.
         
         Args:
@@ -384,8 +395,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         """
         log_progress(f"Aligning transcript with MFA (segment starts at {segment_start_time:.2f}s)")
         
-        segment_duration = len(segment_wav) / 16000.0
-        segment_end_time = segment_start_time + segment_duration
+        segment_duration: float = len(segment_wav) / 16000.0
+        segment_end_time: float = segment_start_time + segment_duration
         
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = pathlib.Path(temp_dir)
@@ -406,23 +417,23 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             transcript_file = audio_dir / "segment.lab"
             transcript_file.write_text(normalized_transcript, encoding='utf-8')
 
-            output_dir = temp_path / "output"
+            output_dir: pathlib.Path = temp_path / "output"
             output_dir.mkdir()
 
-            env = os.environ.copy()
+            env: Dict[str, str] = os.environ.copy()
             env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
             env["MFA_NO_HISTORY"] = "1"
             
-            mfa_env_bin = pathlib.Path(self._get_mfa_command()).parent
+            mfa_env_bin: pathlib.Path = pathlib.Path(self._get_mfa_command()).parent
             env["PATH"] = str(mfa_env_bin) + os.pathsep + env.get("PATH", "")
 
-            textgrid_file = output_dir / "segment.TextGrid"
+            textgrid_file: pathlib.Path = output_dir / "segment.TextGrid"
 
-            project_root = pathlib.Path(__file__).parent.parent.parent.parent
-            mfa_cmd = self._get_mfa_command()
-            config_path = project_root / "mfa_config.yaml"
+            project_root: pathlib.Path = pathlib.Path(__file__).parent.parent.parent.parent
+            mfa_cmd: str = self._get_mfa_command()
+            config_path: pathlib.Path = project_root / "mfa_config.yaml"
             
-            cmd = [
+            cmd: List[str] = [
                 mfa_cmd, "align_one",
                 str(audio_file),
                 str(transcript_file),
@@ -446,12 +457,12 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 )
 
                 if textgrid_file.exists():
-                    word_dicts = self._parse_textgrid_to_word_dicts(textgrid_file, segment_transcript, segment_start_time, segment_end_time, speaker)
+                    word_dicts: List[Dict[str, Any]] = self._parse_textgrid_to_word_dicts(textgrid_file, segment_transcript, segment_start_time, segment_end_time, speaker)
                     
                     # Save TextGrid content for debugging if debug mode is enabled
                     if debug_dir and segment_num is not None:
-                        textgrid_content = textgrid_file.read_text(encoding='utf-8')
-                        textgrid_debug_path = debug_dir / f"segment_{segment_num:03d}_textgrid.TextGrid"
+                        textgrid_content: str = textgrid_file.read_text(encoding='utf-8')
+                        textgrid_debug_path: pathlib.Path = debug_dir / f"segment_{segment_num:03d}_textgrid.TextGrid"
                         textgrid_debug_path.write_text(textgrid_content, encoding='utf-8')
                         log_debug(f"Saved TextGrid for segment {segment_num} to {textgrid_debug_path}")
                     
@@ -470,10 +481,10 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
 
         try:
             with open(textgrid_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
+                lines: List[str] = f.readlines()
             
             # Build mapping of normalized to original words
-            original_words = original_transcript.split()
+            original_words: List[str] = original_transcript.split()
             normalized_to_original = {}
             word_usage_count = {}
             
@@ -503,30 +514,30 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 word_tier_end = len(lines)
 
             # Parse intervals
-            i = word_tier_start
+            i: int = word_tier_start
             while i < word_tier_end:
-                line = lines[i].strip()
+                line: str = lines[i].strip()
                 if line.startswith('intervals ['):
                     i += 1
                     if i >= word_tier_end:
                         break
-                    xmin_line = lines[i].strip()
+                    xmin_line: str = lines[i].strip()
                     i += 1
                     if i >= word_tier_end:
                         break
-                    xmax_line = lines[i].strip()
+                    xmax_line: str = lines[i].strip()
                     i += 1
                     if i >= word_tier_end:
                         break
-                    text_line = lines[i].strip()
+                    text_line: str = lines[i].strip()
 
                     try:
                         start = float(xmin_line.split('=')[1].strip())
                         end = float(xmax_line.split('=')[1].strip())
-                        mfa_text = text_line.split('=')[1].strip().strip('"')
+                        mfa_text: str = text_line.split('=')[1].strip().strip('"')
 
                         if mfa_text and mfa_text not in ["", "<eps>", "sil", "sp", "spn"]:
-                            normalized_key = mfa_text.lower()
+                            normalized_key: str = mfa_text.lower()
                             
                             if normalized_key in normalized_to_original:
                                 word_list = normalized_to_original[normalized_key]
@@ -534,7 +545,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                                 original_text = word_list[usage_idx]
                                 word_usage_count[normalized_key] += 1
                             else:
-                                original_text = mfa_text
+                                original_text: str = mfa_text
                             
                             word_dicts.append({
                                 "text": original_text,
@@ -559,8 +570,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
 
     def _word_similarity(self, word1: str, word2: str) -> float:
         """Calculate similarity between two words for alignment purposes."""
-        norm1 = self._normalize_word_for_matching(word1)
-        norm2 = self._normalize_word_for_matching(word2)
+        norm1: str = self._normalize_word_for_matching(word1)
+        norm2: str = self._normalize_word_for_matching(word2)
         
         if not norm1 or not norm2:
             return 0.0
@@ -569,8 +580,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             return 1.0
         
         if norm1.startswith(norm2) or norm2.startswith(norm1):
-            shorter = min(len(norm1), len(norm2))
-            longer = max(len(norm1), len(norm2))
+            shorter: int = min(len(norm1), len(norm2))
+            longer: int = max(len(norm1), len(norm2))
             return 0.7 + (0.2 * shorter / longer)
         
         len1, len2 = len(norm1), len(norm2)
@@ -581,31 +592,31 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             norm1, norm2 = norm2, norm1
             len1, len2 = len2, len1
         
-        prev_row = list(range(len2 + 1))
+        prev_row: List[int] = list(range(len2 + 1))
         for i, c1 in enumerate(norm1):
-            curr_row = [i + 1]
+            curr_row: List[int] = [i + 1]
             for j, c2 in enumerate(norm2):
-                insertions = prev_row[j + 1] + 1
-                deletions = curr_row[j] + 1
-                substitutions = prev_row[j] + (0 if c1 == c2 else 1)
+                insertions: int = prev_row[j + 1] + 1
+                deletions: int = curr_row[j] + 1
+                substitutions: int = prev_row[j] + (0 if c1 == c2 else 1)
                 curr_row.append(min(insertions, deletions, substitutions))
-            prev_row = curr_row
+            prev_row: List[int] = curr_row
         
-        distance = prev_row[-1]
-        max_len = max(len1, len2)
-        ratio = 1.0 - (distance / max_len)
+        distance: int = prev_row[-1]
+        max_len: int = max(len1, len2)
+        ratio: float = 1.0 - (distance / max_len)
         
         return ratio if ratio >= 0.6 else 0.0
 
     def _align_word_sequences(self, granite_words: List[str], mfa_words: List[Dict[str, Any]]) -> List[tuple]:
         """Align Granite words with MFA words using dynamic programming."""
-        n = len(granite_words)
-        m = len(mfa_words)
+        n: int = len(granite_words)
+        m: int = len(mfa_words)
         
         mfa_texts = [wd["text"] for wd in mfa_words]
         
         dp = [[0.0 for _ in range(m + 1)] for _ in range(n + 1)]
-        backptr = [[None for _ in range(m + 1)] for _ in range(n + 1)]
+        backptr: List[List[Any]] = [[None for _ in range(m + 1)] for _ in range(n + 1)]
         
         GAP_PENALTY = -0.5
         
@@ -625,8 +636,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 sim = self._word_similarity(granite_word, mfa_word)
                 
                 match_score = dp[i-1][j-1] + sim
-                granite_gap_score = dp[i-1][j] + GAP_PENALTY
-                mfa_gap_score = dp[i][j-1] + GAP_PENALTY
+                granite_gap_score: float = dp[i-1][j] + GAP_PENALTY
+                mfa_gap_score: float = dp[i][j-1] + GAP_PENALTY
                 
                 if match_score >= granite_gap_score and match_score >= mfa_gap_score:
                     dp[i][j] = match_score
@@ -670,11 +681,11 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         if num_words == 0:
             return []
         
-        duration = next_start - prev_end
-        word_duration = duration / num_words
+        duration: float = next_start - prev_end
+        word_duration: float = duration / num_words
         
         result = []
-        current_time = prev_end
+        current_time: float = prev_end
         
         for word in words:
             result.append({
@@ -703,9 +714,9 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         """Replace MFA word text with Granite's original words, using MFA timestamps."""
         log_progress("Replacing MFA words with Granite text")
         
-        granite_words = original_transcript.split()
-        mfa_count = len(word_dicts)
-        granite_count = len(granite_words)
+        granite_words: List[str] = original_transcript.split()
+        mfa_count: int = len(word_dicts)
+        granite_count: int = len(granite_words)
         
         log_debug(f"Granite word count: {granite_count}, MFA word count: {mfa_count}")
         
@@ -728,7 +739,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         result = []
         pending_granite_words = []
-        last_end_time = segment_start_time
+        last_end_time: float = segment_start_time
         
         i = 0
         while i < len(alignment):
@@ -738,7 +749,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 if pending_granite_words:
                     self.logger.warning(f"MFA dropped {len(pending_granite_words)} word(s): {pending_granite_words}. Using interpolated timestamps.")
                     current_start = word_dicts[m_idx]["start"]
-                    interpolated = self._interpolate_timestamps(
+                    interpolated: List[Dict[str, Any]] = self._interpolate_timestamps(
                         last_end_time, current_start, 
                         len(pending_granite_words), pending_granite_words, speaker
                     )
@@ -748,7 +759,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 mfa_start_idx = m_idx
                 mfa_end_idx = m_idx + 1
                 
-                j = i + 1
+                j: int = i + 1
                 while j < len(alignment):
                     next_g, next_m = alignment[j]
                     if next_g is None and next_m is not None:
@@ -767,7 +778,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 })
                 
                 last_end_time = end_time
-                i = j
+                i: int = j
                 
             elif g_idx is not None and m_idx is None:
                 pending_granite_words.append(granite_words[g_idx])
@@ -782,7 +793,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         if pending_granite_words:
             self.logger.warning(f"MFA dropped {len(pending_granite_words)} word(s) at end of segment: {pending_granite_words}. Using interpolated timestamps.")
-            interpolated = self._interpolate_timestamps(
+            interpolated: List[Dict[str, Any]] = self._interpolate_timestamps(
                 last_end_time, segment_end_time,
                 len(pending_granite_words), pending_granite_words, speaker
             )
@@ -798,21 +809,21 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         log_debug(f"Replacement complete: {len(result)} words")
         return result
 
-    def _simple_alignment_to_word_dicts(self, segment_wav, transcript: str, segment_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _simple_alignment_to_word_dicts(self, segment_wav: Optional[NDArray[Any]], transcript: str, segment_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fallback: simple even distribution of timestamps."""
-        words = transcript.split()
+        words: List[str] = transcript.split()
         if not words:
             return []
 
         if segment_wav is not None:
-            duration = len(segment_wav) / 16000.0
+            duration: float = len(segment_wav) / 16000.0
         else:
-            duration = len(words) * 0.5
+            duration: float = len(words) * 0.5
 
-        word_duration = duration / len(words)
+        word_duration: float = duration / len(words)
         
         word_dicts = []
-        current_time = segment_start_time
+        current_time: float = segment_start_time
 
         for word in words:
             word_dicts.append({
@@ -888,7 +899,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     
     def _save_debug_segment(self, debug_dir: pathlib.Path, segment_num: int, stage: str, data: Dict[str, Any]) -> None:
         """Save debug files for a processing stage."""
-        segment_num_str = f"{segment_num:03d}"
+        segment_num_str: str = f"{segment_num:03d}"
         
         json_path = debug_dir / f"segment_{segment_num_str}_{stage}.json"
         with open(json_path, 'w', encoding='utf-8') as f:
@@ -950,7 +961,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         # Check if DEBUG logging is enabled and setup debug directory
         from local_transcribe.lib.program_logger import get_output_context
         debug_enabled = get_output_context().should_log("DEBUG")
-        debug_dir = None
+        debug_dir: Optional[pathlib.Path] = None
         intermediate_dir = kwargs.get('intermediate_dir')
         if debug_enabled and intermediate_dir:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -972,22 +983,24 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         # Setup MFA
         if self.mfa_models_dir is None:
             models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / ".models")))
-            self.mfa_models_dir = models_root / "aligners" / "mfa"
+            self.mfa_models_dir: pathlib.Path = models_root / "aligners" / "mfa"
             self.mfa_models_dir.mkdir(parents=True, exist_ok=True)
 
         self._ensure_mfa_models()
 
         # Load audio
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)
-        duration = len(wav) / sr
+        duration: float = len(wav) / sr
         
         log_progress(f"Audio duration: {duration:.1f}s")
         
         # Step 1: Silero VAD segmentation
         log_progress("Running Silero VAD segmentation...")
-        debug_file_path = debug_dir / "vad_segmentation_debug.txt" if debug_dir else None
-        csv_audit_path = debug_dir / "vad_segments_audit.csv" if debug_dir else None
-        vad_segments = self.vad_segmenter.segment_audio(wav, sr, debug_file_path=str(debug_file_path) if debug_file_path else None, csv_audit_path=str(csv_audit_path) if csv_audit_path else None)
+        debug_file_path: pathlib.Path | None = debug_dir / "vad_segmentation_debug.txt" if debug_dir else None
+        csv_audit_path: pathlib.Path | None = debug_dir / "vad_segments_audit.csv" if debug_dir else None
+        if self.vad_segmenter is None:
+            raise RuntimeError("VAD segmenter not initialized")
+        vad_segments: List[Tuple[float, float]] = self.vad_segmenter.segment_audio(wav, int(sr), debug_file_path=str(debug_file_path) if debug_file_path else None, csv_audit_path=str(csv_audit_path) if csv_audit_path else None)
         
         log_progress(f"Silero VAD produced {len(vad_segments)} segments")
         
@@ -1016,17 +1029,17 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         all_segment_words: List[List[Dict[str, Any]]] = []
         
         for seg_idx, (seg_start, seg_end) in enumerate(vad_segments):
-            segment_num = seg_idx + 1
+            segment_num: int = seg_idx + 1
             
             log_progress(f"Processing segment {segment_num}/{len(vad_segments)} ({seg_start:.2f}s - {seg_end:.2f}s)")
             
             # Extract segment audio
             start_sample = int(seg_start * sr)
             end_sample = int(seg_end * sr)
-            segment_wav = wav[start_sample:end_sample]
+            segment_wav: NDArray[Any] = wav[start_sample:end_sample]
             
             # Transcribe segment with Granite
-            segment_text = self._transcribe_single_segment(segment_wav, sample_rate=sr, **kwargs)
+            segment_text: str = self._transcribe_single_segment(segment_wav, sample_rate=int(sr), **kwargs)
             
             if debug_dir:
                 self._save_debug_segment(debug_dir, segment_num, "granite_output", {
@@ -1043,7 +1056,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 continue
             
             # Align segment with MFA
-            timestamped_words = self._align_segment_with_mfa(segment_wav, segment_text, seg_start, role, debug_dir, segment_num)
+            timestamped_words: List[Dict[str, Any]] = self._align_segment_with_mfa(segment_wav, segment_text, seg_start, role, debug_dir, segment_num)
             
             if debug_dir:
                 self._save_debug_segment(debug_dir, segment_num, "mfa_output", {
@@ -1057,7 +1070,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             all_segment_words.append(timestamped_words)
         
         # Step 3: Stitch all segments into continuous output
-        result = self._stitch_vad_segments(all_segment_words)
+        result: List[WordSegment] = self._stitch_vad_segments(all_segment_words)
         
         if debug_enabled:
             log_debug(f"Transcription complete: {len(result)} words from {len(vad_segments)} Silero VAD segments")
@@ -1077,6 +1090,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         log_progress("Preloading Silero VAD segmentation model...")
         try:
             self._init_vad_segmenter()
+            if self.vad_segmenter is None:
+                raise RuntimeError("VAD segmenter not initialized")
             self.vad_segmenter.preload_models()
             log_completion("Silero VAD model preloaded successfully")
         except Exception as e:
@@ -1084,7 +1099,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             raise
 
 
-def register_transcriber_plugins():
+def register_transcriber_plugins() -> None:
     """Register transcriber plugins."""
     registry.register_transcriber_provider(GraniteVADSileroMFATranscriberProvider())
 

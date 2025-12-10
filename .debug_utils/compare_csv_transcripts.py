@@ -13,9 +13,10 @@ from pathlib import Path
 
 # Add the local_transcribe module to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
 
-from local_transcribe.transcript_comparison.engine import TranscriptComparisonEngine
-from local_transcribe.transcript_comparison.data_structures import ComparisonConfig
+from transcript_comparison.engine import TranscriptComparisonEngine
+from transcript_comparison.data_structures import ComparisonConfig
 
 
 def main():

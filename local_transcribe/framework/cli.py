@@ -394,10 +394,17 @@ def interactive_prompt(args, api):
                             try:
                                 model_choice = int(input(f"\nSelect model (number) [Default: 1]: ").strip())
                                 if not model_choice:
-                                    model_choice = 1
+                                    # For granite provider, default to granite-8b (index 1) instead of first model
+                                    if selected_provider == "granite" and "granite-8b" in available_models:
+                                        model_choice = available_models.index("granite-8b") + 1
+                                    else:
+                                        model_choice = 1
                                 if 1 <= model_choice <= len(available_models):
                                     args.transcriber_model = available_models[model_choice - 1]
-                                    print(f"✓ Selected model: {args.transcriber_model}")
+                                    is_default = (model_choice == 1 and selected_provider != "granite") or \
+                                               (selected_provider == "granite" and args.transcriber_model == "granite-8b")
+                                    default_marker = " [Default]" if is_default else ""
+                                    print(f"✓ Selected model: {args.transcriber_model}{default_marker}")
                                     break
                                 else:
                                     print("Error: Please enter a number from the list.")
@@ -546,7 +553,11 @@ def interactive_prompt(args, api):
         while True:
             choice_input = input(f"\nSelect model (number) [Default: 1]: ").strip()
             if not choice_input:
-                choice = 1
+                # For granite provider, default to granite-8b (index 1) instead of first model
+                if args.transcriber_provider == "granite" and "granite-8b" in available_models:
+                    choice = available_models.index("granite-8b") + 1
+                else:
+                    choice = 1
             else:
                 try:
                     choice = int(choice_input)
@@ -556,7 +567,8 @@ def interactive_prompt(args, api):
             
             if 1 <= choice <= len(available_models):
                 args.transcriber_model = available_models[choice - 1]
-                is_default = choice == 1
+                is_default = (choice == 1 and args.transcriber_provider != "granite") or \
+                           (args.transcriber_provider == "granite" and args.transcriber_model == "granite-8b")
                 default_marker = " [Default]" if is_default else ""
                 print(f"✓ Selected: {args.transcriber_model}{default_marker}")
                 break

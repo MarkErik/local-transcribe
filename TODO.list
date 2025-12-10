@@ -1,0 +1,5 @@
+TODO:
+
+- For each plugin that has multiple models, require that a model is set as the default within the plugin, and then ensure that the default is propogated through the application to the cli for interactive mode, and also for the cli arguments. And in the interactive mode, the default model is labelled with [Default] and that if the user presses enter without typing a choice, the default model will be selected.
+
+- 

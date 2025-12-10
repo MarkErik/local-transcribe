@@ -3,6 +3,7 @@
 
 import os
 import sys
+import datetime
 from typing import Optional
 
 from local_transcribe.framework.model_downloader import ensure_models_available
@@ -304,6 +305,12 @@ def run_pipeline(args, api, root):
         "aligner": aligner_provider is not None,
         "diarization": diarization_provider is not None
     }
+
+    # Modify output directory name if DEBUG flag is set
+    if args.log_level == "DEBUG":
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        transcriber_name = transcriber_provider.name if transcriber_provider else "unknown"
+        args.outdir = f"{args.outdir}_{transcriber_name}_{timestamp}"
 
     # Ensure outdir & subdirs
     outdir = ensure_outdir(args.outdir)

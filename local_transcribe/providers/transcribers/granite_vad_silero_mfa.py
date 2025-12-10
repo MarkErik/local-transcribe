@@ -263,11 +263,13 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             chat = [
                 {
                     "role": "system",
-                    "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: April 9, 2024.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
+                    "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: December 9, 2025.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
                 },
                 {
                     "role": "user",
-                    "content": "<|audio|>can you transcribe the speech into a written format?",
+                    # "content": "<|audio|>can you transcribe the speech into a written format?", # original from IBM
+                    #"content": "<|audio|>can you transcribe the speech into a written format? make sure to include disfluencies.", #trying to eal with dropped disfluencies
+                    "content": "<|audio|>can you accurately transcribe the speech (including disfluencies, repetitions, and stutters) into a written format?", #another attempt at a prompt
                 }
             ]
 
@@ -285,11 +287,18 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             # Adjust parameters based on segment duration
             if segment_duration < 8.0:
                 # For segments less than 8 seconds: reduce max_new_tokens and exclude logits_processor
-                max_new_tokens = 192
+                max_new_tokens = 128
                 logits_processor = None
-            else:
-                # For segments 8 seconds or longer: use current settings
+            elif segment_duration < 20.0:
                 max_new_tokens = 256
+                repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(
+                    penalty=1.0,
+                    prompt_ignore_length=model_inputs["input_ids"].shape[-1],
+                )
+                logits_processor = [repetition_penalty_processor]
+            else:
+                # For segments 20 seconds or longer: use current settings
+                max_new_tokens = 512
                 repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(
                     penalty=3.0,
                     prompt_ignore_length=model_inputs["input_ids"].shape[-1],

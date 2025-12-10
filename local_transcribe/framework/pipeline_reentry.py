@@ -8,6 +8,7 @@ from intermediate checkpoint files (e.g., corrected diarized JSON).
 
 from pathlib import Path
 from typing import Optional, Dict, Any
+import os
 
 from local_transcribe.framework.pipeline_context import (
     PipelineContext,
@@ -116,6 +117,37 @@ def run_pipeline_from_checkpoint(args, api, root) -> int:
     
     # Ensure output directory
     outdir = ensure_outdir(args.outdir)
+    
+    # Write settings to file if DEBUG log level is set
+    if args.log_level == "DEBUG":
+        settings_path = os.path.join(outdir, "settings.txt")
+        with open(settings_path, 'w') as f:
+            f.write("Local-Transcribe Settings (Re-entry Mode)\n")
+            f.write("=" * 40 + "\n\n")
+            
+            # Write all command line arguments
+            f.write("Command Line Arguments:\n")
+            f.write("-" * 25 + "\n")
+            for key, value in vars(args).items():
+                if key not in ['audio_files', 'outdir', 'from_diarized_json']:  # Skip these as they can be long
+                    f.write(f"{key}: {value}\n")
+            f.write("\n")
+            
+            # Write processing mode
+            f.write("Processing Mode:\n")
+            f.write("-" * 17 + "\n")
+            f.write(f"Mode: {mode} (Re-entry)\n")
+            f.write(f"Starting Stage: turn_building\n")
+            f.write(f"Selected Outputs: {', '.join(args.selected_outputs)}\n")
+            f.write("\n")
+            
+            # Write checkpoint info
+            f.write("Checkpoint Information:\n")
+            f.write("-" * 23 + "\n")
+            f.write(f"Checkpoint File: {os.path.basename(str(checkpoint_path))}\n")
+            f.write(f"Number of Segments: {len(segments)}\n")
+        
+        print(f"[DEBUG] Settings written to {settings_path}")
     
     # Set up directory structure for re-entry
     # We need minimal directories since we're starting from diarization

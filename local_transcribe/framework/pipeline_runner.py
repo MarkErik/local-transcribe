@@ -309,6 +309,56 @@ def run_pipeline(args, api, root):
     outdir = ensure_outdir(args.outdir)
     paths = api["ensure_session_dirs"](outdir, mode, speaker_files, capabilities)
 
+    # Write settings to file if DEBUG log level is set
+    if args.log_level == "DEBUG":
+        from local_transcribe.lib.system_capability_utils import get_system_capability
+        settings_path = os.path.join(outdir, "settings.txt")
+        with open(settings_path, 'w') as f:
+            f.write("Local-Transcribe Settings\n")
+            f.write("=" * 30 + "\n\n")
+            
+            # Write all command line arguments
+            f.write("Command Line Arguments:\n")
+            f.write("-" * 25 + "\n")
+            for key, value in vars(args).items():
+                if key not in ['audio_files', 'outdir']:  # Skip these as they can be long
+                    f.write(f"{key}: {value}\n")
+            f.write("\n")
+            
+            # Write provider information
+            f.write("Selected Providers:\n")
+            f.write("-" * 20 + "\n")
+            if transcriber_provider:
+                f.write(f"Transcriber: {transcriber_provider.name}\n")
+                if hasattr(transcriber_provider, 'model') and transcriber_provider.model:
+                    f.write(f"Transcriber Model: {transcriber_provider.model}\n")
+                elif hasattr(args, 'transcriber_model') and args.transcriber_model:
+                    f.write(f"Transcriber Model: {args.transcriber_model}\n")
+            if aligner_provider:
+                f.write(f"Aligner: {aligner_provider.name}\n")
+            if diarization_provider:
+                f.write(f"Diarization: {diarization_provider.name}\n")
+            if transcript_cleanup_provider:
+                f.write(f"Transcript Cleanup: {transcript_cleanup_provider.name}\n")
+            f.write("\n")
+            
+            # Write processing mode
+            f.write("Processing Mode:\n")
+            f.write("-" * 17 + "\n")
+            f.write(f"Mode: {mode}\n")
+            f.write(f"System Capability: {get_system_capability()}\n")
+            f.write(f"Number of Speakers: {args.num_speakers}\n")
+            f.write(f"Selected Outputs: {', '.join(args.selected_outputs)}\n")
+            f.write("\n")
+            
+            # Write audio files info
+            f.write("Audio Files:\n")
+            f.write("-" * 13 + "\n")
+            for speaker, path in speaker_files.items():
+                f.write(f"{speaker}: {os.path.basename(path)}\n")
+        
+        print(f"[DEBUG] Settings written to {settings_path}")
+
     if mode == "single_speaker_audio":
         log_status(f"Mode: {mode} | System: {args.system.upper()} | Transcriber: {args.transcriber_provider} | Outputs: CSV")
     else:
@@ -320,7 +370,8 @@ def run_pipeline(args, api, root):
         if hasattr(args, 'diarization_provider') and args.diarization_provider:
             provider_info.append(f"Diarization: {args.diarization_provider}")
         provider_str = " | ".join(provider_info) if provider_info else "Default providers"
-        log_status(f"Mode: {mode} | System: {args.system.upper()} | {provider_str} | Outputs: {', '.join(args.selected_outputs)}")
+        from local_transcribe.lib.system_capability_utils import get_system_capability
+        log_status(f"Mode: {mode} | System: {get_system_capability().upper()} | {provider_str} | Outputs: {', '.join(args.selected_outputs)}")
 
         # Run pipeline
         if mode == "single_speaker_audio":

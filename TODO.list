@@ -1,5 +1,17 @@
 TODO:
 
 - For each plugin that has multiple models, require that a model is set as the default within the plugin, and then ensure that the default is propogated through the application to the cli for interactive mode, and also for the cli arguments. And in the interactive mode, the default model is labelled with [Default] and that if the user presses enter without typing a choice, the default model will be selected.
+-- faster_whisper plugin: Has 2 models (medium.en, large-v3). Set large-v3 as default since it's the more capable model for better transcription accuracy.
+-- openai_whisper plugin: Has 3 models (base.en, small.en, medium.en). Set small.en as default as it provides a good balance between speed and accuracy for most use cases.
+-- granite plugin: Has 2 models (granite-2b, granite-8b). Set granite-8b as default since the larger model provides better transcription quality.
+-- mlx_whisper plugin: Has 8 models (base, base.en, small, small.en, medium, medium.en, large-v3, turbo-v3). Set base.en as default for fast English transcription with good quality.
+-- whisper_cpp plugin: Has 8 models (base, base.en, small, small.en, medium, medium.en, large-v3, turbo-v3). Set base.en as default for efficient CPU-based transcription.
+-- granite_vad_silero_mfa plugin: Has 2 models (granite-2b, granite-8b). Set granite-8b as default for optimal transcription and alignment performance.
+-- granite_wav2vec2 plugin: Has 2 models (granite-2b, granite-8b). Set granite-8b as default for best transcription quality with Wav2Vec2 alignment.
+-- granite_mfa plugin: Has 2 models (granite-2b, granite-8b). Set granite-8b as default for high-accuracy transcription with MFA alignment.
 
-- 
+- Implement lazy imports: Move heavy library imports (torch, transformers, faster_whisper, etc.) from module top-level into methods/classes where they're actually needed. This prevents loading large ML libraries at startup when they're not immediately required, reducing initial import time from several seconds to sub-second. Currently, all provider modules import their dependencies at import time, causing cumulative delays even for unused providers.
+
+- Implement selective loading for interactive mode: Modify the plugin loading system to only load provider metadata and basic registration for interactive mode, deferring full module imports until a provider is actually selected. This allows the CLI to display available providers quickly without loading all their heavy dependencies upfront, improving startup time for users who just want to see options.
+
+- Optimize imports based on system capabilities: Use conditional imports that only load GPU-specific libraries (torch with CUDA/MPS support) when those capabilities are detected and available. This prevents loading unnecessary CUDA/MPS extensions on CPU-only systems, and avoids import failures on systems where GPU libraries aren't properly installed, while still maintaining full functionality when hardware is available.

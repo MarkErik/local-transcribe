@@ -11,6 +11,7 @@ import json
 import re
 import requests
 import time
+import unicodedata
 from typing import List, Dict, Any, Optional, Tuple, Set
 from pathlib import Path
 from datetime import datetime
@@ -18,6 +19,69 @@ from dataclasses import dataclass, field
 
 from local_transcribe.framework.plugin_interfaces import WordSegment
 from local_transcribe.lib.program_logger import log_progress, log_status, log_debug
+
+
+def _normalize_text_for_comparison(text: str) -> str:
+    """
+    Normalize text for comparison by handling Unicode variations.
+    
+    This function addresses the issue where different Unicode representations
+    of the same text (e.g., straight quotes vs. curly quotes) are incorrectly
+    flagged as mismatches during validation.
+    
+    Args:
+        text: The text to normalize
+        
+    Returns:
+        Normalized text that can be compared reliably
+    """
+    if not text:
+        return text
+    
+    # Convert to Unicode normalization form NFC (composed characters)
+    normalized = unicodedata.normalize('NFC', text)
+    
+    # Map common Unicode quote variants to ASCII equivalents
+    # This handles cases like "i'm" vs "i'm" where quotes differ
+    quote_mappings = {
+        '\u2018': "'",  # Left single curly quote
+        '\u2019': "'",  # Right single curly quote
+        '\u201A': "'",  # Single low-9 quote
+        '\u201B': "'",  # Single high-reversed-9 quote
+        '\u201C': '"',  # Left double curly quote
+        '\u201D': '"',  # Right double curly quote
+        '\u201E': '"',  # Double low-9 quote
+        '\u201F': '"',  # Double high-reversed-9 quote
+        '\u00AB': '"',  # Left-pointing double angle quote
+        '\u00BB': '"',  # Right-pointing double angle quote
+        '\u2039': "'",  # Single left-pointing angle quote
+        '\u203A': "'",  # Single right-pointing angle quote
+    }
+    
+    # Apply quote mappings
+    for unicode_char, ascii_char in quote_mappings.items():
+        normalized = normalized.replace(unicode_char, ascii_char)
+    
+    return normalized
+
+
+def _words_equivalent(word1: str, word2: str) -> bool:
+    """
+    Check if two words are equivalent, handling Unicode variations.
+    
+    Args:
+        word1: First word to compare
+        word2: Second word to compare
+        
+    Returns:
+        True if words are equivalent, False otherwise
+    """
+    # Normalize both words for comparison
+    norm1 = _normalize_text_for_comparison(word1)
+    norm2 = _normalize_text_for_comparison(word2)
+    
+    # Compare case-insensitively after normalization
+    return norm1.lower() == norm2.lower()
 
 
 # Configuration defaults
@@ -41,11 +105,11 @@ class DiscoveredName:
     occurrences: int = 1
     
     def __hash__(self):
-        return hash(self.name.lower())
+        return hash(_normalize_text_for_comparison(self.name).lower())
     
     def __eq__(self, other):
         if isinstance(other, DiscoveredName):
-            return self.name.lower() == other.name.lower()
+            return _words_equivalent(self.name, other.name)
         return False
 
 
@@ -94,13 +158,14 @@ def build_global_name_list(
         for rep in replacements:
             original = rep.get('original', '')
             if original and original != '[REDACTED]' and original.strip():
-                name_lower = original.lower().strip()
+                # Use Unicode-aware normalization for name comparison
+                name_normalized = _normalize_text_for_comparison(original).lower().strip()
                 name_original = original.strip()
                 
-                if name_lower in name_counts:
-                    name_counts[name_lower].occurrences += 1
+                if name_normalized in name_counts:
+                    name_counts[name_normalized].occurrences += 1
                 else:
-                    name_counts[name_lower] = DiscoveredName(
+                    name_counts[name_normalized] = DiscoveredName(
                         name=name_original,
                         source_speaker=speaker_name,
                         occurrences=1
@@ -691,9 +756,9 @@ def _map_second_pass_replacements(
         
         # Track NEW replacements (original wasn't already [REDACTED])
         if llm_word == "[REDACTED]" and segment.text != "[REDACTED]":
-            # Try to match against known names
-            orig_lower = segment.text.lower().strip('.,!?;:')
-            matched_name = name_lookup.get(orig_lower, segment.text)
+            # Try to match against known names using Unicode-aware comparison
+            orig_normalized = _normalize_text_for_comparison(segment.text).lower().strip('.,!?;:')
+            matched_name = name_lookup.get(orig_normalized, segment.text)
             names_found.add(matched_name)
             
             replacements.append({

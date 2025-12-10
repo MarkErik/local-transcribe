@@ -8,6 +8,7 @@ import json
 import re
 import requests
 import time
+import unicodedata
 from typing import List, Dict, Any, Optional, Tuple, Set, Union
 from pathlib import Path
 from datetime import datetime
@@ -15,6 +16,69 @@ from dataclasses import dataclass, field
 
 from local_transcribe.framework.plugin_interfaces import WordSegment
 from local_transcribe.lib.program_logger import log_progress, log_status, log_debug
+
+
+def _normalize_text_for_comparison(text: str) -> str:
+    """
+    Normalize text for comparison by handling Unicode variations.
+    
+    This function addresses the issue where different Unicode representations
+    of the same text (e.g., straight quotes vs. curly quotes) are incorrectly
+    flagged as mismatches during validation.
+    
+    Args:
+        text: The text to normalize
+        
+    Returns:
+        Normalized text that can be compared reliably
+    """
+    if not text:
+        return text
+    
+    # Convert to Unicode normalization form NFC (composed characters)
+    normalized = unicodedata.normalize('NFC', text)
+    
+    # Map common Unicode quote variants to ASCII equivalents
+    # This handles cases like "i'm" vs "i'm" where quotes differ
+    quote_mappings = {
+        '\u2018': "'",  # Left single curly quote
+        '\u2019': "'",  # Right single curly quote
+        '\u201A': "'",  # Single low-9 quote
+        '\u201B': "'",  # Single high-reversed-9 quote
+        '\u201C': '"',  # Left double curly quote
+        '\u201D': '"',  # Right double curly quote
+        '\u201E': '"',  # Double low-9 quote
+        '\u201F': '"',  # Double high-reversed-9 quote
+        '\u00AB': '"',  # Left-pointing double angle quote
+        '\u00BB': '"',  # Right-pointing double angle quote
+        '\u2039': "'",  # Single left-pointing angle quote
+        '\u203A': "'",  # Single right-pointing angle quote
+    }
+    
+    # Apply quote mappings
+    for unicode_char, ascii_char in quote_mappings.items():
+        normalized = normalized.replace(unicode_char, ascii_char)
+    
+    return normalized
+
+
+def _words_equivalent(word1: str, word2: str) -> bool:
+    """
+    Check if two words are equivalent, handling Unicode variations.
+    
+    Args:
+        word1: First word to compare
+        word2: Second word to compare
+        
+    Returns:
+        True if words are equivalent, False otherwise
+    """
+    # Normalize both words for comparison
+    norm1 = _normalize_text_for_comparison(word1)
+    norm2 = _normalize_text_for_comparison(word2)
+    
+    # Compare case-insensitively after normalization
+    return norm1.lower() == norm2.lower()
 
 
 @dataclass
@@ -786,16 +850,18 @@ def _validate_llm_output(original: str, processed: str) -> Dict[str, Any]:
             }
         }
 
-    # Check position-wise that non-redacted words match the original (case-insensitive)
+    # Check position-wise that non-redacted words match the original (Unicode-aware)
     mismatches = []
     for i in range(len(orig_words)):
         if proc_words[i] == "[REDACTED]":
             continue  # Redaction is allowed
-        if orig_words[i].lower() != proc_words[i].lower():
+        if not _words_equivalent(orig_words[i], proc_words[i]):
             mismatches.append({
                 'index': i,
                 'original': orig_words[i],
-                'processed': proc_words[i]
+                'processed': proc_words[i],
+                'normalized_original': _normalize_text_for_comparison(orig_words[i]),
+                'normalized_processed': _normalize_text_for_comparison(proc_words[i])
             })
 
     if mismatches:

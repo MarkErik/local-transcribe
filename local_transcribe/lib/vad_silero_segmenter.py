@@ -657,8 +657,8 @@ class SileroVADSegmenter:
         
         # Convert to VADSegment objects
         segments = [
-            VADSegment(ts['start'], ts['end'], ts['end'] - ts['start'])
-            for ts in speech_timestamps
+            VADSegment(ts['start'], ts['end'], ts['end'] - ts['start'], original_number=i+1)
+            for i, ts in enumerate(speech_timestamps)
         ]
         
         if debug_enabled:

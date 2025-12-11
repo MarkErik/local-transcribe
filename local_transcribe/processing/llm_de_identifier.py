@@ -1227,12 +1227,16 @@ def _save_debug_files(
         if validation_result and not validation_result.get('passed', False):
             # Use original_text if provided, otherwise fall back to chunk_data['text']
             diff_original = original_text if original_text is not None else chunk_data['text']
+            
+            # Include attempt number in filename for multiple attempts
+            attempt_suffix = f"_{attempt_idx}" if attempt_idx is not None else ""
             _generate_word_diff(
                 chunk_idx,
                 diff_original,
                 llm_response,
                 validation_result,
-                debug_dir
+                debug_dir,
+                attempt_suffix=attempt_suffix
             )
 
 
@@ -1249,7 +1253,8 @@ def _generate_word_diff(
     original_text: str,
     llm_text: str,
     validation_result: Dict,
-    debug_dir: Path
+    debug_dir: Path,
+    attempt_suffix: str = ""
 ) -> None:
     """
     Generate word-by-word diff for failed validations using sequence alignment.
@@ -1270,7 +1275,7 @@ def _generate_word_diff(
     llm_words = llm_text.split()
     
     chunk_num_str = f"{chunk_idx:03d}"
-    diff_path = debug_dir / f"chunk_{chunk_num_str}_diff.txt"
+    diff_path = debug_dir / f"chunk_{chunk_num_str}{attempt_suffix}_diff.txt"
     
     # Use SequenceMatcher for proper alignment
     matcher = difflib.SequenceMatcher(None, orig_words, llm_words)

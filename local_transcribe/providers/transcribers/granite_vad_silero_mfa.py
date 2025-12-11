@@ -33,6 +33,16 @@ from local_transcribe.lib.vad_silero_segmenter import SileroVADSegmenter
 
 
 class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
+    # Prompt fragment markers to filter from transcription output
+    _PROMPT_FRAGMENTS = [
+        "make sure to include disfluencies",
+        "can you transcribe the speech into a written format",
+        #"can you accurately transcribe the speech",
+        #"into a written format",
+        #"including disfluencies",
+        #"repetitions",
+        #"stutters",
+    ]
     """Combined transcriber+aligner using IBM Granite + Silero VAD segmentation + MFA alignment."""
 
     def __init__(self) -> None:
@@ -55,6 +65,41 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         # MFA configuration
         self.mfa_models_dir = None  # type: ignore
+
+    def _strip_prompt_fragments(self, text: str) -> str:
+        """Strip prompt fragments from the transcription output.
+        
+        This method removes common prompt fragments that Granite sometimes includes
+        in the transcription output, such as "make sure to include disfluencies"
+        or "can you transcribe the speech into a written format".
+        
+        Args:
+            text: The raw transcription text
+            
+        Returns:
+            The cleaned transcription text with prompt fragments removed
+        """
+        if not text:
+            return text
+            
+        lower_text = text.lower()
+        cleaned_text = text
+        
+        for fragment in self._PROMPT_FRAGMENTS:
+            idx = lower_text.find(fragment)
+            if idx != -1:
+                # Remove the fragment and everything before it
+                cleaned_text = cleaned_text[:idx]
+                lower_text = cleaned_text.lower()
+        
+        # Clean up any trailing punctuation or whitespace
+        cleaned_text = cleaned_text.rstrip(" .,\n\t")
+        
+        # If we removed everything, return the original text
+        if not cleaned_text.strip():
+            return text.strip()
+            
+        return cleaned_text.strip()
 
     @property
     def device(self) -> str:
@@ -273,8 +318,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 {
                     "role": "user",
                     # "content": "<|audio|>can you transcribe the speech into a written format?", # original from IBM
-                    #"content": "<|audio|>can you transcribe the speech into a written format? make sure to include disfluencies.", #trying to eal with dropped disfluencies
-                    "content": "<|audio|>can you accurately transcribe the speech (including disfluencies, repetitions, and stutters) into a written format?", #another attempt at a prompt
+                    "content": "<|audio|>can you transcribe the speech into a written format? make sure to include disfluencies.", #trying to eal with dropped disfluencies
+                    #"content": "<|audio|>can you accurately transcribe the speech (including disfluencies, repetitions, and stutters) into a written format?", #another attempt at a prompt
                 }
             ]
 
@@ -299,7 +344,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             elif segment_duration < 20.0:
                 max_new_tokens = 256
                 repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(
-                    penalty=1.0,
+                    penalty=3.0,
                     prompt_ignore_length=model_inputs["input_ids"].shape[-1],
                 )
                 logits_processor = [repetition_penalty_processor]
@@ -341,8 +386,15 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             )
 
             cleaned_text: str = self._clean_transcription_output(output_text[0].strip())
-
-            return cleaned_text
+            
+            # Strip prompt fragments from the transcription
+            final_text: str = self._strip_prompt_fragments(cleaned_text)
+            
+            # Log if prompt fragments were removed
+            if final_text != cleaned_text:
+                log_debug("Removed prompt fragments from transcription output")
+            
+            return final_text
             
         finally:
             if 'wav_tensor' in locals():
@@ -1040,6 +1092,9 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             
             # Transcribe segment with Granite
             segment_text: str = self._transcribe_single_segment(segment_wav, sample_rate=int(sr), **kwargs)
+            
+            # Apply additional prompt fragment filtering as a safety measure
+            segment_text = self._strip_prompt_fragments(segment_text)
             
             if debug_dir:
                 self._save_debug_segment(debug_dir, segment_num, "granite_output", {

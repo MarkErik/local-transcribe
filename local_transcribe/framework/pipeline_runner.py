@@ -879,13 +879,6 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
             
             log_completion("Separate audio processing complete.")
 
-        # Summary
-        print(f"[i] Artifacts written to: {paths['root']}")
-        
-        # Clean up temporary audio files
-        cleanup_temp_audio(outdir)
-        print("[✓] Temporary audio files cleaned up.")
-        
         return return_code
 
     # This should never be reached, but we need to satisfy the type checker

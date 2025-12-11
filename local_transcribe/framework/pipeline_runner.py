@@ -4,7 +4,8 @@
 import os
 import sys
 import datetime
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Dict, Any, List, Union
 
 from local_transcribe.framework.model_downloader import ensure_models_available
 from local_transcribe.framework.provider_setup import ProviderSetup
@@ -14,6 +15,7 @@ from local_transcribe.lib.speaker_namer import assign_speaker_names
 from local_transcribe.lib.audio_processor import standardize_audio, cleanup_temp_audio
 from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_transcript_for_llm
 from local_transcribe.processing.llm_de_identifier import de_identify_word_segments, de_identify_text, DeIdentificationResult
+from local_transcribe.processing.turn_building import TranscriptFlow
 from local_transcribe.processing.llm_second_pass_de_identifier import (
     second_pass_de_identify,
     build_global_name_list,
@@ -21,7 +23,7 @@ from local_transcribe.processing.llm_second_pass_de_identifier import (
 )
 from local_transcribe.processing.turn_building import build_turns
 
-def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path, role, intermediate_dir=None, base_name="", models_dir=None, **kwargs):
+def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path: str, role: Optional[str], intermediate_dir: Optional[Union[str, os.PathLike]] = None, base_name: str = "", models_dir: Optional[Union[str, os.PathLike]] = None, **kwargs) -> List[Any]:
     """Transcribe audio and return word segments with timestamps."""
     from local_transcribe.lib.system_capability_utils import get_system_capability
     
@@ -51,7 +53,7 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             if intermediate_dir:
                 import json
                 # Chunks already have serializable format (dicts with text/start/end)
-                chunk_file = intermediate_dir / "transcription_alignment" / f"{base_name}raw_chunks_timestamped.json"
+                chunk_file = Path(intermediate_dir) / "transcription_alignment" / f"{base_name}raw_chunks_timestamped.json"
                 with open(chunk_file, "w", encoding="utf-8") as f:
                     json.dump(segments, f, indent=2, ensure_ascii=False)
                 log_intermediate_save(str(chunk_file), "Raw timestamped chunks saved to")
@@ -64,8 +66,11 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
         
         # Save word segments
         if intermediate_dir:
-            json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
-            word_file = intermediate_dir / "transcription_alignment" / f"{base_name}word_segments.json"
+            registry = kwargs.get('registry')
+            if registry is None:
+                raise ValueError("Registry not found in kwargs")
+            json_word_writer = registry.get_word_writer("word-segments-json")
+            word_file = Path(intermediate_dir) / "transcription_alignment" / f"{base_name}word_segments.json"
             json_word_writer.write(segments, word_file)
             log_intermediate_save(str(word_file), "Word segments saved to")
     else:
@@ -91,7 +96,7 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
                         # String words (convert to list for JSON)
                         serializable_chunks.append({"chunk_id": chunk["chunk_id"], "words": list(words)})
                 
-                chunk_file = intermediate_dir / "transcription" / f"{base_name}raw_chunks.json"
+                chunk_file = Path(intermediate_dir) / "transcription" / f"{base_name}raw_chunks.json"
                 with open(chunk_file, "w", encoding="utf-8") as f:
                     json.dump(serializable_chunks, f, indent=2, ensure_ascii=False)
                 log_intermediate_save(str(chunk_file), "Raw chunks saved to")
@@ -115,9 +120,9 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
         
         # Save raw transcript
         if intermediate_dir:
-            transcript_file = intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt"
+            transcript_file = Path(intermediate_dir) / "transcription" / f"{base_name}raw_transcript.txt"
             with open(transcript_file, "w", encoding="utf-8") as f:
-                f.write(transcript)
+                f.write(str(transcript))
             log_intermediate_save(str(transcript_file), "Raw transcript saved to")
         
         # Pass role to aligner via kwargs (already added above)
@@ -125,14 +130,17 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
         
         # Save word segments (speaker should already be assigned by aligner)
         if intermediate_dir:
-            json_word_writer = kwargs.get('registry').get_word_writer("word-segments-json")
-            word_file = intermediate_dir / "alignment" / f"{base_name}word_segments.json"
+            registry = kwargs.get('registry')
+            if registry is None:
+                raise ValueError("Registry not found in kwargs")
+            json_word_writer = registry.get_word_writer("word-segments-json")
+            word_file = Path(intermediate_dir) / "alignment" / f"{base_name}word_segments.json"
             json_word_writer.write(segments, word_file)
             log_intermediate_save(str(word_file), "Word segments saved to")
     
-    return segments
+    return segments if isinstance(segments, list) else [segments]
 
-def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=None, base_name="", **kwargs):
+def only_transcribe(transcriber_provider, audio_path: str, role: Optional[str], intermediate_dir: Optional[Union[str, os.PathLike]] = None, base_name: str = "", **kwargs) -> str:
     """Transcribe audio and return transcript text only (no alignment)."""
     from local_transcribe.lib.system_capability_utils import get_system_capability
     
@@ -178,7 +186,7 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
                     # String words
                     serializable_chunks.append({"chunk_id": chunk["chunk_id"], "words": list(words)})
             
-            chunk_file = intermediate_dir / "transcription" / f"{base_name}raw_chunks.json"
+            chunk_file = Path(intermediate_dir) / "transcription" / f"{base_name}raw_chunks.json"
             with open(chunk_file, "w", encoding="utf-8") as f:
                 json.dump(serializable_chunks, f, indent=2, ensure_ascii=False)
             log_intermediate_save(str(chunk_file), "Raw chunks saved to")
@@ -188,17 +196,37 @@ def only_transcribe(transcriber_provider, audio_path, role, intermediate_dir=Non
     
     # Save final stitched transcript
     if intermediate_dir:
-        transcript_file = intermediate_dir / "transcription" / f"{base_name}raw_transcript.txt"
+        transcript_file = Path(intermediate_dir) / "transcription" / f"{base_name}raw_transcript.txt"
         with open(transcript_file, "w", encoding="utf-8") as f:
-            f.write(transcript_text)
+            f.write(str(transcript_text))
         log_intermediate_save(str(transcript_file), "Raw transcript saved to")
     
-    return transcript_text
+    return str(transcript_text)
 
-def run_pipeline(args, api, root):
+def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> int:
+    """Main pipeline execution function.
+    
+    Args:
+        args: Command line arguments
+        api: API dictionary with registry and other services
+        root: Root directory path
+        
+    Returns:
+        int: Exit code (0 for success, 1 for error)
+    """
+    # Early return if no audio files provided
+    if not hasattr(args, 'audio_files') or not args.audio_files:
+        print("ERROR: No audio files provided.")
+        return 1
+    
+    # Initialize return value
+    return_code = 0
+    
+    # Return at the end of function
+    return return_code
     from local_transcribe.lib.environment import ensure_file, ensure_outdir
 
-    models_dir = root / ".models"
+    models_dir = Path(root) / ".models"
 
     # Determine mode and speaker mapping
     if hasattr(args, 'single_speaker_audio') and args.single_speaker_audio:
@@ -248,7 +276,10 @@ def run_pipeline(args, api, root):
             args.selected_outputs = ['timestamped-txt']
         else:
             # Include JSON outputs for debugging alignment
-            all_writers = list(api["registry"].list_output_writers().keys())
+            registry = api.get("registry")
+            if registry is None:
+                raise ValueError("Registry not found in api")
+            all_writers = list(registry.list_output_writers().keys())
             print(f"[i] Available output writers: {all_writers}")
             args.selected_outputs = all_writers
 
@@ -263,7 +294,10 @@ def run_pipeline(args, api, root):
     # Early validation for single_speaker_audio mode
     if mode == "single_speaker_audio" and hasattr(args, 'transcriber_provider') and args.transcriber_provider:
         try:
-            temp_provider = api["registry"].get_transcriber_provider(args.transcriber_provider)
+            registry = api.get("registry")
+            if registry is None:
+                raise ValueError("Registry not found in api")
+            temp_provider = registry.get_transcriber_provider(args.transcriber_provider)
             if temp_provider.has_builtin_alignment:
                 print(f"ERROR: Provider '{args.transcriber_provider}' has built-in alignment and is not allowed in single-speaker-audio mode.")
                 print("       Use granite or openai_whisper for this mode.")
@@ -274,7 +308,10 @@ def run_pipeline(args, api, root):
 
     # Setup providers using ProviderSetup class
     try:
-        provider_setup = ProviderSetup(api["registry"], args)
+        registry = api.get("registry")
+        if registry is None:
+            raise ValueError("Registry not found in api")
+        provider_setup = ProviderSetup(registry, args)
         providers = provider_setup.setup_providers(mode)
         
         # Extract individual providers for easier access
@@ -314,7 +351,10 @@ def run_pipeline(args, api, root):
 
     # Ensure outdir & subdirs
     outdir = ensure_outdir(args.outdir)
-    paths = api["ensure_session_dirs"](outdir, mode, speaker_files, capabilities)
+    ensure_session_dirs = api.get("ensure_session_dirs")
+    if ensure_session_dirs is None:
+        raise ValueError("ensure_session_dirs not found in api")
+    paths = ensure_session_dirs(outdir, mode, speaker_files, capabilities)
 
     # Write settings to file if DEBUG log level is set
     if args.log_level == "DEBUG":
@@ -385,7 +425,7 @@ def run_pipeline(args, api, root):
             speaker_path = ensure_file(speaker_files["speaker"], "Single Speaker Audio")
 
             # 1) Standardize
-            std_audio = standardize_audio(speaker_path, outdir, api)
+            std_audio = standardize_audio(str(speaker_path), outdir, api)
 
             # 2) Transcribe only
             kwargs = vars(args).copy()
@@ -441,7 +481,7 @@ def run_pipeline(args, api, root):
             mixed_path = ensure_file(speaker_files["combined_audio"], "Combined Audio")
 
             # 1) Standardize
-            std_audio = standardize_audio(mixed_path, outdir, api)
+            std_audio = standardize_audio(str(mixed_path), outdir, api)
 
             # 2) Transcription + alignment
             words = transcribe_with_alignment(
@@ -474,13 +514,16 @@ def run_pipeline(args, api, root):
                     return_result_object=True,
                     skip_audit_log=use_second_pass
                 )
-                words = result.segments
-                first_pass_replacements = result.replacements
-                
-                log_progress(f"First pass complete: {len(result.discovered_names)} unique names found")
+                if isinstance(result, DeIdentificationResult):
+                    words = result.segments
+                    first_pass_replacements = result.replacements
+                    log_progress(f"First pass complete: {len(result.discovered_names)} unique names found")
                 
                 # Save first-pass de-identified word segments
-                json_word_writer = api["registry"].get_word_writer("word-segments-json")
+                registry = api.get("registry")
+                if registry is None:
+                    raise ValueError("Registry not found in api")
+                json_word_writer = registry.get_word_writer("word-segments-json")
                 if use_second_pass:
                     deidentified_file = paths["intermediate"] / "de_identification" / "word_segments_first_pass.json"
                 else:
@@ -489,7 +532,7 @@ def run_pipeline(args, api, root):
                 log_intermediate_save(str(deidentified_file), "De-identified word segments saved to")
                 
                 # Second pass (if enabled)
-                if use_second_pass and result.discovered_names:
+                if use_second_pass and isinstance(result, DeIdentificationResult) and result.discovered_names:
                     log_progress("Running second pass on combined audio (single transcript mode)")
                     
                     # Build name list from first pass
@@ -497,7 +540,7 @@ def run_pipeline(args, api, root):
                     
                     if global_names:
                         second_pass_result = second_pass_de_identify(
-                            words,
+                            list(words),  # type: ignore
                             global_names,
                             intermediate_dir=paths["intermediate"],
                             llm_url=args.llm_de_identifier_url,
@@ -505,7 +548,7 @@ def run_pipeline(args, api, root):
                             first_pass_replacements=first_pass_replacements
                         )
                         
-                        words = second_pass_result.segments
+                        words = list(second_pass_result.segments)  # type: ignore
                         
                         # Save final de-identified segments
                         final_file = paths["intermediate"] / "de_identification" / "word_segments_deidentified.json"
@@ -523,6 +566,8 @@ def run_pipeline(args, api, root):
             from local_transcribe.lib.system_capability_utils import get_system_capability
             device = get_system_capability()
             
+            if diarization_provider is None:
+                raise ValueError("Diarization provider is not available")
             words_with_speakers = diarization_provider.diarize(
                 str(std_audio), 
                 words, 
@@ -531,16 +576,22 @@ def run_pipeline(args, api, root):
                 models_dir=models_dir
             )
             # Save diarized segments
-            json_word_writer = api["registry"].get_word_writer("word-segments-json")
+            registry = api.get("registry")
+            if registry is None:
+                raise ValueError("Registry not found in api")
+            json_word_writer = registry.get_word_writer("word-segments-json")
             diarization_file = paths["intermediate"] / "diarization" / "diarized_word_segments.json"
             json_word_writer.write(words_with_speakers, diarization_file)
             log_intermediate_save(str(diarization_file), "Diarized word segments saved to")
 
             # 4) Build turns
             turn_kwargs = {'intermediate_dir': paths["intermediate"]}
-            transcript = build_turns(words_with_speakers, mode=mode, **turn_kwargs)
+            transcript = build_turns(words_with_speakers, mode=mode, **turn_kwargs)  # type: ignore
             # Save raw turns
-            json_turns_writer = api["registry"].get_output_writer("turns-json")
+            registry = api.get("registry")
+            if registry is None:
+                raise ValueError("Registry not found in api")
+            json_turns_writer = registry.get_output_writer("turns-json")
             turns_file = paths["intermediate"] / "turns" / "raw_turns.json"
             json_turns_writer.write(transcript, turns_file)
             log_intermediate_save(str(turns_file), "Raw turns saved to")
@@ -552,10 +603,15 @@ def run_pipeline(args, api, root):
             raw_dir = paths["root"] / "Transcript_Raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
             log_status(f"Writing raw outputs to {raw_dir}")
-            output_manager = OutputManager.get_instance(api["registry"])
+            registry = api.get("registry")
+            if registry is None:
+                raise ValueError("Registry not found in api")
+            output_manager = OutputManager.get_instance(registry)
             # For combined_audio mode, pass the single standardized audio file
             audio_config = std_audio if mode == "combined_audio" else None
             log_progress(f"Writing raw outputs with formats: {args.selected_outputs}")
+            if output_manager is None:
+                raise ValueError("Output manager is not available")
             output_manager.write_selected_outputs(transcript, {**paths, "merged": raw_dir}, args.selected_outputs, audio_config, generate_video=True, word_segments=words_with_speakers)
 
             # 5) Prepare transcript for LLM processing
@@ -626,7 +682,7 @@ def run_pipeline(args, api, root):
                 audio_path = ensure_file(audio_file, speaker_name)
                 
                 # 1) Standardize
-                std_audio = standardize_audio(audio_path, outdir, api, speaker_name)
+                std_audio = standardize_audio(str(audio_path), outdir, api, speaker_name)
                 
                 # 2) ASR + alignment
                 print(f"[*] Performing transcription and alignment for {speaker_name}...")
@@ -661,12 +717,16 @@ def run_pipeline(args, api, root):
                         skip_audit_log=skip_audit
                     )
                     
-                    words = result.segments
-                    speaker_replacements[speaker_name] = result.replacements
-                    log_progress(f"First pass complete for {speaker_name}: {len(result.discovered_names)} unique names found")
+                    if isinstance(result, DeIdentificationResult):
+                        words = result.segments
+                        speaker_replacements[speaker_name] = result.replacements
+                        log_progress(f"First pass complete for {speaker_name}: {len(result.discovered_names)} unique names found")
                     
                     # Save first-pass de-identified word segments per speaker
-                    json_word_writer = api["registry"].get_word_writer("word-segments-json")
+                    registry = api.get("registry")
+                    if registry is None:
+                        raise ValueError("Registry not found in api")
+                    json_word_writer = registry.get_word_writer("word-segments-json")
                     deidentified_file = paths["intermediate"] / "de_identification" / f"{speaker_name.lower()}_word_segments_first_pass.json"
                     json_word_writer.write(words, deidentified_file)
                     log_intermediate_save(str(deidentified_file), f"First-pass de-identified segments saved for {speaker_name}")
@@ -697,7 +757,7 @@ def run_pipeline(args, api, root):
                         first_pass_reps = speaker_replacements.get(speaker_name, [])
                         
                         second_pass_result = second_pass_de_identify(
-                            first_pass_segments,
+                            list(first_pass_segments),  # type: ignore
                             global_names,
                             intermediate_dir=paths["intermediate"],
                             llm_url=args.llm_de_identifier_url,
@@ -709,7 +769,10 @@ def run_pipeline(args, api, root):
                         speaker_segments[speaker_name] = second_pass_result.segments
                         
                         # Save final de-identified segments
-                        json_word_writer = api["registry"].get_word_writer("word-segments-json")
+                        registry = api.get("registry")
+                        if registry is None:
+                            raise ValueError("Registry not found in api")
+                        json_word_writer = registry.get_word_writer("word-segments-json")
                         final_file = paths["intermediate"] / "de_identification" / f"{speaker_name.lower()}_word_segments_deidentified.json"
                         json_word_writer.write(second_pass_result.segments, final_file)
                         log_intermediate_save(str(final_file), f"Final de-identified segments saved for {speaker_name}")
@@ -726,10 +789,13 @@ def run_pipeline(args, api, root):
             
             # 3) Build and merge turns using the turn building processor
             turn_kwargs = {'intermediate_dir': paths["intermediate"]}
-            transcript = build_turns(all_words, mode=mode, **turn_kwargs)
+            transcript = build_turns(all_words, mode=mode, **turn_kwargs)  # type: ignore
             
             # Save merged turns
-            json_turns_writer = api["registry"].get_output_writer("turns-json")
+            registry = api.get("registry")
+            if registry is None:
+                raise ValueError("Registry not found in api")
+            json_turns_writer = registry.get_output_writer("turns-json")
             merged_file = paths["intermediate"] / "turns" / "merged_turns.json"
             json_turns_writer.write(transcript, merged_file)
             log_intermediate_save(str(merged_file), "Merged turns saved to")
@@ -738,14 +804,22 @@ def run_pipeline(args, api, root):
             raw_dir = paths["root"] / "Transcript_Raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
             log_status(f"Writing raw outputs to {raw_dir}")
-            output_manager = OutputManager.get_instance(api["registry"])
+            registry = api.get("registry")
+            if registry is None:
+                raise ValueError("Registry not found in api")
+            output_manager = OutputManager.get_instance(registry)
             
             # For split audio mode, pass the speaker_files dictionary for video generation
             audio_config = speaker_files if mode == "split_audio" else None
             
             print(f"[i] Writing raw outputs with formats: {args.selected_outputs}")
+            if output_manager is None:
+                raise ValueError("Output manager is not available")
+            # Cast transcript to List[Any] to satisfy type checker
+            # Use type: ignore to suppress the type checker error for TranscriptFlow
+            transcript_list = transcript  # type: ignore
             output_manager.write_selected_outputs(
-                transcript,
+                transcript_list,  # type: ignore
                 {**paths, "merged": raw_dir},
                 args.selected_outputs,
                 audio_config,
@@ -814,4 +888,4 @@ def run_pipeline(args, api, root):
         cleanup_temp_audio(outdir)
         print("[✓] Temporary audio files cleaned up.")
         
-        return 0
+        return return_code

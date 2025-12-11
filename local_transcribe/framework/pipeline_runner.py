@@ -222,8 +222,6 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
     # Initialize return value
     return_code = 0
     
-    # Return at the end of function
-    return return_code
     from local_transcribe.lib.environment import ensure_file, ensure_outdir
 
     models_dir = Path(root) / ".models"
@@ -889,3 +887,6 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
         print("[✓] Temporary audio files cleaned up.")
         
         return return_code
+
+    # This should never be reached, but we need to satisfy the type checker
+    return return_code

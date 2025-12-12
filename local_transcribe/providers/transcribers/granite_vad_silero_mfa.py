@@ -30,6 +30,7 @@ from local_transcribe.framework.plugin_interfaces import TranscriberProvider, Wo
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 from local_transcribe.lib.vad_silero_segmenter import SileroVADSegmenter
+from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
 
 
 class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
@@ -49,15 +50,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         self.logger = get_logger()
         self.logger.info("Initializing Granite VAD (Silero) MFA Transcriber Provider")
         
-        # Granite configuration
-        self.model_mapping: Dict[str, str] = {
-            "granite-2b": "ibm-granite/granite-speech-3.3-2b",
-            "granite-8b": "ibm-granite/granite-speech-3.3-8b"
-        }
-        self.selected_model: Optional[str] = None
-        self.processor: Optional[Any] = None
-        self.model: Optional[Any] = None
-        self.tokenizer: Optional[Any] = None
+        # Replace duplicated model management with GraniteModelManager
+        self.model_manager = GraniteModelManager(self.logger)
         
         # Segmenter instance
         self.vad_segmenter: Optional[SileroVADSegmenter] = None
@@ -124,118 +118,33 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
 
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         """Return required Granite models (MFA and Silero VAD models handled separately)."""
-        if selected_model and selected_model in self.model_mapping:
-            return [self.model_mapping[selected_model]]
-        return [self.model_mapping["granite-8b"]]
+        return self.model_manager.get_required_models(selected_model)
 
     def get_available_models(self) -> List[str]:
-        return list(self.model_mapping.keys())
+        return list(self.model_manager.MODEL_MAPPING.keys())
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite models to cache."""
-        self.logger.info("Starting model preload for Granite models")
-        import sys
-
-        cache_dir: pathlib.Path = models_dir / "transcribers" / "granite"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
-        original_hf_home = os.environ.get("HF_HOME")
-        os.environ["HF_HUB_OFFLINE"] = "0"
-
-        # Reload huggingface_hub modules
-        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
-        for module_name in modules_to_reload:
-            del sys.modules[module_name]
-
-        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
-        for module_name in modules_to_reload:
-            del sys.modules[module_name]
-
-        from huggingface_hub import snapshot_download
-
-        try:
-            for model in models:
-                if model in self.model_mapping.values():
-                    os.environ["HF_HOME"] = str(cache_dir)
-                    token = os.getenv("HF_TOKEN")
-                    snapshot_download(model, token=token)
-                    log_completion(f"{model} downloaded successfully.")
-        except Exception as e:
-            raise Exception(f"Failed to download {model}: {e}")
-        finally:
-            os.environ["HF_HUB_OFFLINE"] = offline_mode
-            if original_hf_home is not None:
-                os.environ["HF_HOME"] = original_hf_home
-            else:
-                os.environ.pop("HF_HOME", None)
+        self.model_manager.preload_models(models, models_dir)
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which models are available offline."""
-        missing_models = []
-        
-        # Check Granite models
-        granite_missing: List[str] = self._check_granite_models_offline(models, models_dir)
-        missing_models.extend(granite_missing)
-        
         # Note: Silero VAD doesn't require pre-download check as it's auto-downloaded via torch.hub
         # and is very lightweight (~2MB)
-        
-        return missing_models
-    
-    def _check_granite_models_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
-        """Check which Granite models are available offline."""
-        missing_models = []
-        for model in models:
-            if model in self.model_mapping.values():
-                xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
-                if xdg_cache_home:
-                    models_root = pathlib.Path(xdg_cache_home)
-                else:
-                    models_root = pathlib.Path.home() / ".cache" / "huggingface"
-                
-                hub_dir: pathlib.Path = models_root / "huggingface" / "hub"
-                hf_model_name: str = model.replace("/", "--")
-                model_dir: pathlib.Path = hub_dir / f"models--{hf_model_name}"
-                
-                if not model_dir.exists() or (not any(model_dir.rglob("*.bin")) and not any(model_dir.rglob("*.safetensors"))):
-                    missing_models.append(model)
-        return missing_models
+        return self.model_manager.check_models_available_offline(models, models_dir)
 
     def _load_granite_model(self) -> None:
         """Load the Granite model if not already loaded."""
-        log_progress("Loading Granite model...")
-        if self.model is None:
-            model_name = self.model_mapping.get(self.selected_model or "granite-8b")
-            if model_name is None:
-                raise ValueError(f"Invalid model selected: {self.selected_model}")
-            
-            xdg_cache_home: str | None = os.environ.get("XDG_CACHE_HOME")
-            if xdg_cache_home:
-                models_root = pathlib.Path(xdg_cache_home)
-            else:
-                models_root: pathlib.Path = pathlib.Path.home() / ".cache" / "huggingface"
-            
-            cache_dir: pathlib.Path = models_root / "huggingface" / "hub"
-
-            try:
-                token: str | None = os.getenv("HF_TOKEN")
-                self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=True, token=token)
-                self.tokenizer = self.processor.tokenizer  # type: ignore
-
-                log_progress(f"Loading Granite model on device: {self.device}")
-                self.model = AutoModelForSpeechSeq2Seq.from_pretrained(  # type: ignore
-                    model_name, 
-                    local_files_only=True, 
-                    token=token
-                ).to(self.device)
-                log_completion("Granite model loaded successfully")
-            except Exception as e:
-                log_debug(f"Failed to load model {model_name}")
-                log_debug(f"Cache directory exists: {cache_dir.exists()}")
-                if cache_dir.exists():
-                    log_debug(f"Cache directory contents: {list(cache_dir.iterdir())}")
-                raise e
+        # Set the selected model in the model manager
+        self.model_manager.selected_model = self.selected_model
+        
+        # Load the model using the model manager
+        self.model_manager._load_model(self.model_manager.get_required_models()[0])
+        
+        # Copy the loaded model components from the manager
+        self.model = self.model_manager.model
+        self.processor = self.model_manager.processor
+        self.tokenizer = self.model_manager.tokenizer
 
     def _init_vad_segmenter(self) -> None:
         """Initialize the Silero VAD segmenter if not already done."""
@@ -1022,7 +931,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             log_debug(f"Debug mode enabled - saving debug files to {debug_dir}")
         
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')
-        if transcriber_model not in self.model_mapping:
+        if transcriber_model not in self.model_manager.MODEL_MAPPING:
             self.logger.warning(f"Unknown model {transcriber_model}, defaulting to granite-8b")
             transcriber_model = 'granite-8b'
 
@@ -1136,10 +1045,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         """Ensure models are available by preloading them."""
         self.models_dir = models_dir
         
-        # Preload Granite models
-        granite_models = [m for m in models if m in self.model_mapping.values()]
-        if granite_models:
-            self.preload_models(granite_models, models_dir)
+        # Ensure Granite models are available
+        self.model_manager.ensure_models_available(models, models_dir)
         
         # Preload Silero VAD model
         log_progress("Preloading Silero VAD segmentation model...")

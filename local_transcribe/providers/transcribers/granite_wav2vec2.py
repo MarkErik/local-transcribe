@@ -30,6 +30,7 @@ from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
+from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
 
 
 class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
@@ -39,15 +40,8 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         self.logger = get_logger()
         self.logger.info("Initializing Granite Wav2Vec2 Transcriber Provider")
         
-        # Granite configuration
-        self.model_mapping = {
-            "granite-2b": "ibm-granite/granite-speech-3.3-2b",
-            "granite-8b": "ibm-granite/granite-speech-3.3-8b"
-        }
-        self.selected_model = None
-        self.processor = None
-        self.model = None
-        self.tokenizer = None
+        # Replace duplicated model management with GraniteModelManager
+        self.model_manager = GraniteModelManager(self.logger)
         
         # Wav2Vec2 configuration
         self.wav2vec2_model_name = "facebook/wav2vec2-large-960h"
@@ -88,11 +82,9 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         """Return required Granite and Wav2Vec2 models."""
         models = []
         
-        # Granite model
-        if selected_model and selected_model in self.model_mapping:
-            models.append(self.model_mapping[selected_model])
-        else:
-            models.append(self.model_mapping["granite-8b"])
+        # Granite model - delegate to GraniteModelManager
+        granite_models = self.model_manager.get_required_models(selected_model)
+        models.extend(granite_models)
         
         # Wav2Vec2 model
         models.append(self.wav2vec2_model_name)
@@ -100,40 +92,31 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         return models
 
     def get_available_models(self) -> List[str]:
-        return list(self.model_mapping.keys())
+        return list(self.model_manager.MODEL_MAPPING.keys())
 
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
         """Preload Granite and Wav2Vec2 models to cache."""
         self.logger.info("Starting model preload for Granite and Wav2Vec2 models")
-        import sys
-
-        cache_dir = models_dir / "transcribers" / "granite"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        offline_mode = os.environ.get("HF_HUB_OFFLINE", "0")
-        original_hf_home = os.environ.get("HF_HOME")
-        os.environ["HF_HUB_OFFLINE"] = "0"
-
-        # Reload huggingface_hub modules
-        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('huggingface_hub')]
-        for module_name in modules_to_reload:
-            del sys.modules[module_name]
-
-        modules_to_reload = [name for name in sys.modules.keys() if name.startswith('transformers')]
-        for module_name in modules_to_reload:
-            del sys.modules[module_name]
-
-        from huggingface_hub import snapshot_download
-
-        try:
-            for model in models:
-                if model in self.model_mapping.values():
-                    # Granite model - use HF_HOME
-                    os.environ["HF_HOME"] = str(cache_dir)
-                    token = os.getenv("HF_TOKEN")
-                    snapshot_download(model, token=token)
-                    log_completion(f"{model} downloaded successfully.")
-                elif model == self.wav2vec2_model_name:
+        
+        # Separate Granite models from Wav2Vec2 models
+        granite_models = []
+        wav2vec2_models = []
+        
+        for model in models:
+            if model == self.wav2vec2_model_name:
+                wav2vec2_models.append(model)
+            else:
+                # Assume it's a Granite model
+                granite_models.append(model)
+        
+        # Preload Granite models using GraniteModelManager
+        if granite_models:
+            self.model_manager.preload_models(granite_models, models_dir)
+        
+        # Preload Wav2Vec2 models separately
+        if wav2vec2_models:
+            for model in wav2vec2_models:
+                if model == self.wav2vec2_model_name:
                     # Wav2Vec2 model - use standard HF cache
                     xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
                     if xdg_cache_home:
@@ -144,80 +127,81 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                     hub_cache_dir = models_root / "huggingface" / "hub"
                     hub_cache_dir.mkdir(parents=True, exist_ok=True)
                     
+                    from huggingface_hub import snapshot_download
                     snapshot_download(model, cache_dir=hub_cache_dir, token=os.getenv("HF_TOKEN"))
                     log_completion(f"{model} downloaded successfully.")
-        except Exception as e:
-            raise Exception(f"Failed to download model: {e}")
-        finally:
-            os.environ["HF_HUB_OFFLINE"] = offline_mode
-            if original_hf_home is not None:
-                os.environ["HF_HOME"] = original_hf_home
-            else:
-                os.environ.pop("HF_HOME", None)
 
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
         """Check which Granite and Wav2Vec2 models are available offline."""
         missing_models = []
         
-        xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
-        if xdg_cache_home:
-            models_root = pathlib.Path(xdg_cache_home)
-        else:
-            models_root = pathlib.Path.home() / ".cache" / "huggingface"
-        
-        hub_dir = models_root / "huggingface" / "hub"
+        # Separate Granite models from Wav2Vec2 models
+        granite_models = []
+        wav2vec2_models = []
         
         for model in models:
-            if "/" in model:
-                hf_model_name = model.replace("/", "--")
-                model_dir = hub_dir / f"models--{hf_model_name}"
-                
-                has_model_files = (
-                    model_dir.exists() and (
-                        any(model_dir.rglob("*.bin")) or
-                        any(model_dir.rglob("*.safetensors")) or
-                        any(model_dir.rglob("*.pt")) or
-                        any(model_dir.rglob("*.pth"))
-                    )
-                )
-                
-                if not has_model_files:
-                    missing_models.append(model)
+            if model == self.wav2vec2_model_name:
+                wav2vec2_models.append(model)
+            else:
+                # Assume it's a Granite model
+                granite_models.append(model)
         
-        return missing_models
-
-    def _load_granite_model(self):
-        """Load the Granite model if not already loaded."""
-        log_progress("Loading Granite model...")
-        if self.model is None:
-            model_name = self.model_mapping.get(self.selected_model, self.model_mapping["granite-8b"])
-            
+        # Check Granite models using GraniteModelManager
+        if granite_models:
+            granite_missing = self.model_manager.check_models_available_offline(granite_models, models_dir)
+            missing_models.extend(granite_missing)
+        
+        # Check Wav2Vec2 models separately
+        if wav2vec2_models:
             xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
             if xdg_cache_home:
                 models_root = pathlib.Path(xdg_cache_home)
             else:
                 models_root = pathlib.Path.home() / ".cache" / "huggingface"
             
-            cache_dir = models_root / "huggingface" / "hub"
+            hub_dir = models_root / "huggingface" / "hub"
+            
+            for model in wav2vec2_models:
+                if "/" in model:
+                    hf_model_name = model.replace("/", "--")
+                    model_dir = hub_dir / f"models--{hf_model_name}"
+                    
+                    has_model_files = (
+                        model_dir.exists() and (
+                            any(model_dir.rglob("*.bin")) or
+                            any(model_dir.rglob("*.safetensors")) or
+                            any(model_dir.rglob("*.pt")) or
+                            any(model_dir.rglob("*.pth"))
+                        )
+                    )
+                    
+                    if not has_model_files:
+                        missing_models.append(model)
+        
+        return missing_models
 
-            try:
-                token = os.getenv("HF_TOKEN")
-                self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=True, token=token)
-                self.tokenizer = self.processor.tokenizer
-
-                log_progress(f"Loading Granite model on device: {self.device}")
-                self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-                    model_name, 
-                    local_files_only=True, 
-                    token=token
-                ).to(self.device)
+    def _load_granite_model(self):
+        """Load the Granite model if not already loaded."""
+        log_progress("Loading Granite model...")
+        
+        # Load the model using GraniteModelManager
+        if self.model_manager.model is None:
+            # Get the required models
+            required_models = self.model_manager.get_required_models()
+            if required_models:
+                model_name = required_models[0]  # Get the first (and only) model
+                
+                # Load the model
+                self.model_manager._load_model(model_name)
+                
+                # Update the instance variables for backward compatibility
+                self.processor = self.model_manager.processor
+                self.model = self.model_manager.model
+                self.tokenizer = self.model_manager.tokenizer
+                
                 log_completion("Granite model loaded successfully")
-            except Exception as e:
-                log_debug(f"Failed to load model {model_name}")
-                log_debug(f"Cache directory exists: {cache_dir.exists()}")
-                if cache_dir.exists():
-                    log_debug(f"Cache directory contents: {list(cache_dir.iterdir())}")
-                raise e
+            else:
+                raise Exception("No Granite model specified or available")
 
     def _load_wav2vec2_model(self):
         """Load the Wav2Vec2 model for alignment if not already loaded."""
@@ -1216,11 +1200,11 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             log_debug(f"Debug not enabled: debug_enabled={debug_enabled}, intermediate_dir={intermediate_dir}")
         
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')
-        if transcriber_model not in self.model_mapping:
+        if not self.model_manager.validate_model_selection(transcriber_model):
             self.logger.warning(f"Unknown model {transcriber_model}, defaulting to granite-8b")
             transcriber_model = 'granite-8b'
 
-        self.selected_model = transcriber_model
+        self.model_manager.selected_model = transcriber_model
         self._load_granite_model()
         self._load_wav2vec2_model()
 

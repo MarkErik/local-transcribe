@@ -1,0 +1,1 @@
+# Common providers for local_transcribe

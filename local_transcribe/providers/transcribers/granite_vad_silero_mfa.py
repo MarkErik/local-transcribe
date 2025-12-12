@@ -2,11 +2,6 @@
 """
 Combined Transcriber+Aligner plugin using IBM Granite with Silero VAD-based segmentation and MFA alignment.
 
-This plugin combines:
-- Silero VAD for intelligent audio segmentation at speech boundaries
-- Granite's transcription capabilities
-- Montreal Forced Aligner for precise word-level timestamps
-
 The integrated stitcher produces continuous WordSegments output.
 Debug mode saves individual segment transcripts when DEBUG logging is enabled.
 """
@@ -56,9 +51,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         self.mfa_models_dir = None  # type: ignore
 
     def _strip_prompt_fragments(self, text: str) -> str:
-        """Strip prompt fragments from the transcription output.
-
-        """
+        """Strip prompt fragments from the transcription output."""
         if not text:
             return text
             
@@ -331,9 +324,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         return text
 
     def _align_segment_with_mfa(self, segment_wav: NDArray[Any], segment_transcript: str, segment_start_time: float = 0.0, speaker: Optional[str] = None, debug_dir: Optional[pathlib.Path] = None, segment_num: Optional[int] = None) -> List[Dict[str, Any]]:
-        """
-        Align a single segment using MFA and return timestamped words.
-        """
+        """Align a single segment using MFA and return timestamped words."""
         log_progress(f"Aligning transcript with MFA (segment starts at {segment_start_time:.2f}s)")
         
         segment_duration: float = len(segment_wav) / 16000.0

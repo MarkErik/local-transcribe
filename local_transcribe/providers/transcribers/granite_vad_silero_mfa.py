@@ -38,11 +38,6 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     _PROMPT_FRAGMENTS = [
         "make sure to include disfluencies",
         "can you transcribe the speech into a written format",
-        #"can you accurately transcribe the speech",
-        #"into a written format",
-        #"including disfluencies",
-        #"repetitions",
-        #"stutters",
     ]
     """Combined transcriber+aligner using IBM Granite + Silero VAD segmentation + MFA alignment."""
 
@@ -62,16 +57,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
 
     def _strip_prompt_fragments(self, text: str) -> str:
         """Strip prompt fragments from the transcription output.
-        
-        This method removes common prompt fragments that Granite sometimes includes
-        in the transcription output, such as "make sure to include disfluencies"
-        or "can you transcribe the speech into a written format".
-        
-        Args:
-            text: The raw transcription text
-            
-        Returns:
-            The cleaned transcription text with prompt fragments removed
+
         """
         if not text:
             return text
@@ -227,8 +213,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 {
                     "role": "user",
                     # "content": "<|audio|>can you transcribe the speech into a written format?", # original from IBM
-                    "content": "<|audio|>can you transcribe the speech into a written format? make sure to include disfluencies.", #trying to eal with dropped disfluencies
-                    #"content": "<|audio|>can you accurately transcribe the speech (including disfluencies, repetitions, and stutters) into a written format?", #another attempt at a prompt
+                    "content": "<|audio|>can you transcribe the speech into a written format? make sure to include disfluencies.", #trying to deal with dropped disfluencies
                 }
             ]
 
@@ -346,13 +331,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         return text
 
     def _align_segment_with_mfa(self, segment_wav: NDArray[Any], segment_transcript: str, segment_start_time: float = 0.0, speaker: Optional[str] = None, debug_dir: Optional[pathlib.Path] = None, segment_num: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Align a single segment using MFA and return timestamped words.
-        
-        Args:
-            segment_wav: Audio data for this segment
-            segment_transcript: Transcript text for this segment
-            segment_start_time: Absolute start time of this segment in the full audio (seconds)
-            speaker: Speaker identifier
+        """
+        Align a single segment using MFA and return timestamped words.
         """
         log_progress(f"Aligning transcript with MFA (segment starts at {segment_start_time:.2f}s)")
         
@@ -804,15 +784,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     def _stitch_vad_segments(self, all_segment_words: List[List[Dict[str, Any]]]) -> List[WordSegment]:
         """
         Stitch VAD segment words into continuous output.
-        
-        Since VAD segments are non-overlapping and separated by silence,
-        this is primarily simple concatenation with timestamp validation.
-        
-        Args:
-            all_segment_words: List of word dict lists, one per VAD segment
-            
-        Returns:
-            List of WordSegment objects in chronological order
+
         """
         log_progress("Stitching VAD segments into continuous output...")
         
@@ -908,9 +880,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     ) -> List[WordSegment]:
         """
         Transcribe audio with Silero VAD-based segmentation and MFA alignment.
-        
-        Returns:
-            List[WordSegment] - Continuous list of timestamped words
+
         """
         log_progress("Starting transcription with Silero VAD segmentation + Granite + MFA")
         

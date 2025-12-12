@@ -3,9 +3,7 @@
 Combined Transcriber+Aligner plugin using IBM Granite with MFA alignment.
 
 This plugin combines Granite's transcription capabilities with Montreal Forced Aligner
-to produce chunked transcripts where each word has timestamps. Unlike the separate
-granite + mfa pipeline, this processes each chunk with alignment before moving to the next,
-resulting in chunks that contain timestamped words ready for intelligent stitching.
+to produce chunked transcripts where each word has timestamps. 
 """
 
 from typing import List, Optional, Dict, Any
@@ -257,12 +255,6 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def _align_chunk_with_mfa(self, chunk_wav, chunk_transcript: str, chunk_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Align a single chunk using MFA and return timestamped words.
-        
-        Args:
-            chunk_wav: Audio data for this chunk
-            chunk_transcript: Transcript text for this chunk
-            chunk_start_time: Absolute start time of this chunk in the full audio (seconds)
-            speaker: Speaker identifier
         """
         log_progress(f"Aligning transcript with MFA (chunk starts at {chunk_start_time:.2f}s)")
         
@@ -340,13 +332,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def _parse_textgrid_to_word_dicts(self, textgrid_path: pathlib.Path, original_transcript: str, chunk_start_time: float = 0.0, chunk_end_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Parse MFA TextGrid and return list of word dicts with timestamps.
-        
-        Args:
-            textgrid_path: Path to the TextGrid file
-            original_transcript: Original transcript with punctuation/capitalization
-            chunk_start_time: Absolute start time of this chunk in the full audio (seconds)
-            chunk_end_time: Absolute end time of this chunk in the full audio (seconds)
-            speaker: Speaker identifier
+
         """
         word_dicts = []
 
@@ -439,12 +425,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def _normalize_word_for_matching(self, word: str) -> str:
         """Normalize a word for comparison during alignment.
-        
-        Args:
-            word: The word to normalize
-            
-        Returns:
-            Lowercase word with only alphanumeric characters
+
         """
         return ''.join(c.lower() for c in word if c.isalnum())
 
@@ -509,14 +490,6 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         Uses a similarity-aware alignment algorithm to find the best mapping
         between the two sequences, handling insertions, deletions, and substitutions.
         
-        Args:
-            granite_words: List of words from Granite transcript
-            mfa_words: List of word dicts from MFA alignment
-            
-        Returns:
-            List of tuples (granite_idx, mfa_idx) representing aligned pairs.
-            granite_idx is None if MFA has an extra word (to be merged).
-            mfa_idx is None if Granite has an extra word (needs interpolation).
         """
         n = len(granite_words)
         m = len(mfa_words)
@@ -604,15 +577,6 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                                  words: List[str], speaker: Optional[str]) -> List[Dict[str, Any]]:
         """Create word dicts with interpolated timestamps for words that MFA dropped.
         
-        Args:
-            prev_end: End time of the previous aligned word
-            next_start: Start time of the next aligned word
-            num_words: Number of words to interpolate
-            words: The actual word texts
-            speaker: Speaker identifier
-            
-        Returns:
-            List of word dicts with interpolated timestamps
         """
         if num_words == 0:
             return []
@@ -657,21 +621,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
                                           chunk_start_time: float, chunk_end_time: float, 
                                           speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Replace MFA word text with Granite's original words, using MFA timestamps.
-        
-        This function handles three cases:
-        1. Word counts match: Direct positional replacement
-        2. MFA has fewer words: Use alignment + interpolation for gaps
-        3. MFA has more words: Use alignment + timestamp merging for splits
-        
-        Args:
-            word_dicts: List of word dictionaries from MFA alignment
-            original_transcript: Original transcript from Granite
-            chunk_start_time: Start time of the chunk (for gap interpolation at start)
-            chunk_end_time: End time of the chunk (for gap interpolation at end)
-            speaker: Speaker identifier
-            
-        Returns:
-            New list of word dicts with Granite text and MFA/interpolated timestamps
+
         """
         log_progress("Replacing MFA words with Granite text")
         
@@ -796,12 +746,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
     def _simple_alignment_to_word_dicts(self, chunk_wav, transcript: str, chunk_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fallback: simple even distribution of timestamps.
-        
-        Args:
-            chunk_wav: Audio data for this chunk (or None)
-            transcript: Transcript text
-            chunk_start_time: Absolute start time of this chunk in the full audio (seconds)
-            speaker: Speaker identifier
+
         """
         words = transcript.split()
         if not words:
@@ -894,13 +839,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
     ) -> List[Dict[str, Any]]:
         """
         Transcribe audio with alignment, returning chunked data with timestamped words.
-        
-        Returns:
-            List of chunk dicts, each with:
-            {
-                "chunk_id": int,
-                "words": List[Dict[str, Any]]  # Each word has "text", "start", "end"
-            }
+
         """
         log_progress("Starting transcription with alignment using Granite + MFA")
         

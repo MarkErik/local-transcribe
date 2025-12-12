@@ -16,11 +16,8 @@ class GraniteModelManager:
     }
     
     def __init__(self, logger: Any, models_dir: Optional[pathlib.Path] = None):
-        """Initialize the model manager.
-        
-        Args:
-            logger: Logger instance for logging operations
-            models_dir: Optional base directory for model storage
+        """
+        Initialize the model manager.
         """
         self.logger = logger
         self.models_dir = models_dir
@@ -30,21 +27,8 @@ class GraniteModelManager:
         self.tokenizer: Optional[Any] = None
     
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
-        """Get the list of required model names based on the selected model.
-        
-        This method extracts the logic from all existing plugins to determine
-        which models need to be loaded based on the selected model configuration.
-        
-        Args:
-            selected_model: Optional model name to use. If None, uses the instance's
-                          selected_model or defaults to "granite-8b" if no model is selected.
-                          
-        Returns:
-            List of required model names. Returns empty list if no valid model is selected,
-            or returns all available models if selected_model is "all".
-            
-        Raises:
-            ValueError: If the selected_model is not valid and cannot be resolved.
+        """
+        Get the list of required model names based on the selected model.
         """
         # Determine which model to use
         model_to_check = selected_model or self.selected_model
@@ -68,18 +52,8 @@ class GraniteModelManager:
         return [self.MODEL_MAPPING[model_to_check]]
     
     def validate_model_selection(self, selected_model: Optional[str] = None) -> bool:
-        """Validate that the selected model exists in MODEL_MAPPING.
-        
-        Args:
-            selected_model: Model name to validate. If None, uses the instance's
-                          selected_model.
-                          
-        Returns:
-            True if the model is valid, False otherwise.
-            
-        Logs:
-            Information about validation results including warnings for invalid models
-            and successful validation messages.
+        """
+        Validate that the selected model exists in MODEL_MAPPING.
         """
         # Determine which model to validate
         model_to_validate = selected_model or self.selected_model
@@ -104,23 +78,8 @@ class GraniteModelManager:
             return False
     
     def check_models_available_offline(self, models: List[str], models_dir: pathlib.Path) -> List[str]:
-        """Check which models are available offline without downloading.
-        
-        This method checks if the specified models are already cached locally
-        and available for offline use. It uses the standard HuggingFace cache
-        directory structure to locate model files.
-        
-        Args:
-            models: List of model names to check (e.g., ["ibm-granite/granite-speech-3.3-8b"])
-            models_dir: Base directory where models should be cached
-            
-        Returns:
-            List of model names that are missing or not available offline
-            
-        Note:
-            This method checks for both .bin and .safetensors model files,
-            as different HuggingFace models may use different file formats.
-            It also handles both full model names and short names from MODEL_MAPPING.
+        """
+        Check which models are available offline without downloading.
         """
         missing_models = []
         
@@ -157,23 +116,8 @@ class GraniteModelManager:
         return missing_models
     
     def ensure_models_available(self, models: List[str], models_dir: pathlib.Path) -> None:
-        """Ensure models are available by preloading them if needed.
-        
-        This method checks if the specified models are available offline and
-        downloads them if they're missing. This ensures that models are ready
-        for use when needed, without requiring network access during transcription.
-        
-        Args:
-            models: List of model names to ensure are available
-            models_dir: Base directory where models should be cached
-            
-        Raises:
-            Exception: If model downloading fails for any of the specified models
-            
-        Note:
-            This method is a convenience wrapper around check_models_available_offline
-            and preload_models. It first checks which models are missing, then
-            downloads only those that are needed.
+        """
+        Ensure models are available by preloading them if needed.
         """
         self.logger.info(f"Ensuring models are available: {models}")
         
@@ -192,23 +136,8 @@ class GraniteModelManager:
         self.logger.info("All models are now available offline")
     
     def preload_models(self, models: List[str], models_dir: pathlib.Path) -> None:
-        """Preload Granite models to cache.
-        
-        This method downloads and caches the specified Granite models to ensure they're
-        available for offline use. It handles environment variable manipulation to
-        ensure proper caching and model downloading.
-        
-        Args:
-            models: List of model names to preload (e.g., ["ibm-granite/granite-speech-3.3-8b"])
-            models_dir: Base directory where models should be cached
-            
-        Raises:
-            Exception: If model downloading fails for any of the specified models
-            
-        Note:
-            This method temporarily modifies environment variables for HuggingFace Hub
-            operations and restores them upon completion. It also reloads HuggingFace
-            modules to ensure fresh configuration.
+        """
+        Preload Granite models to cache.
         """
         self.logger.info("Starting model preload for Granite models")
         
@@ -276,23 +205,8 @@ class GraniteModelManager:
                 os.environ.pop("HF_HOME", None)
     
     def _reload_huggingface_modules(self) -> None:
-        """Reload HuggingFace modules to ensure fresh configuration for model loading.
-        
-        This private method removes cached HuggingFace modules from sys.modules to ensure
-        fresh configuration when downloading or loading models. This is necessary because
-        some HuggingFace modules cache configuration that can interfere with offline mode
-        settings and cause issues with model loading.
-        
-        The method specifically targets:
-        - huggingface_hub modules (for repository access)
-        - transformers modules (for model architecture and loading)
-        
-        This approach ensures that subsequent imports of these modules will use the
-        most current configuration and environment settings.
-        
-        Note:
-            This method is called automatically during model preloading and should
-            not typically be called directly by external code.
+        """
+        Reload HuggingFace modules to ensure fresh configuration for model loading.
         """
         import importlib
         import sys
@@ -321,24 +235,8 @@ class GraniteModelManager:
             # Continue with execution even if module reload fails
     
     def _download_model(self, model_name: str, cache_dir: pathlib.Path) -> None:
-        """Download a specific model from HuggingFace Hub to the cache directory.
-        
-        This private method handles the downloading of individual Granite models from
-        the HuggingFace Hub to ensure they're available for offline use. It includes
-        proper error handling, logging, and progress tracking for the download process.
-        
-        Args:
-            model_name: The full model name to download (e.g., "ibm-granite/granite-speech-3.3-8b")
-            cache_dir: The directory where the model should be cached
-            
-        Raises:
-            Exception: If the model download fails for any reason
-            
-        Note:
-            This method temporarily modifies environment variables for HuggingFace Hub
-            operations and handles authentication via HF_TOKEN environment variable.
-            It also reloads HuggingFace modules to ensure fresh configuration before
-            attempting to download the model.
+        """
+        Download a specific model from HuggingFace Hub to the cache directory.
         """
         self.logger.info(f"Starting download for model: {model_name}")
         
@@ -390,27 +288,8 @@ class GraniteModelManager:
                 os.environ.pop("HF_HOME", None)
     
     def _resolve_cache_directory(self) -> pathlib.Path:
-        """Resolve the cache directory for storing models.
-        
-        This method determines the appropriate directory for caching models based on
-        environment variables and configuration. It follows the standard HuggingFace
-        cache resolution pattern:
-        1. Uses XDG_CACHE_HOME if set (typically ~/.cache)
-        2. Falls back to ~/.cache/huggingface if XDG_CACHE_HOME is not set
-        3. Creates the necessary directory structure if it doesn't exist
-        
-        Returns:
-            pathlib.Path: The resolved cache directory path
-            
-        Raises:
-            OSError: If directory creation fails due to permissions or other filesystem issues
-            
-        Note:
-            This method is used internally by model loading and preloading methods
-            to ensure consistent cache directory resolution across all operations.
-            The returned path will be in the format:
-            - {XDG_CACHE_HOME}/huggingface/hub (if XDG_CACHE_HOME is set)
-            - ~/.cache/huggingface/hub (if XDG_CACHE_HOME is not set)
+        """
+        Resolve the cache directory for storing models.
         """
         # Check for XDG_CACHE_HOME environment variable first
         xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
@@ -438,22 +317,8 @@ class GraniteModelManager:
             raise OSError(error_msg)
     
     def _load_model(self, model_name: str) -> None:
-        """Load a Granite model from the cache directory.
-        
-        This method loads a pre-downloaded Granite model from the cache directory
-        for use in transcription. It handles proper error checking and logging
-        for the model loading process.
-        
-        Args:
-            model_name: The full model name to load (e.g., "ibm-granite/granite-speech-3.3-8b")
-            
-        Raises:
-            Exception: If model loading fails for any reason
-            
-        Note:
-            This method assumes the model has already been downloaded and cached.
-            It will fail if the model is not available in the cache directory.
-            The method uses the resolved cache directory to locate the model.
+        """
+        Load a Granite model from the cache directory.
         """
         self.logger.info(f"Loading model: {model_name}")
         

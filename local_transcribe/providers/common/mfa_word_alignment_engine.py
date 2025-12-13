@@ -126,3 +126,4 @@ class MFAWordAlignmentEngine(WordAlignmentEngine):
             segment.get('end', 0.0) - segment.get('start', 0.0),
             segment.get('speaker')
         )
+    

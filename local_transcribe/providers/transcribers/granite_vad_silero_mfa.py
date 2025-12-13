@@ -27,6 +27,7 @@ from local_transcribe.lib.program_logger import get_logger, log_progress, log_co
 from local_transcribe.lib.vad_silero_segmenter import SileroVADSegmenter
 from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
 from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
+from local_transcribe.processing.local_chunk_stitcher import ChunkStitcher
 
 
 class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
@@ -438,6 +439,276 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         )
 
     # =========================================================================
+    # Chunking strategy for long segments
+    # =========================================================================
+    
+    def _should_chunk_segment(self, segment_duration: float) -> bool:
+        """Returns True if segment_duration > 50 seconds."""
+        return segment_duration > 50.0
+    
+    def _chunk_segment(self, segment_wav: NDArray, segment_start: float, segment_end: float, sr: int) -> List[Tuple[NDArray, float, float]]:
+        """
+        Split a long segment into chunks with 25-second length and 4-second overlaps.
+        
+        Args:
+            segment_wav: Full segment audio data
+            segment_start: Absolute start time of the segment
+            segment_end: Absolute end time of the segment
+            sr: Sample rate
+            
+        Returns:
+            List of (chunk_audio, chunk_start_time, chunk_end_time)
+        """
+        segment_duration = segment_end - segment_start
+        if segment_duration <= 50.0:
+            # No chunking needed for segments <= 50 seconds
+            return [(segment_wav, segment_start, segment_end)]
+        
+        log_debug(f"Chunking segment of {segment_duration:.1f}s into smaller chunks")
+        
+        # Chunking parameters
+        CHUNK_LENGTH = 25.0  # seconds
+        OVERLAP = 4.0  # seconds
+        MIN_CHUNK_SIZE = 7.0  # seconds
+        
+        chunks = []
+        
+        # Calculate number of full chunks and remaining duration
+        num_full_chunks = int(segment_duration // CHUNK_LENGTH)
+        remaining = segment_duration - (num_full_chunks * CHUNK_LENGTH)
+        
+        # Process full chunks
+        for i in range(num_full_chunks):
+            # Calculate chunk boundaries with overlap
+            if i == 0:
+                # First chunk starts at segment start
+                chunk_start_time = segment_start
+            else:
+                # Subsequent chunks start with overlap
+                chunk_start_time = segment_start + (i * CHUNK_LENGTH) - OVERLAP
+            
+            chunk_end_time = segment_start + ((i + 1) * CHUNK_LENGTH)
+            
+            # Convert to sample indices
+            start_sample = int(chunk_start_time * sr)
+            end_sample = int(chunk_end_time * sr)
+            
+            # Ensure we don't go beyond the segment boundaries
+            start_sample = max(0, start_sample)
+            end_sample = min(len(segment_wav), end_sample)
+            
+            # Extract chunk audio
+            chunk_audio = segment_wav[start_sample:end_sample]
+            chunks.append((chunk_audio, chunk_start_time, chunk_end_time))
+        
+        # Handle remaining duration
+        if remaining > 0:
+            if remaining < MIN_CHUNK_SIZE:
+                # Merge remaining with last chunk
+                log_debug(f"Remaining {remaining:.1f}s < {MIN_CHUNK_SIZE}s, merging with last chunk")
+                if chunks:
+                    # Extend the last chunk to include remaining audio
+                    last_chunk_audio, last_start, last_end = chunks[-1]
+                    new_end_time = segment_end
+                    new_end_sample = int(new_end_time * sr)
+                    new_end_sample = min(len(segment_wav), new_end_sample)
+                    
+                    # Extract the extended audio
+                    extended_audio = segment_wav[int(last_start * sr):new_end_sample]
+                    chunks[-1] = (extended_audio, last_start, new_end_time)
+            else:
+                # Add final chunk for remaining duration
+                final_start_time = segment_end - remaining
+                start_sample = int(final_start_time * sr)
+                end_sample = int(segment_end * sr)
+                
+                final_chunk_audio = segment_wav[start_sample:end_sample]
+                chunks.append((final_chunk_audio, final_start_time, segment_end))
+        
+        log_debug(f"Created {len(chunks)} chunks from {segment_duration:.1f}s segment")
+        for i, (chunk_audio, chunk_start, chunk_end) in enumerate(chunks):
+            log_debug(f"  Chunk {i+1}: {chunk_start:.2f}s - {chunk_end:.2f}s ({chunk_end - chunk_start:.1f}s)")
+        
+        return chunks
+    
+    def _process_chunked_segment(self, segment_wav: NDArray, segment_start: float, segment_end: float, role: Optional[str], debug_dir: Optional[pathlib.Path], segment_num: int) -> List[Dict[str, Any]]:
+        """
+        Process a segment that requires chunking.
+        
+        Args:
+            segment_wav: Full segment audio data
+            segment_start: Absolute start time of the segment
+            segment_end: Absolute end time of the segment
+            role: Speaker role information
+            debug_dir: Debug directory path
+            segment_num: Segment number for debug files
+            
+        Returns:
+            List of word dictionaries (same format as current _align_segment_with_mfa)
+        """
+        sr = 16000  # Sample rate used throughout the system
+        
+        log_debug(f"Processing chunked segment {segment_num} ({segment_start:.2f}s - {segment_end:.2f}s)")
+        
+        # Step 1: Split phase - Calculate chunk boundaries and extract audio
+        chunks = self._chunk_segment(segment_wav, segment_start, segment_end, sr)
+        
+        # Prepare chunks for processing
+        chunk_data = []
+        for i, (chunk_audio, chunk_start_time, chunk_end_time) in enumerate(chunks):
+            chunk_id = f"{segment_num}-{i+1}"
+            chunk_data.append({
+                'chunk_id': chunk_id,
+                'audio': chunk_audio,
+                'start_time': chunk_start_time,
+                'end_time': chunk_end_time,
+                'duration': chunk_end_time - chunk_start_time
+            })
+        
+        # Step 2: Transcription phase - Transcribe each chunk
+        log_progress(f"Transcribing {len(chunk_data)} chunks for segment {segment_num}")
+        chunk_transcripts = []
+        
+        for chunk in chunk_data:
+            chunk_id = chunk['chunk_id']
+            chunk_audio = chunk['audio']
+            chunk_start_time = chunk['start_time']
+            
+            log_debug(f"Transcribing chunk {chunk_id} ({chunk_start_time:.2f}s)")
+            
+            # Transcribe the chunk
+            chunk_text = self._transcribe_single_segment(chunk_audio, sample_rate=sr)
+            chunk_text = self._strip_prompt_fragments(chunk_text)
+            
+            if not chunk_text.strip():
+                log_debug(f"Chunk {chunk_id} produced empty transcript, skipping")
+                continue
+                
+            chunk_transcripts.append({
+                'chunk_id': chunk_id,
+                'text': chunk_text,
+                'start_time': chunk_start_time,
+                'end_time': chunk['end_time']
+            })
+            
+            if debug_dir:
+                chunk_debug_num = int(f"{segment_num}{i+1:02d}")
+                self._save_debug_segment(debug_dir, chunk_debug_num, "chunk_granite_output", {
+                    "chunk_id": chunk_id,
+                    "segment_start_time": chunk_start_time,
+                    "segment_end_time": chunk['end_time'],
+                    "text": chunk_text,
+                    "word_count": len(chunk_text.split())
+                })
+        
+        if not chunk_transcripts:
+            log_debug(f"All chunks for segment {segment_num} produced empty transcripts")
+            return []
+        
+        # Step 3: Alignment phase - Align each chunk with MFA
+        log_progress(f"Aligning {len(chunk_transcripts)} chunks for segment {segment_num}")
+        chunk_words = []
+        
+        for chunk_transcript in chunk_transcripts:
+            chunk_id = chunk_transcript['chunk_id']
+            chunk_audio = None  # We'll need to get this from chunk_data
+            chunk_start_time = chunk_transcript['start_time']
+            
+            # Find the corresponding audio data
+            for chunk in chunk_data:
+                if chunk['chunk_id'] == chunk_id:
+                    chunk_audio = chunk['audio']
+                    break
+            
+            if chunk_audio is None:
+                log_debug(f"Could not find audio data for chunk {chunk_id}, skipping")
+                continue
+            
+            # Align the chunk with MFA
+            chunk_num_suffix = int(chunk_id.split('-')[1])
+            timestamped_words = self._align_segment_with_mfa(
+                chunk_audio,
+                chunk_transcript['text'],
+                chunk_start_time,
+                role,
+                debug_dir,
+                chunk_num_suffix
+            )
+            
+            chunk_words.append({
+                'chunk_id': chunk_id,
+                'words': timestamped_words,
+                'start_time': chunk_start_time,
+                'end_time': chunk_transcript['end_time']
+            })
+            
+            if debug_dir:
+                self._save_debug_segment(debug_dir, chunk_num_suffix, "chunk_mfa_output", {
+                    "chunk_id": chunk_id,
+                    "segment_start_time": chunk_start_time,
+                    "segment_end_time": chunk_transcript['end_time'],
+                    "word_count": len(timestamped_words),
+                    "words": timestamped_words
+                })
+        
+        if not chunk_words:
+            log_debug(f"All chunks for segment {segment_num} failed alignment")
+            return []
+        
+        # Step 4: Merging phase - Use ChunkStitcher to merge overlapping chunks
+        log_progress(f"Merging {len(chunk_words)} chunks for segment {segment_num}")
+        
+        # Prepare chunks for stitching
+        chunks_for_stitching = []
+        for chunk_word in chunk_words:
+            chunks_for_stitching.append({
+                'chunk_id': chunk_word['chunk_id'],
+                'words': chunk_word['words']
+            })
+        
+        # Use ChunkStitcher to merge chunks
+        stitcher = ChunkStitcher()
+        merged_words = stitcher.stitch_chunks(chunks_for_stitching)
+        
+        # Convert to list of dictionaries if needed
+        if isinstance(merged_words, list) and merged_words and hasattr(merged_words[0], 'text'):
+            # Convert WordSegment objects to dictionaries
+            result_words = []
+            for word in merged_words:
+                result_words.append({
+                    'text': word.text,
+                    'start': word.start,
+                    'end': word.end,
+                    'speaker': word.speaker
+                })
+            merged_words = result_words
+        elif isinstance(merged_words, str):
+            # If stitcher returns a string (shouldn't happen with timestamped words),
+            # create simple alignment
+            log_debug("ChunkStitcher returned string, creating simple alignment")
+            segment_duration = segment_end - segment_start
+            merged_words = self._simple_alignment_to_word_dicts(
+                segment_wav, merged_words, segment_start, role
+            )
+        elif isinstance(merged_words, list) and merged_words and isinstance(merged_words[0], WordSegment):
+            # Convert WordSegment objects to dictionaries
+            result_words = []
+            for word in merged_words:
+                result_words.append({
+                    'text': word.text,
+                    'start': word.start,
+                    'end': word.end,
+                    'speaker': word.speaker
+                })
+            merged_words = result_words
+        
+        log_debug(f"Chunk merging complete for segment {segment_num}: {len(merged_words)} words")
+        
+        # Step 5: Integration - Return the merged words
+        # Type cast to satisfy the return type annotation
+        return merged_words  # type: ignore
+
+    # =========================================================================
     # VAD-specific stitching (simple concatenation with gap handling)
     # =========================================================================
     
@@ -621,45 +892,54 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         for seg_idx, (seg_start, seg_end) in enumerate(vad_segments):
             segment_num: int = seg_idx + 1
+            segment_duration = seg_end - seg_start
             
-            log_progress(f"Processing segment {segment_num}/{len(vad_segments)} ({seg_start:.2f}s - {seg_end:.2f}s)")
+            log_progress(f"Processing segment {segment_num}/{len(vad_segments)} ({seg_start:.2f}s - {seg_end:.2f}s, duration: {segment_duration:.1f}s)")
             
             # Extract segment audio
             start_sample = int(seg_start * sr)
             end_sample = int(seg_end * sr)
             segment_wav: NDArray[Any] = wav[start_sample:end_sample]
             
-            # Transcribe segment with Granite
-            segment_text: str = self._transcribe_single_segment(segment_wav, sample_rate=int(sr), **kwargs)
-            
-            # Apply additional prompt fragment filtering as a safety measure
-            segment_text = self._strip_prompt_fragments(segment_text)
-            
-            if debug_dir:
-                self._save_debug_segment(debug_dir, segment_num, "granite_output", {
-                    "segment_id": segment_num,
-                    "segment_start_time": seg_start,
-                    "segment_end_time": seg_end,
-                    "text": segment_text,
-                    "word_count": len(segment_text.split())
-                })
-            
-            if not segment_text.strip():
-                log_debug(f"Segment {segment_num} produced empty transcript, skipping")
-                all_segment_words.append([])
-                continue
-            
-            # Align segment with MFA
-            timestamped_words: List[Dict[str, Any]] = self._align_segment_with_mfa(segment_wav, segment_text, seg_start, role, debug_dir, segment_num)
-            
-            if debug_dir:
-                self._save_debug_segment(debug_dir, segment_num, "mfa_output", {
-                    "segment_id": segment_num,
-                    "segment_start_time": seg_start,
-                    "segment_end_time": seg_end,
-                    "word_count": len(timestamped_words),
-                    "words": timestamped_words
-                })
+            # NEW: Check if segment needs chunking
+            if self._should_chunk_segment(segment_duration):
+                log_debug(f"Segment {segment_num} is {segment_duration:.1f}s > 50s, applying chunking strategy")
+                timestamped_words = self._process_chunked_segment(
+                    segment_wav, seg_start, seg_end, role, debug_dir, segment_num
+                )
+            else:
+                # Existing processing for short segments
+                log_debug(f"Segment {segment_num} is {segment_duration:.1f}s <= 50s, processing as single segment")
+                segment_text: str = self._transcribe_single_segment(segment_wav, sample_rate=int(sr), **kwargs)
+                
+                # Apply additional prompt fragment filtering as a safety measure
+                segment_text = self._strip_prompt_fragments(segment_text)
+                
+                if debug_dir:
+                    self._save_debug_segment(debug_dir, segment_num, "granite_output", {
+                        "segment_id": segment_num,
+                        "segment_start_time": seg_start,
+                        "segment_end_time": seg_end,
+                        "text": segment_text,
+                        "word_count": len(segment_text.split())
+                    })
+                
+                if not segment_text.strip():
+                    log_debug(f"Segment {segment_num} produced empty transcript, skipping")
+                    all_segment_words.append([])
+                    continue
+                
+                # Align segment with MFA
+                timestamped_words: List[Dict[str, Any]] = self._align_segment_with_mfa(segment_wav, segment_text, seg_start, role, debug_dir, segment_num)
+                
+                if debug_dir:
+                    self._save_debug_segment(debug_dir, segment_num, "mfa_output", {
+                        "segment_id": segment_num,
+                        "segment_start_time": seg_start,
+                        "segment_end_time": seg_end,
+                        "word_count": len(timestamped_words),
+                        "words": timestamped_words
+                    })
             
             all_segment_words.append(timestamped_words)
         

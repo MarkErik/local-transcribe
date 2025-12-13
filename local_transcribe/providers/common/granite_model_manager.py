@@ -6,6 +6,9 @@ import os
 import sys
 from typing import Optional, Any, Dict, List
 
+# Import system capability utilities
+from local_transcribe.lib.system_capability_utils import get_system_capability
+
 
 class GraniteModelManager:
     """Base class for managing Granite models across different providers."""
@@ -338,14 +341,42 @@ class GraniteModelManager:
                 local_files_only=True,
                 token=token
             )
-            self.tokenizer = self.processor.tokenizer
+            # Extract tokenizer from processor with null check
+            if self.processor is not None:
+                self.tokenizer = getattr(self.processor, 'tokenizer', None)
+            else:
+                self.tokenizer = None
             
-            # Load the model
+            # Load the model with proper device handling
             self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
                 model_name,
                 local_files_only=True,
                 token=token
             )
+            
+            # Move model to the appropriate device
+            try:
+                import torch
+                device = get_system_capability()
+                
+                if self.model is not None:
+                    if device == "mps" and torch.backends.mps.is_available():
+                        # For MPS, we need to explicitly move the model and set device
+                        self.model = self.model.to("mps")
+                        self.logger.info(f"Model moved to MPS device: {device}")
+                    elif device == "cuda" and torch.cuda.is_available():
+                        # For CUDA
+                        self.model = self.model.to("cuda")
+                        self.logger.info(f"Model moved to CUDA device: {device}")
+                    else:
+                        # For CPU or other devices
+                        self.model = self.model.to("cpu")
+                        self.logger.info(f"Model moved to CPU device: {device}")
+                        
+            except Exception as device_error:
+                self.logger.warning(f"Device placement failed ({device_error}), falling back to CPU")
+                if self.model is not None:
+                    self.model = self.model.to("cpu")
             
             self.logger.info(f"Successfully loaded model: {model_name}")
             

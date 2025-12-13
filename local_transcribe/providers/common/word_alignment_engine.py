@@ -1,8 +1,5 @@
 """
 Word Alignment Engine for aligning transcribed text with audio segments.
-
-This module provides a base class for word-level alignment functionality
-that can be used by different transcription providers.
 """
 
 from typing import Optional, Dict, Any, List, Tuple, Union
@@ -13,9 +10,6 @@ import pathlib
 class WordAlignmentEngine:
     """
     Base class for word alignment engines.
-    
-    This class provides the foundation for aligning transcribed text
-    with corresponding audio segments at the word level.
     """
     
     # Configuration constants
@@ -27,15 +21,6 @@ class WordAlignmentEngine:
     def __init__(self, logger: Optional[logging.Logger] = None, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the WordAlignmentEngine.
-        
-        Args:
-            logger: Optional logger instance for logging messages
-            config: Optional configuration dictionary for customizing alignment behavior.
-                    Supported keys:
-                    - gap_penalty: Penalty for gaps in alignment (default: -0.5)
-                    - min_similarity_threshold: Minimum similarity for word matching (default: 0.6)
-                    - min_word_duration: Minimum duration for words in seconds (default: 0.02)
-                    - max_fallback_similarity: Maximum similarity for fallback alignment (default: 0.8)
         """
         self.logger = logger or logging.getLogger(__name__)
         
@@ -54,16 +39,6 @@ class WordAlignmentEngine:
     def align_words(self, audio_segments: List[Dict[str, Any]], transcript: str) -> List[Dict[str, Any]]:
         """
         Align words in transcript with audio segments.
-        
-        This method should be implemented by subclasses to provide
-        specific word alignment functionality.
-        
-        Args:
-            audio_segments: List of audio segment dictionaries with timing information
-            transcript: The transcribed text to align
-            
-        Returns:
-            List of aligned word dictionaries with timing and confidence information
         """
         raise NotImplementedError("Subclasses must implement align_words method")
     
@@ -74,19 +49,6 @@ class WordAlignmentEngine:
                                     speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Parse MFA TextGrid and return list of word dicts with timestamps.
-        
-        Consolidated logic from granite_mfa.py and granite_vad_silero_mfa.py
-        with improved error handling and validation.
-        
-        Args:
-            textgrid_path: Path to the TextGrid file
-            original_transcript: Original transcript text for word mapping
-            segment_start_time: Start time of the audio segment
-            segment_end_time: End time of the audio segment
-            speaker: Optional speaker identifier
-            
-        Returns:
-            List of word dictionaries with timestamps and text
         """
         word_dicts = []
         
@@ -132,12 +94,6 @@ class WordAlignmentEngine:
     def _build_word_mapping(self, original_words: List[str]) -> Dict[str, str]:
         """
         Build mapping of normalized words to original words.
-        
-        Args:
-            original_words: List of original words from transcript
-            
-        Returns:
-            Dictionary mapping normalized words to original words
         """
         normalized_to_original = {}
         
@@ -152,13 +108,7 @@ class WordAlignmentEngine:
     
     def _find_word_tier(self, lines: List[str]) -> Optional[Tuple[int, int]]:
         """
-        Find the word tier in TextGrid lines with improved error handling.
-        
-        Args:
-            lines: List of lines from TextGrid file
-            
-        Returns:
-            Tuple of (start_line, end_line) for word tier, or None if not found
+        Find the word tier in TextGrid lines.
         """
         for i, line in enumerate(lines):
             # Look for word tier definition
@@ -182,17 +132,8 @@ class WordAlignmentEngine:
                                  segment_start_time: float,
                                  speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Parse intervals from TextGrid word tier with comprehensive error handling.
-        
-        Args:
-            lines: List of lines from TextGrid file
-            word_tier_bounds: Tuple of (start_line, end_line) for word tier
-            normalized_to_original: Mapping of normalized to original words
-            segment_start_time: Start time of the audio segment
-            speaker: Optional speaker identifier
-            
-        Returns:
-            List of word dictionaries with timestamps
+        Parse intervals from TextGrid word tier.
+
         """
         word_dicts = []
         start_line, end_line = word_tier_bounds
@@ -285,16 +226,6 @@ class WordAlignmentEngine:
                                audio_wav: Optional[Any] = None) -> List[Dict[str, Any]]:
         """
         Create simple even-distribution alignment as fallback.
-        
-        Args:
-            transcript: Transcript text
-            segment_start_time: Start time of the segment
-            segment_duration: Optional duration of the segment
-            speaker: Optional speaker identifier
-            audio_wav: Optional audio data for duration calculation
-            
-        Returns:
-            List of word dicts with evenly distributed timestamps
         """
         words = transcript.split()
         if not words:
@@ -330,12 +261,6 @@ class WordAlignmentEngine:
     def normalize_word_for_matching(self, word: str) -> str:
         """
         Normalize word for comparison during alignment.
-        
-        Args:
-            word: The word to normalize
-            
-        Returns:
-            Lowercase word with only alphanumeric characters
         """
         if not word:
             return ""
@@ -344,18 +269,6 @@ class WordAlignmentEngine:
     def calculate_word_similarity(self, word1: str, word2: str) -> float:
         """
         Calculate similarity between two words for alignment purposes.
-        
-        Uses a multi-strategy approach:
-        1. Exact match (1.0)
-        2. Prefix match (0.7-0.9)
-        3. Character-level Levenshtein ratio (0.0-1.0)
-        
-        Args:
-            word1: First word
-            word2: Second word
-            
-        Returns:
-            Similarity score between 0.0 and 1.0
         """
         # Handle empty strings
         if not word1 or not word2:
@@ -381,13 +294,6 @@ class WordAlignmentEngine:
     def _calculate_levenshtein_ratio(self, s1: str, s2: str) -> float:
         """
         Calculate Levenshtein distance ratio between two strings.
-        
-        Args:
-            s1: First string
-            s2: Second string
-            
-        Returns:
-            Similarity ratio between 0.0 and 1.0
         """
         len1, len2 = len(s1), len(s2)
         
@@ -422,19 +328,8 @@ class WordAlignmentEngine:
         return ratio if ratio >= self.min_similarity_threshold else 0.0
     
     def align_word_sequences(self, source_words: List[str], target_words: List[Dict[str, Any]]) -> List[tuple]:
-        """Align source and target word sequences using dynamic programming.
-        
-        Uses a similarity-aware alignment algorithm to find the best mapping
-        between the two sequences, handling insertions, deletions, and substitutions.
-        
-        Args:
-            source_words: List of words from source (e.g., Granite transcript)
-            target_words: List of word dicts from target (e.g., MFA alignment)
-            
-        Returns:
-            List of tuples (source_idx, target_idx) representing aligned pairs.
-            source_idx is None if target has an extra word (to be merged).
-            target_idx is None if source has an extra word (needs interpolation).
+        """
+        Align source and target word sequences using dynamic programming.
         """
         if not source_words and not target_words:
             return []
@@ -496,15 +391,8 @@ class WordAlignmentEngine:
         return self._traceback_alignment(backptr, n, m)
     
     def _traceback_alignment(self, backptr: List[List[Tuple[int, int, str]]], n: int, m: int) -> List[tuple]:
-        """Perform traceback to construct alignment from DP table.
-        
-        Args:
-            backptr: Backpointer table from dynamic programming
-            n: Length of source sequence
-            m: Length of target sequence
-            
-        Returns:
-            List of tuples (source_idx, target_idx) representing aligned pairs
+        """
+        Perform traceback to construct alignment from DP table.
         """
         alignment = []
         i, j = n, m
@@ -538,17 +426,8 @@ class WordAlignmentEngine:
     
     def interpolate_timestamps(self, prev_end: float, next_start: float, num_words: int,
                               words: List[str], speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Create word dicts with interpolated timestamps for words that were missed.
-        
-        Args:
-            prev_end: End time of the previous aligned word
-            next_start: Start time of the next aligned word
-            num_words: Number of words to interpolate
-            words: The actual word texts
-            speaker: Optional speaker identifier
-            
-        Returns:
-            List of word dicts with interpolated timestamps
+        """
+        Create word dicts with interpolated timestamps for words that were missed.
         """
         if num_words == 0 or not words:
             return []
@@ -583,22 +462,8 @@ class WordAlignmentEngine:
                                         segment_start_time: float,
                                         segment_end_time: float,
                                         speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Replace alignment engine words with original text, using alignment timestamps.
-        
-        Handles three scenarios:
-        1. Word counts match: Direct positional replacement
-        2. Alignment has fewer words: Use sequence alignment + interpolation
-        3. Alignment has more words: Use sequence alignment + timestamp merging
-        
-        Args:
-            word_dicts: Word dictionaries from alignment engine
-            original_transcript: Complete original transcript
-            segment_start_time: Start time of the segment
-            segment_end_time: End time of the segment
-            speaker: Optional speaker identifier
-            
-        Returns:
-            New list of word dicts with original text and alignment timestamps
+        """
+        Replace alignment engine words with original text, using alignment timestamps.
         """
         self.logger.info("Replacing alignment words with original text")
         
@@ -626,15 +491,8 @@ class WordAlignmentEngine:
     def _create_direct_replacement(self, word_dicts: List[Dict[str, Any]],
                                   original_words: List[str],
                                   speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Create direct positional replacement when word counts match.
-        
-        Args:
-            word_dicts: Word dictionaries from alignment engine
-            original_words: List of original words from transcript
-            speaker: Optional speaker identifier
-            
-        Returns:
-            New list of word dicts with original text and alignment timestamps
+        """
+        Create direct positional replacement when word counts match.
         """
         result = []
         for i, word_dict in enumerate(word_dicts):
@@ -649,18 +507,8 @@ class WordAlignmentEngine:
     def _process_alignment_result(self, alignment: List[tuple], word_dicts: List[Dict[str, Any]],
                                  original_words: List[str], segment_start_time: float,
                                  segment_end_time: float, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Process alignment result to handle gaps and merges.
-        
-        Args:
-            alignment: List of alignment tuples from sequence alignment
-            word_dicts: Word dictionaries from alignment engine
-            original_words: List of original words from transcript
-            segment_start_time: Start time of the segment
-            segment_end_time: End time of the segment
-            speaker: Optional speaker identifier
-            
-        Returns:
-            New list of word dicts with original text and alignment timestamps
+        """
+        Process alignment result to handle gaps and merges.
         """
         result = []
         pending_original_words = []  # Words waiting for timestamps
@@ -743,15 +591,8 @@ class WordAlignmentEngine:
         return result
     
     def _merge_mfa_timestamps(self, mfa_words: List[Dict[str, Any]], start_idx: int, end_idx: int) -> tuple:
-        """Get merged start/end times from a range of MFA words.
-        
-        Args:
-            mfa_words: List of word dictionaries from alignment engine
-            start_idx: Starting index of the range to merge
-            end_idx: Ending index of the range to merge
-            
-        Returns:
-            Tuple of (start_time, end_time) representing the merged time range
+        """
+        Get merged start/end times from a range of MFA words.
         """
         if start_idx >= end_idx or start_idx >= len(mfa_words):
             return (0.0, 0.0)

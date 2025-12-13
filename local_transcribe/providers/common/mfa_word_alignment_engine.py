@@ -1,8 +1,5 @@
 """
 MFA-specific Word Alignment Engine for aligning transcribed text with audio segments.
-
-This module provides an MFA-specific subclass of WordAlignmentEngine with enhanced
-functionality for MFA-specific word validation, cleanup, and configuration.
 """
 
 from typing import Optional, Dict, Any, List, Tuple, Union
@@ -13,10 +10,7 @@ from .word_alignment_engine import WordAlignmentEngine
 
 class MFAWordAlignmentEngine(WordAlignmentEngine):
     """
-    MFA-specific subclass of WordAlignmentEngine with enhanced functionality.
-    
-    This class provides MFA-specific configuration and word processing capabilities
-    including silence token filtering, duration validation, and enhanced TextGrid parsing.
+    MFA-specific subclass of WordAlignmentEngine.
     """
     
     # MFA-specific configuration constants
@@ -27,18 +21,6 @@ class MFAWordAlignmentEngine(WordAlignmentEngine):
     def __init__(self, logger: Optional[logging.Logger] = None, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the MFAWordAlignmentEngine.
-        
-        Args:
-            logger: Optional logger instance for logging messages
-            config: Optional configuration dictionary for customizing alignment behavior.
-                    Supported keys:
-                    - min_duration: Minimum duration for words in seconds (default: 0.01)
-                    - max_gap: Maximum gap between words in seconds (default: 0.1)
-                    - silence_tokens: List of silence tokens to filter (default: ['<eps>', 'sil', 'sp', 'spn'])
-                    - gap_penalty: Penalty for gaps in alignment (default: -0.5)
-                    - min_similarity_threshold: Minimum similarity for word matching (default: 0.6)
-                    - min_word_duration: Minimum duration for words in seconds (default: 0.02)
-                    - max_fallback_similarity: Maximum similarity for fallback alignment (default: 0.8)
         """
         super().__init__(logger, config)
         
@@ -56,18 +38,6 @@ class MFAWordAlignmentEngine(WordAlignmentEngine):
                                     speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Parse MFA TextGrid and return list of word dicts with timestamps.
-        
-        Enhanced version with MFA-specific validation and cleanup.
-        
-        Args:
-            textgrid_path: Path to the TextGrid file
-            original_transcript: Original transcript text for word mapping
-            segment_start_time: Start time of the audio segment
-            segment_end_time: End time of the audio segment
-            speaker: Optional speaker identifier
-            
-        Returns:
-            List of word dictionaries with timestamps and text
         """
         # Call parent method to get basic parsing
         word_dicts = super().parse_textgrid_to_word_dicts(
@@ -84,17 +54,6 @@ class MFAWordAlignmentEngine(WordAlignmentEngine):
                                segment_start_time: float, segment_end_time: float) -> List[Dict[str, Any]]:
         """
         Apply MFA-specific word validation and cleanup.
-        
-        This method filters out silence tokens, validates word durations,
-        ensures timestamps are within segment bounds, and handles gaps.
-        
-        Args:
-            word_dicts: List of word dictionaries from TextGrid parsing
-            segment_start_time: Start time of the audio segment
-            segment_end_time: End time of the audio segment
-            
-        Returns:
-            List of cleaned and validated word dictionaries
         """
         if not word_dicts:
             return []
@@ -149,13 +108,6 @@ class MFAWordAlignmentEngine(WordAlignmentEngine):
     def align_words(self, audio_segments: List[Dict[str, Any]], transcript: str) -> List[Dict[str, Any]]:
         """
         Align words in transcript with audio segments using MFA-specific logic.
-        
-        Args:
-            audio_segments: List of audio segment dictionaries with timing information
-            transcript: The transcribed text to align
-            
-        Returns:
-            List of aligned word dictionaries with timing and confidence information
         """
         # For MFA, we typically rely on the TextGrid parsing rather than implementing
         # custom alignment logic here. This method can be extended if needed.

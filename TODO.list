@@ -15,3 +15,11 @@ TODO:
 - Implement selective loading for interactive mode: Modify the plugin loading system to only load provider metadata and basic registration for interactive mode, deferring full module imports until a provider is actually selected. This allows the CLI to display available providers quickly without loading all their heavy dependencies upfront, improving startup time for users who just want to see options.
 
 - Optimize imports based on system capabilities: Use conditional imports that only load GPU-specific libraries (torch with CUDA/MPS support) when those capabilities are detected and available. This prevents loading unnecessary CUDA/MPS extensions on CPU-only systems, and avoids import failures on systems where GPU libraries aren't properly installed, while still maintaining full functionality when hardware is available.
+
+- Add conversation block numbers in the outputs so it makes it easier to reference during analysis.
+
+- Have a mode, or a flag, or an output type using LLM, where the interviewer questions are simplified and condensed significantly. In the output generation of this include audit for each one that shows the original and the condensed.
+
+- Use VAD as input into turn-building. Then do disfluencies and accurate timestamps matter? Just want a decently accurate transcription.
+Are timestamps at word-level needed at all? If using VAD blocks. If there is overlapping text, just note it as an interjection.
+

@@ -3,7 +3,7 @@
 Core plugin system initialization and utilities.
 """
 
-from .plugin_interfaces import (
+from local_transcribe.framework.plugin_interfaces import (
     PluginRegistry,
     TranscriberProvider,
     AlignerProvider,

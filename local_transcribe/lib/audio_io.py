@@ -3,7 +3,7 @@ from __future__ import annotations
 import pathlib
 import subprocess
 from typing import Optional
-from .program_logger import get_logger, AudioProcessingError, error_context
+from local_transcribe.lib.program_logger import get_logger, AudioProcessingError, error_context
 
 # We use ffmpeg via command line to normalize: mono/16k WAV
 # This avoids subtle differences between python audio stacks and keeps it robust.

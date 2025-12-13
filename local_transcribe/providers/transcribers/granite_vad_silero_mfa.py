@@ -26,6 +26,7 @@ from local_transcribe.lib.system_capability_utils import get_system_capability, 
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 from local_transcribe.lib.vad_silero_segmenter import SileroVADSegmenter
 from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
+from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
 
 
 class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
@@ -42,6 +43,9 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         # Replace duplicated model management with GraniteModelManager
         self.model_manager = GraniteModelManager(self.logger)
+        
+        # Initialize WordAlignmentEngine for alignment operations
+        self.word_alignment_engine = MFAWordAlignmentEngine(self.logger)
         
         # Segmenter instance
         self.vad_segmenter: Optional[SileroVADSegmenter] = None
@@ -409,364 +413,29 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
 
     def _parse_textgrid_to_word_dicts(self, textgrid_path: pathlib.Path, original_transcript: str, segment_start_time: float = 0.0, segment_end_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Parse MFA TextGrid and return list of word dicts with timestamps."""
-        word_dicts = []
+        return self.word_alignment_engine.parse_textgrid_to_word_dicts(
+            textgrid_path, original_transcript, segment_start_time, segment_end_time, speaker
+        )
 
-        try:
-            with open(textgrid_path, 'r', encoding='utf-8') as f:
-                lines: List[str] = f.readlines()
-            
-            # Build mapping of normalized to original words
-            original_words: List[str] = original_transcript.split()
-            normalized_to_original = {}
-            word_usage_count = {}
-            
-            for orig_word in original_words:
-                normalized = ''.join(c.lower() for c in orig_word if c.isalnum())
-                if normalized:
-                    if normalized not in normalized_to_original:
-                        normalized_to_original[normalized] = []
-                        word_usage_count[normalized] = 0
-                    normalized_to_original[normalized].append(orig_word)
 
-            # Find word tier
-            word_tier_start = None
-            word_tier_end = None
-            
-            for i, line in enumerate(lines):
-                if 'name = "words"' in line:
-                    word_tier_start = i
-                elif word_tier_start is not None and 'name = "phones"' in line:
-                    word_tier_end = i
-                    break
-
-            if word_tier_start is None:
-                raise ValueError("Could not find word tier in TextGrid")
-            
-            if word_tier_end is None:
-                word_tier_end = len(lines)
-
-            # Parse intervals
-            i: int = word_tier_start
-            while i < word_tier_end:
-                line: str = lines[i].strip()
-                if line.startswith('intervals ['):
-                    i += 1
-                    if i >= word_tier_end:
-                        break
-                    xmin_line: str = lines[i].strip()
-                    i += 1
-                    if i >= word_tier_end:
-                        break
-                    xmax_line: str = lines[i].strip()
-                    i += 1
-                    if i >= word_tier_end:
-                        break
-                    text_line: str = lines[i].strip()
-
-                    try:
-                        start = float(xmin_line.split('=')[1].strip())
-                        end = float(xmax_line.split('=')[1].strip())
-                        mfa_text: str = text_line.split('=')[1].strip().strip('"')
-
-                        if mfa_text and mfa_text not in ["", "<eps>", "sil", "sp", "spn"]:
-                            normalized_key: str = mfa_text.lower()
-                            
-                            if normalized_key in normalized_to_original:
-                                word_list = normalized_to_original[normalized_key]
-                                usage_idx = word_usage_count[normalized_key] % len(word_list)
-                                original_text = word_list[usage_idx]
-                                word_usage_count[normalized_key] += 1
-                            else:
-                                original_text: str = mfa_text
-                            
-                            word_dicts.append({
-                                "text": original_text,
-                                "start": start + segment_start_time,
-                                "end": end + segment_start_time,
-                                "speaker": speaker
-                            })
-                    except (ValueError, IndexError):
-                        pass
-
-                i += 1
-
-        except Exception as e:
-            self.logger.warning(f"Failed to parse TextGrid: {e}")
-            return self._simple_alignment_to_word_dicts(None, original_transcript, segment_start_time, speaker)
-
-        return self._replace_words_with_granite_text(word_dicts, original_transcript, segment_start_time, segment_end_time, speaker)
-
-    def _normalize_word_for_matching(self, word: str) -> str:
-        """Normalize a word for comparison during alignment."""
-        return ''.join(c.lower() for c in word if c.isalnum())
-
-    def _word_similarity(self, word1: str, word2: str) -> float:
-        """Calculate similarity between two words for alignment purposes."""
-        norm1: str = self._normalize_word_for_matching(word1)
-        norm2: str = self._normalize_word_for_matching(word2)
-        
-        if not norm1 or not norm2:
-            return 0.0
-        
-        if norm1 == norm2:
-            return 1.0
-        
-        if norm1.startswith(norm2) or norm2.startswith(norm1):
-            shorter: int = min(len(norm1), len(norm2))
-            longer: int = max(len(norm1), len(norm2))
-            return 0.7 + (0.2 * shorter / longer)
-        
-        len1, len2 = len(norm1), len(norm2)
-        if abs(len1 - len2) > max(len1, len2) // 2:
-            return 0.0
-        
-        if len1 < len2:
-            norm1, norm2 = norm2, norm1
-            len1, len2 = len2, len1
-        
-        prev_row: List[int] = list(range(len2 + 1))
-        for i, c1 in enumerate(norm1):
-            curr_row: List[int] = [i + 1]
-            for j, c2 in enumerate(norm2):
-                insertions: int = prev_row[j + 1] + 1
-                deletions: int = curr_row[j] + 1
-                substitutions: int = prev_row[j] + (0 if c1 == c2 else 1)
-                curr_row.append(min(insertions, deletions, substitutions))
-            prev_row: List[int] = curr_row
-        
-        distance: int = prev_row[-1]
-        max_len: int = max(len1, len2)
-        ratio: float = 1.0 - (distance / max_len)
-        
-        return ratio if ratio >= 0.6 else 0.0
-
-    def _align_word_sequences(self, granite_words: List[str], mfa_words: List[Dict[str, Any]]) -> List[tuple]:
-        """Align Granite words with MFA words using dynamic programming."""
-        n: int = len(granite_words)
-        m: int = len(mfa_words)
-        
-        mfa_texts = [wd["text"] for wd in mfa_words]
-        
-        dp = [[0.0 for _ in range(m + 1)] for _ in range(n + 1)]
-        backptr: List[List[Any]] = [[None for _ in range(m + 1)] for _ in range(n + 1)]
-        
-        GAP_PENALTY = -0.5
-        
-        for i in range(1, n + 1):
-            dp[i][0] = dp[i-1][0] + GAP_PENALTY
-            backptr[i][0] = (i-1, 0, 'granite_gap')
-        
-        for j in range(1, m + 1):
-            dp[0][j] = dp[0][j-1] + GAP_PENALTY
-            backptr[0][j] = (0, j-1, 'mfa_gap')
-        
-        for i in range(1, n + 1):
-            for j in range(1, m + 1):
-                granite_word = granite_words[i-1]
-                mfa_word = mfa_texts[j-1]
-                
-                sim = self._word_similarity(granite_word, mfa_word)
-                
-                match_score = dp[i-1][j-1] + sim
-                granite_gap_score: float = dp[i-1][j] + GAP_PENALTY
-                mfa_gap_score: float = dp[i][j-1] + GAP_PENALTY
-                
-                if match_score >= granite_gap_score and match_score >= mfa_gap_score:
-                    dp[i][j] = match_score
-                    backptr[i][j] = (i-1, j-1, 'match')
-                elif granite_gap_score >= mfa_gap_score:
-                    dp[i][j] = granite_gap_score
-                    backptr[i][j] = (i-1, j, 'granite_gap')
-                else:
-                    dp[i][j] = mfa_gap_score
-                    backptr[i][j] = (i, j-1, 'mfa_gap')
-        
-        alignment = []
-        i, j = n, m
-        
-        while i > 0 or j > 0:
-            if i == 0:
-                alignment.append((None, j-1))
-                j -= 1
-            elif j == 0:
-                alignment.append((i-1, None))
-                i -= 1
-            else:
-                _, _, move = backptr[i][j]
-                if move == 'match':
-                    alignment.append((i-1, j-1))
-                    i -= 1
-                    j -= 1
-                elif move == 'granite_gap':
-                    alignment.append((i-1, None))
-                    i -= 1
-                else:
-                    alignment.append((None, j-1))
-                    j -= 1
-        
-        alignment.reverse()
-        return alignment
-
-    def _interpolate_timestamps(self, prev_end: float, next_start: float, num_words: int, 
-                                 words: List[str], speaker: Optional[str]) -> List[Dict[str, Any]]:
-        """Create word dicts with interpolated timestamps for words that MFA dropped."""
-        if num_words == 0:
-            return []
-        
-        duration: float = next_start - prev_end
-        word_duration: float = duration / num_words
-        
-        result = []
-        current_time: float = prev_end
-        
-        for word in words:
-            result.append({
-                "text": word,
-                "start": current_time,
-                "end": current_time + word_duration,
-                "speaker": speaker
-            })
-            current_time += word_duration
-        
-        return result
-
-    def _merge_mfa_timestamps(self, mfa_words: List[Dict[str, Any]], start_idx: int, end_idx: int) -> tuple:
-        """Get merged start/end times from a range of MFA words."""
-        if start_idx >= end_idx or start_idx >= len(mfa_words):
-            return (0.0, 0.0)
-        
-        start_time = mfa_words[start_idx]["start"]
-        end_time = mfa_words[min(end_idx - 1, len(mfa_words) - 1)]["end"]
-        
-        return (start_time, end_time)
-
-    def _replace_words_with_granite_text(self, word_dicts: List[Dict[str, Any]], original_transcript: str, 
-                                          segment_start_time: float, segment_end_time: float, 
+    def _replace_words_with_granite_text(self, word_dicts: List[Dict[str, Any]], original_transcript: str,
+                                          segment_start_time: float, segment_end_time: float,
                                           speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Replace MFA word text with Granite's original words, using MFA timestamps."""
-        log_progress("Replacing MFA words with Granite text")
-        
-        granite_words: List[str] = original_transcript.split()
-        mfa_count: int = len(word_dicts)
-        granite_count: int = len(granite_words)
-        
-        log_debug(f"Granite word count: {granite_count}, MFA word count: {mfa_count}")
-        
-        if mfa_count == granite_count:
-            log_debug("Word counts match - using direct positional replacement")
-            result = []
-            for i, word_dict in enumerate(word_dicts):
-                result.append({
-                    "text": granite_words[i],
-                    "start": word_dict["start"],
-                    "end": word_dict["end"],
-                    "speaker": word_dict.get("speaker", speaker)
-                })
-            return result
-        
-        log_debug(f"Word counts differ ({granite_count} vs {mfa_count}) - using sequence alignment")
-        alignment = self._align_word_sequences(granite_words, word_dicts)
-        
-        log_debug(f"Alignment computed with {len(alignment)} entries")
-        
-        result = []
-        pending_granite_words = []
-        last_end_time: float = segment_start_time
-        
-        i = 0
-        while i < len(alignment):
-            g_idx, m_idx = alignment[i]
-            
-            if g_idx is not None and m_idx is not None:
-                if pending_granite_words:
-                    self.logger.warning(f"MFA dropped {len(pending_granite_words)} word(s): {pending_granite_words}. Using interpolated timestamps.")
-                    current_start = word_dicts[m_idx]["start"]
-                    interpolated: List[Dict[str, Any]] = self._interpolate_timestamps(
-                        last_end_time, current_start, 
-                        len(pending_granite_words), pending_granite_words, speaker
-                    )
-                    result.extend(interpolated)
-                    pending_granite_words = []
-                
-                mfa_start_idx = m_idx
-                mfa_end_idx = m_idx + 1
-                
-                j: int = i + 1
-                while j < len(alignment):
-                    next_g, next_m = alignment[j]
-                    if next_g is None and next_m is not None:
-                        mfa_end_idx = next_m + 1
-                        j += 1
-                    else:
-                        break
-                
-                start_time, end_time = self._merge_mfa_timestamps(word_dicts, mfa_start_idx, mfa_end_idx)
-                
-                result.append({
-                    "text": granite_words[g_idx],
-                    "start": start_time,
-                    "end": end_time,
-                    "speaker": word_dicts[m_idx].get("speaker", speaker)
-                })
-                
-                last_end_time = end_time
-                i: int = j
-                
-            elif g_idx is not None and m_idx is None:
-                pending_granite_words.append(granite_words[g_idx])
-                i += 1
-                
-            elif g_idx is None and m_idx is not None:
-                log_debug(f"Unexpected MFA extra word at position {m_idx}: '{word_dicts[m_idx]['text']}'")
-                i += 1
-                
-            else:
-                i += 1
-        
-        if pending_granite_words:
-            self.logger.warning(f"MFA dropped {len(pending_granite_words)} word(s) at end of segment: {pending_granite_words}. Using interpolated timestamps.")
-            interpolated: List[Dict[str, Any]] = self._interpolate_timestamps(
-                last_end_time, segment_end_time,
-                len(pending_granite_words), pending_granite_words, speaker
-            )
-            result.extend(interpolated)
-        
-        if len(result) != granite_count:
-            self.logger.warning(
-                f"Word count mismatch after alignment: expected {granite_count}, got {len(result)}. "
-                "Falling back to simple distribution."
-            )
-            return self._simple_alignment_to_word_dicts(None, original_transcript, segment_start_time, speaker)
-        
-        log_debug(f"Replacement complete: {len(result)} words")
-        return result
+        return self.word_alignment_engine.replace_words_with_original_text(
+            word_dicts, original_transcript, segment_start_time, segment_end_time, speaker
+        )
 
     def _simple_alignment_to_word_dicts(self, segment_wav: Optional[NDArray[Any]], transcript: str, segment_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fallback: simple even distribution of timestamps."""
-        words: List[str] = transcript.split()
-        if not words:
-            return []
-
         if segment_wav is not None:
             duration: float = len(segment_wav) / 16000.0
         else:
-            duration: float = len(words) * 0.5
+            duration: float = len(transcript.split()) * 0.5
 
-        word_duration: float = duration / len(words)
-        
-        word_dicts = []
-        current_time: float = segment_start_time
-
-        for word in words:
-            word_dicts.append({
-                "text": word,
-                "start": current_time,
-                "end": current_time + word_duration,
-                "speaker": speaker
-            })
-            current_time += word_duration
-
-        return word_dicts
+        return self.word_alignment_engine.create_simple_alignment(
+            transcript, segment_start_time, duration, speaker, segment_wav
+        )
 
     # =========================================================================
     # VAD-specific stitching (simple concatenation with gap handling)

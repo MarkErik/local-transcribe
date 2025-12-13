@@ -479,19 +479,19 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         # Process full chunks
         for i in range(num_full_chunks):
-            # Calculate chunk boundaries with overlap
+            # Calculate chunk boundaries with overlap (relative to segment start)
             if i == 0:
-                # First chunk starts at segment start
-                chunk_start_time = segment_start
+                # First chunk starts at 0 (relative)
+                chunk_start_relative = 0.0
             else:
                 # Subsequent chunks start with overlap
-                chunk_start_time = segment_start + (i * CHUNK_LENGTH) - OVERLAP
+                chunk_start_relative = (i * CHUNK_LENGTH) - OVERLAP
             
-            chunk_end_time = segment_start + ((i + 1) * CHUNK_LENGTH)
+            chunk_end_relative = (i + 1) * CHUNK_LENGTH
             
-            # Convert to sample indices
-            start_sample = int(chunk_start_time * sr)
-            end_sample = int(chunk_end_time * sr)
+            # Convert relative times to sample indices (within segment_wav)
+            start_sample = int(chunk_start_relative * sr)
+            end_sample = int(chunk_end_relative * sr)
             
             # Ensure we don't go beyond the segment boundaries
             start_sample = max(0, start_sample)
@@ -499,6 +499,11 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             
             # Extract chunk audio
             chunk_audio = segment_wav[start_sample:end_sample]
+            
+            # Convert relative times to absolute times for return
+            chunk_start_time = segment_start + chunk_start_relative
+            chunk_end_time = segment_start + chunk_end_relative
+            
             chunks.append((chunk_audio, chunk_start_time, chunk_end_time))
         
         # Handle remaining duration
@@ -510,17 +515,25 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                     # Extend the last chunk to include remaining audio
                     last_chunk_audio, last_start, last_end = chunks[-1]
                     new_end_time = segment_end
-                    new_end_sample = int(new_end_time * sr)
-                    new_end_sample = min(len(segment_wav), new_end_sample)
+                    
+                    # Calculate relative position of last chunk start
+                    last_start_relative = last_start - segment_start
+                    
+                    # Convert to sample indices using relative times
+                    start_sample = int(last_start_relative * sr)
+                    end_sample = len(segment_wav)  # Go to end of segment
                     
                     # Extract the extended audio
-                    extended_audio = segment_wav[int(last_start * sr):new_end_sample]
+                    extended_audio = segment_wav[start_sample:end_sample]
                     chunks[-1] = (extended_audio, last_start, new_end_time)
             else:
                 # Add final chunk for remaining duration
-                final_start_time = segment_end - remaining
-                start_sample = int(final_start_time * sr)
-                end_sample = int(segment_end * sr)
+                final_start_relative = segment_duration - remaining
+                final_start_time = segment_start + final_start_relative
+                
+                # Convert to sample indices using relative times
+                start_sample = int(final_start_relative * sr)
+                end_sample = len(segment_wav)  # Go to end of segment
                 
                 final_chunk_audio = segment_wav[start_sample:end_sample]
                 chunks.append((final_chunk_audio, final_start_time, segment_end))

@@ -158,7 +158,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         mfa_cmd: str = self._get_mfa_command()
         
         try:
-            result: subprocess.CompletedProcess[str] = subprocess.run(
+            result_acoustic: subprocess.CompletedProcess[str] = subprocess.run(
                 [mfa_cmd, "model", "list", "acoustic"],
                 capture_output=True,
                 text=True,
@@ -166,7 +166,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 env=env
             )
 
-            if "english_us_arpa" not in result.stdout:
+            if "english_us_arpa" not in result_acoustic.stdout:
                 log_progress("Downloading MFA English acoustic model...")
                 subprocess.run(
                     [mfa_cmd, "model", "download", "acoustic", "english_us_arpa"],
@@ -174,7 +174,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                     env=env
                 )
 
-            result: subprocess.CompletedProcess[str] = subprocess.run(
+            result_dictionary: subprocess.CompletedProcess[str] = subprocess.run(
                 [mfa_cmd, "model", "list", "dictionary"],
                 capture_output=True,
                 text=True,
@@ -182,7 +182,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                 env=env
             )
 
-            if "english_us_arpa" not in result.stdout:
+            if "english_us_arpa" not in result_dictionary.stdout:
                 log_progress("Downloading MFA English dictionary...")
                 subprocess.run(
                     [mfa_cmd, "model", "download", "dictionary", "english_us_arpa"],
@@ -459,7 +459,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         Returns:
             List of (chunk_audio, chunk_start_time, chunk_end_time)
         """
-        segment_duration = segment_end - segment_start
+        segment_duration: float = segment_end - segment_start
         if segment_duration <= 50.0:
             # No chunking needed for segments <= 50 seconds
             return [(segment_wav, segment_start, segment_end)]
@@ -569,15 +569,15 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         log_progress(f"Transcribing {len(chunk_data)} chunks for segment {segment_num}")
         chunk_transcripts = []
         
-        for chunk in chunk_data:
+        for i, chunk in enumerate(chunk_data):
             chunk_id = chunk['chunk_id']
-            chunk_audio = chunk['audio']
+            chunk_audio_data: NDArray = chunk['audio']
             chunk_start_time = chunk['start_time']
             
             log_debug(f"Transcribing chunk {chunk_id} ({chunk_start_time:.2f}s)")
             
             # Transcribe the chunk
-            chunk_text = self._transcribe_single_segment(chunk_audio, sample_rate=sr)
+            chunk_text: str = self._transcribe_single_segment(chunk_audio_data, sample_rate=sr)
             chunk_text = self._strip_prompt_fragments(chunk_text)
             
             if not chunk_text.strip():
@@ -611,23 +611,23 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         for chunk_transcript in chunk_transcripts:
             chunk_id = chunk_transcript['chunk_id']
-            chunk_audio = None  # We'll need to get this from chunk_data
+            chunk_audio_for_alignment: Optional[NDArray] = None  # We'll need to get this from chunk_data
             chunk_start_time = chunk_transcript['start_time']
             
             # Find the corresponding audio data
             for chunk in chunk_data:
                 if chunk['chunk_id'] == chunk_id:
-                    chunk_audio = chunk['audio']
+                    chunk_audio_for_alignment = chunk['audio']
                     break
             
-            if chunk_audio is None:
+            if chunk_audio_for_alignment is None:
                 log_debug(f"Could not find audio data for chunk {chunk_id}, skipping")
                 continue
             
             # Align the chunk with MFA
             chunk_num_suffix = int(chunk_id.split('-')[1])
-            timestamped_words = self._align_segment_with_mfa(
-                chunk_audio,
+            timestamped_words: List[Dict[str, Any]] = self._align_segment_with_mfa(
+                chunk_audio_for_alignment,
                 chunk_transcript['text'],
                 chunk_start_time,
                 role,
@@ -845,7 +845,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         # Setup MFA
         if self.mfa_models_dir is None:
             models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / ".models")))
-            self.mfa_models_dir: pathlib.Path = models_root / "aligners" / "mfa"
+            self.mfa_models_dir = models_root / "aligners" / "mfa"
             self.mfa_models_dir.mkdir(parents=True, exist_ok=True)
 
         self._ensure_mfa_models()
@@ -904,9 +904,10 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             # NEW: Check if segment needs chunking
             if self._should_chunk_segment(segment_duration):
                 log_debug(f"Segment {segment_num} is {segment_duration:.1f}s > 50s, applying chunking strategy")
-                timestamped_words = self._process_chunked_segment(
+                processed_words = self._process_chunked_segment(
                     segment_wav, seg_start, seg_end, role, debug_dir, segment_num
                 )
+                all_segment_words.append(processed_words)
             else:
                 # Existing processing for short segments
                 log_debug(f"Segment {segment_num} is {segment_duration:.1f}s <= 50s, processing as single segment")
@@ -940,8 +941,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
                         "word_count": len(timestamped_words),
                         "words": timestamped_words
                     })
-            
-            all_segment_words.append(timestamped_words)
+                
+                all_segment_words.append(timestamped_words)
         
         # Step 3: Stitch all segments into continuous output
         result: List[WordSegment] = self._stitch_vad_segments(all_segment_words)

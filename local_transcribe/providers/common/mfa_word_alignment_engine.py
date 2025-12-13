@@ -5,7 +5,7 @@ MFA-specific Word Alignment Engine for aligning transcribed text with audio segm
 from typing import Optional, Dict, Any, List, Tuple, Union
 import logging
 import pathlib
-from .word_alignment_engine import WordAlignmentEngine
+from local_transcribe.providers.common.word_alignment_engine import WordAlignmentEngine
 
 
 class MFAWordAlignmentEngine(WordAlignmentEngine):

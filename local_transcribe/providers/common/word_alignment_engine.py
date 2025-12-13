@@ -109,23 +109,31 @@ class WordAlignmentEngine:
     def _find_word_tier(self, lines: List[str]) -> Optional[Tuple[int, int]]:
         """
         Find the word tier in TextGrid lines.
-        """
-        for i, line in enumerate(lines):
-            # Look for word tier definition
-            if 'words' in line.lower() and 'interval' in line.lower():
-                # Found potential word tier, find its bounds
-                start_line = i
-                end_line = i
-                
-                # Find the end of this tier
-                for j in range(i + 1, len(lines)):
-                    if 'intervals' in lines[j].lower():
-                        end_line = j
-                        break
-                
-                return (start_line, end_line)
         
-        return None
+        Returns:
+            Tuple of (start_line, end_line) for the word tier, or None if not found
+        """
+        word_tier_start = None
+        word_tier_end = None
+        
+        for i, line in enumerate(lines):
+            # Look for word tier declaration: name = "words"
+            if 'name = "words"' in line:
+                word_tier_start = i
+            # Look for phones tier (marks end of word tier)
+            elif word_tier_start is not None and 'name = "phones"' in line:
+                word_tier_end = i
+                break
+        
+        # If we found word tier start but not phones tier, use end of file
+        if word_tier_start is not None and word_tier_end is None:
+            word_tier_end = len(lines)
+        
+        # Return None if we didn't find the word tier
+        if word_tier_start is None:
+            return None
+            
+        return (word_tier_start, word_tier_end)
     
     def _parse_textgrid_intervals(self, lines: List[str], word_tier_bounds: Tuple[int, int],
                                  normalized_to_original: Dict[str, str],
@@ -133,90 +141,60 @@ class WordAlignmentEngine:
                                  speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Parse intervals from TextGrid word tier.
-
+        
+        Uses the original proven parsing logic that looks for:
+        - intervals [N]:
+        - xmin = <time>
+        - xmax = <time>
+        - text = "<word>"
         """
         word_dicts = []
         start_line, end_line = word_tier_bounds
         
-        # Parse intervals within the word tier bounds
-        for i in range(start_line, end_line):
+        i = start_line
+        while i < end_line:
             line = lines[i].strip()
             
-            # Look for interval entries
-            if 'intervals' in line.lower() and '[' in line and ']' in line:
+            # Look for interval start: "intervals [N]:"
+            if line.startswith('intervals ['):
+                # Move to next lines for xmin, xmax, text
+                i += 1
+                if i >= end_line:
+                    break
+                xmin_line = lines[i].strip()
+                
+                i += 1
+                if i >= end_line:
+                    break
+                xmax_line = lines[i].strip()
+                
+                i += 1
+                if i >= end_line:
+                    break
+                text_line = lines[i].strip()
+                
                 try:
-                    # Extract interval number
-                    interval_start = line.find('[')
-                    interval_end = line.find(']')
-                    if interval_start == -1 or interval_end == -1:
-                        continue
+                    # Parse timing
+                    start = float(xmin_line.split('=')[1].strip())
+                    end = float(xmax_line.split('=')[1].strip())
                     
-                    interval_num = line[interval_start + 1:interval_end].strip()
+                    # Parse text, removing quotes
+                    mfa_text = text_line.split('=')[1].strip().strip('"')
                     
-                    # Find the text for this interval (usually in next few lines)
-                    text = ""
-                    for j in range(i + 1, min(i + 5, len(lines))):
-                        text_line = lines[j].strip()
-                        if 'text' in text_line.lower() and '=' in text_line:
-                            # Extract text value
-                            text_parts = text_line.split('=', 1)
-                            if len(text_parts) > 1:
-                                text = text_parts[1].strip().strip('"\'')
-                                break
-                    
-                    # Skip empty or invalid text
-                    if not text or text in ['', '<eps>', 'sil', 'sp', 'spn']:
-                        continue
-                    
-                    # Find timing information (usually in next few lines after text)
-                    start_time = 0.0
-                    end_time = 0.0
-                    
-                    for j in range(i + 1, min(i + 8, len(lines))):
-                        time_line = lines[j].strip()
-                        if 'xmin' in time_line.lower() and '=' in time_line:
-                            # Extract start time
-                            time_parts = time_line.split('=', 1)
-                            if len(time_parts) > 1:
-                                try:
-                                    start_time = float(time_parts[1].strip())
-                                except ValueError:
-                                    continue
-                        
-                        if 'xmax' in time_line.lower() and '=' in time_line:
-                            # Extract end time
-                            time_parts = time_line.split('=', 1)
-                            if len(time_parts) > 1:
-                                try:
-                                    end_time = float(time_parts[1].strip())
-                                except ValueError:
-                                    continue
-                        
-                        # Break if we have both times
-                        if start_time > 0 and end_time > 0:
-                            break
-                    
-                    # Validate timing
-                    if start_time >= end_time or end_time - start_time < self.min_word_duration:
-                        continue
-                    
-                    # Adjust timing relative to segment start
-                    start_time += segment_start_time
-                    end_time += segment_start_time
-                    
-                    # Create word dictionary
-                    word_dict = {
-                        "text": text,
-                        "start": start_time,
-                        "end": end_time,
-                        "speaker": speaker
-                    }
-                    
-                    word_dicts.append(word_dict)
-                    
-                except Exception as e:
+                    # Skip empty words and silence tokens
+                    if mfa_text and mfa_text not in ["", "<eps>", "sil", "sp", "spn"]:
+                        # Validate duration
+                        if end - start >= self.min_word_duration:
+                            word_dicts.append({
+                                "text": mfa_text,
+                                "start": start + segment_start_time,
+                                "end": end + segment_start_time,
+                                "speaker": speaker
+                            })
+                except (ValueError, IndexError) as e:
                     self.logger.debug(f"Error parsing interval at line {i}: {e}")
-                    continue
+            
+            i += 1
         
         return word_dicts
     

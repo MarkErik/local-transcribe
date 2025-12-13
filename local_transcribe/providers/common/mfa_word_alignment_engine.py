@@ -15,6 +15,7 @@ class MFAWordAlignmentEngine(WordAlignmentEngine):
     
     # MFA-specific configuration constants
     DEFAULT_MIN_DURATION = 0.01  # 10ms minimum word duration for MFA
+    DEFAULT_MAX_GAP = 0.1  # 100ms maximum gap between words
     DEFAULT_SILENCE_TOKENS = ['<eps>', 'sil', 'sp', 'spn', 'SIL', 'SP', 'SPN']
     
     def __init__(self, logger: Optional[logging.Logger] = None, config: Optional[Dict[str, Any]] = None):
@@ -25,10 +26,11 @@ class MFAWordAlignmentEngine(WordAlignmentEngine):
         
         # Apply MFA-specific configuration with defaults
         self.min_duration = self.config.get('min_duration', self.DEFAULT_MIN_DURATION)
+        self.max_gap = self.config.get('max_gap', self.DEFAULT_MAX_GAP)
         self.silence_tokens = self.config.get('silence_tokens', self.DEFAULT_SILENCE_TOKENS)
         
         self.logger.info(f"MFAWordAlignmentEngine initialized with MFA-specific config: "
-                        f"min_duration={self.min_duration}, "
+                        f"min_duration={self.min_duration}, max_gap={self.max_gap}, "
                         f"silence_tokens={self.silence_tokens}")
     
     def parse_textgrid_to_word_dicts(self, textgrid_path: pathlib.Path, original_transcript: str,
@@ -79,6 +81,12 @@ class MFAWordAlignmentEngine(WordAlignmentEngine):
             if start_time >= end_time:
                 self.logger.debug(f"Filtered out word outside segment bounds: '{word_dict['text']}'")
                 continue
+            
+            # Check for excessive gaps between words
+            gap = start_time - prev_end_time
+            if gap > self.max_gap:
+                self.logger.debug(f"Large gap detected: {gap:.3f}s between words")
+                # Note: We don't filter out words due to gaps, but log this for analysis
             
             # Update word dictionary with validated timestamps
             validated_word = {

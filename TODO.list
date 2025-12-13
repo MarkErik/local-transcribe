@@ -20,6 +20,9 @@ TODO:
 
 - Have a mode, or a flag, or an output type using LLM, where the interviewer questions are simplified and condensed significantly. In the output generation of this include audit for each one that shows the original and the condensed.
 
-- Use VAD as input into turn-building. Then do disfluencies and accurate timestamps matter? Just want a decently accurate transcription.
+- Use VAD as input into turn-building. Then do disfluencies and accurate timestamps matter? Just want an accurate transcription.
 Are timestamps at word-level needed at all? If using VAD blocks. If there is overlapping text, just note it as an interjection.
+But the larger segments we create from the VAD are for the purposes of transcription and alignment, not for turn-building. However,
+they are built using somewhat conversation based logic. So still could be used.
+The alignment is used to create the videos - but not for anything else really.
 

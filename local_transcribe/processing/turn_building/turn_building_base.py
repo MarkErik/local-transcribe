@@ -153,7 +153,7 @@ class TurnBuildingAuditLog:
     
     def get_summary(self) -> Dict[str, Any]:
         """Get a summary of the audit log."""
-        categories = {}
+        categories: Dict[str, int] = {}
         for entry in self.entries:
             cat = entry["category"]
             categories[cat] = categories.get(cat, 0) + 1
@@ -205,7 +205,7 @@ def normalize_word_timestamps(
             }
             anomalies.append(anomaly)
             
-            if anomaly["time_jump"] > 0.5:
+            if float(anomaly["time_jump"]) if isinstance(anomaly["time_jump"], (int, float)) else 0.0 > 0.5:
                 get_logger().warning(
                     f"Significant backwards time jump at index {i}: "
                     f"'{curr.text}' ({curr.start:.2f}s) -> '{next_w.text}' ({next_w.start:.2f}s), "
@@ -268,7 +268,7 @@ def group_words_by_speaker(
         if speaker != current_speaker:
             # Speaker change - save current segment and start new one
             if current_words:
-                segment = _create_raw_segment(current_words, current_speaker)
+                segment = _create_raw_segment(current_words, current_speaker or "Unknown")
                 segments.append(segment)
             
             current_words = [word]
@@ -279,7 +279,7 @@ def group_words_by_speaker(
     
     # Don't forget the last segment
     if current_words:
-        segment = _create_raw_segment(current_words, current_speaker)
+        segment = _create_raw_segment(current_words, current_speaker or "Unknown")
         segments.append(segment)
     
     # Calculate gaps between segments
@@ -457,11 +457,11 @@ def calculate_interrupt_level(
         return "high"
     elif has_overlap_before or has_overlap_after:
         # Overlaps one side
-        overlap_amount = 0
+        overlap_amount: float = 0.0
         if has_overlap_before:
-            overlap_amount = abs(gap_before)
+            overlap_amount = abs(float(gap_before)) if gap_before is not None else 0.0
         if has_overlap_after:
-            overlap_amount = max(overlap_amount, abs(gap_after))
+            overlap_amount = float(max(overlap_amount, abs(float(gap_after)))) if gap_after is not None else overlap_amount
         
         if overlap_amount > 0.5:
             return "high"

@@ -84,6 +84,9 @@ class WordAlignmentEngine:
                 return self.create_simple_alignment(original_transcript, segment_start_time,
                                                   segment_end_time - segment_start_time, speaker, None)
             
+            # Replace <unk> tokens with words from original transcript
+            self.replace_unk_with_original(word_dicts, original_transcript)
+            
             return word_dicts
             
         except Exception as e:
@@ -579,3 +582,76 @@ class WordAlignmentEngine:
         end_time = mfa_words[min(end_idx - 1, len(mfa_words) - 1)]["end"]
         
         return (start_time, end_time)
+    
+    def replace_unk_with_original(self, word_dicts: List[Dict[str, Any]], original_transcript: str) -> None:
+        """
+        Replace <unk> tokens in aligned word dicts with words from the original transcript 
+        using two-pointer alignment.
+        """
+        if not word_dicts:
+            self.logger.debug("No word dicts to process for UNK replacement")
+            return
+        
+        aligned_texts = [wd["text"] for wd in word_dicts]
+        original_words = original_transcript.split()
+        
+        self.logger.debug(f"[UNK REPLACE] Starting <unk> replacement")
+        self.logger.debug(f"[UNK REPLACE] Original transcript word count: {len(original_words)}")
+        self.logger.debug(f"[UNK REPLACE] Aligned word count before replacement: {len(aligned_texts)}")
+        
+        if len(aligned_texts) > 20:
+            self.logger.debug(f"[UNK REPLACE] Aligned texts ({len(aligned_texts)} words): {' '.join(aligned_texts[:10])} ... {' '.join(aligned_texts[-10:])}")
+        else:
+            self.logger.debug(f"[UNK REPLACE] Aligned texts: {' '.join(aligned_texts)}")
+        
+        if len(original_words) > 20:
+            self.logger.debug(f"[UNK REPLACE] Original words ({len(original_words)} words): {' '.join(original_words[:10])} ... {' '.join(original_words[-10:])}")
+        else:
+            self.logger.debug(f"[UNK REPLACE] Original words: {' '.join(original_words)}")
+        
+        # Two-pointer alignment: ptr tracks position in original_words
+        ptr = 0
+        replacements_made = 0
+        
+        for i, word_dict in enumerate(word_dicts):
+            if word_dict["text"] == "<unk>":
+                # Debug: show context around the <unk> token
+                start_idx = max(0, i - 5)
+                end_idx = min(len(aligned_texts), i + 6)
+                aligned_context = aligned_texts[start_idx:end_idx]
+                
+                orig_start = max(0, ptr - 5)
+                orig_end = min(len(original_words), ptr + 6)
+                original_context = original_words[orig_start:orig_end]
+                
+                self.logger.debug(f"[UNK REPLACE] Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
+                
+                if ptr < len(original_words):
+                    replacement = original_words[ptr]
+                    word_dict["text"] = replacement
+                    self.logger.debug(f"[UNK REPLACE] Replaced with: '{replacement}'")
+                    ptr += 1
+                    replacements_made += 1
+                else:
+                    self.logger.debug(f"[UNK REPLACE] No more original words available, leaving as <unk>")
+            else:
+                # Check if current aligned word matches the current position in original
+                if ptr < len(original_words):
+                    aligned_normalized = word_dict["text"].lower()
+                    original_normalized = original_words[ptr].lower()
+                    
+                    if aligned_normalized == original_normalized:
+                        self.logger.debug(f"[UNK REPLACE] Matched '{word_dict['text']}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
+                        ptr += 1
+                    else:
+                        self.logger.debug(f"[UNK REPLACE] No match for '{word_dict['text']}' at ptr {ptr} (expected '{original_words[ptr]}'), not advancing ptr")
+        
+        # Final logging
+        final_texts = [wd["text"] for wd in word_dicts]
+        self.logger.debug(f"[UNK REPLACE] Completed: made {replacements_made} replacements")
+        self.logger.debug(f"[UNK REPLACE] Aligned word count after replacement: {len(final_texts)}")
+        
+        if len(final_texts) > 20:
+            self.logger.debug(f"[UNK REPLACE] Final aligned texts: {' '.join(final_texts[:10])} ... {' '.join(final_texts[-10:])}")
+        else:
+            self.logger.debug(f"[UNK REPLACE] Final aligned texts: {' '.join(final_texts)}")

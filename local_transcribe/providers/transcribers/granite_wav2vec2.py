@@ -5,7 +5,7 @@ Combined Transcriber+Aligner plugin using IBM Granite with Wav2Vec2 alignment.
 This plugin combines Granite's transcription capabilities with Wav2Vec2 forced alignment
 to produce chunked transcripts where each word has timestamps. Unlike the separate
 granite + wav2vec2 pipeline, this processes each chunk with alignment before moving to the next,
-resulting in chunks that contain timestamped words ready for intelligent stitching.
+resulting in chunks that contain timestamped words ready for stitching.
 
 If Wav2Vec2 alignment fails, it falls back to MFA alignment if available.
 """

@@ -4,7 +4,7 @@ Transcriber plugin using whisper.cpp for speech-to-text transcription.
 
 This plugin uses the whisper.cpp binary (installed via Homebrew) to perform
 efficient transcription with word-level timestamps. It supports chunked processing
-for long audio files with intelligent stitching.
+for long audio files with stitching.
 
 Installation:
     brew install whisper-cpp

@@ -414,7 +414,7 @@ def interactive_prompt(args, api):
                     if selected_provider == "granite":
                         # Always use chunking with local stitching
                         args.output_format = "chunked"
-                        print("✓ Using local intelligent stitching for Granite")
+                        print("✓ Using chunk stitching for Granite")
                     
                     break
                 else:
@@ -548,9 +548,9 @@ def interactive_prompt(args, api):
 
     # Granite-specific options
     if args.transcriber_provider == "granite":
-        # Always use chunking with local stitching
+        # Always use chunking with stitching
         args.output_format = 'chunked'
-        print("✓ Using local intelligent stitching for Granite")
+        print("✓ Using chunk stitching for Granite")
 
     # Check if aligner is needed
     if not transcriber_provider.has_builtin_alignment:

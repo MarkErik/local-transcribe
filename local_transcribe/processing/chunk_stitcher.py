@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Chunk stitcher for intelligently stitching overlapping transcript chunks from audio transcription.
+Chunk stitcher for stitching overlapping transcript chunks from audio transcription.
 
 This module provides functionality to stitch overlapping chunks from transcriber output,
 handling cases where words may be cut off at chunk boundaries (e.g. "generational" -> "rational")
@@ -22,7 +22,7 @@ from local_transcribe.framework.plugin_interfaces import WordSegment
 
 class ChunkStitcher:
     """
-    A class for stitching overlapping transcript chunks with intelligent overlap detection.
+    A class for stitching overlapping transcript chunks with  overlap detection.
     """
     
     def __init__(self, min_overlap_ratio: float = 0.6, similarity_threshold: float = 0.7,
@@ -153,7 +153,7 @@ class ChunkStitcher:
                            has_timestamps: bool, step_num: int = 0, 
                            chunk_id: Any = None) -> List[Any]:
         """
-        Stitch two chunks, handling overlaps intelligently.
+        Stitch two chunks, handling overlaps.
         
         Uses a cascade of overlap detection strategies:
         1. Temporal overlap (if timestamps available)

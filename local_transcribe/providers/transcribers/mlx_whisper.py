@@ -2,7 +2,7 @@
 """
 Transcriber plugin using MLX Whisper for Apple Silicon.
 
-Supports chunked processing for long audio files with intelligent stitching.
+Supports chunked processing for long audio files with stitching.
 """
 
 from typing import List, Optional, Union, Dict, Any

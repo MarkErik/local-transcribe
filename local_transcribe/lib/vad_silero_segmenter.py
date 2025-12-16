@@ -2,11 +2,11 @@
 """
 VAD-based audio segmentation using Silero VAD.
 
-This module implements intelligent audio segmentation based on Voice Activity Detection (VAD)
+This module implements audio segmentation based on Voice Activity Detection (VAD)
 using the SileroVAD model. The segmentation strategy uses:
 
 1. Neural VAD scoring via Silero's `get_speech_timestamps()` function
-2. Maximum segment duration enforcement with intelligent splitting
+2. Maximum segment duration enforcement with splitting
 3. Optional merging of short adjacent segments
 
 This approach ensures chunks start/end at natural speech boundaries rather than arbitrary time points.
@@ -123,7 +123,7 @@ class SileroVADSegmenter:
     Voice Activity Detection based audio segmenter using Silero VAD.
     
     Uses Silero's neural VAD to identify speech regions and segments audio
-    intelligently at natural speech boundaries.
+    at natural speech boundaries.
     """
     
     def __init__(

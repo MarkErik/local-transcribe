@@ -24,7 +24,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
     p.add_argument("--transcriber-provider", help="Transcriber provider to use [Default: auto-selected]")
     p.add_argument("--transcriber-model", help="Transcriber model to use (if provider supports multiple models) [Default: provider-specific]")
-    p.add_argument("--stitching-method", choices=["local", "llm"], default="local", help="Method for stitching transcript chunks [Default: local]. local=intelligent local overlap detection, llm=external LLM server stitching")
     p.add_argument("--aligner-provider", help="Aligner provider to use (required if transcriber doesn't have built-in alignment) [Default: auto-selected if needed]")
     p.add_argument("--diarization-provider", help="Diarization provider to use (required for single audio files with multiple speakers) [Default: auto-selected if needed]")
     p.add_argument("--transcript-cleanup-provider", help="Transcript cleanup provider to use for LLM-based transcript cleaning [Default: none]")
@@ -66,11 +65,9 @@ def show_defaults():
     print("  - Number of Speakers: 2")
     print("  - Output Formats: All available formats")
     print("  - Single Speaker Audio: Disabled (use -s to enable)")
-    print("  - Chunking (Granite): Always enabled")
-    print("  - Stitching Method (Granite): local (default) or llm available")
+    print("  - Chunking (Granite): Always enabled with local stitching")
     
     print("\nURLs:")
-    print("  - LLM Stitcher URL: http://0.0.0.0:8080")
     print("  - LLM Turn Builder URL: http://0.0.0.0:8080")
     print("  - LLM Transcript Cleanup URL: http://0.0.0.0:8080")
     
@@ -417,7 +414,6 @@ def interactive_prompt(args, api):
                     # Granite-specific options
                     if selected_provider == "granite":
                         # Always use chunking with local stitching
-                        args.stitching_method = "local"
                         args.output_format = "chunked"
                         print("✓ Using local intelligent stitching for Granite")
                     
@@ -555,7 +551,6 @@ def interactive_prompt(args, api):
     if args.transcriber_provider == "granite":
         # Always use chunking with local stitching
         args.output_format = 'chunked'
-        args.stitching_method = "local"
         print("✓ Using local intelligent stitching for Granite")
 
     # Check if aligner is needed

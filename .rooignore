@@ -21,6 +21,6 @@ test/
 # Input and Output Data
 *.m4a
 *.mp4
-*.json
+#*.json
 *.csv
-*.txt
+#*.txt

@@ -60,7 +60,7 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
             
             # Use chunk_stitcher (which now handles timestamped words)
             from local_transcribe.processing.chunk_stitcher import stitch_chunks
-            log_progress("Stitching chunks with timestamps using intelligent local overlap detection")
+            log_progress("Stitching chunks with timestamps using intelligent overlap detection")
             segments = stitch_chunks(segments, **kwargs)
             # Now segments is List[WordSegment]
         
@@ -101,9 +101,9 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
                     json.dump(serializable_chunks, f, indent=2, ensure_ascii=False)
                 log_intermediate_save(str(chunk_file), "Raw chunks saved to")
             
-            # Use intelligent local chunk stitching
+            # Use intelligent chunk stitching
             from local_transcribe.processing.chunk_stitcher import stitch_chunks
-            log_progress("Stitching chunks using intelligent local overlap detection")
+            log_progress("Stitching chunks using intelligent overlap detection")
             transcript = stitch_chunks(transcript_result, **kwargs)
         else:
             # Simple string output - no stitching needed
@@ -149,9 +149,9 @@ def only_transcribe(transcriber_provider, audio_path: str, role: Optional[str], 
         # Chunked output - need to stitch
         log_progress(f"Received chunked output with {len(transcript)} chunks")
         
-        # Use intelligent local chunk stitching
+        # Use intelligent chunk stitching
         from local_transcribe.processing.chunk_stitcher import stitch_chunks
-        log_progress("Stitching chunks using intelligent local overlap detection")
+        log_progress("Stitching chunks using intelligent overlap detection")
         transcript_text = stitch_chunks(transcript, **kwargs)
         
         # Save chunked data

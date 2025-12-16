@@ -49,7 +49,7 @@ class ChunkStitcher:
         debug_enabled = get_output_context().should_log("DEBUG")
         if debug_enabled and intermediate_dir:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.debug_dir = Path(intermediate_dir) / "chunk_stitching" / "local_stitcher_debug" / timestamp
+            self.debug_dir = Path(intermediate_dir) / "chunk_stitching" / "stitcher_debug" / timestamp
             self.debug_dir.mkdir(parents=True, exist_ok=True)
             log_debug(f"Debug mode enabled - saving debug files to {self.debug_dir}")
 

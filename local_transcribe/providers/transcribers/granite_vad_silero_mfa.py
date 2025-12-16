@@ -27,7 +27,7 @@ from local_transcribe.lib.program_logger import get_logger, log_progress, log_co
 from local_transcribe.lib.vad_silero_segmenter import SileroVADSegmenter
 from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
 from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
-from local_transcribe.processing.local_chunk_stitcher import ChunkStitcher
+from local_transcribe.processing.chunk_stitcher import ChunkStitcher
 
 
 class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):

@@ -416,38 +416,10 @@ def interactive_prompt(args, api):
                     
                     # Granite-specific options
                     if selected_provider == "granite":
-                        # Always use chunking, but ask for stitcher method
-                        print("\nGranite Stitching Options:")
-                        print("  1. Local (use intelligent local overlap detection) [Default]")
-                        print("  2. LLM-based (use external LLM server for stitching)")
-                        
-                        while True:
-                            stitch_input = input("\nSelect stitching option (number) [Default: 1]: ").strip()
-                            if not stitch_input or stitch_input == "1":
-                                args.stitching_method = "local"
-                                args.output_format = "chunked"
-                                print("✓ Selected: Local intelligent stitching")
-                                break
-                            elif stitch_input == "2":
-                                args.stitching_method = "llm"
-                                args.output_format = "chunked"  # Using chunked mode for LLM stitching
-                                # Prompt for LLM server URL
-                                default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
-                                llm_url = input(f"\nLLM server URL [Default: {default_url}]: ").strip()
-                                if not llm_url:
-                                    args.llm_stitcher_url = default_url
-                                    is_default = True
-                                else:
-                                    # Add http:// if not present
-                                    if not llm_url.startswith(('http://', 'https://')):
-                                        llm_url = f"http://{llm_url}"
-                                    args.llm_stitcher_url = llm_url
-                                    is_default = False
-                                default_marker = " [Default]" if is_default else ""
-                                print(f"✓ Selected: LLM-based stitching with URL: {args.llm_stitcher_url}{default_marker}")
-                                break
-                            else:
-                                print("Error: Please enter 1 or 2.")
+                        # Always use chunking with local stitching
+                        args.stitching_method = "local"
+                        args.output_format = "chunked"
+                        print("✓ Using local intelligent stitching for Granite")
                     
                     break
                 else:
@@ -581,38 +553,10 @@ def interactive_prompt(args, api):
 
     # Granite-specific options
     if args.transcriber_provider == "granite":
-        # Always use chunking, but ask for stitcher method
-        print(f"\nGranite Stitching Options:")
-        print(f"  1. Local: Intelligent local overlap detection [Default]")
-        print(f"  2. LLM: External AI server for intelligent chunk merging (requires LLM server)")
-        
-        while True:
-            choice = input(f"\nSelect stitching method (number) [Default: 1]: ").strip()
-            if choice in ['1', '']:
-                args.output_format = 'chunked'
-                args.stitching_method = "local"
-                print("✓ Selected: Local intelligent stitching [Default]")
-                break
-            elif choice == '2':
-                args.output_format = 'chunked'
-                args.stitching_method = "llm"
-                # Prompt for LLM URL
-                default_url = getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080')
-                llm_url = input(f"LLM server URL [Default: {default_url}]: ").strip()
-                if not llm_url:
-                    llm_url = default_url
-                    is_default = True
-                else:
-                    # Add http:// if not present
-                    if not llm_url.startswith(('http://', 'https://')):
-                        llm_url = f"http://{llm_url}"
-                    is_default = False
-                args.llm_stitcher_url = llm_url
-                default_marker = " [Default]" if is_default else ""
-                print(f"✓ Selected: LLM stitching with URL: {llm_url}{default_marker}")
-                break
-            else:
-                print("Error: Please enter 1 or 2.")
+        # Always use chunking with local stitching
+        args.output_format = 'chunked'
+        args.stitching_method = "local"
+        print("✓ Using local intelligent stitching for Granite")
 
     # Check if aligner is needed
     if not transcriber_provider.has_builtin_alignment:

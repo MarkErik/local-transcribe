@@ -101,19 +101,10 @@ def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path
                     json.dump(serializable_chunks, f, indent=2, ensure_ascii=False)
                 log_intermediate_save(str(chunk_file), "Raw chunks saved to")
             
-            # Choose stitching method
-            stitching_method = kwargs.get('stitching_method', 'local')
-            
-            if stitching_method == 'llm':
-                # Use external LLM server for stitching
-                from local_transcribe.processing.llm_chunk_stitcher import stitch_chunks
-                log_progress("Stitching chunks using external LLM server")
-                transcript = stitch_chunks(transcript_result, **kwargs)
-            else:
-                # Use intelligent local chunk stitching (default)
-                from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
-                log_progress("Stitching chunks using intelligent local overlap detection")
-                transcript = stitch_chunks(transcript_result, **kwargs)
+            # Use intelligent local chunk stitching
+            from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
+            log_progress("Stitching chunks using intelligent local overlap detection")
+            transcript = stitch_chunks(transcript_result, **kwargs)
         else:
             # Simple string output - no stitching needed
             transcript = transcript_result
@@ -158,19 +149,10 @@ def only_transcribe(transcriber_provider, audio_path: str, role: Optional[str], 
         # Chunked output - need to stitch
         log_progress(f"Received chunked output with {len(transcript)} chunks")
         
-        # Always use local chunk stitcher by default, with fallback to LLM if specified
-        stitching_method = kwargs.get('stitching_method', 'local')
-        
-        if stitching_method == 'llm':
-            # Use external LLM server for stitching
-            from local_transcribe.processing.llm_chunk_stitcher import stitch_chunks
-            log_progress("Stitching chunks using external LLM server")
-            transcript_text = stitch_chunks(transcript, **kwargs)
-        else:
-            # Use intelligent local chunk stitching (default)
-            from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
-            log_progress("Stitching chunks using intelligent local overlap detection")
-            transcript_text = stitch_chunks(transcript, **kwargs)
+        # Use intelligent local chunk stitching
+        from local_transcribe.processing.local_chunk_stitcher import stitch_chunks
+        log_progress("Stitching chunks using intelligent local overlap detection")
+        transcript_text = stitch_chunks(transcript, **kwargs)
         
         # Save chunked data
         if intermediate_dir:
@@ -492,9 +474,7 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
                 models_dir=models_dir,
                 registry=api["registry"],
                 transcriber_model=args.transcriber_model,
-                output_format=getattr(args, 'output_format', 'stitched'),
-                llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080'),
-                stitching_method=getattr(args, 'stitching_method', 'local')
+                output_format=getattr(args, 'output_format', 'stitched')
             )
 
             # 2.5) De-identification (if enabled) - BEFORE diarization
@@ -693,9 +673,7 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
                     base_name=f"{speaker_name.lower()}_",
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
-                    output_format=getattr(args, 'output_format', 'stitched'),
-                    llm_stitcher_url=getattr(args, 'llm_stitcher_url', 'http://0.0.0.0:8080'),
-                    stitching_method=getattr(args, 'stitching_method', 'local')
+                    output_format=getattr(args, 'output_format', 'stitched')
                 )
                 
                 # 2.5) De-identification FIRST PASS per speaker (if enabled)

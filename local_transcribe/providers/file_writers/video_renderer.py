@@ -297,7 +297,7 @@ class VideoWriter(OutputWriter):
             **kwargs: Additional arguments including 'audio_config'
         """
         # Import SRT writer to generate subtitles
-        from local_transcribe.providers.file_writers.str_writer import write_srt
+        from local_transcribe.providers.file_writers.srt_writer import write_srt
         
         # Create temporary SRT file
         srt_path = Path(output_path).with_suffix('.srt')

@@ -190,8 +190,8 @@ class WordAlignmentEngine:
                         if end - start >= self.min_word_duration:
                             word_dicts.append({
                                 "text": mfa_text,
-                                "start": start + segment_start_time,
-                                "end": end + segment_start_time,
+                                "start": round(start + segment_start_time, 2),
+                                "end": round(end + segment_start_time, 2),
                                 "speaker": speaker
                             })
                 except (ValueError, IndexError) as e:
@@ -231,8 +231,8 @@ class WordAlignmentEngine:
             word_end = current_time + word_duration
             word_dicts.append({
                 "text": word,
-                "start": current_time,
-                "end": word_end,
+                "start": round(current_time, 2),
+                "end": round(word_end, 2),
                 "speaker": speaker
             })
             current_time = word_end
@@ -430,8 +430,8 @@ class WordAlignmentEngine:
             word_end = current_time + word_duration
             result.append({
                 "text": word,
-                "start": current_time,
-                "end": word_end,
+                "start": round(current_time, 2),
+                "end": round(word_end, 2),
                 "speaker": speaker
             })
             current_time = word_end

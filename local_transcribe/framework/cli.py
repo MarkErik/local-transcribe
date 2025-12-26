@@ -30,6 +30,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     
     p.add_argument("--llm-de-identifier-url", default="http://0.0.0.0:8080", help="URL for LLM personal information de-identifier processor (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
     p.add_argument("--llm-transcript-cleanup-url", default="http://0.0.0.0:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
+    
+    # Remote Granite transcription arguments
+    p.add_argument("--remote-granite", action="store_true", help="Use remote Granite server for transcription instead of local model. Useful when local machine lacks memory for Granite 8B.")
+    p.add_argument("--remote-granite-url", default="http://0.0.0.0:7070", help="URL for remote Granite transcription server (e.g., http://ip:port) [Default: http://0.0.0.0:7070]")
 
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
@@ -65,10 +69,12 @@ def show_defaults():
     print("  - Output Formats: All available formats")
     print("  - Single Speaker Audio: Disabled (use -s to enable)")
     print("  - Chunking (Granite): Always enabled with local stitching")
+    print("  - Remote Granite: Disabled (use --remote-granite to enable)")
     
     print("\nURLs:")
     print("  - LLM Turn Builder URL: http://0.0.0.0:8080")
     print("  - LLM Transcript Cleanup URL: http://0.0.0.0:8080")
+    print("  - Remote Granite URL: http://0.0.0.0:7070")
     
     print("\nNote: Some defaults may be overridden by system capabilities or provider availability.")
 
@@ -551,6 +557,45 @@ def interactive_prompt(args, api):
         # Always use chunking with stitching
         args.output_format = 'chunked'
         print("✓ Using chunk stitching for Granite")
+    
+    # Check for Granite-based providers and offer remote option
+    if args.transcriber_provider in ["granite", "granite_mfa", "granite_vad_silero_mfa", "granite_wav2vec2"]:
+        # Offer remote Granite option
+        if not getattr(args, 'remote_granite', False):
+            print("\n--- Remote Granite Server ---")
+            print("If you have limited memory, you can use a remote Granite server for transcription.")
+            print("This requires a Granite server running at the specified URL.")
+            
+            response = input("\nUse remote Granite server? [Default: n/Y]: ").strip().lower()
+            if response == 'y':
+                args.remote_granite = True
+                default_url = getattr(args, 'remote_granite_url', 'http://0.0.0.0:7070')
+                url = input(f"Enter remote Granite server URL [Default: {default_url}]: ").strip()
+                if url:
+                    if not url.startswith(('http://', 'https://')):
+                        url = f"http://{url}"
+                    args.remote_granite_url = url
+                else:
+                    args.remote_granite_url = default_url
+                
+                # Check if server is available
+                from local_transcribe.providers.common.remote_granite_client import check_remote_granite_available
+                print(f"Checking connection to {args.remote_granite_url}...")
+                if check_remote_granite_available(args.remote_granite_url):
+                    print(f"✓ Remote Granite server is available at {args.remote_granite_url}")
+                else:
+                    print(f"⚠ Remote Granite server not available at {args.remote_granite_url}")
+                    fallback = input("Continue anyway (will fail if server unavailable) or use local? [remote/local]: ").strip().lower()
+                    if fallback == 'local':
+                        args.remote_granite = False
+                        print("✓ Using local Granite model")
+                    else:
+                        print("✓ Will attempt remote Granite server")
+            else:
+                args.remote_granite = False
+                print("✓ Using local Granite model")
+        else:
+            print(f"✓ Remote Granite enabled: {args.remote_granite_url} (set via CLI flag)")
 
     # Check if aligner is needed
     if not transcriber_provider.has_builtin_alignment:

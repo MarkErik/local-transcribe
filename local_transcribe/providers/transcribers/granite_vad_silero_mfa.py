@@ -54,6 +54,10 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         # MFA configuration
         self.mfa_models_dir = None  # type: ignore
+        
+        # Remote transcription settings (configured via kwargs in transcribe_with_alignment)
+        self.use_remote_granite: bool = False
+        self.remote_granite_url: Optional[str] = None
 
     def _strip_prompt_fragments(self, text: str) -> str:
         """Strip prompt fragments from the transcription output."""
@@ -195,7 +199,28 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             raise
 
     def _transcribe_single_segment(self, wav: NDArray[Any], sample_rate: int = 16000, **kwargs) -> str:
-        """Transcribe a single audio segment using Granite."""
+        """Transcribe a single audio segment using Granite (local or remote)."""
+        segment_duration: float = len(wav) / sample_rate
+        
+        # Check if we should use remote transcription
+        if self.use_remote_granite and self.model_manager.should_use_remote():
+            log_progress(f"Transcribing {segment_duration:.1f}s segment with remote Granite server")
+            try:
+                text = self.model_manager.transcribe_remote(
+                    audio=wav,
+                    sample_rate=sample_rate,
+                    segment_duration=segment_duration,
+                    include_disfluencies=True
+                )
+                # Still apply local cleaning/filtering
+                cleaned_text: str = self._clean_transcription_output(text)
+                final_text: str = self._strip_prompt_fragments(cleaned_text)
+                return final_text
+            except Exception as e:
+                self.logger.warning(f"Remote transcription failed, falling back to local: {e}")
+                # Fall through to local transcription
+        
+        # Local transcription
         log_progress("Transcribing audio segment with Granite")
         try:
             wav_tensor: torch.Tensor = torch.from_numpy(wav).unsqueeze(0)
@@ -825,8 +850,45 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         """
         Transcribe audio with Silero VAD-based segmentation and MFA alignment.
 
+        Supports both local and remote Granite transcription. Configure remote
+        transcription by passing:
+            use_remote_granite=True
+            remote_granite_url="http://server:7070"
+        
+        Args:
+            audio_path: Path to the audio file
+            role: Optional speaker role
+            device: Device for processing
+            **kwargs: Additional options including:
+                - models_dir: Directory for models
+                - transcriber_model: Model to use (granite-2b or granite-8b)
+                - intermediate_dir: Directory for intermediate files
+                - use_remote_granite: Use remote Granite server (default: False)
+                - remote_granite_url: URL of remote Granite server
+        
+        Returns:
+            List of WordSegment objects with timestamps
         """
         log_progress("Starting transcription with Silero VAD segmentation + Granite + MFA")
+        
+        # Configure remote Granite if requested
+        self.use_remote_granite = kwargs.get('use_remote_granite', False)
+        self.remote_granite_url = kwargs.get('remote_granite_url')
+        
+        if self.use_remote_granite:
+            log_progress(f"Remote Granite transcription enabled: {self.remote_granite_url or 'default URL'}")
+            self.model_manager.configure_remote(
+                use_remote=True,
+                remote_url=self.remote_granite_url
+            )
+            
+            # Check if remote is available
+            if not self.model_manager.is_remote_available():
+                self.logger.warning("Remote Granite server not available, falling back to local")
+                self.use_remote_granite = False
+                self.model_manager.configure_remote(use_remote=False)
+        else:
+            self.model_manager.configure_remote(use_remote=False)
         
         # Extract models_dir from kwargs if provided
         models_dir = kwargs.get('models_dir')
@@ -850,7 +912,12 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             transcriber_model = 'granite-8b'
 
         self.selected_model = transcriber_model
-        self._load_granite_model()
+        
+        # Only load local model if not using remote (or as fallback)
+        if not self.use_remote_granite:
+            self._load_granite_model()
+        else:
+            log_progress("Using remote Granite server - skipping local model load")
 
         # Initialize Silero VAD segmenter
         self._init_vad_segmenter()

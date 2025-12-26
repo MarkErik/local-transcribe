@@ -46,6 +46,10 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         
         # MFA configuration
         self.mfa_models_dir = None
+        
+        # Remote transcription settings
+        self.use_remote_granite: bool = False
+        self.remote_granite_url: Optional[str] = None
 
     @property
     def device(self):
@@ -155,8 +159,28 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             self.logger.error(f"Failed to check/download MFA models: {e}")
             raise
 
-    def _transcribe_single_chunk(self, wav, **kwargs) -> str:
-        """Transcribe a single audio chunk using Granite."""
+    def _transcribe_single_chunk(self, wav, sample_rate: int = 16000, **kwargs) -> str:
+        """Transcribe a single audio chunk using Granite (local or remote)."""
+        segment_duration: float = len(wav) / sample_rate
+        
+        # Check if we should use remote transcription
+        if self.use_remote_granite and self.model_manager.should_use_remote():
+            log_progress(f"Transcribing {segment_duration:.1f}s chunk with remote Granite server")
+            try:
+                text = self.model_manager.transcribe_remote(
+                    audio=wav,
+                    sample_rate=sample_rate,
+                    segment_duration=segment_duration,
+                    include_disfluencies=True
+                )
+                # Apply local cleaning
+                cleaned_text = self._clean_transcription_output(text, verbose=kwargs.get('verbose', False))
+                return cleaned_text
+            except Exception as e:
+                self.logger.warning(f"Remote transcription failed, falling back to local: {e}")
+                # Fall through to local transcription
+        
+        # Local transcription
         log_progress("Transcribing audio chunk with Granite")
         try:
             wav_tensor = torch.from_numpy(wav).unsqueeze(0)
@@ -415,8 +439,44 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         """
         Transcribe audio with alignment, returning chunked data with timestamped words.
 
+        Supports both local and remote Granite transcription. Configure remote
+        transcription by passing:
+            use_remote_granite=True
+            remote_granite_url="http://server:7070"
+        
+        Args:
+            audio_path: Path to the audio file
+            role: Optional speaker role
+            device: Device for processing
+            **kwargs: Additional options including:
+                - transcriber_model: Model to use (granite-2b or granite-8b)
+                - intermediate_dir: Directory for intermediate files
+                - use_remote_granite: Use remote Granite server (default: False)
+                - remote_granite_url: URL of remote Granite server
+        
+        Returns:
+            List of dictionaries with chunk data and timestamped words
         """
         log_progress("Starting transcription with alignment using Granite + MFA")
+        
+        # Configure remote Granite if requested
+        self.use_remote_granite = kwargs.get('use_remote_granite', False)
+        self.remote_granite_url = kwargs.get('remote_granite_url')
+        
+        if self.use_remote_granite:
+            log_progress(f"Remote Granite transcription enabled: {self.remote_granite_url or 'default URL'}")
+            self.model_manager.configure_remote(
+                use_remote=True,
+                remote_url=self.remote_granite_url
+            )
+            
+            # Check if remote is available
+            if not self.model_manager.is_remote_available():
+                self.logger.warning("Remote Granite server not available, falling back to local")
+                self.use_remote_granite = False
+                self.model_manager.configure_remote(use_remote=False)
+        else:
+            self.model_manager.configure_remote(use_remote=False)
         
         # Check if DEBUG logging is enabled and setup debug directory
         from local_transcribe.lib.program_logger import get_output_context
@@ -437,7 +497,12 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             transcriber_model = 'granite-8b'
 
         self.selected_model = transcriber_model
-        self._load_granite_model()
+        
+        # Only load local model if not using remote (or as fallback)
+        if not self.use_remote_granite:
+            self._load_granite_model()
+        else:
+            log_progress("Using remote Granite server - skipping local model load")
 
         # Setup MFA
         if self.mfa_models_dir is None:

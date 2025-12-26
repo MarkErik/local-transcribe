@@ -474,7 +474,9 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
                 models_dir=models_dir,
                 registry=api["registry"],
                 transcriber_model=args.transcriber_model,
-                output_format=getattr(args, 'output_format', 'stitched')
+                output_format=getattr(args, 'output_format', 'stitched'),
+                use_remote_granite=getattr(args, 'remote_granite', False),
+                remote_granite_url=getattr(args, 'remote_granite_url', None)
             )
 
             # 2.5) De-identification (if enabled) - BEFORE diarization
@@ -673,7 +675,9 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
                     base_name=f"{speaker_name.lower()}_",
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
-                    output_format=getattr(args, 'output_format', 'stitched')
+                    output_format=getattr(args, 'output_format', 'stitched'),
+                    use_remote_granite=getattr(args, 'remote_granite', False),
+                    remote_granite_url=getattr(args, 'remote_granite_url', None)
                 )
                 
                 # 2.5) De-identification FIRST PASS per speaker (if enabled)

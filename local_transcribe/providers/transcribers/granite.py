@@ -38,6 +38,17 @@ class GraniteTranscriberProvider(TranscriberProvider):
         self.overlap_seconds = 3.0  # Configurable overlap between chunks in seconds
         self.min_chunk_seconds = 6.0  # Configurable minimum chunk length in seconds
         self.logger = get_logger()
+        
+        # Remote transcription settings
+        self.use_remote_granite: bool = False
+        self.remote_granite_url: Optional[str] = None
+        self._model_manager: Optional[GraniteModelManager] = None
+    
+    def _get_model_manager(self) -> GraniteModelManager:
+        """Get or create the GraniteModelManager instance."""
+        if self._model_manager is None:
+            self._model_manager = GraniteModelManager(self.logger, self.models_dir)
+        return self._model_manager
 
     @property
     def device(self):
@@ -101,7 +112,25 @@ class GraniteTranscriberProvider(TranscriberProvider):
             self.tokenizer = model_manager.tokenizer
 
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
-        """Transcribe audio using Granite model."""
+        """Transcribe audio using Granite model.
+        
+        Supports both local and remote Granite transcription. Configure remote
+        transcription by passing:
+            use_remote_granite=True
+            remote_granite_url="http://server:7070"
+        
+        Args:
+            audio_path: Path to the audio file
+            device: Device for processing
+            **kwargs: Additional options including:
+                - transcriber_model: Model to use (granite-2b or granite-8b)
+                - models_dir: Directory for models
+                - use_remote_granite: Use remote Granite server (default: False)
+                - remote_granite_url: URL of remote Granite server
+        
+        Returns:
+            List of dictionaries with chunk data
+        """
         transcriber_model = kwargs.get('transcriber_model', 'granite-8b')  # Default to 8b
         if transcriber_model not in self.model_mapping:
             self.logger.warning(f"Unknown model {transcriber_model}, defaulting to granite-8b")
@@ -113,7 +142,32 @@ class GraniteTranscriberProvider(TranscriberProvider):
         if 'models_dir' in kwargs:
             self.models_dir = kwargs['models_dir']
         
-        self._load_model()
+        # Configure remote Granite if requested
+        self.use_remote_granite = kwargs.get('use_remote_granite', False)
+        self.remote_granite_url = kwargs.get('remote_granite_url')
+        
+        model_manager = self._get_model_manager()
+        
+        if self.use_remote_granite:
+            log_progress(f"Remote Granite transcription enabled: {self.remote_granite_url or 'default URL'}")
+            model_manager.configure_remote(
+                use_remote=True,
+                remote_url=self.remote_granite_url
+            )
+            
+            # Check if remote is available
+            if not model_manager.is_remote_available():
+                self.logger.warning("Remote Granite server not available, falling back to local")
+                self.use_remote_granite = False
+                model_manager.configure_remote(use_remote=False)
+        else:
+            model_manager.configure_remote(use_remote=False)
+        
+        # Only load local model if not using remote
+        if not self.use_remote_granite:
+            self._load_model()
+        else:
+            log_progress("Using remote Granite server - skipping local model load")
 
         # Load audio
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)
@@ -133,8 +187,31 @@ class GraniteTranscriberProvider(TranscriberProvider):
         log_progress(f"Audio duration: {duration:.1f}s - processing in {num_chunks} chunks to manage memory")
         return self._transcribe_chunked(wav, sr, **kwargs)
 
-    def _transcribe_single_chunk(self, wav, **kwargs) -> str:
-        """Transcribe a single audio chunk."""
+    def _transcribe_single_chunk(self, wav, sample_rate: int = 16000, **kwargs) -> str:
+        """Transcribe a single audio chunk (local or remote)."""
+        segment_duration = len(wav) / sample_rate
+        
+        # Check if we should use remote transcription
+        model_manager = self._get_model_manager()
+        if self.use_remote_granite and model_manager.should_use_remote():
+            log_progress(f"Transcribing {segment_duration:.1f}s chunk with remote Granite server")
+            try:
+                text = model_manager.transcribe_remote(
+                    audio=wav,
+                    sample_rate=sample_rate,
+                    segment_duration=segment_duration,
+                    include_disfluencies=True
+                )
+                # Apply local cleaning
+                cleaned_text = self._clean_transcription_output(text)
+                return cleaned_text
+            except Exception as e:
+                self.logger.warning(f"Remote transcription failed, falling back to local: {e}")
+                # Load local model if not already loaded
+                if self.model is None:
+                    self._load_model()
+        
+        # Local transcription
         try:
             wav_tensor = torch.from_numpy(wav).unsqueeze(0)
 

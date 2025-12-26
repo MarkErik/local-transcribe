@@ -3,13 +3,7 @@
 VAD-based audio segmentation using Silero VAD.
 
 This module implements audio segmentation based on Voice Activity Detection (VAD)
-using the SileroVAD model. The segmentation strategy uses:
-
-1. Neural VAD scoring via Silero's `get_speech_timestamps()` function
-2. Maximum segment duration enforcement with splitting
-3. Optional merging of short adjacent segments
-
-This approach ensures chunks start/end at natural speech boundaries rather than arbitrary time points.
+using the SileroVAD model.
 """
 
 import re
@@ -140,17 +134,7 @@ class SileroVADSegmenter:
     ):
         """
         Initialize the Silero VAD segmenter.
-        
-        Args:
-            threshold: Speech probability threshold.
-            neg_threshold: Threshold to exit speech state. If None, uses threshold - 0.15.
-            min_speech_duration_ms: Minimum speech segment duration in milliseconds.
-            min_silence_duration_ms: Minimum silence duration to end speech segment.
-            speech_pad_ms: Padding added to each side of speech segments.
-            device: Device to run VAD model on ('cpu', 'cuda', 'mps'). Auto-detected if None.
-            models_dir: Directory where models are cached (for consistency with other providers).
-            combination_config: Configuration for segment combination and splitting.
-            max_segment_duration: Maximum segment duration before splitting.
+
         """
         self.logger = get_logger()
         

@@ -40,7 +40,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         self.word_alignment_engine = MFAWordAlignmentEngine(self.logger)
         
         # Keep MFA-specific configuration
-        self.chunk_length_seconds = 60.0
+        self.chunk_length_seconds = 30.0
         self.overlap_seconds = 4.0
         self.min_chunk_seconds = 7.0
         

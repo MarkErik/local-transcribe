@@ -2,33 +2,28 @@
 """
 Pre-LLM transcript preparation module.
 
-This module provides functions to prepare raw transcripts for LLM processing in the 
-transcript cleanup step. It handles standardizing speaker labels, managing segment lengths,
-preserving sentence boundaries, normalizing whitespace, handling special characters,
-and maintaining context.
 """
 
 import re
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union, TypedDict
 from local_transcribe.framework.plugin_interfaces import Turn
+
+
+class StatsDict(TypedDict):
+    original_turns: int
+    processed_turns: int
+    segments_created: int
+    words_processed: int
+    turns_split: int
+    preparation_mode: str
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
 
 def _extract_turns_from_transcript(transcript: Any) -> List[Dict]:
-    """
-    Extract turns as dictionaries from various transcript formats.
-    
-    Handles:
-    - TranscriptFlow (new hierarchical format)
-    - List of Turn objects
-    - List of HierarchicalTurn objects
-    - List of dictionaries
-    
-    Returns list of dicts with 'speaker', 'start', 'end', 'text' keys.
-    """
+
     # Handle TranscriptFlow
     if hasattr(transcript, 'turns') and hasattr(transcript, 'metadata'):
         # This is a TranscriptFlow object
@@ -115,8 +110,8 @@ def prepare_transcript_for_llm(
         raise ValueError(f"Invalid preparation mode: {preparation_mode}. Must be 'basic' or 'advanced'")
     
     # Initialize statistics
-    stats = {
-        'original_turns': len(turns),
+    stats: StatsDict = {
+        'original_turns': int(len(turns)),
         'processed_turns': 0,
         'segments_created': 0,
         'words_processed': 0,
@@ -129,7 +124,17 @@ def prepare_transcript_for_llm(
         processed_turns = []
         
         for turn in turns:
-            processed_text = turn.text
+            # Handle both dict and Turn object types
+            if isinstance(turn, dict):
+                processed_text = turn.get('text', '')
+                processed_speaker = turn.get('speaker', 'Unknown')
+                turn_start = turn.get('start', 0.0)
+                turn_end = turn.get('end', 0.0)
+            else:
+                processed_text = turn.text
+                processed_speaker = turn.speaker
+                turn_start = turn.start
+                turn_end = turn.end
             
             # Apply advanced preprocessing only in advanced mode
             if preparation_mode == "advanced":
@@ -142,15 +147,14 @@ def prepare_transcript_for_llm(
                     processed_text = _handle_special_characters(processed_text)
             
             # Standardize speaker label if requested (applied in both modes)
-            processed_speaker = turn.speaker
             if standardize_speakers:
-                processed_speaker = _standardize_speaker_label(turn.speaker)
+                processed_speaker = _standardize_speaker_label(processed_speaker)
             
             # Create processed turn
             processed_turn = Turn(
                 speaker=processed_speaker,
-                start=turn.start,
-                end=turn.end,
+                start=turn_start,
+                end=turn_end,
                 text=processed_text
             )
             processed_turns.append(processed_turn)
@@ -164,7 +168,7 @@ def prepare_transcript_for_llm(
         
         # Count how many turns were split into multiple segments
         if len(turns) > 0:
-            stats['turns_split'] = len(segments) - len(turns)
+            stats['turns_split'] = int(len(segments) - len(turns))
         
         logger.info(f"Transcript preparation complete ({preparation_mode} mode): {stats['segments_created']} segments created from {stats['processed_turns']} turns")
         
@@ -335,7 +339,7 @@ def _split_into_sentences(text: str, sentence_endings: List[str]) -> List[str]:
     while current_pos < len(text):
         next_end = float('inf')
         for ending in sentence_endings:
-            pos = text.find(ending, current_pos)
+            pos = text.find(ending, int(current_pos))
             if pos != -1 and pos < next_end:
                 next_end = pos + len(ending)
         
@@ -343,8 +347,8 @@ def _split_into_sentences(text: str, sentence_endings: List[str]) -> List[str]:
             sentences.append(text[current_pos:])
             break
         else:
-            sentences.append(text[current_pos:next_end])
-            current_pos = next_end
+            sentences.append(text[current_pos:int(next_end)])
+            current_pos = int(next_end)
     
     return sentences
 
@@ -366,7 +370,7 @@ def _group_sentences(
         List of grouped text segments with speaker labels
     """
     grouped_segments = []
-    current_chunk = []
+    current_chunk: List[str] = []
     current_word_count = 0
     
     for sentence in sentences:
@@ -406,7 +410,7 @@ def _group_sentences_without_speaker(
         List of grouped text segments
     """
     grouped_segments = []
-    current_chunk = []
+    current_chunk: List[str] = []
     current_word_count = 0
     
     for sentence in sentences:

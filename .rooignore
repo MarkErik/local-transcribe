@@ -13,9 +13,9 @@ uv.lock
 .venv/
 .mfa_env/
 
-# Some directories
-data/
+# Directories
 .models/
+data/
 test/
 
 # Input and Output Data
@@ -24,3 +24,4 @@ test/
 #*.json
 *.csv
 #*.txt
+#*.md

@@ -200,7 +200,6 @@ class SileroVADProcessor:
                 speaker_id=speaker_id,
                 start_s=start_s,
                 end_s=end_s,
-                confidence=1.0,  # Silero doesn't provide per-segment confidence
             )
             segments.append(segment)
         
@@ -253,7 +252,6 @@ class SileroVADProcessor:
                 speaker_id=speaker_id,
                 start_s=start_s,
                 end_s=end_s,
-                confidence=1.0,
             )
             segments.append(segment)
         

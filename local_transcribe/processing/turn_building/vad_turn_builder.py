@@ -30,7 +30,7 @@ from local_transcribe.processing.turn_building.turn_building_data_structures imp
     InterjectionSegment,
 )
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment
-from local_transcribe.lib.program_logger import log_status, log_progress, log_completion, log_debug
+from local_transcribe.lib.program_logger import log_status, log_progress, log_completion, log_debug, log_intermediate_save
 
 
 def _validate_audio_durations(
@@ -302,6 +302,17 @@ def build_turns_vad_split_audio(
     block_config = config or VADBlockBuilderConfig()
     block_builder = VADBlockBuilder(config=block_config)
     blocks = block_builder.build_blocks(all_vad_segments)
+    
+    # Save intermediate VAD blocks (before ASR processing)
+    if intermediate_dir:
+        write_turn_building_audit(
+            blocks,
+            vad_dir,
+            run_id,
+            config=block_config.to_dict(),
+            asr_chunk_data=None,  # No ASR chunking data yet
+        )
+        log_intermediate_save(str(vad_dir / f"turn_building_audit_{run_id}.json"), "Intermediate VAD blocks saved to")
     
     # 3. Process blocks through ASR
     log_status(f"Transcribing {len(blocks)} blocks")

@@ -175,15 +175,22 @@ class GraniteTranscriberProvider(TranscriberProvider):
         # Calculate audio duration in seconds
         duration = len(wav) / sr
         
-        # Validate audio length - must be at least as long as chunk length
+        # For short audio (less than chunk_length), transcribe directly without chunking
+        # This supports VAD pipeline which sends individual short blocks
         if duration < self.chunk_length_seconds:
-            raise ValueError(f"Audio duration ({duration:.1f}s) is shorter than the minimum required chunk length ({self.chunk_length_seconds}s). Please provide audio longer than {self.chunk_length_seconds}s for transcription.")
+            # Short audio - transcribe as single segment (minimum ~1 second for any meaningful speech)
+            if duration < 1.0:
+                raise ValueError(f"Audio duration ({duration:.1f}s) is too short for transcription. Please provide audio longer than 1 second.")
+            log_progress(f"Audio duration: {duration:.1f}s - transcribing as single segment")
+            text = self._transcribe_single_chunk(wav, sr, **kwargs)
+            # Return in chunked format for consistency
+            return [{"chunk_id": 0, "words": text.split(), "text": text}]
         
         # Calculate number of chunks accounting for overlap
         effective_chunk_length = self.chunk_length_seconds - self.overlap_seconds
         num_chunks = math.ceil(duration / effective_chunk_length) if effective_chunk_length > 0 else 1
         
-        # Always process in chunks and return chunked output
+        # Process in chunks for longer audio
         log_progress(f"Audio duration: {duration:.1f}s - processing in {num_chunks} chunks to manage memory")
         return self._transcribe_chunked(wav, sr, **kwargs)
 

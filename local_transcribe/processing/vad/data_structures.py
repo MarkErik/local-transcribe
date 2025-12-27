@@ -23,12 +23,11 @@ class VADSegment:
     speaker_id: str          # Speaker identifier (e.g., "Interviewer", "Participant")
     start_s: float           # Start time in seconds (absolute timeline)
     end_s: float             # End time in seconds (absolute timeline)
-    confidence: float        # VAD confidence score (0-1)
     
     @property
     def duration_s(self) -> float:
         """Duration of this segment in seconds."""
-        return self.end_s - self.start_s
+        return round(self.end_s - self.start_s, 3)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -37,7 +36,6 @@ class VADSegment:
             "speaker_id": self.speaker_id,
             "start_s": self.start_s,
             "end_s": self.end_s,
-            "confidence": self.confidence,
             "duration_s": self.duration_s,
         }
     
@@ -49,7 +47,6 @@ class VADSegment:
             speaker_id=data["speaker_id"],
             start_s=data["start_s"],
             end_s=data["end_s"],
-            confidence=data["confidence"],
         )
 
 
@@ -74,7 +71,7 @@ class VADBlock:
     @property
     def duration_s(self) -> float:
         """Duration of this block in seconds."""
-        return self.end_s - self.start_s
+        return round(self.end_s - self.start_s, 3)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -148,7 +145,7 @@ class ASRChunk:
     @property
     def duration_s(self) -> float:
         """Duration of this chunk in seconds."""
-        return self.end_s - self.start_s
+        return round(self.end_s - self.start_s, 3)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization (without audio data)."""

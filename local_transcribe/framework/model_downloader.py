@@ -23,11 +23,17 @@ def ensure_models_available(providers, models_dir: Path, args) -> int:
     Returns:
         0 on success, 1 on failure
     """
+    # Check if using remote Granite transcription
+    use_remote_granite = getattr(args, 'remote_granite', False)
+    if use_remote_granite:
+        print(f"[*] Remote Granite transcription enabled - skipping local transcriber model download")
+    
     # Phase 2: Model Availability Check (Offline)
     transcriber_provider = providers.get('transcriber')
     aligner_provider = providers.get('aligner')  # May be None if transcriber has builtin alignment
     diarization_provider = providers.get('diarization')  # May be None for split audio
 
+    # Only check transcriber models if provider is present (it won't be if using remote granite)
     required_transcriber_models = transcriber_provider.get_required_models(args.transcriber_model) if transcriber_provider else []
     required_aligner_models = aligner_provider.get_required_models() if aligner_provider else []
     required_diarization_models = diarization_provider.get_required_models() if diarization_provider else []

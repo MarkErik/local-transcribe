@@ -10,6 +10,7 @@ import json
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from datetime import datetime
+import os
 
 from local_transcribe.processing.vad.data_structures import VADSegment, VADBlock
 from local_transcribe.lib.program_logger import log_intermediate_save
@@ -22,57 +23,56 @@ def write_vad_audit(
     speaker_audio_files: Optional[Dict[str, str]] = None,
     speaker_durations: Optional[Dict[str, float]] = None,
     vad_config: Optional[Dict[str, Any]] = None,
-) -> Path:
+) -> List[Path]:
     """
-    Write vad_audit_<run>.json with normalized per-speaker VAD data.
+    Write vad_audit_<run>_<audio_basename>.json with normalized per-speaker VAD data.
+    Creates a separate JSON file for each audio file.
     
     Args:
         vad_segments: Mapping of speaker_id to their VAD segments
-        output_path: Directory to write the audit file
+        output_path: Directory to write the audit files
         run_id: Unique run identifier
         speaker_audio_files: Optional mapping of speaker_id to audio file path
         speaker_durations: Optional mapping of speaker_id to audio duration
         vad_config: Optional VAD configuration used
         
     Returns:
-        Path to the written audit file
+        List of paths to the written audit files
     """
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    audit_data = {
-        "run_id": run_id,
-        "timestamp": datetime.now().isoformat(),
-        "speakers": {},
-    }
+    audit_files = []
     
     for speaker_id, segments in vad_segments.items():
-        speaker_data = {
-            "audio_file": speaker_audio_files.get(speaker_id) if speaker_audio_files else None,
+        # Get audio file basename for filename
+        audio_file = speaker_audio_files.get(speaker_id) if speaker_audio_files else None
+        if audio_file:
+            base_name = os.path.splitext(os.path.basename(audio_file))[0]
+            filename = f"vad_audit_{run_id}_{base_name}.json"
+        else:
+            filename = f"vad_audit_{run_id}_{speaker_id}.json"
+        
+        audit_data = {
+            "run_id": run_id,
+            "timestamp": datetime.now().isoformat(),
+            "speaker_id": speaker_id,
+            "audio_file": audio_file,
             "duration_s": speaker_durations.get(speaker_id) if speaker_durations else None,
             "vad_config": vad_config,
             "segments": [seg.to_dict() for seg in segments],
             "total_speech_s": sum(seg.duration_s for seg in segments),
             "segment_count": len(segments),
         }
-        audit_data["speakers"][speaker_id] = speaker_data
+        
+        audit_file = output_path / filename
+        with open(audit_file, 'w', encoding='utf-8') as f:
+            json.dump(audit_data, f, indent=2, ensure_ascii=False)
+        
+        log_intermediate_save(str(audit_file), "VAD audit saved to")
+        audit_files.append(audit_file)
     
-    # Summary
-    audit_data["summary"] = {
-        "total_speakers": len(vad_segments),
-        "total_segments": sum(len(segs) for segs in vad_segments.values()),
-        "total_speech_s": sum(
-            sum(seg.duration_s for seg in segs) 
-            for segs in vad_segments.values()
-        ),
-    }
-    
-    audit_file = output_path / f"vad_audit_{run_id}.json"
-    with open(audit_file, 'w', encoding='utf-8') as f:
-        json.dump(audit_data, f, indent=2, ensure_ascii=False)
-    
-    log_intermediate_save(str(audit_file), "VAD audit saved to")
-    return audit_file
+    return audit_files
 
 
 def write_turn_building_audit(

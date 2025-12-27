@@ -161,28 +161,38 @@ class ProviderSetup:
         """
         providers = {}
         
+        # Check if using remote Granite transcription - if so, skip transcriber model downloads
+        use_remote_granite = getattr(self.args, 'remote_granite', False)
+        
         # Check for single_speaker_audio mode
         if hasattr(self.args, 'single_speaker_audio') and self.args.single_speaker_audio:
-            try:
-                transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
-                providers['transcriber'] = transcriber_provider
-            except ValueError:
-                pass
+            # Skip transcriber model download if using remote granite
+            if not use_remote_granite:
+                try:
+                    transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
+                    providers['transcriber'] = transcriber_provider
+                except ValueError:
+                    pass
             return providers
         
-        # Check for VAD pipeline mode - only needs transcriber
+        # Check for VAD pipeline mode - only needs transcriber (unless using remote)
         if getattr(self.args, 'vad_pipeline', False):
-            try:
-                transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
-                providers['transcriber'] = transcriber_provider
-            except ValueError:
-                pass
+            # Skip transcriber model download if using remote granite
+            if not use_remote_granite:
+                try:
+                    transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
+                    providers['transcriber'] = transcriber_provider
+                except ValueError:
+                    pass
             return providers
         
-        # For separate processing mode, we need transcriber, aligner (if needed), and diarization
+        # For separate processing mode, we need transcriber (unless remote), aligner (if needed), and diarization
         try:
             transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
-            providers['transcriber'] = transcriber_provider
+            
+            # Only include transcriber for model downloads if not using remote granite
+            if not use_remote_granite:
+                providers['transcriber'] = transcriber_provider
             
             # Add aligner if transcriber doesn't have built-in alignment
             if not transcriber_provider.has_builtin_alignment:

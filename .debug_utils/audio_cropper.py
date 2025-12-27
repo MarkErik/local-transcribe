@@ -212,92 +212,113 @@ class AudioCropper:
         # Crop from 4 minutes to 12 minutes (8 minute output)
         crop_audio(input, output, start_minutes=4.0, end_minutes=12.0)
         """
-        try:
-            input_path = pathlib.Path(input_path).resolve()
-            output_path = pathlib.Path(output_path).resolve()
-            
-            # Get input duration
-            input_duration = self.get_audio_duration(input_path)
-            
-            # Determine start and target duration in seconds
-            start_seconds = start_minutes * 60
-            
-            if end_minutes is not None:
-                # Range-based cropping: start_minutes to end_minutes
-                if end_minutes <= start_minutes:
-                    error_msg = (
-                        f"End time ({end_minutes:.2f} min) must be greater than "
-                        f"start time ({start_minutes:.2f} min)"
-                    )
-                    self.logger.error(error_msg)
-                    raise AudioProcessingError(error_msg, audio_path=str(input_path))
-                
-                end_seconds = end_minutes * 60
-                target_duration_seconds = end_seconds - start_seconds
-                
-                # Check if input is long enough for the requested end time
-                if input_duration < end_seconds:
-                    error_msg = (
-                        f"Input audio ({input_duration:.2f}s / {input_duration/60:.2f} min) is shorter than "
-                        f"requested end time ({end_seconds:.2f}s / {end_minutes:.2f} min)"
-                    )
-                    self.logger.error(error_msg)
-                    raise AudioProcessingError(error_msg, audio_path=str(input_path))
-                    
-                self.logger.info(
-                    f"Cropping {input_path.name} from {start_minutes:.2f} min to {end_minutes:.2f} min "
-                    f"(output duration: {target_duration_seconds/60:.2f} min / {target_duration_seconds:.2f}s)"
+        input_path = pathlib.Path(input_path).resolve()
+        output_path = pathlib.Path(output_path).resolve()
+        
+        # Validate parameters and get cropping details
+        start_seconds, target_duration_seconds = self._validate_crop_params(
+            input_path, duration_minutes, start_minutes, end_minutes
+        )
+        
+        # Ensure output directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Build and run ffmpeg command
+        self._run_ffmpeg_crop(input_path, output_path, start_seconds, target_duration_seconds)
+        
+        # Verify output
+        self._verify_crop_output(output_path, target_duration_seconds)
+        
+        self.logger.info(f"✓ Successfully cropped audio to {output_path}")
+    
+    def _validate_crop_params(self, input_path: pathlib.Path, 
+                             duration_minutes: Optional[float], 
+                             start_minutes: float, 
+                             end_minutes: Optional[float]) -> Tuple[float, float]:
+        """Validate cropping parameters and return start_seconds, target_duration_seconds."""
+        # Get input duration
+        input_duration = self.get_audio_duration(input_path)
+        start_seconds = start_minutes * 60
+        
+        if end_minutes is not None:
+            # Range-based cropping: start_minutes to end_minutes
+            if end_minutes <= start_minutes:
+                error_msg = (
+                    f"End time ({end_minutes:.2f} min) must be greater than "
+                    f"start time ({start_minutes:.2f} min)"
                 )
-            elif duration_minutes is not None:
-                # Traditional duration-based cropping from start_minutes
-                target_duration_seconds = duration_minutes * 60
-                required_duration = start_seconds + target_duration_seconds
-                
-                # Check if input is long enough
-                if input_duration < required_duration:
-                    error_msg = (
-                        f"Input audio ({input_duration:.2f}s) is shorter than requested "
-                        f"duration ({required_duration:.2f}s from start {start_seconds:.2f}s)"
-                    )
-                    self.logger.error(error_msg)
-                    raise AudioProcessingError(error_msg, audio_path=str(input_path))
-                
-                self.logger.info(
-                    f"Cropping {input_path.name} to {duration_minutes:.2f} minutes "
-                    f"({target_duration_seconds:.2f}s) from {start_minutes:.2f} min"
-                )
-            else:
-                error_msg = "Either duration_minutes or end_minutes must be provided"
                 self.logger.error(error_msg)
                 raise AudioProcessingError(error_msg, audio_path=str(input_path))
             
-            # Ensure output directory exists
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            end_seconds = end_minutes * 60
+            target_duration_seconds = end_seconds - start_seconds
             
-            # Build ffmpeg command
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", str(input_path),
-            ]
+            # Check if input is long enough for the requested end time
+            if input_duration < end_seconds:
+                error_msg = (
+                    f"Input audio ({input_duration:.2f}s / {input_duration/60:.2f} min) is shorter than "
+                    f"requested end time ({end_seconds:.2f}s / {end_minutes:.2f} min)"
+                )
+                self.logger.error(error_msg)
+                raise AudioProcessingError(error_msg, audio_path=str(input_path))
+                
+            self.logger.info(
+                f"Cropping {input_path.name} from {start_minutes:.2f} min to {end_minutes:.2f} min "
+                f"(output duration: {target_duration_seconds/60:.2f} min / {target_duration_seconds:.2f}s)"
+            )
+        elif duration_minutes is not None:
+            # Traditional duration-based cropping from start_minutes
+            target_duration_seconds = duration_minutes * 60
+            required_duration = start_seconds + target_duration_seconds
             
-            # Add start time if not starting from beginning
-            if start_seconds > 0:
-                cmd.extend(["-ss", str(start_seconds)])
+            # Check if input is long enough
+            if input_duration < required_duration:
+                error_msg = (
+                    f"Input audio ({input_duration:.2f}s) is shorter than requested "
+                    f"duration ({required_duration:.2f}s from start {start_seconds:.2f}s)"
+                )
+                self.logger.error(error_msg)
+                raise AudioProcessingError(error_msg, audio_path=str(input_path))
             
-            cmd.extend([
-                "-t", str(target_duration_seconds),  # Duration to record/copy
-            ])
-            
-            # Choose appropriate codec based on output format
-            if output_path.suffix.lower() == '.wav':
-                cmd.extend(["-c:a", "pcm_s16le"])  # PCM 16-bit for WAV
-            else:
-                cmd.extend(["-c", "copy"])  # Copy streams for other formats
-            
-            cmd.append(str(output_path))
-            
-            self.logger.info(f"Running ffmpeg command: {' '.join(cmd)}")
-            
+            self.logger.info(
+                f"Cropping {input_path.name} to {duration_minutes:.2f} minutes "
+                f"({target_duration_seconds:.2f}s) from {start_minutes:.2f} min"
+            )
+        else:
+            error_msg = "Either duration_minutes or end_minutes must be provided"
+            self.logger.error(error_msg)
+            raise AudioProcessingError(error_msg, audio_path=str(input_path))
+        
+        return start_seconds, target_duration_seconds
+    
+    def _run_ffmpeg_crop(self, input_path: pathlib.Path, output_path: pathlib.Path, 
+                        start_seconds: float, target_duration_seconds: float) -> None:
+        """Build and execute the ffmpeg cropping command."""
+        # Build ffmpeg command
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(input_path),
+        ]
+        
+        # Add start time if not starting from beginning
+        if start_seconds > 0:
+            cmd.extend(["-ss", str(start_seconds)])
+        
+        cmd.extend([
+            "-t", str(target_duration_seconds),  # Duration to record/copy
+        ])
+        
+        # Choose appropriate codec based on output format
+        if output_path.suffix.lower() == '.wav':
+            cmd.extend(["-c:a", "pcm_s16le"])  # PCM 16-bit for WAV
+        else:
+            cmd.extend(["-c", "copy"])  # Copy streams for other formats
+        
+        cmd.append(str(output_path))
+        
+        self.logger.info(f"Running ffmpeg command: {' '.join(cmd)}")
+        
+        try:
             result = subprocess.run(
                 cmd,
                 check=True,
@@ -305,35 +326,27 @@ class AudioCropper:
                 stderr=subprocess.PIPE,
                 text=True
             )
-            
-            # Verify output was created
-            if not output_path.exists():
-                raise AudioProcessingError(
-                    f"ffmpeg failed to create cropped file: {output_path}",
-                    audio_path=str(input_path)
-                )
-            
-            # Verify output duration
-            actual_duration = self.get_audio_duration(output_path)
-            if abs(actual_duration - target_duration_seconds) > 1.0:  # Allow 1s tolerance
-                self.logger.warning(
-                    f"Output duration ({actual_duration:.2f}s) differs from target "
-                    f"({target_duration_seconds:.2f}s)"
-                )
-            
-            self.logger.info(f"✓ Successfully cropped audio to {output_path}")
-            
         except subprocess.CalledProcessError as e:
             error_msg = f"ffmpeg cropping failed: {e.stderr}"
             self.logger.error(f"{error_msg} for {input_path}")
             raise AudioProcessingError(error_msg, audio_path=str(input_path), cause=e)
-        except Exception as e:
-            if isinstance(e, AudioProcessingError):
-                raise
-            else:
-                error_msg = f"Unexpected error during audio cropping: {e}"
-                self.logger.error(error_msg)
-                raise AudioProcessingError(error_msg, audio_path=str(input_path), cause=e)
+    
+    def _verify_crop_output(self, output_path: pathlib.Path, target_duration_seconds: float) -> None:
+        """Verify that the cropped output file was created and has correct duration."""
+        # Verify output was created
+        if not output_path.exists():
+            raise AudioProcessingError(
+                f"ffmpeg failed to create cropped file: {output_path}",
+                audio_path=str(output_path)
+            )
+        
+        # Verify output duration
+        actual_duration = self.get_audio_duration(output_path)
+        if abs(actual_duration - target_duration_seconds) > 1.0:  # Allow 1s tolerance
+            self.logger.warning(
+                f"Output duration ({actual_duration:.2f}s) differs from target "
+                f"({target_duration_seconds:.2f}s)"
+            )
 
 
 @error_context(reraise=True)

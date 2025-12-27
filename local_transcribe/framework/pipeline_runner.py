@@ -648,8 +648,84 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
 
             print("[✓] Single file processing complete.")
 
+        elif mode == "split_audio" and getattr(args, 'vad_pipeline', False):
+            # VAD-first pipeline for split audio
+            log_status("Using VAD-first pipeline for split audio files")
+            
+            from local_transcribe.processing.vad import VADBlockBuilderConfig
+            from local_transcribe.processing.turn_building import build_turns_vad_split_audio
+            
+            # Build VAD config from CLI args
+            vad_config = VADBlockBuilderConfig(
+                merge_gap_threshold_ms=getattr(args, 'vad_merge_gap_ms', 500),
+            )
+            
+            # Build speaker audio files dict (need absolute paths)
+            from local_transcribe.lib.environment import ensure_file
+            speaker_audio_paths = {}
+            for speaker_name, audio_file in speaker_files.items():
+                speaker_audio_paths[speaker_name] = str(ensure_file(audio_file, speaker_name))
+            
+            # Get remote granite URL if using remote
+            remote_url = None
+            if getattr(args, 'remote_granite', False):
+                remote_url = getattr(args, 'remote_granite_url', 'http://0.0.0.0:7070')
+            
+            # Run VAD pipeline
+            transcript = build_turns_vad_split_audio(
+                speaker_audio_files=speaker_audio_paths,
+                transcriber_provider=transcriber_provider,
+                config=vad_config,
+                intermediate_dir=paths.get("intermediate"),
+                models_dir=models_dir,
+                vad_threshold=getattr(args, 'vad_threshold', 0.5),
+                remote_granite_url=remote_url,
+                transcriber_model=getattr(args, 'transcriber_model', None),
+            )
+            
+            # Save turns
+            registry = api.get("registry")
+            if registry is None:
+                raise ValueError("Registry not found in api")
+            json_turns_writer = registry.get_output_writer("turns-json")
+            turns_file = paths["intermediate"] / "turns" / "vad_turns.json"
+            turns_file.parent.mkdir(parents=True, exist_ok=True)
+            json_turns_writer.write(transcript, turns_file)
+            log_intermediate_save(str(turns_file), "VAD turns saved to")
+            
+            # De-identification (if enabled)
+            if args.de_identify:
+                log_status("De-identification not yet implemented for VAD pipeline")
+                log_progress("Skipping de-identification - use standard pipeline if needed")
+            
+            # Assign speaker names if interactive
+            transcript = assign_speaker_names(transcript, getattr(args, 'interactive', False), mode)
+            
+            # Write outputs
+            raw_dir = paths["root"] / "Transcript_Raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            log_status(f"Writing raw outputs to {raw_dir}")
+            
+            output_manager = OutputManager.get_instance(registry)
+            if output_manager is None:
+                raise ValueError("Output manager is not available")
+            
+            # For VAD pipeline, use speaker_files for audio config
+            log_progress(f"Writing outputs with formats: {args.selected_outputs}")
+            output_manager.write_selected_outputs(
+                transcript,  # type: ignore
+                {**paths, "merged": raw_dir},
+                args.selected_outputs,
+                speaker_audio_paths,  # Pass speaker audio files for potential video generation
+                generate_video=False,  # Video not supported yet for VAD pipeline
+                word_segments=None,  # No word-level segments in VAD pipeline
+            )
+            
+            log_progress(f"Artifacts written to: {paths['root']}")
+            log_completion("VAD-first pipeline complete.")
+
         else:
-            # Process separate audio files
+            # Process separate audio files (standard split_audio pipeline)
             all_words = []
             
             # For two-pass de-identification, we need to collect data per speaker

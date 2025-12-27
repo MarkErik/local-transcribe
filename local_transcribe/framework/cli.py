@@ -42,10 +42,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     # Pipeline re-entry arguments
     p.add_argument("--from-diarized-json", metavar="JSON_FILE", help="Resume pipeline from a corrected diarized word segments JSON file. Starts from turn-building stage.")
     p.add_argument("--audio-for-video", metavar="AUDIO_FILE", help="Original audio file path for video generation when resuming from checkpoint.")
-    p.add_argument("--mode", choices=["combined_audio", "split_audio"], help="Pipeline mode. Overrides mode detected from checkpoint metadata.")
+    p.add_argument("--mode", choices=["combined_audio", "split_audio", "vad_split_audio"], help="Pipeline mode. Overrides mode detected from checkpoint metadata.")
     p.add_argument("--speaker-map", metavar="MAPPING", help="Speaker name mapping for re-entry (e.g., 'SPEAKER_00=Interviewer,SPEAKER_01=Participant')")
     p.add_argument("--dry-run", action="store_true", help="Validate checkpoint and show what stages would run without executing.")
     p.add_argument("--list-stages", action="store_true", help="List available pipeline stages and exit.")
+
+    # VAD pipeline arguments
+    p.add_argument("--vad-pipeline", action="store_true", help="Use VAD-first pipeline for split audio files (recommended for interviews).")
+    p.add_argument("--skip-alignment", action="store_true", default=True, help="Skip word-level alignment (default: True for VAD pipeline).")
+    p.add_argument("--vad-threshold", type=float, default=0.5, help="VAD speech probability threshold (0-1) [Default: 0.5]")
+    p.add_argument("--vad-merge-gap-ms", type=int, default=500, help="Maximum gap between VAD segments to merge (ms) [Default: 500]")
 
     args = p.parse_args(argv)
 
@@ -70,6 +76,12 @@ def show_defaults():
     print("  - Single Speaker Audio: Disabled (use -s to enable)")
     print("  - Chunking (Granite): Always enabled with local stitching")
     print("  - Remote Granite: Disabled (use --remote-granite to enable)")
+    
+    print("\nVAD Pipeline Settings:")
+    print("  - VAD Pipeline: Disabled (use --vad-pipeline for split audio)")
+    print("  - VAD Threshold: 0.5 (speech probability)")
+    print("  - VAD Merge Gap: 500ms (gap threshold for merging segments)")
+    print("  - Skip Alignment: True (word alignment skipped in VAD mode)")
     
     print("\nURLs:")
     print("  - LLM Turn Builder URL: http://0.0.0.0:8080")

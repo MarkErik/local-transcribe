@@ -16,7 +16,7 @@ class ProviderSetup:
         Setup all required providers based on processing mode and arguments.
         
         Args:
-            mode: Either "combined_audio" or "split_audio"
+            mode: Either "combined_audio", "split_audio", or "vad_split_audio"
             
         Returns:
             Dictionary containing all configured providers
@@ -26,11 +26,28 @@ class ProviderSetup:
         # Check for single_speaker_audio mode
         if mode == "single_speaker_audio":
             providers.update(self._setup_single_speaker_audio_providers())
+        # Check for VAD split audio mode (only needs transcriber)
+        elif mode == "split_audio" and getattr(self.args, 'vad_pipeline', False):
+            providers.update(self._setup_vad_pipeline_providers())
         else:
             providers.update(self._setup_separate_processing_providers(mode))
         
         # Setup transcript cleanup provider if specified
         providers.update(self._setup_transcript_cleanup_provider())
+        
+        return providers
+    
+    def _setup_vad_pipeline_providers(self) -> Dict[str, Any]:
+        """Setup providers for VAD pipeline mode (only transcriber needed)."""
+        providers = {}
+        
+        # Setup transcriber only - VAD pipeline handles everything else
+        transcriber_provider = self._setup_transcriber_provider()
+        providers['transcriber'] = transcriber_provider
+        
+        # No aligner or diarization needed - VAD handles timing
+        providers['aligner'] = None
+        providers['diarization'] = None
         
         return providers
     
@@ -146,6 +163,15 @@ class ProviderSetup:
         
         # Check for single_speaker_audio mode
         if hasattr(self.args, 'single_speaker_audio') and self.args.single_speaker_audio:
+            try:
+                transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
+                providers['transcriber'] = transcriber_provider
+            except ValueError:
+                pass
+            return providers
+        
+        # Check for VAD pipeline mode - only needs transcriber
+        if getattr(self.args, 'vad_pipeline', False):
             try:
                 transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
                 providers['transcriber'] = transcriber_provider

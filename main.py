@@ -11,7 +11,7 @@ from typing import Optional
 
 from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist, validate_system_capability
 from local_transcribe.lib.system_capability_utils import set_system_capability
-from local_transcribe.framework.cli import parse_args, interactive_prompt
+from local_transcribe.framework.cli import parse_args, interactive_prompt, apply_cli_implications
 from local_transcribe.framework.plugin_manager import import_pipeline_modules, handle_plugin_listing
 from local_transcribe.framework.pipeline_runner import run_pipeline
 
@@ -74,6 +74,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("Error: Must provide --audio-files (-a) or --from-diarized-json")
         return 1
 
+    # Apply CLI argument implications (e.g., --remote-granite implies granite transcriber)
+    # This is done before interactive mode so the implications are visible to the user
+    args = apply_cli_implications(args)
+
     if args.interactive:
         args = interactive_prompt(args, api)
         # Update system capability after interactive selection
@@ -81,6 +85,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             args.system = validate_system_capability(args.system)
             set_system_capability(args.system)
             print(f"[i] System capability set to: {args.system.upper()}")
+    else:
+        # Non-interactive mode - still apply implications for consistency
+        # (already done above, but ensure system capability is set)
+        if hasattr(args, 'system') and args.system:
+            args.system = validate_system_capability(args.system)
+            set_system_capability(args.system)
 
     # Run the pipeline
     return run_pipeline(args, api, root)

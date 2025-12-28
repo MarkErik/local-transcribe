@@ -53,8 +53,8 @@ class RemoteGraniteClient:
     """
     
     DEFAULT_URL = "http://0.0.0.0:7070"
-    DEFAULT_TIMEOUT = 120  # 2 minutes for long segments
-    CONNECT_TIMEOUT = 5    # 5 seconds for connection
+    DEFAULT_TIMEOUT = 300  # 2 minutes for long segments
+    CONNECT_TIMEOUT = 10    # 5 seconds for connection
     
     def __init__(
         self,

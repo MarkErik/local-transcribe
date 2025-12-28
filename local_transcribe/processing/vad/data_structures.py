@@ -110,7 +110,7 @@ class VADBlockBuilderConfig:
     Controls how nearby VAD segments are merged and how interjections
     and overlaps are detected.
     """
-    merge_gap_threshold_ms: int = 500   # Merge segments with gap < this
+    merge_gap_threshold_ms: int = 600   # Merge segments with gap < this
     interjection_max_duration_ms: int = 2000  # Max duration to classify as interjection
     interjection_window_ms: int = 500   # Window after block start for interjection detection
     overlap_threshold_ms: int = 100     # Min overlap to consider segments overlapping

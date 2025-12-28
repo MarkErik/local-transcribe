@@ -6,7 +6,9 @@ This module handles the transcription of VAD blocks through an ASR provider,
 with automatic chunking of long blocks and stitching of overlapping results.
 """
 
+import json
 import tempfile
+from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 import numpy as np
@@ -15,7 +17,7 @@ import soundfile as sf
 from local_transcribe.processing.vad.data_structures import VADBlock, ASRChunk
 from local_transcribe.processing.chunk_stitcher import ChunkStitcher
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment
-from local_transcribe.lib.program_logger import log_progress, log_debug, log_completion, get_logger
+from local_transcribe.lib.program_logger import log_progress, log_debug, log_completion, get_logger, get_output_context
 from local_transcribe.lib.audio_processor import load_audio_as_array
 
 
@@ -31,6 +33,10 @@ class VADASRProcessor:
     MAX_CHUNK_DURATION_S = 30.0
     OVERLAP_DURATION_S = 4.0
     MIN_CHUNK_DURATION_S = 7.0  # Minimum viable chunk size
+    
+    # Minimum audio duration for ASR (seconds)
+    # Short audio will be padded with silence to reach this threshold
+    MIN_AUDIO_DURATION_S = 1.0
     
     # Standard sample rate for ASR
     SAMPLE_RATE = 16000
@@ -55,12 +61,101 @@ class VADASRProcessor:
         self.models_dir = models_dir
         self.intermediate_dir = intermediate_dir
         self.remote_granite_url = remote_granite_url
-        self.chunk_stitcher = ChunkStitcher(intermediate_dir=intermediate_dir)
         self.logger = get_logger()
         
         # Track chunk info for audit
         self._chunk_audit_data: List[Dict[str, Any]] = []
+        
+        # Debug directories - initialized on first use in process_blocks
+        self.debug_enabled = False
+        self.transcription_debug_dir: Optional[Path] = None
+        self.stitching_debug_dir: Optional[Path] = None
+        
+        # Create chunk stitcher without intermediate_dir initially
+        # We'll configure it properly in _setup_debug_directories
+        self.chunk_stitcher = ChunkStitcher(intermediate_dir=None)
     
+    def _setup_debug_directories(self) -> None:
+        """
+        Setup debug directories for the transcription run.
+        
+        Creates timestamped directories for transcription outputs and stitching debug.
+        Only creates directories if DEBUG logging is enabled and intermediate_dir is set.
+        """
+        self.debug_enabled = get_output_context().should_log("DEBUG")
+        
+        if not self.debug_enabled or not self.intermediate_dir:
+            return
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Create transcription debug directory for per-block ASR results
+        self.transcription_debug_dir = Path(self.intermediate_dir) / "transcription" / f"vad_asr_{timestamp}"
+        self.transcription_debug_dir.mkdir(parents=True, exist_ok=True)
+        log_debug(f"Transcription debug output: {self.transcription_debug_dir}")
+        
+        # Create stitching debug directory for blocks that require chunk stitching
+        self.stitching_debug_dir = Path(self.intermediate_dir) / "chunk_stitching" / f"vad_stitching_{timestamp}"
+        # Don't create this directory yet - only create if we actually need stitching
+        
+    def _save_block_transcription_debug(
+        self,
+        block: VADBlock,
+        text: str,
+        was_chunked: bool,
+        chunk_count: int = 1
+    ) -> None:
+        """
+        Save debug output for a transcribed block.
+        
+        Args:
+            block: The VAD block that was transcribed
+            text: The transcription result
+            was_chunked: Whether the block required chunking
+            chunk_count: Number of chunks if chunking was needed
+        """
+        if not self.debug_enabled or not self.transcription_debug_dir:
+            return
+        
+        # Use block_id and source segment IDs for audit trail
+        block_id_str = f"block_{block.block_id:03d}"
+        segment_ids_str = "_".join(str(sid) for sid in block.source_segment_ids)
+        
+        # Save JSON with full details
+        debug_data = {
+            "block_id": block.block_id,
+            "speaker_id": block.speaker_id,
+            "source_segment_ids": block.source_segment_ids,
+            "start_s": block.start_s,
+            "end_s": block.end_s,
+            "duration_s": block.duration_s,
+            "was_chunked": was_chunked,
+            "chunk_count": chunk_count,
+            "transcription": {
+                "text": text,
+                "word_count": len(text.split()) if text else 0,
+            }
+        }
+        
+        json_path = self.transcription_debug_dir / f"{block_id_str}_segments_{segment_ids_str}.json"
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(debug_data, f, indent=2, ensure_ascii=False)
+        
+        # Save human-readable text file
+        txt_path = self.transcription_debug_dir / f"{block_id_str}_segments_{segment_ids_str}.txt"
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write(f"{'=' * 60}\n")
+            f.write(f"BLOCK {block.block_id} - ASR OUTPUT\n")
+            f.write(f"{'=' * 60}\n")
+            f.write(f"Speaker: {block.speaker_id}\n")
+            f.write(f"Source VAD Segment IDs: {block.source_segment_ids}\n")
+            f.write(f"Time: {block.start_s:.2f}s - {block.end_s:.2f}s ({block.duration_s:.2f}s)\n")
+            f.write(f"Chunked: {'Yes (' + str(chunk_count) + ' chunks)' if was_chunked else 'No'}\n")
+            f.write(f"Word count: {len(text.split()) if text else 0}\n")
+            f.write(f"{'-' * 60}\n\n")
+            f.write(text if text else "[No transcription]")
+            f.write("\n")
+
     def process_blocks(
         self,
         blocks: List[VADBlock],
@@ -79,6 +174,9 @@ class VADASRProcessor:
             List of VADBlock with text field populated
         """
         log_progress(f"Transcribing {len(blocks)} VAD blocks")
+        
+        # Setup debug directories for this run
+        self._setup_debug_directories()
         
         # Load audio data for each speaker
         speaker_audio: Dict[str, tuple] = {}  # speaker_id -> (audio_array, sample_rate)
@@ -142,7 +240,10 @@ class VADASRProcessor:
         
         if block.duration_s <= self.MAX_CHUNK_DURATION_S:
             # Direct transcription for short blocks
-            return self._transcribe_audio(block_audio, sample_rate, block.speaker_id, **kwargs)
+            text = self._transcribe_audio(block_audio, sample_rate, block.speaker_id, block=block, **kwargs)
+            # Save debug output for non-chunked block
+            self._save_block_transcription_debug(block, text, was_chunked=False, chunk_count=1)
+            return text
         
         # Long block - need to chunk
         log_debug(f"Block {block.block_id} duration {block.duration_s:.1f}s > {self.MAX_CHUNK_DURATION_S}s, chunking")
@@ -153,7 +254,7 @@ class VADASRProcessor:
         # Transcribe each chunk
         chunk_results: List[Dict[str, Any]] = []
         for chunk in chunks:
-            text = self._transcribe_audio(chunk.audio_segment, sample_rate, chunk.speaker_id, **kwargs)
+            text = self._transcribe_audio(chunk.audio_segment, sample_rate, chunk.speaker_id, block=block, chunk=chunk, **kwargs)
             chunk_results.append({
                 "chunk_id": chunk.chunk_id,
                 "words": text.split(),  # Simple word splitting for stitching
@@ -174,9 +275,14 @@ class VADASRProcessor:
         
         # Stitch results
         if len(chunk_results) == 1:
-            return chunk_results[0]["text"]
+            result_text = chunk_results[0]["text"]
+            self._save_block_transcription_debug(block, result_text, was_chunked=True, chunk_count=1)
+            return result_text
         
-        return self._stitch_chunk_transcripts(chunk_results)
+        result_text = self._stitch_chunk_transcripts(chunk_results, block)
+        # Save debug output for chunked block
+        self._save_block_transcription_debug(block, result_text, was_chunked=True, chunk_count=len(chunks))
+        return result_text
     
     def _split_block_into_chunks(
         self,
@@ -274,6 +380,8 @@ class VADASRProcessor:
         audio_data: np.ndarray,
         sample_rate: int,
         speaker_id: str,
+        block: Optional[VADBlock] = None,
+        chunk: Optional[ASRChunk] = None,
         **kwargs
     ) -> str:
         """
@@ -283,15 +391,20 @@ class VADASRProcessor:
             audio_data: Audio samples
             sample_rate: Sample rate
             speaker_id: Speaker identifier
+            block: Optional VAD block context (for debug)
+            chunk: Optional ASR chunk context (for debug)
             **kwargs: Additional arguments for transcriber
             
         Returns:
             Transcribed text
         """
+        # Pad short audio segments with silence to meet minimum duration requirement
+        audio_to_transcribe = self._pad_short_audio(audio_data, sample_rate)
+        
         # Write audio to temp file (most ASR providers expect file path)
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
             temp_path = f.name
-            sf.write(temp_path, audio_data, sample_rate)
+            sf.write(temp_path, audio_to_transcribe, sample_rate)
         
         try:
             # Get device preference
@@ -341,21 +454,87 @@ class VADASRProcessor:
             except Exception:
                 pass
     
+    def _pad_short_audio(
+        self,
+        audio_data: np.ndarray,
+        sample_rate: int
+    ) -> np.ndarray:
+        """
+        Pad short audio segments with silence to meet minimum duration requirement.
+        
+        If the audio is shorter than MIN_AUDIO_DURATION_S, silence is added
+        equally before and after the actual audio to reach the threshold.
+        
+        Args:
+            audio_data: Audio samples
+            sample_rate: Sample rate of audio
+            
+        Returns:
+            Original audio if long enough, or padded audio if too short
+        """
+        current_duration = len(audio_data) / sample_rate
+        
+        if current_duration >= self.MIN_AUDIO_DURATION_S:
+            return audio_data
+        
+        # Calculate padding needed
+        target_samples = int(self.MIN_AUDIO_DURATION_S * sample_rate)
+        padding_needed = target_samples - len(audio_data)
+        
+        # Split padding equally before and after
+        pad_before = padding_needed // 2
+        pad_after = padding_needed - pad_before
+        
+        log_debug(
+            f"Padding short audio ({current_duration:.2f}s) with "
+            f"{pad_before / sample_rate:.2f}s before and "
+            f"{pad_after / sample_rate:.2f}s after to reach {self.MIN_AUDIO_DURATION_S}s"
+        )
+        
+        # Create silence arrays and concatenate
+        silence_before = np.zeros(pad_before, dtype=audio_data.dtype)
+        silence_after = np.zeros(pad_after, dtype=audio_data.dtype)
+        
+        return np.concatenate([silence_before, audio_data, silence_after])
+    
     def _stitch_chunk_transcripts(
         self,
-        chunk_results: List[Dict[str, Any]]
+        chunk_results: List[Dict[str, Any]],
+        block: Optional[VADBlock] = None
     ) -> str:
         """
         Stitch overlapping chunk transcripts using ChunkStitcher.
         
         Args:
             chunk_results: List of chunk results with words
+            block: The source VAD block (for debug context)
             
         Returns:
             Stitched transcript text
         """
-        # Use chunk_stitcher for overlap detection
-        result = self.chunk_stitcher.stitch_chunks(chunk_results)
+        # Only enable stitching debug if we're actually stitching multiple chunks
+        if self.debug_enabled and self.stitching_debug_dir and len(chunk_results) > 1:
+            # Create the stitching debug directory if it doesn't exist
+            self.stitching_debug_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create a block-specific subdirectory for this stitching operation
+            if block:
+                block_debug_dir = self.stitching_debug_dir / f"block_{block.block_id:03d}"
+                block_debug_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Create a new chunk stitcher with the block-specific debug directory
+                # Use use_timestamped_debug_dir=False to use the directory directly
+                block_stitcher = ChunkStitcher(
+                    intermediate_dir=block_debug_dir,
+                    skip_single_chunk_debug=True,
+                    use_timestamped_debug_dir=False  # Use the directory directly
+                )
+                result = block_stitcher.stitch_chunks(chunk_results)
+            else:
+                result = self.chunk_stitcher.stitch_chunks(chunk_results)
+        else:
+            # Use default stitcher without debug output
+            result = self.chunk_stitcher.stitch_chunks(chunk_results)
         
         if isinstance(result, str):
             return result

@@ -27,31 +27,46 @@ class ChunkStitcher:
     
     def __init__(self, min_overlap_ratio: float = 0.6, similarity_threshold: float = 0.7,
                  intermediate_dir: Optional[Path] = None,
-                 sequence_alignment_window: int = 20, min_sequence_match_length: int = 3):
+                 sequence_alignment_window: int = 20, min_sequence_match_length: int = 3,
+                 skip_single_chunk_debug: bool = True,
+                 use_timestamped_debug_dir: bool = True):
         """
         Initialize the chunk stitcher with configurable thresholds.
         
         Args:
             min_overlap_ratio: Minimum ratio of overlapping words to consider a valid overlap
             similarity_threshold: Threshold for word similarity using SequenceMatcher
-            intermediate_dir: Optional path for saving debug files when DEBUG logging is enabled
+            intermediate_dir: Optional path for saving debug files when DEBUG logging is enabled.
+                              If use_timestamped_debug_dir is False, debug files are saved directly here.
             sequence_alignment_window: Number of words to compare from each chunk for sequence alignment
             min_sequence_match_length: Minimum number of matching words required for sequence alignment
+            skip_single_chunk_debug: If True, skip debug output when there's only one chunk (no stitching needed)
+            use_timestamped_debug_dir: If True, create a timestamped subdirectory under intermediate_dir.
+                                       If False, use intermediate_dir directly for debug files.
         """
         self.min_overlap_ratio = min_overlap_ratio
         self.similarity_threshold = similarity_threshold
         self.intermediate_dir = intermediate_dir
         self.sequence_alignment_window = sequence_alignment_window
         self.min_sequence_match_length = min_sequence_match_length
+        self.skip_single_chunk_debug = skip_single_chunk_debug
+        self.use_timestamped_debug_dir = use_timestamped_debug_dir
         
         # Setup debug directory if DEBUG logging is enabled
-        self.debug_dir = None
-        debug_enabled = get_output_context().should_log("DEBUG")
-        if debug_enabled and intermediate_dir:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.debug_dir = Path(intermediate_dir) / "chunk_stitching" / "stitcher_debug" / timestamp
+        self.debug_dir: Optional[Path] = None
+        self._debug_enabled = get_output_context().should_log("DEBUG")
+        
+        if self._debug_enabled and intermediate_dir:
+            if use_timestamped_debug_dir:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                self.debug_dir = Path(intermediate_dir) / "chunk_stitching" / "stitcher_debug" / timestamp
+            else:
+                # Use intermediate_dir directly as the debug directory
+                self.debug_dir = Path(intermediate_dir)
+            
+            # Create the debug directory
             self.debug_dir.mkdir(parents=True, exist_ok=True)
-            log_debug(f"Debug mode enabled - saving debug files to {self.debug_dir}")
+            log_debug(f"Chunk stitcher debug output: {self.debug_dir}")
 
     # =========================================================================
     # Helper methods for unified word handling
@@ -73,6 +88,25 @@ class ChunkStitcher:
             return False
         first_word = words[0]
         return isinstance(first_word, dict) and "text" in first_word and "start" in first_word
+    
+    def _should_save_debug(self, chunk_count: int) -> bool:
+        """
+        Determine if debug files should be saved.
+        
+        Args:
+            chunk_count: Number of chunks to process
+            
+        Returns:
+            True if debug files should be saved
+        """
+        if not self.debug_dir:
+            return False
+        
+        # Skip debug for single chunks if configured
+        if self.skip_single_chunk_debug and chunk_count <= 1:
+            return False
+        
+        return True
 
     # =========================================================================
     # Main entry point
@@ -100,11 +134,15 @@ class ChunkStitcher:
                 has_timestamps = self._has_timestamps(chunk["words"])
                 break
         
-        # Save debug input
-        self._save_debug_input(chunks, has_timestamps)
+        # Check if we should save debug output
+        save_debug = self._should_save_debug(len(chunks))
+        
+        # Save debug input (only if we should)
+        if save_debug:
+            self._save_debug_input(chunks, has_timestamps)
         
         if len(chunks) == 1:
-            return self._finalize_result(chunks[0]["words"], chunks, has_timestamps, 0)
+            return self._finalize_result(chunks[0]["words"], chunks, has_timestamps, 0, save_debug)
         
         # Start with the first chunk
         stitched_words = list(chunks[0]["words"])
@@ -122,27 +160,32 @@ class ChunkStitcher:
                 current_chunk_words,
                 has_timestamps=has_timestamps,
                 step_num=i,
-                chunk_id=chunk_id
+                chunk_id=chunk_id,
+                save_debug=save_debug
             )
         
         log_progress(f"Stitch complete: {len(stitched_words)} words total")
         
-        return self._finalize_result(stitched_words, chunks, has_timestamps, len(chunks) - 1)
+        return self._finalize_result(stitched_words, chunks, has_timestamps, len(chunks) - 1, save_debug)
     
     def _finalize_result(self, words: List[Any], chunks: List[Dict], 
-                         has_timestamps: bool, stitch_steps: int) -> Union[str, List[WordSegment]]:
+                         has_timestamps: bool, stitch_steps: int,
+                         save_debug: bool = True) -> Union[str, List[WordSegment]]:
         """Convert final word list to appropriate output format."""
         if has_timestamps:
             result = [
                 WordSegment(text=w["text"], start=w["start"], end=w["end"], speaker=w.get("speaker"))
                 for w in words
             ]
-            self._save_debug_output(result, has_timestamps=True)
+            if save_debug:
+                self._save_debug_output(result, has_timestamps=True)
         else:
             result = " ".join(words)
-            self._save_debug_output(result, has_timestamps=False)
+            if save_debug:
+                self._save_debug_output(result, has_timestamps=False)
         
-        self._save_debug_session_summary(chunks, has_timestamps, stitch_steps, len(words))
+        if save_debug:
+            self._save_debug_session_summary(chunks, has_timestamps, stitch_steps, len(words))
         return result
 
     # =========================================================================
@@ -151,7 +194,7 @@ class ChunkStitcher:
     
     def _stitch_two_chunks(self, chunk1: List[Any], chunk2: List[Any], 
                            has_timestamps: bool, step_num: int = 0, 
-                           chunk_id: Any = None) -> List[Any]:
+                           chunk_id: Any = None, save_debug: bool = True) -> List[Any]:
         """
         Stitch two chunks, handling overlaps.
         
@@ -166,6 +209,7 @@ class ChunkStitcher:
             has_timestamps: Whether words have timestamp information
             step_num: Step number for debug output
             chunk_id: Chunk ID for debug output
+            save_debug: Whether to save debug output
             
         Returns:
             Stitched word list
@@ -195,29 +239,30 @@ class ChunkStitcher:
             # Keep all of chunk1, skip the overlapping words from chunk2
             result = list(chunk1) + chunk2[words_to_skip_in_chunk2:]
         
-        # Capture and save debug info
-        overlap_info = {
-            'overlap_found': overlap_length > 0,
-            'overlap_start': overlap_start,
-            'overlap_length': overlap_length,
-            'overlapping_words': self._get_word_texts(chunk1[overlap_start:overlap_start + overlap_length]) if overlap_length > 0 else [],
-            'method': overlap_result.get('method', 'none'),
-            'words_to_skip_in_chunk2': words_to_skip_in_chunk2
-        }
-        
-        result_info = {
-            'word_count': len(result),
-            'words_from_chunk1': len(chunk1) if overlap_length > 0 else len(chunk1),
-            'words_from_chunk2': len(chunk2) - words_to_skip_in_chunk2 if overlap_length > 0 else len(chunk2)
-        }
-        
-        if has_timestamps and result:
-            result_info['time_range'] = {
-                'start': result[0].get('start', 0),
-                'end': result[-1].get('end', 0)
+        # Capture and save debug info (only if enabled)
+        if save_debug:
+            overlap_info = {
+                'overlap_found': overlap_length > 0,
+                'overlap_start': overlap_start,
+                'overlap_length': overlap_length,
+                'overlapping_words': self._get_word_texts(chunk1[overlap_start:overlap_start + overlap_length]) if overlap_length > 0 else [],
+                'method': overlap_result.get('method', 'none'),
+                'words_to_skip_in_chunk2': words_to_skip_in_chunk2
             }
-        
-        self._save_debug_stitch_step(step_num, chunk1_info, chunk2_info, overlap_info, result_info)
+            
+            result_info = {
+                'word_count': len(result),
+                'words_from_chunk1': len(chunk1) if overlap_length > 0 else len(chunk1),
+                'words_from_chunk2': len(chunk2) - words_to_skip_in_chunk2 if overlap_length > 0 else len(chunk2)
+            }
+            
+            if has_timestamps and result:
+                result_info['time_range'] = {
+                    'start': result[0].get('start', 0),
+                    'end': result[-1].get('end', 0)
+                }
+            
+            self._save_debug_stitch_step(step_num, chunk1_info, chunk2_info, overlap_info, result_info)
         
         return result
     
@@ -726,6 +771,8 @@ def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> Union[str, List[Wor
             - intermediate_dir: Path for debug files
             - sequence_alignment_window: Words to compare for sequence alignment (default 20)
             - min_sequence_match_length: Minimum matching words for alignment (default 3)
+            - skip_single_chunk_debug: Skip debug for single chunks (default True)
+            - use_timestamped_debug_dir: Create timestamped subdirectory (default True)
         
     Returns:
         If words are strings: Stitched transcript as a string
@@ -736,6 +783,8 @@ def stitch_chunks(chunks: List[Dict[str, Any]], **kwargs) -> Union[str, List[Wor
         similarity_threshold=kwargs.get('similarity_threshold', 0.7),
         intermediate_dir=kwargs.get('intermediate_dir'),
         sequence_alignment_window=kwargs.get('sequence_alignment_window', 20),
-        min_sequence_match_length=kwargs.get('min_sequence_match_length', 3)
+        min_sequence_match_length=kwargs.get('min_sequence_match_length', 3),
+        skip_single_chunk_debug=kwargs.get('skip_single_chunk_debug', True),
+        use_timestamped_debug_dir=kwargs.get('use_timestamped_debug_dir', True)
     )
     return stitcher.stitch_chunks(chunks)

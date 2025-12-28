@@ -51,7 +51,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--vad-pipeline", action="store_true", help="Use VAD-first pipeline for split audio files (recommended for interviews).")
     p.add_argument("--skip-alignment", action="store_true", default=True, help="Skip word-level alignment (default: True for VAD pipeline).")
     p.add_argument("--vad-threshold", type=float, default=0.5, help="VAD speech probability threshold (0-1) [Default: 0.5]")
-    p.add_argument("--vad-merge-gap-ms", type=int, default=500, help="Maximum gap between VAD segments to merge (ms) [Default: 500]")
+    p.add_argument("--vad-merge-gap-ms", type=int, default=600, help="Maximum gap between VAD segments to merge (ms) [Default: 600]")
 
     args = p.parse_args(argv)
 

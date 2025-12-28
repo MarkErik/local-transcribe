@@ -3,13 +3,14 @@
 Combined Transcriber+Aligner plugin using IBM Granite with MFA alignment.
 
 This plugin combines Granite's transcription capabilities with Montreal Forced Aligner
-to produce chunked transcripts where each word has timestamps. 
+to produce chunked transcripts where each word has timestamps.
+
+Uses GraniteModelManager for consolidated model management and transcription.
 """
 
 from typing import List, Optional, Dict, Any
 import os
 import pathlib
-import re
 import torch
 import math
 import librosa
@@ -17,37 +18,41 @@ import tempfile
 import subprocess
 import json
 from datetime import datetime
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
-from transformers import LogitsProcessorList, RepetitionPenaltyLogitsProcessor
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
-from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_capability_utils import get_system_capability
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
 from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
 
 
 class GraniteMFATranscriberProvider(TranscriberProvider):
-    """Combined transcriber+aligner using IBM Granite + MFA for chunked transcription with timestamps."""
+    """Combined transcriber+aligner using IBM Granite + MFA for chunked transcription with timestamps.
+    
+    Uses GraniteModelManager for consolidated model management and transcription.
+    """
 
     def __init__(self):
         self.logger = get_logger()
         self.logger.info("Initializing Granite MFA Transcriber Provider")
         
-        # Replace duplicated model management with GraniteModelManager
+        # Use GraniteModelManager for all Granite operations
         self.model_manager = GraniteModelManager(self.logger)
         
         # Initialize MFA Word Alignment Engine
         self.word_alignment_engine = MFAWordAlignmentEngine(self.logger)
         
-        # Keep MFA-specific configuration
+        # Chunking configuration for MFA
         self.chunk_length_seconds = 30.0
         self.overlap_seconds = 4.0
         self.min_chunk_seconds = 7.0
         
-        # MFA configuration
-        self.mfa_models_dir = None
+        # Track selected model
+        self.selected_model: Optional[str] = None
         
-        # Remote transcription settings
+        # MFA configuration
+        self.mfa_models_dir: Optional[pathlib.Path] = None
+        
+        # Remote transcription settings (configured via kwargs in transcribe_with_alignment)
         self.use_remote_granite: bool = False
         self.remote_granite_url: Optional[str] = None
 
@@ -87,7 +92,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         """Check which Granite models are available offline."""
         return self.model_manager.check_models_available_offline(models, models_dir)
 
-    def _load_granite_model(self):
+    def _load_granite_model(self) -> None:
         """Load the Granite model if not already loaded."""
         if self.model_manager.model is None:
             # Set the selected model in the model manager
@@ -97,11 +102,6 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             # Load the model using the model manager
             model_name = self.model_manager.get_required_models()[0]
             self.model_manager._load_model(model_name)
-            
-            # Copy the loaded model components to the instance for backward compatibility
-            self.model = self.model_manager.model
-            self.processor = self.model_manager.processor
-            self.tokenizer = self.model_manager.tokenizer
 
     def _get_mfa_command(self):
         """Get the MFA command, checking local environment first."""
@@ -160,126 +160,8 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             raise
 
     def _transcribe_single_chunk(self, wav, sample_rate: int = 16000, **kwargs) -> str:
-        """Transcribe a single audio chunk using Granite (local or remote)."""
-        segment_duration: float = len(wav) / sample_rate
-        
-        # Check if we should use remote transcription
-        if self.use_remote_granite and self.model_manager.should_use_remote():
-            log_progress(f"Transcribing {segment_duration:.1f}s chunk with remote Granite server")
-            try:
-                text = self.model_manager.transcribe_remote(
-                    audio=wav,
-                    sample_rate=sample_rate,
-                    segment_duration=segment_duration,
-                    include_disfluencies=True
-                )
-                # Apply local cleaning
-                cleaned_text = self._clean_transcription_output(text, verbose=kwargs.get('verbose', False))
-                return cleaned_text
-            except Exception as e:
-                self.logger.warning(f"Remote transcription failed, falling back to local: {e}")
-                # Fall through to local transcription
-        
-        # Local transcription
-        log_progress("Transcribing audio chunk with Granite")
-        try:
-            wav_tensor = torch.from_numpy(wav).unsqueeze(0)
-
-            chat = [
-                {
-                    "role": "system",
-                    "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: April 9, 2024.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
-                },
-                {
-                    "role": "user",
-                    "content": "<|audio|>can you transcribe the speech into a written format?",
-                }
-            ]
-
-            text = self.tokenizer.apply_chat_template(
-                chat, tokenize=False, add_generation_prompt=True
-            )
-
-            model_inputs = self.processor(
-                text,
-                wav_tensor,
-                device=self.device,
-                return_tensors="pt",
-            ).to(self.device)
-
-            # The recommended repetition penalty is 3 as long as input IDs are excluded.
-            # Otherwise, you should use a repetition penalty of 1 to keep results stable.
-            repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(
-                penalty=3.0,
-                prompt_ignore_length=model_inputs["input_ids"].shape[-1],
-            )
-
-            with torch.no_grad():
-                model_outputs = self.model.generate(
-                    **model_inputs,
-                    max_new_tokens=256,
-                    num_beams=4,
-                    do_sample=False,
-                    min_length=1,
-                    top_p=1.0,
-                    length_penalty=1.0,
-                    temperature=1.0,
-                    early_stopping = True,
-                    logits_processor=[repetition_penalty_processor],
-                    bos_token_id=self.tokenizer.bos_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-
-            num_input_tokens = model_inputs["input_ids"].shape[-1]
-            new_tokens = torch.unsqueeze(model_outputs[0, num_input_tokens:], dim=0)
-
-            output_text = self.tokenizer.batch_decode(
-                new_tokens, add_special_tokens=False, skip_special_tokens=True
-            )
-
-            cleaned_text = self._clean_transcription_output(output_text[0].strip(), verbose=kwargs.get('verbose', False))
-
-            return cleaned_text
-            
-        finally:
-            if 'wav_tensor' in locals():
-                del wav_tensor
-            if 'model_inputs' in locals():
-                for key in list(model_inputs.keys()):
-                    del model_inputs[key]
-                del model_inputs
-            if 'model_outputs' in locals():
-                del model_outputs
-            if 'new_tokens' in locals():
-                del new_tokens
-            
-            import gc
-            gc.collect()
-            clear_device_cache()
-
-    def _clean_transcription_output(self, text: str, verbose: bool = False) -> str:
-        """Clean the transcription output by removing dialogue markers and quotation marks."""
-        if verbose:
-            user_count = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
-            assistant_count = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
-            assistant_short_count = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
-            total_removed = user_count + assistant_count + assistant_short_count
-        
-        text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'\bAssistant:\s*', '', text, flags=re.IGNORECASE)
-        
-        text = text.replace('"', '')
-        text = text.replace('\u201C', '')
-        text = text.replace('\u201D', '')
-        
-        text = re.sub(r'\s+', ' ', text).strip()
-        
-        if verbose and 'total_removed' in locals() and total_removed > 0:
-            self.logger.info(f"Removed {total_removed} labels from chunk transcript.")
-        
-        return text
+        """Transcribe a single audio chunk using consolidated GraniteModelManager."""
+        return self.model_manager.transcribe_segment(wav, sample_rate)
 
     def _align_chunk_with_mfa(self, chunk_wav, chunk_transcript: str, chunk_start_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Align a single chunk using MFA and return timestamped words.

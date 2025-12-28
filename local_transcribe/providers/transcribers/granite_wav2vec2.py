@@ -8,12 +8,13 @@ granite + wav2vec2 pipeline, this processes each chunk with alignment before mov
 resulting in chunks that contain timestamped words ready for stitching.
 
 If Wav2Vec2 alignment fails, it falls back to MFA alignment if available.
+
+Uses GraniteModelManager for consolidated model management and transcription.
 """
 
 from typing import List, Optional, Dict, Any
 import os
 import pathlib
-import re
 import torch
 import math
 import librosa
@@ -24,29 +25,33 @@ import warnings
 import numpy as np
 import torchaudio
 from datetime import datetime
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
-from transformers import LogitsProcessorList, RepetitionPenaltyLogitsProcessor
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
-from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_capability_utils import get_system_capability
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
 
 
 class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
-    """Combined transcriber+aligner using IBM Granite + Wav2Vec2 for chunked transcription with timestamps."""
+    """Combined transcriber+aligner using IBM Granite + Wav2Vec2 for chunked transcription with timestamps.
+    
+    Uses GraniteModelManager for consolidated model management and transcription.
+    """
 
     def __init__(self):
         self.logger = get_logger()
         self.logger.info("Initializing Granite Wav2Vec2 Transcriber Provider")
         
-        # Replace duplicated model management with GraniteModelManager
+        # Use GraniteModelManager for all Granite operations
         self.model_manager = GraniteModelManager(self.logger)
+        
+        # Track selected model
+        self.selected_model: Optional[str] = None
         
         # Wav2Vec2 configuration
         self.wav2vec2_model_name = "facebook/wav2vec2-large-960h"
-        self.wav2vec2_processor = None
-        self.wav2vec2_model = None
+        self.wav2vec2_processor: Optional[Wav2Vec2Processor] = None
+        self.wav2vec2_model: Optional[Wav2Vec2ForCTC] = None
         
         # Chunking configuration
         self.chunk_length_seconds = 60.0
@@ -54,10 +59,10 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         self.min_chunk_seconds = 7.0
         
         # MFA fallback configuration
-        self.mfa_models_dir = None
-        self.mfa_available = None  # Lazy check
+        self.mfa_models_dir: Optional[pathlib.Path] = None
+        self.mfa_available: Optional[bool] = None
         
-        # Remote transcription settings
+        # Remote transcription settings (configured via kwargs in transcribe_with_alignment)
         self.use_remote_granite: bool = False
         self.remote_granite_url: Optional[str] = None
 
@@ -184,28 +189,20 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         
         return missing_models
 
-    def _load_granite_model(self):
+    def _load_granite_model(self) -> None:
         """Load the Granite model if not already loaded."""
         log_progress("Loading Granite model...")
         
-        # Load the model using GraniteModelManager
         if self.model_manager.model is None:
-            # Get the required models
-            required_models = self.model_manager.get_required_models()
-            if required_models:
-                model_name = required_models[0]  # Get the first (and only) model
-                
-                # Load the model
-                self.model_manager._load_model(model_name)
-                
-                # Update the instance variables for backward compatibility
-                self.processor = self.model_manager.processor
-                self.model = self.model_manager.model
-                self.tokenizer = self.model_manager.tokenizer
-                
-                log_completion("Granite model loaded successfully")
-            else:
-                raise Exception("No Granite model specified or available")
+            # Set selected model in the manager
+            if self.selected_model:
+                self.model_manager.selected_model = self.selected_model
+            
+            # Load the model
+            model_name = self.model_manager.get_required_models()[0]
+            self.model_manager._load_model(model_name)
+            
+            log_completion("Granite model loaded successfully")
 
     def _load_wav2vec2_model(self):
         """Load the Wav2Vec2 model for alignment if not already loaded."""
@@ -238,126 +235,8 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                 raise e
 
     def _transcribe_single_chunk(self, wav, sample_rate: int = 16000, **kwargs) -> str:
-        """Transcribe a single audio chunk using Granite (local or remote)."""
-        segment_duration = len(wav) / sample_rate
-        
-        # Check if we should use remote transcription
-        if self.use_remote_granite and self.model_manager.should_use_remote():
-            log_progress(f"Transcribing {segment_duration:.1f}s chunk with remote Granite server")
-            try:
-                text = self.model_manager.transcribe_remote(
-                    audio=wav,
-                    sample_rate=sample_rate,
-                    segment_duration=segment_duration,
-                    include_disfluencies=True
-                )
-                # Apply local cleaning
-                cleaned_text = self._clean_transcription_output(text, verbose=kwargs.get('verbose', False))
-                return cleaned_text
-            except Exception as e:
-                self.logger.warning(f"Remote transcription failed, falling back to local: {e}")
-                # Load local model if not already loaded
-                if self.model is None:
-                    self._load_granite_model()
-        
-        # Local transcription
-        log_progress("Transcribing audio chunk with Granite")
-        try:
-            wav_tensor = torch.from_numpy(wav).unsqueeze(0)
-
-            chat = [
-                {
-                    "role": "system",
-                    "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: April 9, 2024.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
-                },
-                {
-                    "role": "user",
-                    "content": "<|audio|>can you transcribe the speech into a written format?",
-                }
-            ]
-
-            text = self.tokenizer.apply_chat_template(
-                chat, tokenize=False, add_generation_prompt=True
-            )
-
-            model_inputs = self.processor(
-                text,
-                wav_tensor,
-                device=self.device,
-                return_tensors="pt",
-            ).to(self.device)
-
-            repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(
-                penalty=3.0,
-                prompt_ignore_length=model_inputs["input_ids"].shape[-1],
-            )
-
-            with torch.no_grad():
-                model_outputs = self.model.generate(
-                    **model_inputs,
-                    max_new_tokens=256,
-                    num_beams=4,
-                    do_sample=False,
-                    min_length=1,
-                    top_p=1.0,
-                    length_penalty=1.0,
-                    temperature=1.0,
-                    early_stopping=True,
-                    logits_processor=[repetition_penalty_processor],
-                    bos_token_id=self.tokenizer.bos_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-
-            num_input_tokens = model_inputs["input_ids"].shape[-1]
-            new_tokens = torch.unsqueeze(model_outputs[0, num_input_tokens:], dim=0)
-
-            output_text = self.tokenizer.batch_decode(
-                new_tokens, add_special_tokens=False, skip_special_tokens=True
-            )
-
-            cleaned_text = self._clean_transcription_output(output_text[0].strip(), verbose=kwargs.get('verbose', False))
-
-            return cleaned_text
-            
-        finally:
-            if 'wav_tensor' in locals():
-                del wav_tensor
-            if 'model_inputs' in locals():
-                for key in list(model_inputs.keys()):
-                    del model_inputs[key]
-                del model_inputs
-            if 'model_outputs' in locals():
-                del model_outputs
-            if 'new_tokens' in locals():
-                del new_tokens
-            
-            import gc
-            gc.collect()
-            clear_device_cache()
-
-    def _clean_transcription_output(self, text: str, verbose: bool = False) -> str:
-        """Clean the transcription output by removing dialogue markers and quotation marks."""
-        if verbose:
-            user_count = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
-            assistant_count = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
-            assistant_short_count = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
-            total_removed = user_count + assistant_count + assistant_short_count
-        
-        text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'\bAssistant:\s*', '', text, flags=re.IGNORECASE)
-        
-        text = text.replace('"', '')
-        text = text.replace('\u201C', '')
-        text = text.replace('\u201D', '')
-        
-        text = re.sub(r'\s+', ' ', text).strip()
-        
-        if verbose and 'total_removed' in locals() and total_removed > 0:
-            self.logger.info(f"Removed {total_removed} labels from chunk transcript.")
-        
-        return text
+        """Transcribe a single audio chunk using consolidated GraniteModelManager."""
+        return self.model_manager.transcribe_segment(wav, sample_rate)
 
     def _get_token_timestamps(self, emissions: torch.Tensor, transcript: str) -> List[tuple]:
         """Extract token timestamps using CTC alignment with frame-level paths."""

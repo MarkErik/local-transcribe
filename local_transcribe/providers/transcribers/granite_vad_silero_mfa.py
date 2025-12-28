@@ -4,14 +4,13 @@ Combined Transcriber+Aligner plugin using IBM Granite with Silero VAD-based segm
 
 The integrated stitcher produces continuous WordSegments output.
 Debug mode saves individual segment transcripts when DEBUG logging is enabled.
+
+Uses GraniteModelManager for consolidated model management and transcription.
 """
 
-from logging import Logger
-from typing import List, Optional, Dict, Any, Tuple, Union
+from typing import List, Optional, Dict, Any, Tuple
 import os
 import pathlib
-import re
-from numpy import dtype
 from numpy.typing import NDArray
 import torch
 import librosa
@@ -19,10 +18,8 @@ import tempfile
 import subprocess
 import json
 from datetime import datetime
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
-from transformers import LogitsProcessorList, RepetitionPenaltyLogitsProcessor
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
-from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
+from local_transcribe.lib.system_capability_utils import get_system_capability
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 from local_transcribe.lib.vad_silero_segmenter import SileroVADSegmenter
 from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
@@ -31,57 +28,34 @@ from local_transcribe.processing.chunk_stitcher import ChunkStitcher
 
 
 class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
-    # Prompt fragment markers to filter from transcription output
-    _PROMPT_FRAGMENTS = [
-        "make sure to include disfluencies",
-        "can you transcribe the speech into a written format",
-    ]
-    """Combined transcriber+aligner using IBM Granite + Silero VAD segmentation + MFA alignment."""
+    """Combined transcriber+aligner using IBM Granite + Silero VAD segmentation + MFA alignment.
+    
+    Uses GraniteModelManager for consolidated model management and transcription.
+    """
 
     def __init__(self) -> None:
         self.logger = get_logger()
         self.logger.info("Initializing Granite VAD (Silero) MFA Transcriber Provider")
         
-        # Replace duplicated model management with GraniteModelManager
+        # Use GraniteModelManager for all Granite operations
         self.model_manager = GraniteModelManager(self.logger)
         
         # Initialize WordAlignmentEngine for alignment operations
         self.word_alignment_engine = MFAWordAlignmentEngine(self.logger)
+        
+        # Track selected model
+        self.selected_model: Optional[str] = None
         
         # Segmenter instance
         self.vad_segmenter: Optional[SileroVADSegmenter] = None
         self.models_dir: Optional[pathlib.Path] = None
         
         # MFA configuration
-        self.mfa_models_dir = None  # type: ignore
+        self.mfa_models_dir: Optional[pathlib.Path] = None
         
         # Remote transcription settings (configured via kwargs in transcribe_with_alignment)
         self.use_remote_granite: bool = False
         self.remote_granite_url: Optional[str] = None
-
-    def _strip_prompt_fragments(self, text: str) -> str:
-        """Strip prompt fragments from the transcription output."""
-        if not text:
-            return text
-            
-        lower_text = text.lower()
-        cleaned_text = text
-        
-        for fragment in self._PROMPT_FRAGMENTS:
-            idx = lower_text.find(fragment)
-            if idx != -1:
-                # Remove the fragment and everything before it
-                cleaned_text = cleaned_text[:idx]
-                lower_text = cleaned_text.lower()
-        
-        # Clean up any trailing punctuation or whitespace
-        cleaned_text = cleaned_text.rstrip(" .,\n\t")
-        
-        # If we removed everything, return the original text
-        if not cleaned_text.strip():
-            return text.strip()
-            
-        return cleaned_text.strip()
 
     @property
     def device(self) -> str:
@@ -123,16 +97,12 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
 
     def _load_granite_model(self) -> None:
         """Load the Granite model if not already loaded."""
-        # Set the selected model in the model manager
-        self.model_manager.selected_model = self.selected_model
-        
-        # Load the model using the model manager
-        self.model_manager._load_model(self.model_manager.get_required_models()[0])
-        
-        # Copy the loaded model components from the manager
-        self.model = self.model_manager.model
-        self.processor = self.model_manager.processor
-        self.tokenizer = self.model_manager.tokenizer
+        if self.model_manager.model is None:
+            # Set the selected model in the model manager
+            self.model_manager.selected_model = self.selected_model
+            
+            # Load the model using the model manager
+            self.model_manager._load_model(self.model_manager.get_required_models()[0])
 
     def _init_vad_segmenter(self) -> None:
         """Initialize the Silero VAD segmenter if not already done."""
@@ -199,159 +169,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             raise
 
     def _transcribe_single_segment(self, wav: NDArray[Any], sample_rate: int = 16000, **kwargs) -> str:
-        """Transcribe a single audio segment using Granite (local or remote)."""
-        segment_duration: float = len(wav) / sample_rate
-        
-        # Check if we should use remote transcription
-        if self.use_remote_granite and self.model_manager.should_use_remote():
-            log_progress(f"Transcribing {segment_duration:.1f}s segment with remote Granite server")
-            try:
-                text = self.model_manager.transcribe_remote(
-                    audio=wav,
-                    sample_rate=sample_rate,
-                    segment_duration=segment_duration,
-                    include_disfluencies=True
-                )
-                # Still apply local cleaning/filtering
-                cleaned_text: str = self._clean_transcription_output(text)
-                final_text: str = self._strip_prompt_fragments(cleaned_text)
-                return final_text
-            except Exception as e:
-                self.logger.warning(f"Remote transcription failed, falling back to local: {e}")
-                # Fall through to local transcription
-        
-        # Local transcription
-        log_progress("Transcribing audio segment with Granite")
-        try:
-            wav_tensor: torch.Tensor = torch.from_numpy(wav).unsqueeze(0)
-            
-            # Calculate segment duration from wav array using provided sample rate
-            segment_duration: float = len(wav) / sample_rate
-
-            chat: List[Dict[str, str]] = [
-                {
-                    "role": "system",
-                    "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: December 9, 2025.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
-                },
-                {
-                    "role": "user",
-                    # "content": "<|audio|>can you transcribe the speech into a written format?", # original from IBM
-                    "content": "<|audio|>can you transcribe the speech into a written format? make sure to include disfluencies.", #trying to deal with dropped disfluencies
-                }
-            ]
-
-            text = self.tokenizer.apply_chat_template(  # type: ignore
-                chat, tokenize=False, add_generation_prompt=True
-            )
-
-            if self.processor is None:
-                raise RuntimeError("Granite processor not loaded")
-            model_inputs = self.processor.__call__(
-                text,
-                wav_tensor,
-                device=self.device,
-                return_tensors="pt",
-            ).to(self.device)
-
-            # Adjust parameters based on segment duration
-            if segment_duration < 8.0:
-                # For segments less than 8 seconds: reduce max_new_tokens and exclude logits_processor
-                max_new_tokens = 128
-                logits_processor = None
-            elif segment_duration < 20.0:
-                max_new_tokens = 256
-                repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(
-                    penalty=3.0,
-                    prompt_ignore_length=model_inputs["input_ids"].shape[-1],
-                )
-                logits_processor = [repetition_penalty_processor]
-            else:
-                # For segments 20 seconds or longer: use current settings
-                max_new_tokens = 512
-                repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(
-                    penalty=3.0,
-                    prompt_ignore_length=model_inputs["input_ids"].shape[-1],
-                )
-                logits_processor = [repetition_penalty_processor]
-
-            with torch.no_grad():
-                if self.model is None:
-                    raise RuntimeError("Granite model not loaded")
-                model_outputs = self.model.generate.__call__(
-                    **model_inputs,
-                    max_new_tokens=max_new_tokens,
-                    num_beams=4,
-                    do_sample=False,
-                    min_length=1,
-                    top_p=1.0,
-                    length_penalty=1.0,
-                    temperature=1.0,
-                    early_stopping=True,
-                    logits_processor=logits_processor,
-                    bos_token_id=self.tokenizer.bos_token_id if self.tokenizer else None,
-                    eos_token_id=self.tokenizer.eos_token_id if self.tokenizer else None,
-                    pad_token_id=self.tokenizer.pad_token_id if self.tokenizer else None,
-                )
-
-            num_input_tokens = model_inputs["input_ids"].shape[-1]
-            new_tokens: torch.Tensor = torch.unsqueeze(model_outputs[0, num_input_tokens:], dim=0)
-
-            if self.tokenizer is None:
-                raise RuntimeError("Granite tokenizer not loaded")
-            output_text = self.tokenizer.batch_decode(
-                new_tokens, add_special_tokens=False, skip_special_tokens=True
-            )
-
-            cleaned_text: str = self._clean_transcription_output(output_text[0].strip())
-            
-            # Strip prompt fragments from the transcription
-            final_text: str = self._strip_prompt_fragments(cleaned_text)
-            
-            # Log if prompt fragments were removed
-            if final_text != cleaned_text:
-                log_debug("Removed prompt fragments from transcription output")
-            
-            return final_text
-            
-        finally:
-            if 'wav_tensor' in locals():
-                del wav_tensor
-            if 'model_inputs' in locals():
-                for key in list(model_inputs.keys()):
-                    del model_inputs[key]
-                del model_inputs
-            if 'model_outputs' in locals():
-                del model_outputs
-            if 'new_tokens' in locals():
-                del new_tokens
-            
-            import gc
-            gc.collect()
-            clear_device_cache()
-
-    def _clean_transcription_output(self, text: str) -> str:
-        """Clean the transcription output by removing dialogue markers and quotation marks."""
-        # Count labels before removal for debug logging
-        user_count: int = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
-        assistant_count: int = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
-        assistant_short_count: int = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
-        total_removed: int = user_count + assistant_count + assistant_short_count
-        
-        text = re.sub(r'\bUser:\s*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'\bAssistant:\s*', '', text, flags=re.IGNORECASE)
-        
-        text = text.replace('"', '')
-        text = text.replace('\u201C', '')
-        text = text.replace('\u201D', '')
-        
-        text = re.sub(r'\s+', ' ', text).strip()
-        
-        # Log count if any labels were removed
-        if total_removed > 0:
-            log_debug(f"Removed {total_removed} labels from segment transcript.")
-        
-        return text
+        """Transcribe a single audio segment using consolidated GraniteModelManager."""
+        return self.model_manager.transcribe_segment(wav, sample_rate)
 
     def _align_segment_with_mfa(self, segment_wav: NDArray[Any], segment_transcript: str, segment_start_time: float = 0.0, speaker: Optional[str] = None, debug_dir: Optional[pathlib.Path] = None, segment_num: Optional[int] = None) -> List[Dict[str, Any]]:
         """Align a single segment using MFA and return timestamped words."""
@@ -614,9 +433,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             
             log_debug(f"Transcribing chunk {chunk_id} ({chunk_start_time:.2f}s)")
             
-            # Transcribe the chunk
+            # Transcribe the chunk (GraniteModelManager handles cleaning and prompt stripping)
             chunk_text: str = self._transcribe_single_segment(chunk_audio_data, sample_rate=sr)
-            chunk_text = self._strip_prompt_fragments(chunk_text)
             
             if not chunk_text.strip():
                 log_debug(f"Chunk {chunk_id} produced empty transcript, skipping")
@@ -991,10 +809,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             else:
                 # Existing processing for short segments
                 log_debug(f"Segment {segment_num} is {segment_duration:.1f}s <= 50s, processing as single segment")
+                # Transcribe segment (GraniteModelManager handles cleaning and prompt stripping)
                 segment_text: str = self._transcribe_single_segment(segment_wav, sample_rate=int(sr), **kwargs)
-                
-                # Apply additional prompt fragment filtering as a safety measure
-                segment_text = self._strip_prompt_fragments(segment_text)
                 
                 if debug_dir:
                     self._save_debug_segment(debug_dir, segment_num, "granite_output", {

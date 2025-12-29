@@ -85,8 +85,6 @@ class GraniteModelManager:
         
         if use_remote:
             self.logger.info(f"Remote Granite configured: {self.remote_url}")
-        else:
-            self.logger.info("Remote Granite disabled, using local model")
     
     def _get_remote_client(self) -> Any:
         """

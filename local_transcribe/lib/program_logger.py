@@ -172,6 +172,9 @@ def setup_logging(
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
     
+    # Prevent propagation to root logger to avoid duplicate messages
+    logger.propagate = False
+    
     return logger
 
 

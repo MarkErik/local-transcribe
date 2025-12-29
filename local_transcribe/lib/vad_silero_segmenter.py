@@ -105,7 +105,7 @@ class SegmentCombinationConfig:
     min_gap_for_secondary_split: float = 0.7
     min_gap_for_tertiary_split: float = 0.6
     
-    # Advanced splitting parameters
+    # Additional splitting parameters
     max_splits_per_segment: int = 3
     min_split_segment_duration: float = 5.0
     preferred_split_gap_ratio: float = 0.3

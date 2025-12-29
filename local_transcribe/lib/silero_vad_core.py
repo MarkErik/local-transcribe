@@ -44,12 +44,12 @@ class SileroVADCore:
     
     def __init__(
         self,
-        threshold: float = 0.5,
+        threshold: float = 0.45,
         neg_threshold: Optional[float] = None,
-        min_speech_duration_ms: int = 250,
-        min_silence_duration_ms: int = 100,
+        min_speech_duration_ms: int = 300,
+        min_silence_duration_ms: int = 150,
         window_size_samples: int = 512,
-        speech_pad_ms: int = 30,
+        speech_pad_ms: int = 60,
         models_dir: Optional[Path] = None,
     ):
         """
@@ -284,17 +284,17 @@ class SileroVADCore:
 
 # Default parameters that work well for typical speech
 DEFAULT_VAD_PARAMS = {
-    "threshold": 0.5,
-    "min_speech_duration_ms": 250,
-    "min_silence_duration_ms": 100,
+    "threshold": 0.45,
+    "min_speech_duration_ms": 300,
+    "min_silence_duration_ms": 150,
     "window_size_samples": 512,
-    "speech_pad_ms": 30,
+    "speech_pad_ms": 60,
 }
 
 # Parameters tuned for the segmenter (slightly different defaults)
 SEGMENTER_VAD_PARAMS = {
-    "threshold": 0.4,
+    "threshold": 0.45,
     "min_speech_duration_ms": 300,
     "min_silence_duration_ms": 150,
-    "speech_pad_ms": 50,
+    "speech_pad_ms": 60,
 }

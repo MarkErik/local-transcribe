@@ -3,12 +3,14 @@
 VAD-based audio segmentation using Silero VAD.
 
 This module implements audio segmentation based on Voice Activity Detection (VAD)
-using the SileroVAD model.
+using the Silero VAD model. It builds upon SileroVADCore to add intelligent
+segment combination and splitting logic for optimal ASR chunk sizes.
+
+For core VAD functionality, see: lib/silero_vad_core.py
 """
 
-import re
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Any, Callable
+from typing import List, Tuple, Optional
 import pathlib
 import numpy as np
 import torch
@@ -16,6 +18,7 @@ import csv
 import logging
 from datetime import datetime
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion, get_output_context, log_intermediate_save
+from local_transcribe.lib.silero_vad_core import SileroVADCore, SEGMENTER_VAD_PARAMS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -117,7 +120,8 @@ class SileroVADSegmenter:
     Voice Activity Detection based audio segmenter using Silero VAD.
     
     Uses Silero's neural VAD to identify speech regions and segments audio
-    at natural speech boundaries.
+    at natural speech boundaries. Builds upon SileroVADCore for model loading
+    and raw VAD inference, adding intelligent segment combination and splitting.
     """
     
     def __init__(
@@ -134,35 +138,39 @@ class SileroVADSegmenter:
     ):
         """
         Initialize the Silero VAD segmenter.
-
+        
+        Args:
+            threshold: Speech probability threshold (0-1). Higher = stricter.
+            neg_threshold: Negative threshold for speech end detection.
+            min_speech_duration_ms: Minimum speech segment duration in ms.
+            min_silence_duration_ms: Minimum silence between segments in ms.
+            speech_pad_ms: Padding around speech in ms.
+            device: Device for inference (currently unused, Silero runs on CPU).
+            models_dir: Optional path for model caching.
+            combination_config: Configuration for segment combination/splitting.
+            max_segment_duration: Maximum segment duration for ASR chunks.
         """
         self.logger = get_logger()
         
-        # VAD parameters
+        # Store parameters for reference
         self.threshold = threshold
         self.neg_threshold = neg_threshold if neg_threshold is not None else (threshold - 0.15)
         self.min_speech_duration_ms = min_speech_duration_ms
         self.min_silence_duration_ms = min_silence_duration_ms
         self.speech_pad_ms = speech_pad_ms
         self.max_segment_duration = max_segment_duration
-        
-        # Device configuration
-        if device is None:
-            if torch.cuda.is_available():
-                self.device = "cuda"
-            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                self.device = "cpu"  # Silero works best on CPU for MPS systems
-            else:
-                self.device = "cpu"
-        else:
-            self.device = device
-        
+        self.device = device
         self.models_dir = models_dir
         
-        # Model state
-        self._model: Optional[Any] = None
-        self._get_speech_timestamps: Optional[Callable[..., Any]] = None
-        self._read_audio: Optional[Callable[..., Any]] = None
+        # Initialize the core VAD processor
+        self._vad_core = SileroVADCore(
+            threshold=threshold,
+            neg_threshold=self.neg_threshold,
+            min_speech_duration_ms=min_speech_duration_ms,
+            min_silence_duration_ms=min_silence_duration_ms,
+            speech_pad_ms=speech_pad_ms,
+            models_dir=models_dir,
+        )
         
         # Initialize combination config
         if combination_config is None:
@@ -172,73 +180,18 @@ class SileroVADSegmenter:
         else:
             self.combination_config = combination_config
     
-    def _get_cache_dir(self) -> pathlib.Path:
-        """Get the cache directory for VAD models."""
-        if self.models_dir is None:
-            # Default to user's torch hub cache
-            return pathlib.Path(torch.hub.get_dir()) / "silero_vad"
-        return self.models_dir / "vad" / "silero"
-    
     def _load_model(self):
-        """Load the Silero VAD model."""
-        if self._model is not None:
-            return
-        
-        log_progress("Loading Silero VAD model...")
-        
-        try:
-            # Try using the silero-vad package first (preferred)
-            from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
-            
-            self._model = load_silero_vad()
-            self._get_speech_timestamps = get_speech_timestamps
-            self._read_audio = read_audio
-            
-            log_completion("Silero VAD model loaded successfully (via silero-vad package)")
-            
-        except ImportError:
-            # Fallback to torch.hub
-            log_debug("silero-vad package not available, falling back to torch.hub")
-            try:
-                self._model = torch.hub.load(
-                    repo_or_dir='snakers4/silero-vad',
-                    model='silero_vad',
-                    force_reload=False,
-                    trust_repo=True
-                )
-                utils = torch.hub.load(
-                    repo_or_dir='snakers4/silero-vad',
-                    model='utils',
-                    force_reload=False,
-                    trust_repo=True
-                )
-                (self._get_speech_timestamps, _, self._read_audio, _, _) = utils  # type: ignore
-                
-                log_completion("Silero VAD model loaded successfully (via torch.hub)")
-                
-            except Exception as e:
-                self.logger.error(f"Failed to load Silero VAD model: {e}")
-                raise
+        """Ensure the VAD model is loaded (delegates to core)."""
+        self._vad_core._load_model()
     
     def preload_models(self) -> None:
         """Preload the VAD model to cache."""
-        log_progress("Preloading Silero VAD model...")
-        
-        try:
-            # Loading the model will download/cache it
-            self._load_model()
-            log_completion("Silero VAD model preloaded successfully")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to preload Silero VAD model: {e}")
-            raise
+        self._vad_core.preload_model()
     
     def check_models_available_offline(self) -> bool:
         """Check if VAD model is available offline without downloading."""
         try:
-            # Try to load the model - Silero is small and typically cached
-            # after first use via torch.hub or silero-vad package
-            self._load_model()
+            self._vad_core._load_model()
             return True
         except Exception:
             return False
@@ -586,18 +539,12 @@ class SileroVADSegmenter:
             debug_lines.append(f"  max_segment_duration: {self.max_segment_duration}")
             debug_lines.append("")
         
-        # Get speech timestamps using Silero's built-in function
+        # Get speech timestamps using core VAD processor
         try:
-            speech_timestamps = self._get_speech_timestamps(  # type: ignore
+            speech_timestamps = self._vad_core.get_speech_timestamps(
                 audio_tensor,
-                self._model,
-                threshold=self.threshold,
-                neg_threshold=self.neg_threshold,
-                sampling_rate=sample_rate,
-                min_speech_duration_ms=self.min_speech_duration_ms,
-                min_silence_duration_ms=self.min_silence_duration_ms,
-                speech_pad_ms=self.speech_pad_ms,
-                return_seconds=True
+                sample_rate=sample_rate,
+                return_seconds=True,
             )
         except Exception as e:
             self.logger.error(f"Silero VAD failed: {e}")

@@ -2,18 +2,19 @@
 """
 Silero VAD wrapper for VAD-driven split-audio pipeline.
 
-This module provides a library utility that wraps Silero VAD with
-configurable parameters for speech detection in audio files.
+This module provides a pipeline-specific interface to Silero VAD for
+speech detection in audio files, returning VADSegment objects.
+
+For core VAD functionality, see: lib/silero_vad_core.py
 """
 
-import logging
-from typing import List, Optional, Any, Callable
+from typing import List, Optional
 from pathlib import Path
 import numpy as np
-import torch
 
 from local_transcribe.processing.vad.data_structures import VADSegment
-from local_transcribe.lib.program_logger import log_progress, log_debug, log_completion, get_logger
+from local_transcribe.lib.program_logger import log_progress, log_completion, get_logger
+from local_transcribe.lib.silero_vad_core import SileroVADCore, DEFAULT_VAD_PARAMS
 
 
 class SileroVADProcessor:
@@ -21,7 +22,8 @@ class SileroVADProcessor:
     Wrapper for Silero VAD with configurable parameters.
     
     This processor detects speech regions in audio files and returns
-    VADSegment objects with absolute timestamps.
+    VADSegment objects with absolute timestamps. It builds upon
+    SileroVADCore for model loading and raw VAD inference.
     """
     
     # Standard sample rate for Silero VAD
@@ -49,6 +51,7 @@ class SileroVADProcessor:
         """
         self.logger = get_logger()
         
+        # Store parameters for reference
         self.threshold = threshold
         self.min_speech_duration_ms = min_speech_duration_ms
         self.min_silence_duration_ms = min_silence_duration_ms
@@ -56,82 +59,21 @@ class SileroVADProcessor:
         self.speech_pad_ms = speech_pad_ms
         self.models_dir = models_dir
         
-        # Model state (lazy loaded)
-        self._model: Optional[Any] = None
-        self._get_speech_timestamps: Optional[Callable[..., Any]] = None
-        self._read_audio: Optional[Callable[..., Any]] = None
+        # Initialize the core VAD processor
+        self._vad_core = SileroVADCore(
+            threshold=threshold,
+            min_speech_duration_ms=min_speech_duration_ms,
+            min_silence_duration_ms=min_silence_duration_ms,
+            window_size_samples=window_size_samples,
+            speech_pad_ms=speech_pad_ms,
+            models_dir=models_dir,
+        )
     
     def _load_model(self) -> None:
-        """Load the Silero VAD model (lazy loading)."""
-        if self._model is not None:
-            return
-        
-        log_progress("Loading Silero VAD model...")
-        
-        try:
-            # Try using the silero-vad package first (preferred)
-            from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
-            
-            self._model = load_silero_vad()
-            self._get_speech_timestamps = get_speech_timestamps
-            self._read_audio = read_audio
-            
-            log_completion("Silero VAD model loaded successfully (via silero-vad package)")
-            
-        except ImportError:
-            # Fallback to torch.hub
-            log_debug("silero-vad package not available, falling back to torch.hub")
-            try:
-                self._model = torch.hub.load(
-                    repo_or_dir='snakers4/silero-vad',
-                    model='silero_vad',
-                    force_reload=False,
-                    trust_repo=True
-                )
-                utils = torch.hub.load(
-                    repo_or_dir='snakers4/silero-vad',
-                    model='utils',
-                    force_reload=False,
-                    trust_repo=True
-                )
-                (self._get_speech_timestamps, _, self._read_audio, _, _) = utils  # type: ignore
-                
-                log_completion("Silero VAD model loaded successfully (via torch.hub)")
-                
-            except Exception as e:
-                self.logger.error(f"Failed to load Silero VAD model: {e}")
-                raise
+        """Ensure the VAD model is loaded (delegates to core)."""
+        self._vad_core._load_model()
     
-    def _load_audio(self, audio_path: str) -> torch.Tensor:
-        """
-        Load and preprocess audio file for VAD.
-        
-        Standardizes to 16kHz mono format.
-        
-        Args:
-            audio_path: Path to audio file
-            
-        Returns:
-            Audio tensor (16kHz mono)
-        """
-        # Use silero_vad's read_audio if available
-        if self._read_audio is not None:
-            try:
-                wav = self._read_audio(audio_path, sampling_rate=self.SAMPLE_RATE)
-                return wav
-            except Exception:
-                pass  # Fall back to librosa
-        
-        # Use librosa for robust audio loading (handles many formats)
-        import librosa
-        import numpy as np
-        
-        audio, sr = librosa.load(audio_path, sr=self.SAMPLE_RATE, mono=True)
-        wav = torch.from_numpy(audio).float()
-        
-        return wav
-    
-    def get_speech_timestamps(self, wav: torch.Tensor) -> List[dict]:
+    def get_speech_timestamps(self, wav) -> List[dict]:
         """
         Get raw speech timestamps from Silero VAD.
         
@@ -141,24 +83,12 @@ class SileroVADProcessor:
         Returns:
             List of dicts with 'start' and 'end' keys (in samples)
         """
-        self._load_model()
-        
-        if self._get_speech_timestamps is None:
-            raise RuntimeError("VAD model not properly loaded")
-        
-        timestamps = self._get_speech_timestamps(
+        return self._vad_core.get_speech_timestamps(
             wav,
-            self._model,
-            threshold=self.threshold,
-            min_speech_duration_ms=self.min_speech_duration_ms,
-            min_silence_duration_ms=self.min_silence_duration_ms,
-            window_size_samples=self.window_size_samples,
-            speech_pad_ms=self.speech_pad_ms,
+            sample_rate=self.SAMPLE_RATE,
             return_seconds=False,  # Return samples for precision
-            sampling_rate=self.SAMPLE_RATE,
+            use_neg_threshold=False,  # This processor doesn't use neg_threshold
         )
-        
-        return timestamps
     
     def process_audio(
         self,
@@ -175,12 +105,10 @@ class SileroVADProcessor:
         Returns:
             List of VADSegment objects with absolute timestamps
         """
-        self._load_model()
-        
         log_progress(f"Running VAD on {speaker_id} audio: {audio_path}")
         
-        # Load audio
-        wav = self._load_audio(audio_path)
+        # Load audio using core
+        wav = self._vad_core.load_audio(audio_path)
         
         # Get speech timestamps
         timestamps = self.get_speech_timestamps(wav)
@@ -228,16 +156,8 @@ class SileroVADProcessor:
         Returns:
             List of VADSegment objects
         """
-        self._load_model()
-        
-        # Convert to tensor
-        wav = torch.from_numpy(audio_data).float()
-        
-        # Resample if necessary using librosa
-        if sample_rate != self.SAMPLE_RATE:
-            import librosa
-            audio_resampled = librosa.resample(audio_data, orig_sr=sample_rate, target_sr=self.SAMPLE_RATE)
-            wav = torch.from_numpy(audio_resampled).float()
+        # Convert and resample using core
+        wav = self._vad_core.load_audio_array(audio_data, sample_rate)
         
         # Get timestamps and convert to segments
         timestamps = self.get_speech_timestamps(wav)
@@ -267,8 +187,7 @@ class SileroVADProcessor:
         Returns:
             Duration in seconds
         """
-        wav = self._load_audio(audio_path)
-        return len(wav) / self.SAMPLE_RATE
+        return self._vad_core.get_audio_duration(audio_path)
     
     @property
     def config(self) -> dict:

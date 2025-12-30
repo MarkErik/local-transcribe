@@ -414,11 +414,6 @@ class VADASRProcessor:
                 'role': speaker_id,
             }
             
-            # Add remote granite URL if available
-            if self.remote_granite_url:
-                transcriber_kwargs['use_remote_granite'] = True
-                transcriber_kwargs['remote_granite_url'] = self.remote_granite_url
-            
             if self.models_dir:
                 transcriber_kwargs['models_dir'] = self.models_dir
             

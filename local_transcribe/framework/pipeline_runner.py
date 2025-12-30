@@ -475,8 +475,6 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
                 registry=api["registry"],
                 transcriber_model=args.transcriber_model,
                 output_format=getattr(args, 'output_format', 'stitched'),
-                use_remote_granite=getattr(args, 'remote_granite', False),
-                remote_granite_url=getattr(args, 'remote_granite_url', None)
             )
 
             # 2.5) De-identification (if enabled) - BEFORE diarization
@@ -666,11 +664,6 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
             for speaker_name, audio_file in speaker_files.items():
                 speaker_audio_paths[speaker_name] = str(ensure_file(audio_file, speaker_name))
             
-            # Get remote granite URL if using remote
-            remote_url = None
-            if getattr(args, 'remote_granite', False):
-                remote_url = getattr(args, 'remote_granite_url', 'http://0.0.0.0:7070')
-            
             # Run VAD pipeline
             transcript = build_turns_vad_split_audio(
                 speaker_audio_files=speaker_audio_paths,
@@ -679,7 +672,6 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
                 intermediate_dir=paths.get("intermediate"),
                 models_dir=models_dir,
                 vad_threshold=getattr(args, 'vad_threshold', 0.5),
-                remote_granite_url=remote_url,
                 transcriber_model=getattr(args, 'transcriber_model', None),
             )
             
@@ -752,8 +744,6 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
                     registry=api["registry"],
                     transcriber_model=args.transcriber_model,
                     output_format=getattr(args, 'output_format', 'stitched'),
-                    use_remote_granite=getattr(args, 'remote_granite', False),
-                    remote_granite_url=getattr(args, 'remote_granite_url', None)
                 )
                 
                 # 2.5) De-identification FIRST PASS per speaker (if enabled)

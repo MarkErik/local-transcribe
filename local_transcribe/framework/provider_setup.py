@@ -86,6 +86,12 @@ class ProviderSetup:
         try:
             transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
             
+            # Configure remote transcriber with server URL if applicable
+            if transcriber_provider.name == "remote":
+                server_url = getattr(self.args, 'remote_transcriber_url', None)
+                if server_url and hasattr(transcriber_provider, 'configure'):
+                    transcriber_provider.configure(server_url=server_url)
+            
             # Set default model if not specified
             if not hasattr(self.args, 'transcriber_model') or self.args.transcriber_model is None:
                 available_models = transcriber_provider.get_available_models()
@@ -104,6 +110,12 @@ class ProviderSetup:
             # Validate that it's a pure transcriber
             if transcriber_provider.has_builtin_alignment:
                 raise ValueError(f"Provider '{self.args.transcriber_provider}' has built-in alignment and is not allowed in participant-audio-only mode. Use granite or openai_whisper.")
+            
+            # Configure remote transcriber with server URL if applicable
+            if transcriber_provider.name == "remote":
+                server_url = getattr(self.args, 'remote_transcriber_url', None)
+                if server_url and hasattr(transcriber_provider, 'configure'):
+                    transcriber_provider.configure(server_url=server_url)
             
             # Set default model if not specified
             if not hasattr(self.args, 'transcriber_model') or self.args.transcriber_model is None:
@@ -161,13 +173,13 @@ class ProviderSetup:
         """
         providers = {}
         
-        # Check if using remote Granite transcription - if so, skip transcriber model downloads
-        use_remote_granite = getattr(self.args, 'remote_granite', False)
+        # Check if using remote transcriber - no local models needed
+        is_remote_transcriber = getattr(self.args, 'transcriber_provider', None) == 'remote'
         
         # Check for single_speaker_audio mode
         if hasattr(self.args, 'single_speaker_audio') and self.args.single_speaker_audio:
-            # Skip transcriber model download if using remote granite
-            if not use_remote_granite:
+            # Skip transcriber model download if using remote transcriber
+            if not is_remote_transcriber:
                 try:
                     transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
                     providers['transcriber'] = transcriber_provider
@@ -177,8 +189,8 @@ class ProviderSetup:
         
         # Check for VAD pipeline mode - only needs transcriber (unless using remote)
         if getattr(self.args, 'vad_pipeline', False):
-            # Skip transcriber model download if using remote granite
-            if not use_remote_granite:
+            # Skip transcriber model download if using remote transcriber
+            if not is_remote_transcriber:
                 try:
                     transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
                     providers['transcriber'] = transcriber_provider
@@ -190,8 +202,8 @@ class ProviderSetup:
         try:
             transcriber_provider = self.registry.get_transcriber_provider(self.args.transcriber_provider)
             
-            # Only include transcriber for model downloads if not using remote granite
-            if not use_remote_granite:
+            # Only include transcriber for model downloads if not using remote transcriber
+            if not is_remote_transcriber:
                 providers['transcriber'] = transcriber_provider
             
             # Add aligner if transcriber doesn't have built-in alignment

@@ -220,7 +220,6 @@ def build_turns_vad_split_audio(
     intermediate_dir: Optional[Path] = None,
     models_dir: Optional[Path] = None,
     vad_threshold: float = 0.5,
-    remote_granite_url: Optional[str] = None,
     validate_durations: bool = True,
     **kwargs
 ) -> TranscriptFlow:
@@ -237,12 +236,11 @@ def build_turns_vad_split_audio(
     
     Args:
         speaker_audio_files: Mapping of speaker IDs to audio file paths
-        transcriber_provider: ASR provider to use (e.g., granite)
+        transcriber_provider: ASR provider to use (e.g., granite, remote)
         config: VAD block building configuration
         intermediate_dir: Path for intermediate/debug files
         models_dir: Path to model cache directory
         vad_threshold: VAD speech probability threshold (0-1)
-        remote_granite_url: URL for remote Granite server
         validate_durations: Whether to validate audio file durations match
         **kwargs: Additional arguments passed to transcriber
         
@@ -320,7 +318,6 @@ def build_turns_vad_split_audio(
         transcriber_provider=transcriber_provider,
         models_dir=models_dir,
         intermediate_dir=intermediate_dir,
-        remote_granite_url=remote_granite_url,
     )
     
     blocks = asr_processor.process_blocks(

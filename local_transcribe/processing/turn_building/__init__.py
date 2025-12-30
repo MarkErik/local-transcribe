@@ -92,12 +92,11 @@ def build_turns_vad_split_audio(speaker_audio_files, **kwargs) -> TranscriptFlow
     Args:
         speaker_audio_files: Dict mapping speaker_id -> audio file path
         **kwargs: Configuration options including:
-            - transcriber_provider: ASR provider (required)
+            - transcriber_provider: ASR provider (required, e.g., granite, remote)
             - config: VADBlockBuilderConfig
             - intermediate_dir: Path for debug files
             - models_dir: Path to model cache
             - vad_threshold: VAD sensitivity (0-1)
-            - remote_granite_url: URL for remote transcription
     
     Returns:
         TranscriptFlow with hierarchical turn structure
@@ -128,10 +127,9 @@ def build_turns(words_or_files, mode: str, **kwargs) -> TranscriptFlow:
             - max_gap_to_merge_turns: Max gap to merge same-speaker turns (default: 3.0s)
             
             For vad_split_audio mode:
-            - transcriber_provider: ASR provider (required)
+            - transcriber_provider: ASR provider (required, e.g., granite, remote)
             - config: VADBlockBuilderConfig
             - vad_threshold: VAD sensitivity (0-1)
-            - remote_granite_url: URL for remote transcription
     
     Returns:
         TranscriptFlow with hierarchical turn structure

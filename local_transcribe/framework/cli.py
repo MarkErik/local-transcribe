@@ -835,8 +835,8 @@ def interactive_single_speaker(args, api) -> argparse.Namespace:
     else:
         print(f"  ✓ Model: {args.transcriber_model} (set via CLI)")
     
-    # Remote Granite option
-    args = prompt_remote_granite(args)
+    # Remote transcriber URL prompt (if remote transcriber selected)
+    args = prompt_remote_transcriber_url(args)
     
     # Granite-specific settings
     if args.transcriber_provider == "granite":
@@ -1183,8 +1183,6 @@ def interactive_prompt(args, api):
         cli_items.append(f"Transcriber: {args.transcriber_provider}")
     if args.transcriber_model:
         cli_items.append(f"Model: {args.transcriber_model}")
-    if getattr(args, 'remote_granite', False):
-        cli_items.append(f"Remote Granite: {args.remote_granite_url}")
     if getattr(args, 'vad_pipeline', False):
         cli_items.append("VAD Pipeline: Enabled")
     if args.aligner_provider:

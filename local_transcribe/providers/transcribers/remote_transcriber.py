@@ -227,12 +227,28 @@ class RemoteTranscriberClient:
             info = self.get_server_info(refresh=True)
             
             if info:
+                # Parse nested structure from server
+                # Server returns: {model: {name: ...}, capabilities: {max_audio_duration_seconds: ...}}
+                model_info = info.get("model", {})
+                capabilities_info = info.get("capabilities", {})
+                
+                # Extract model name from nested structure
+                model_name = model_info.get("name", "unknown")
+                
+                # Extract capabilities from nested structure
+                max_duration = capabilities_info.get("max_audio_duration_seconds", 60.0)
+                min_duration = capabilities_info.get("min_audio_duration_seconds", 1.0)
+                
+                # Get sample rate - either from capabilities or supported_sample_rates list
+                sample_rates = capabilities_info.get("supported_sample_rates", [16000])
+                sample_rate = sample_rates[0] if sample_rates else 16000
+                
                 self._capabilities = ServerCapabilities(
-                    max_segment_duration_s=info.get("max_audio_duration_s", 60.0),
-                    min_segment_duration_s=info.get("min_audio_duration_s", 1.0),
-                    model_name=info.get("model_name", "unknown"),
-                    supports_disfluencies=info.get("supports_disfluencies", True),
-                    sample_rate=info.get("sample_rate", 16000)
+                    max_segment_duration_s=float(max_duration),
+                    min_segment_duration_s=float(min_duration),
+                    model_name=model_name,
+                    supports_disfluencies=True,  # Assume true for now
+                    sample_rate=int(sample_rate)
                 )
             else:
                 # Default capabilities if server doesn't provide /info

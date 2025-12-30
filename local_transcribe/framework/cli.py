@@ -1123,9 +1123,7 @@ def display_configuration_summary(args, mode: str):
         print(f"  VAD threshold: {getattr(args, 'vad_threshold', 0.5)}")
         print(f"  VAD merge gap: {getattr(args, 'vad_merge_gap_ms', 600)}ms")
     
-    print(f"  De-identification: {'Enabled' if getattr(args, 'de_identify', False) else 'Disabled'}")
-    if getattr(args, 'de_identify', False) and getattr(args, 'de_identify_second_pass', False):
-        print(f"  Second-pass de-id: Enabled")
+    print(f"  De-identification: {'Enabled (two-pass)' if getattr(args, 'de_identify', False) else 'Disabled'}")
     
     if hasattr(args, 'selected_outputs') and args.selected_outputs:
         print(f"  Output formats: {', '.join(args.selected_outputs)}")

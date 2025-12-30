@@ -20,7 +20,7 @@ from .core import (
 def validate_first_pass_output(
     original: str,
     processed: str,
-    max_redaction_rate: float = 0.1
+    max_redaction_rate: float = 0.30
 ) -> ValidationResult:
     """
     Validate first-pass LLM output.
@@ -34,7 +34,7 @@ def validate_first_pass_output(
     Args:
         original: Original input text
         processed: LLM processed text
-        max_redaction_rate: Maximum allowed fraction of words to be redacted
+        max_redaction_rate: Maximum allowed fraction of words to be redacted (default 30%)
         
     Returns:
         ValidationResult with pass/fail status and details
@@ -44,6 +44,11 @@ def validate_first_pass_output(
     
     # Count [REDACTED] tokens
     redacted_count = proc_words.count("[REDACTED]")
+    
+    # For small chunks, allow a minimum number of redactions regardless of rate
+    # This prevents overly strict validation when processing small text samples
+    # or name-heavy passages (introductions, etc.)
+    min_allowed_redactions = max(10, int(len(orig_words) * max_redaction_rate))
     
     # Rule 1: Word count must match exactly
     if len(orig_words) != len(proc_words):
@@ -62,10 +67,11 @@ def validate_first_pass_output(
         )
     
     # Rule 2: Check redaction rate (not everything replaced)
-    if len(orig_words) > 0 and redacted_count > len(orig_words) * max_redaction_rate:
+    # Allow at least min_allowed_redactions regardless of rate (for small chunks)
+    if len(orig_words) > 0 and redacted_count > min_allowed_redactions:
         log_progress(
             f"Validation failed: too many replacements "
-            f"({redacted_count} out of {len(orig_words)} words)"
+            f"({redacted_count} out of {len(orig_words)} words, max allowed: {min_allowed_redactions})"
         )
         return ValidationResult(
             passed=False,
@@ -75,6 +81,7 @@ def validate_first_pass_output(
                 'processed_word_count': len(proc_words),
                 'redacted_count': redacted_count,
                 'redacted_percentage': (redacted_count / len(orig_words)) * 100,
+                'max_allowed_redactions': min_allowed_redactions,
                 'max_allowed_percentage': max_redaction_rate * 100
             }
         )
@@ -121,7 +128,7 @@ def validate_second_pass_output(
     original: str,
     processed: str,
     expected_redacted_min: int = 0,
-    max_new_redaction_rate: float = 0.02
+    max_new_redaction_rate: float = 0.2
 ) -> ValidationResult:
     """
     Validate second-pass LLM output with stricter rules.

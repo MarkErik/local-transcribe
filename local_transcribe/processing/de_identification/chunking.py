@@ -51,7 +51,7 @@ def chunk_word_segments(
             start_idx=i,
             end_idx=end_idx,
             segments=list(chunk_segments),
-            words=None
+            words=[]
         ))
         
         # Check if we're near the end
@@ -60,14 +60,15 @@ def chunk_word_segments(
             break
         elif remaining < min_final_chunk:
             # Merge small final chunk into current chunk
+            merged_segments = list(segments[i:])
             chunks[-1] = Chunk(
                 text=" ".join(seg.text for seg in segments[i:]),
                 start_idx=i,
                 end_idx=len(segments),
-                segments=list(segments[i:]),
-                words=None
+                segments=merged_segments,
+                words=[]
             )
-            log_debug(f"Merged final chunk with {len(chunks[-1].segments)} segments")
+            log_debug(f"Merged final chunk with {len(merged_segments)} segments")
             break
         
         # Move forward, accounting for overlap
@@ -112,7 +113,7 @@ def chunk_plain_text(
             text=chunk_text,
             start_idx=i,
             end_idx=end_idx,
-            segments=None,
+            segments=[],
             words=list(chunk_words)
         ))
         
@@ -122,14 +123,15 @@ def chunk_plain_text(
             break
         elif remaining < min_final_chunk:
             # Merge small final chunk into current chunk
+            merged_words = list(words[i:])
             chunks[-1] = Chunk(
                 text=" ".join(words[i:]),
                 start_idx=i,
                 end_idx=len(words),
-                segments=None,
-                words=list(words[i:])
+                segments=[],
+                words=merged_words
             )
-            log_debug(f"Merged final text chunk with {len(chunks[-1].words)} words")
+            log_debug(f"Merged final text chunk with {len(merged_words)} words")
             break
         
         # Move forward, accounting for overlap

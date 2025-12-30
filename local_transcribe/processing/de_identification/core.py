@@ -21,7 +21,7 @@ class DeIdentificationConfig:
     
     # Chunking settings
     chunk_size: int = 400              # Words per chunk
-    overlap_size: int = 70             # Words of overlap between chunks
+    overlap_size: int = 60             # Words of overlap between chunks
     min_final_chunk: int = 200         # Min words for final chunk
     
     # LLM settings
@@ -124,12 +124,18 @@ class ChunkProcessingResult:
 
 @dataclass
 class Chunk:
-    """A chunk of text/segments for processing."""
+    """
+    A chunk of text/segments for processing.
+    
+    Note: segments and words are mutually exclusive:
+    - segments is populated when processing WordSegment lists
+    - words is populated when processing plain text
+    """
     text: str
     start_idx: int
     end_idx: int
-    segments: Optional[List[Any]] = None  # WordSegment list if available
-    words: Optional[List[str]] = None     # Plain words if text-only mode
+    segments: List[Any] = field(default_factory=list)  # WordSegment list if available
+    words: List[str] = field(default_factory=list)     # Plain words if text-only mode
 
 
 @dataclass

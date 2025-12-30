@@ -676,7 +676,6 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
 
         else:
             # Process separate audio files (standard split_audio pipeline)
-            all_words = []
             
             # Collect word segments per speaker for processing
             speaker_segments = {}  # speaker_name -> word segments

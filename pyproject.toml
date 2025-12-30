@@ -39,6 +39,12 @@ dev = [
     "pytest>=9.0.1",
 ]
 
+[tool.uv]
+constraint-dependencies = [
+    "numba>=0.60.0",
+    "llvmlite>=0.40.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["local_transcribe*"]

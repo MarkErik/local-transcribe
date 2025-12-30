@@ -265,7 +265,8 @@ class LLMDeIdentifierClient:
                 
                 if validation.passed:
                     # Success! Add retry info to validation
-                    validation.details['attempts'] = all_attempts
+                    # Note: Don't store all_attempts reference here to avoid circular reference
+                    # when serializing to JSON (attempts are available via attempt_logs)
                     validation.details['total_attempts'] = attempt_number
                     validation.details['final_temperature'] = current_temperature
                     
@@ -313,7 +314,8 @@ class LLMDeIdentifierClient:
             reason='all attempts failed',
             details={}
         )
-        final_validation.details['attempts'] = all_attempts
+        # Note: Don't store all_attempts reference here to avoid circular reference
+        # when serializing to JSON (attempts are available via attempt_logs)
         final_validation.details['total_attempts'] = max_retries + 1
         final_validation.details['all_attempts_failed'] = True
         

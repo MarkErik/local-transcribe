@@ -20,7 +20,7 @@ from .core import (
 def validate_first_pass_output(
     original: str,
     processed: str,
-    max_redaction_rate: float = 0.30
+    max_redaction_rate: float = 0.10
 ) -> ValidationResult:
     """
     Validate first-pass LLM output.
@@ -34,7 +34,7 @@ def validate_first_pass_output(
     Args:
         original: Original input text
         processed: LLM processed text
-        max_redaction_rate: Maximum allowed fraction of words to be redacted (default 30%)
+        max_redaction_rate: Maximum allowed fraction of words to be redacted (default 10%)
         
     Returns:
         ValidationResult with pass/fail status and details
@@ -128,7 +128,7 @@ def validate_second_pass_output(
     original: str,
     processed: str,
     expected_redacted_min: int = 0,
-    max_new_redaction_rate: float = 0.2
+    max_new_redaction_rate: float = 0.1
 ) -> ValidationResult:
     """
     Validate second-pass LLM output with stricter rules.

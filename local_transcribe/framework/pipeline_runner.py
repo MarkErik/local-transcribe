@@ -14,13 +14,8 @@ from local_transcribe.lib.program_logger import log_status, log_progress, log_in
 from local_transcribe.lib.speaker_namer import assign_speaker_names
 from local_transcribe.lib.audio_processor import standardize_audio, cleanup_temp_audio
 from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_transcript_for_llm
-from local_transcribe.processing.llm_de_identifier import de_identify_word_segments, de_identify_text, DeIdentificationResult
+from local_transcribe.processing.de_identification import DeIdentificationOrchestrator
 from local_transcribe.processing.turn_building import TranscriptFlow
-from local_transcribe.processing.llm_second_pass_de_identifier import (
-    second_pass_de_identify,
-    build_global_name_list,
-    DiscoveredName
-)
 from local_transcribe.processing.turn_building import build_turns
 
 def transcribe_with_alignment(transcriber_provider, aligner_provider, audio_path: str, role: Optional[str], intermediate_dir: Optional[Union[str, os.PathLike]] = None, base_name: str = "", models_dir: Optional[Union[str, os.PathLike]] = None, **kwargs) -> List[Any]:
@@ -431,11 +426,11 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
             # 2.5) De-identification (if enabled)
             if args.de_identify:
                 log_progress("De-identifying transcript (text mode)")
-                transcript = de_identify_text(
-                    transcript,
-                    intermediate_dir=paths["intermediate"],
-                    llm_url=args.llm_de_identifier_url
+                orchestrator = DeIdentificationOrchestrator(
+                    llm_url=args.llm_de_identifier_url,
+                    intermediate_dir=paths["intermediate"]
                 )
+                transcript = orchestrator.de_identify_text(transcript)
                 log_progress("De-identification complete")
 
             # 3) Process transcript into words and save as CSV
@@ -481,64 +476,27 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
             if args.de_identify:
                 log_progress("De-identifying word segments")
                 
-                # For combined_audio, second pass is less useful since there's only one transcript
-                # But we still support it for consistency
-                use_second_pass = getattr(args, 'de_identify_second_pass', False)
-                
-                result = de_identify_word_segments(
-                    words,
-                    intermediate_dir=paths["intermediate"],
+                # Use the orchestrator for automatic two-pass processing
+                orchestrator = DeIdentificationOrchestrator(
                     llm_url=args.llm_de_identifier_url,
-                    return_result_object=True,
-                    skip_audit_log=use_second_pass
+                    intermediate_dir=paths["intermediate"]
                 )
-                if isinstance(result, DeIdentificationResult):
-                    words = result.segments
-                    first_pass_replacements = result.replacements
-                    log_progress(f"First pass complete: {len(result.discovered_names)} unique names found")
+                result = orchestrator.de_identify(words, speaker_name=None)
+                words = list(result.segments)
                 
-                # Save first-pass de-identified word segments
+                # Save de-identified word segments
                 registry = api.get("registry")
                 if registry is None:
                     raise ValueError("Registry not found in api")
                 json_word_writer = registry.get_word_writer("word-segments-json")
-                if use_second_pass:
-                    deidentified_file = paths["intermediate"] / "de_identification" / "word_segments_first_pass.json"
-                else:
-                    deidentified_file = paths["intermediate"] / "de_identification" / "word_segments_deidentified.json"
+                deidentified_file = paths["intermediate"] / "de_identification" / "word_segments_deidentified.json"
                 json_word_writer.write(words, deidentified_file)
                 log_intermediate_save(str(deidentified_file), "De-identified word segments saved to")
                 
-                # Second pass (if enabled)
-                if use_second_pass and isinstance(result, DeIdentificationResult) and result.discovered_names:
-                    log_progress("Running second pass on combined audio (single transcript mode)")
-                    
-                    # Build name list from first pass
-                    global_names = build_global_name_list({"combined": first_pass_replacements})
-                    
-                    if global_names:
-                        second_pass_result = second_pass_de_identify(
-                            list(words),  # type: ignore
-                            global_names,
-                            intermediate_dir=paths["intermediate"],
-                            llm_url=args.llm_de_identifier_url,
-                            speaker_name=None,
-                            first_pass_replacements=first_pass_replacements
-                        )
-                        
-                        words = list(second_pass_result.segments)  # type: ignore
-                        
-                        # Save final de-identified segments
-                        final_file = paths["intermediate"] / "de_identification" / "word_segments_deidentified.json"
-                        json_word_writer.write(words, final_file)
-                        log_intermediate_save(str(final_file), "Final de-identified segments saved")
-                        
-                        if second_pass_result.additional_replacements:
-                            log_progress(f"Second pass found {len(second_pass_result.additional_replacements)} additional names")
-                elif use_second_pass:
-                    log_progress("No names discovered in first pass, skipping second pass")
-                
-                log_progress("De-identification complete")
+                log_progress(
+                    f"De-identification complete: {result.total_replacements} names replaced "
+                    f"({len(result.discovered_names)} unique)"
+                )
 
             # 3) Diarize (assign speakers to words)
             from local_transcribe.lib.system_capability_utils import get_system_capability
@@ -720,9 +678,8 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
             # Process separate audio files (standard split_audio pipeline)
             all_words = []
             
-            # For two-pass de-identification, we need to collect data per speaker
+            # Collect word segments per speaker for processing
             speaker_segments = {}  # speaker_name -> word segments
-            speaker_replacements = {}  # speaker_name -> first-pass replacements
             
             for speaker_name, audio_file in speaker_files.items():
                 print(f"[*] Processing {speaker_name}...")
@@ -746,92 +703,46 @@ def run_pipeline(args, api: Dict[str, Any], root: Union[str, os.PathLike]) -> in
                     output_format=getattr(args, 'output_format', 'stitched'),
                 )
                 
-                # 2.5) De-identification FIRST PASS per speaker (if enabled)
-                if args.de_identify:
-                    log_progress(f"De-identifying word segments for {speaker_name} (first pass)")
-                    
-                    # Use return_result_object to get replacements for second pass
-                    # Skip individual audit log if second pass is enabled (combined log will be created)
-                    skip_audit = getattr(args, 'de_identify_second_pass', False)
-                    
-                    result = de_identify_word_segments(
-                        words,
-                        intermediate_dir=paths["intermediate"],
-                        llm_url=args.llm_de_identifier_url,
-                        speaker_name=speaker_name,
-                        return_result_object=True,
-                        skip_audit_log=skip_audit
-                    )
-                    
-                    if isinstance(result, DeIdentificationResult):
-                        words = result.segments
-                        speaker_replacements[speaker_name] = result.replacements
-                        log_progress(f"First pass complete for {speaker_name}: {len(result.discovered_names)} unique names found")
-                    
-                    # Save first-pass de-identified word segments per speaker
-                    registry = api.get("registry")
-                    if registry is None:
-                        raise ValueError("Registry not found in api")
-                    json_word_writer = registry.get_word_writer("word-segments-json")
-                    deidentified_file = paths["intermediate"] / "de_identification" / f"{speaker_name.lower()}_word_segments_first_pass.json"
-                    json_word_writer.write(words, deidentified_file)
-                    log_intermediate_save(str(deidentified_file), f"First-pass de-identified segments saved for {speaker_name}")
-                
-                # Store segments for potential second pass
                 speaker_segments[speaker_name] = words
-                
-                # Add words to the combined list
-                all_words.extend(words)
             
-            # 2.6) De-identification SECOND PASS (if enabled)
-            if args.de_identify and getattr(args, 'de_identify_second_pass', False):
-                log_status("Starting second-pass de-identification across all speakers")
+            # 2.5) De-identification (if enabled) - uses orchestrator for automatic two-pass
+            if args.de_identify:
+                log_status("Starting de-identification across all speakers")
                 
-                # Build global name list from all speakers' first-pass results
-                global_names = build_global_name_list(speaker_replacements)
+                orchestrator = DeIdentificationOrchestrator(
+                    llm_url=args.llm_de_identifier_url,
+                    intermediate_dir=paths["intermediate"]
+                )
                 
-                if global_names:
-                    log_progress(f"Global name list: {', '.join(n.name for n in global_names)}")
+                # Process all speakers with automatic two-pass processing
+                results = orchestrator.de_identify_multi_speaker(speaker_segments)
+                
+                # Update segments with de-identified versions
+                all_words = []
+                registry = api.get("registry")
+                if registry is None:
+                    raise ValueError("Registry not found in api")
+                json_word_writer = registry.get_word_writer("word-segments-json")
+                
+                for speaker_name, result in results.items():
+                    speaker_segments[speaker_name] = result.segments
+                    all_words.extend(result.segments)
                     
-                    # Clear all_words to rebuild with second-pass results
-                    all_words = []
+                    # Save de-identified segments
+                    deidentified_file = paths["intermediate"] / "de_identification" / f"{speaker_name.lower()}_word_segments_deidentified.json"
+                    json_word_writer.write(result.segments, deidentified_file)
+                    log_intermediate_save(str(deidentified_file), f"De-identified segments saved for {speaker_name}")
                     
-                    for speaker_name in speaker_files.keys():
-                        log_progress(f"Running second pass for {speaker_name}")
-                        
-                        first_pass_segments = speaker_segments[speaker_name]
-                        first_pass_reps = speaker_replacements.get(speaker_name, [])
-                        
-                        second_pass_result = second_pass_de_identify(
-                            list(first_pass_segments),  # type: ignore
-                            global_names,
-                            intermediate_dir=paths["intermediate"],
-                            llm_url=args.llm_de_identifier_url,
-                            speaker_name=speaker_name,
-                            first_pass_replacements=first_pass_reps
-                        )
-                        
-                        # Update speaker segments with final de-identified version
-                        speaker_segments[speaker_name] = second_pass_result.segments
-                        
-                        # Save final de-identified segments
-                        registry = api.get("registry")
-                        if registry is None:
-                            raise ValueError("Registry not found in api")
-                        json_word_writer = registry.get_word_writer("word-segments-json")
-                        final_file = paths["intermediate"] / "de_identification" / f"{speaker_name.lower()}_word_segments_deidentified.json"
-                        json_word_writer.write(second_pass_result.segments, final_file)
-                        log_intermediate_save(str(final_file), f"Final de-identified segments saved for {speaker_name}")
-                        
-                        # Add to combined list
-                        all_words.extend(second_pass_result.segments)
-                        
-                        if second_pass_result.additional_replacements:
-                            log_progress(f"Second pass found {len(second_pass_result.additional_replacements)} additional names for {speaker_name}")
-                    
-                    log_status("Second-pass de-identification complete")
-                else:
-                    log_progress("No names discovered in first pass, skipping second pass")
+                    log_progress(
+                        f"De-identification for {speaker_name}: {result.total_replacements} names replaced"
+                    )
+                
+                log_status("De-identification complete for all speakers")
+            else:
+                # No de-identification, just combine all segments
+                all_words = []
+                for speaker_name in speaker_files.keys():
+                    all_words.extend(speaker_segments[speaker_name])
             
             # 3) Build and merge turns using the turn building processor
             turn_kwargs = {'intermediate_dir': paths["intermediate"]}

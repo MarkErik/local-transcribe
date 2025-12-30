@@ -19,8 +19,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("-s", "--single-speaker-audio", action="store_true", help="Process a single speaker audio file for transcription only, output as CSV.")
     p.add_argument("-n", "--num-speakers", type=int, help="Number of speakers expected in the audio (for diarization) [Default: 2]")
     p.add_argument("-x", "--system", choices=["cuda", "mps", "cpu"], help="System capability to use for ML acceleration [Default: auto-detected preference: MPS > CUDA > CPU]")
-    p.add_argument("-d", "--de-identify", action="store_true", help="Enable de-identification to replace people's names with [REDACTED] [Default: prompt in interactive mode]")
-    p.add_argument("--de-identify-second-pass", action="store_true", help="Enable second-pass de-identification using names discovered across all speakers [Default: prompt in interactive mode if de-identify enabled]")
+    p.add_argument("-d", "--de-identify", action="store_true", help="Enable de-identification to replace people's names with [REDACTED]. Automatically runs two-pass processing for multi-speaker transcripts. [Default: prompt in interactive mode]")
 
     p.add_argument("--transcriber-provider", help="Transcriber provider to use [Default: auto-selected]")
     p.add_argument("--transcriber-model", help="Transcriber model to use (if provider supports multiple models) [Default: provider-specific]")
@@ -652,55 +651,35 @@ def prompt_remote_transcriber_url(args) -> argparse.Namespace:
 
 
 def prompt_de_identification(args, mode: str) -> argparse.Namespace:
-    """Prompt for de-identification settings if not already set."""
+    """Prompt for de-identification settings if not already set.
+    
+    De-identification now automatically runs two-pass processing when enabled
+    for multi-speaker transcripts, so there's no need to prompt separately.
+    """
     # De-identification not supported in VAD mode yet
     if mode == PipelineMode.VAD_SPLIT_AUDIO:
         print("\n  ⚠ Note: De-identification not yet implemented for VAD pipeline")
         args.de_identify = False
-        args.de_identify_second_pass = False
         return args
     
-    # Single speaker doesn't need second pass prompt
-    if mode == PipelineMode.SINGLE_SPEAKER:
-        if not args.de_identify:
-            args.de_identify = _prompt_yes_no(
-                "\nEnable de-identification (replace names with [REDACTED])?",
-                default=True
-            )
-            if args.de_identify:
-                print("  ✓ De-identification enabled")
-            else:
-                print("  ✓ De-identification disabled")
-        else:
-            print("  ✓ De-identification enabled (set via --de-identify)")
-        return args
-    
-    # Standard modes - prompt for de-identify if not set
+    # Prompt for de-identification if not already set via CLI
     if not args.de_identify:
         args.de_identify = _prompt_yes_no(
             "\nEnable de-identification (replace names with [REDACTED])?",
             default=True
         )
         if args.de_identify:
-            print("  ✓ De-identification enabled")
+            if mode == PipelineMode.SINGLE_SPEAKER:
+                print("  ✓ De-identification enabled")
+            else:
+                print("  ✓ De-identification enabled (includes two-pass processing)")
         else:
             print("  ✓ De-identification disabled")
     else:
-        print("  ✓ De-identification enabled (set via --de-identify)")
-    
-    # Second pass prompt only if de-identify is enabled and not already set
-    if args.de_identify:
-        if not args.de_identify_second_pass:
-            args.de_identify_second_pass = _prompt_yes_no(
-                "Enable second-pass de-identification (catches names across all speakers)?",
-                default=True
-            )
-            if args.de_identify_second_pass:
-                print("  ✓ Second-pass de-identification enabled")
-            else:
-                print("  ✓ Second-pass de-identification disabled")
+        if mode == PipelineMode.SINGLE_SPEAKER:
+            print("  ✓ De-identification enabled (set via --de-identify)")
         else:
-            print("  ✓ Second-pass de-identification enabled (set via CLI)")
+            print("  ✓ De-identification enabled (set via --de-identify, includes two-pass processing)")
     
     return args
 

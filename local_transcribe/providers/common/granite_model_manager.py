@@ -19,9 +19,8 @@ from local_transcribe.lib.program_logger import log_progress, log_debug, log_com
 class GraniteModelManager:
     """Base class for managing Granite models across different providers.
     
-    Supports both local model execution and remote server execution.
-    Remote execution can be enabled by setting use_remote=True and providing
-    a remote_url pointing to a Remote Granite Server.
+    Provides consolidated model management and local transcription functionality
+    for all Granite-based transcriber providers.
     """
     
     MODEL_MAPPING = {
@@ -29,15 +28,10 @@ class GraniteModelManager:
         "granite-8b": "ibm-granite/granite-speech-3.3-8b"
     }
     
-    # Default remote Granite server URL
-    DEFAULT_REMOTE_URL = "http://0.0.0.0:7070"
-    
     def __init__(
         self,
         logger: Any,
-        models_dir: Optional[pathlib.Path] = None,
-        use_remote: bool = False,
-        remote_url: Optional[str] = None
+        models_dir: Optional[pathlib.Path] = None
     ):
         """
         Initialize the model manager.
@@ -45,8 +39,6 @@ class GraniteModelManager:
         Args:
             logger: Logger instance for logging messages
             models_dir: Directory for storing/loading models
-            use_remote: If True, use remote Granite server for transcription
-            remote_url: URL of remote Granite server (default: http://0.0.0.0:7070)
         """
         self.logger = logger
         self.models_dir = models_dir
@@ -54,138 +46,9 @@ class GraniteModelManager:
         self.processor: Optional[Any] = None
         self.model: Optional[Any] = None
         self.tokenizer: Optional[Any] = None
-        
-        # Remote transcription configuration
-        self.use_remote = use_remote
-        self.remote_url = remote_url or self.DEFAULT_REMOTE_URL
-        self._remote_client: Optional[Any] = None
-        
-        # Track whether remote is available (checked lazily)
-        self._remote_available: Optional[bool] = None
     
     # =========================================================================
-    # Remote Transcription Methods
-    # =========================================================================
-    
-    def configure_remote(self, use_remote: bool, remote_url: Optional[str] = None) -> None:
-        """
-        Configure remote transcription settings.
-        
-        Args:
-            use_remote: Whether to use remote server for transcription
-            remote_url: URL of the remote Granite server
-        """
-        self.use_remote = use_remote
-        if remote_url:
-            self.remote_url = remote_url
-        
-        # Reset cached availability check
-        self._remote_available = None
-        self._remote_client = None
-        
-        if use_remote:
-            self.logger.info(f"Remote Granite configured: {self.remote_url}")
-    
-    def _get_remote_client(self) -> Any:
-        """
-        Get or create the remote Granite client.
-        
-        Returns:
-            RemoteGraniteClient instance
-        """
-        if self._remote_client is None:
-            from local_transcribe.providers.common.remote_granite_client import RemoteGraniteClient
-            self._remote_client = RemoteGraniteClient(self.remote_url)
-        return self._remote_client
-    
-    def is_remote_available(self, refresh: bool = False) -> bool:
-        """
-        Check if remote Granite server is available.
-        
-        Args:
-            refresh: Force a new health check
-        
-        Returns:
-            True if remote server is available and model is loaded
-        """
-        if not self.use_remote:
-            return False
-        
-        if refresh or self._remote_available is None:
-            try:
-                client = self._get_remote_client()
-                self._remote_available = client.is_available(refresh=True)
-                if self._remote_available:
-                    log_progress(f"Remote Granite server available at {self.remote_url}")
-                else:
-                    self.logger.warning(f"Remote Granite server not available at {self.remote_url}")
-            except Exception as e:
-                self.logger.warning(f"Failed to check remote Granite availability: {e}")
-                self._remote_available = False
-        
-        return self._remote_available
-    
-    def transcribe_remote(
-        self,
-        audio: NDArray[np.floating],
-        sample_rate: int = 16000,
-        segment_duration: Optional[float] = None,
-        include_disfluencies: bool = True,
-        max_new_tokens: Optional[int] = None
-    ) -> str:
-        """
-        Transcribe audio using remote Granite server.
-        
-        Args:
-            audio: Audio samples as numpy array (mono, float32)
-            sample_rate: Sample rate (must be 16000)
-            segment_duration: Duration of segment in seconds (auto-calculated if None)
-            include_disfluencies: Include disfluencies in output
-            max_new_tokens: Maximum tokens to generate
-        
-        Returns:
-            Transcribed text
-        
-        Raises:
-            RuntimeError: If remote server is not available or transcription fails
-        """
-        if not self.use_remote:
-            raise RuntimeError("Remote transcription not enabled. Call configure_remote(True) first.")
-        
-        if not self.is_remote_available():
-            raise RuntimeError(f"Remote Granite server not available at {self.remote_url}")
-        
-        client = self._get_remote_client()
-        
-        # Calculate segment duration if not provided
-        if segment_duration is None:
-            segment_duration = len(audio) / sample_rate
-        
-        log_debug(f"Sending {segment_duration:.1f}s audio to remote Granite server")
-        
-        try:
-            text = client.transcribe_audio(
-                audio=audio,
-                sample_rate=sample_rate,
-                include_disfluencies=include_disfluencies,
-                max_new_tokens=max_new_tokens
-            )
-            return text
-        except Exception as e:
-            self.logger.error(f"Remote transcription failed: {e}")
-            raise RuntimeError(f"Remote transcription failed: {e}")
-    
-    def should_use_remote(self) -> bool:
-        """
-        Determine if remote transcription should be used.
-        
-        Returns:
-            True if remote is configured and available
-        """
-        return self.use_remote and self.is_remote_available()
-    
-    # =========================================================================
-    # Transcription Methods (consolidated from all Granite transcriber providers)
+    # Transcription Methods
     # =========================================================================
     
     # Prompt fragment markers to filter from transcription output
@@ -304,11 +167,10 @@ class GraniteModelManager:
         **kwargs
     ) -> str:
         """
-        Transcribe a single audio segment using Granite (local or remote).
+        Transcribe a single audio segment using local Granite model.
         
         This is the main transcription method that should be used by all Granite-based
         transcriber providers. It handles:
-        - Remote vs local transcription selection
         - Duration-based parameter calculation
         - Memory cleanup
         - Output cleaning and prompt fragment stripping
@@ -321,27 +183,6 @@ class GraniteModelManager:
         Returns:
             Cleaned transcription text
         """
-        segment_duration = len(audio) / sample_rate
-        
-        # Check if we should use remote transcription
-        if self.should_use_remote():
-            log_progress(f"Transcribing {segment_duration:.1f}s segment with remote Granite server")
-            try:
-                text = self.transcribe_remote(
-                    audio=audio,
-                    sample_rate=sample_rate,
-                    segment_duration=segment_duration,
-                    include_disfluencies=True
-                )
-                # Apply local cleaning/filtering
-                cleaned_text = self._clean_transcription_output(text)
-                final_text = self._strip_prompt_fragments(cleaned_text)
-                return final_text
-            except Exception as e:
-                self.logger.warning(f"Remote transcription failed, falling back to local: {e}")
-                # Fall through to local transcription
-        
-        # Local transcription
         return self._transcribe_segment_local(audio, sample_rate)
     
     def _transcribe_segment_local(

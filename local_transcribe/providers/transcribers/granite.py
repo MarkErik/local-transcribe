@@ -39,10 +39,6 @@ class GraniteTranscriberProvider(TranscriberProvider):
         # Track selected model
         self.selected_model: Optional[str] = None
         self.models_dir: Optional[pathlib.Path] = None
-        
-        # Remote transcription settings (configured via kwargs in transcribe)
-        self.use_remote_granite: bool = False
-        self.remote_granite_url: Optional[str] = None
 
     @property
     def device(self):
@@ -89,12 +85,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
             self.model_manager._load_model(model_name)
 
     def transcribe(self, audio_path: str, device: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
-        """Transcribe audio using Granite model.
-        
-        Supports both local and remote Granite transcription. Configure remote
-        transcription by passing:
-            use_remote_granite=True
-            remote_granite_url="http://server:7070"
+        """Transcribe audio using local Granite model.
         
         Args:
             audio_path: Path to the audio file
@@ -102,8 +93,6 @@ class GraniteTranscriberProvider(TranscriberProvider):
             **kwargs: Additional options including:
                 - transcriber_model: Model to use (granite-2b or granite-8b)
                 - models_dir: Directory for models
-                - use_remote_granite: Use remote Granite server (default: False)
-                - remote_granite_url: URL of remote Granite server
         
         Returns:
             List of dictionaries with chunk data
@@ -120,30 +109,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
         if 'models_dir' in kwargs:
             self.models_dir = pathlib.Path(kwargs['models_dir'])
         
-        # Configure remote Granite if requested
-        self.use_remote_granite = kwargs.get('use_remote_granite', False)
-        self.remote_granite_url = kwargs.get('remote_granite_url')
-        
-        if self.use_remote_granite:
-            log_progress(f"Remote Granite transcription enabled: {self.remote_granite_url or 'default URL'}")
-            self.model_manager.configure_remote(
-                use_remote=True,
-                remote_url=self.remote_granite_url
-            )
-            
-            # Check if remote is available
-            if not self.model_manager.is_remote_available():
-                self.logger.warning("Remote Granite server not available, falling back to local")
-                self.use_remote_granite = False
-                self.model_manager.configure_remote(use_remote=False)
-        else:
-            self.model_manager.configure_remote(use_remote=False)
-        
-        # Only load local model if not using remote
-        if not self.use_remote_granite:
-            self._load_model()
-        else:
-            log_progress("Using remote Granite server - skipping local model load")
+        # Load the model
+        self._load_model()
 
         # Load audio
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)

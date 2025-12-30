@@ -61,10 +61,6 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         # MFA fallback configuration
         self.mfa_models_dir: Optional[pathlib.Path] = None
         self.mfa_available: Optional[bool] = None
-        
-        # Remote transcription settings (configured via kwargs in transcribe_with_alignment)
-        self.use_remote_granite: bool = False
-        self.remote_granite_url: Optional[str] = None
 
     @property
     def device(self):
@@ -1082,11 +1078,6 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         """
         Transcribe audio with alignment, returning chunked data with timestamped words.
         
-        Supports both local and remote Granite transcription. Configure remote
-        transcription by passing:
-            use_remote_granite=True
-            remote_granite_url="http://server:7070"
-        
         Returns:
             List of chunk dicts, each with:
             {
@@ -1095,25 +1086,6 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             }
         """
         log_progress("Starting transcription with alignment using Granite + Wav2Vec2")
-        
-        # Configure remote Granite if requested
-        self.use_remote_granite = kwargs.get('use_remote_granite', False)
-        self.remote_granite_url = kwargs.get('remote_granite_url')
-        
-        if self.use_remote_granite:
-            log_progress(f"Remote Granite transcription enabled: {self.remote_granite_url or 'default URL'}")
-            self.model_manager.configure_remote(
-                use_remote=True,
-                remote_url=self.remote_granite_url
-            )
-            
-            # Check if remote is available
-            if not self.model_manager.is_remote_available():
-                self.logger.warning("Remote Granite server not available, falling back to local")
-                self.use_remote_granite = False
-                self.model_manager.configure_remote(use_remote=False)
-        else:
-            self.model_manager.configure_remote(use_remote=False)
         
         # Check if DEBUG logging is enabled and setup debug directory
         from local_transcribe.lib.program_logger import get_output_context
@@ -1135,11 +1107,8 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
 
         self.model_manager.selected_model = transcriber_model
         
-        # Only load local model if not using remote (or as fallback)
-        if not self.use_remote_granite:
-            self._load_granite_model()
-        else:
-            log_progress("Using remote Granite server - skipping local model load")
+        # Load the Granite model
+        self._load_granite_model()
         
         self._load_wav2vec2_model()
 

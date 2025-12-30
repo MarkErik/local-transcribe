@@ -46,7 +46,6 @@ class VADASRProcessor:
         transcriber_provider: TranscriberProvider,
         models_dir: Optional[Path] = None,
         intermediate_dir: Optional[Path] = None,
-        remote_granite_url: Optional[str] = None,
     ):
         """
         Initialize the VAD ASR processor.
@@ -55,12 +54,10 @@ class VADASRProcessor:
             transcriber_provider: ASR provider to use for transcription
             models_dir: Path to model cache directory
             intermediate_dir: Path for intermediate/debug files
-            remote_granite_url: URL for remote Granite server (if using remote)
         """
         self.transcriber = transcriber_provider
         self.models_dir = models_dir
         self.intermediate_dir = intermediate_dir
-        self.remote_granite_url = remote_granite_url
         self.logger = get_logger()
         
         # Track chunk info for audit

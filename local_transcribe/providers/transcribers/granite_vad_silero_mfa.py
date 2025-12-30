@@ -22,7 +22,7 @@ from datetime import datetime
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
-from local_transcribe.processing.chunk_stitcher import ChunkStitcher
+from local_transcribe.processing.chunk_stitching import ChunkStitcher
 
 # Type hints for lazy-loaded modules
 if TYPE_CHECKING:

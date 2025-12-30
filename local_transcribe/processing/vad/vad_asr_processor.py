@@ -15,7 +15,7 @@ import numpy as np
 import soundfile as sf
 
 from local_transcribe.processing.vad.data_structures import VADBlock, ASRChunk
-from local_transcribe.processing.chunk_stitcher import ChunkStitcher
+from local_transcribe.processing.chunk_stitching import ChunkStitcher
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment
 from local_transcribe.lib.program_logger import log_progress, log_debug, log_completion, get_logger, get_output_context
 from local_transcribe.lib.audio_processor import load_audio_as_array

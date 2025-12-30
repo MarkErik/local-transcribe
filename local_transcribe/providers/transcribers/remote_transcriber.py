@@ -22,7 +22,7 @@ import librosa
 
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion
-from local_transcribe.processing.chunk_stitcher import ChunkStitcher
+from local_transcribe.processing.chunk_stitching import ChunkStitcher
 
 
 # =============================================================================

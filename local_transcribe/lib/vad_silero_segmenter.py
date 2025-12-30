@@ -9,16 +9,20 @@ segment combination and splitting logic for optimal ASR chunk sizes.
 For core VAD functionality, see: lib/silero_vad_core.py
 """
 
+from __future__ import annotations
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, TYPE_CHECKING
 import pathlib
 import numpy as np
-import torch
 import csv
 import logging
 from datetime import datetime
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion, get_output_context, log_intermediate_save
 from local_transcribe.lib.silero_vad_core import SileroVADCore, SEGMENTER_VAD_PARAMS
+
+# Type hints only - torch imported lazily when needed
+if TYPE_CHECKING:
+    import torch
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -505,6 +509,9 @@ class SileroVADSegmenter:
         
         # Ensure model is loaded
         self._load_model()
+        
+        # Lazy import of torch for tensor conversion
+        import torch
         
         # Convert numpy array to torch tensor
         if isinstance(waveform, np.ndarray):

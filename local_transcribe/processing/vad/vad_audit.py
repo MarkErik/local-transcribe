@@ -116,15 +116,6 @@ def write_turn_building_audit(
         if block.block_id in asr_chunks_by_block:
             block_dict["asr_chunks"] = asr_chunks_by_block[block.block_id]
         
-        # Add transcript preview
-        if block.text:
-            preview_length = 60
-            block_dict["transcript_preview"] = (
-                block.text[:preview_length] + "..." 
-                if len(block.text) > preview_length 
-                else block.text
-            )
-        
         block_data.append(block_dict)
     
     audit_data = {

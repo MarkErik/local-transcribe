@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Aligner plugin using Montreal Forced Aligner (MFA).
+
+Uses MFAWordAlignmentEngine for TextGrid parsing and word alignment utilities.
 """
 
 from typing import List, Optional
@@ -9,16 +11,40 @@ import pathlib
 import tempfile
 import subprocess
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
-from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug, log_debug
+from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
+
+# Lazy import to avoid loading torch at module import time
+_mfa_word_alignment_engine_class = None
+
+def _get_mfa_word_alignment_engine_class():
+    """Lazily import MFAWordAlignmentEngine."""
+    global _mfa_word_alignment_engine_class
+    if _mfa_word_alignment_engine_class is None:
+        from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
+        _mfa_word_alignment_engine_class = MFAWordAlignmentEngine
+    return _mfa_word_alignment_engine_class
 
 
 class MFAAlignerProvider(AlignerProvider):
-    """Aligner provider using Montreal Forced Aligner for word-level timestamps."""
+    """Aligner provider using Montreal Forced Aligner for word-level timestamps.
+    
+    Uses MFAWordAlignmentEngine for TextGrid parsing to avoid code duplication
+    with the granite_mfa and granite_vad_silero_mfa transcribers.
+    """
 
     def __init__(self):
         # MFA setup
         self.mfa_models_dir = None
         self.logger = get_logger()
+        self._word_alignment_engine = None
+    
+    @property
+    def word_alignment_engine(self):
+        """Lazily initialize the word alignment engine."""
+        if self._word_alignment_engine is None:
+            MFAWordAlignmentEngine = _get_mfa_word_alignment_engine_class()
+            self._word_alignment_engine = MFAWordAlignmentEngine(self.logger)
+        return self._word_alignment_engine
 
     @property
     def name(self) -> str:
@@ -125,202 +151,70 @@ class MFAAlignerProvider(AlignerProvider):
     def _parse_textgrid(self, textgrid_path: pathlib.Path, original_transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
         """Parse MFA TextGrid output to extract word timestamps.
         
+        Delegates to MFAWordAlignmentEngine for consistent TextGrid parsing
+        across all MFA-based providers.
+        
         Args:
             textgrid_path: Path to the TextGrid file
             original_transcript: Original transcript with punctuation/capitalization
             speaker: Speaker identifier
+            
+        Returns:
+            List of WordSegment objects with timestamps
         """
         self.logger.info(f"[MFA] Parsing TextGrid: {textgrid_path}")
-        segments = []
-
-        try:
-            with open(textgrid_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            log_debug(f"[MFA] TextGrid has {len(lines)} lines")
-            if len(lines) < 10:
-                log_debug(f"[MFA] TextGrid content (first 10 lines): {lines}")
-            
-            # Build a mapping of normalized words to original words
-            original_words = original_transcript.split()
-            normalized_to_original = {}
-            word_usage_count = {}  # Track how many times we've used each normalized form
-            
-            for orig_word in original_words:
-                # Normalize: lowercase and strip punctuation
-                normalized = ''.join(c.lower() for c in orig_word if c.isalnum())
-                if normalized:
-                    if normalized not in normalized_to_original:
-                        normalized_to_original[normalized] = []
-                        word_usage_count[normalized] = 0
-                    normalized_to_original[normalized].append(orig_word)
-
-            # Find the word tier
-            word_tier_start = None
-            word_tier_end = None
-            
-            for i, line in enumerate(lines):
-                if 'name = "words"' in line:
-                    word_tier_start = i
-                    log_debug(f"[MFA] Found word tier at line {i}")
-                # Find the next tier (phones) to know where words tier ends
-                elif word_tier_start is not None and 'name = "phones"' in line:
-                    word_tier_end = i
-                    log_debug(f"[MFA] Word tier ends at line {i}")
-                    break
-
-            if word_tier_start is None:
-                self.logger.error(f"[MFA] ERROR: Could not find word tier in TextGrid")
-                raise ValueError("Could not find word tier in TextGrid")
-            
-            # If we didn't find the phones tier, parse until end of file
-            if word_tier_end is None:
-                word_tier_end = len(lines)
-                log_debug(f"[MFA] No phones tier found, parsing until end of file")
-
-            # Parse intervals only within the words tier
-            i = word_tier_start
-            interval_count = 0
-            while i < word_tier_end:
-                line = lines[i].strip()
-                if line.startswith('intervals ['):
-                    # Parse interval
-                    # Skip to xmin, xmax, text lines
-                    i += 1  # Move to xmin line
-                    if i >= word_tier_end:
-                        break
-                    xmin_line = lines[i].strip()
-                    i += 1  # Move to xmax line
-                    if i >= word_tier_end:
-                        break
-                    xmax_line = lines[i].strip()
-                    i += 1  # Move to text line
-                    if i >= word_tier_end:
-                        break
-                    text_line = lines[i].strip()
-
-                    # Extract values
-                    try:
-                        start = float(xmin_line.split('=')[1].strip())
-                        end = float(xmax_line.split('=')[1].strip())
-                        mfa_text = text_line.split('=')[1].strip().strip('"')
-
-                        # Skip empty intervals, silence markers, and special tokens
-                        if mfa_text and mfa_text not in ["", "<eps>", "sil", "sp", "spn"]:
-                            interval_count += 1
-                            # Map MFA's normalized text back to original formatting
-                            normalized_key = mfa_text.lower()
-                            
-                            if normalized_key in normalized_to_original:
-                                # Get the next occurrence of this word from the original transcript
-                                word_list = normalized_to_original[normalized_key]
-                                usage_idx = word_usage_count[normalized_key] % len(word_list)
-                                original_text = word_list[usage_idx]
-                                word_usage_count[normalized_key] += 1
-                            else:
-                                # Fallback: use MFA's text if we can't find a mapping
-                                original_text = mfa_text
-                            
-                            segments.append(WordSegment(
-                                text=original_text,
-                                start=round(start, 2),
-                                end=round(end, 2),
-                                speaker=speaker
-                            ))
-                    except (ValueError, IndexError) as e:
-                        self.logger.warning(f"[MFA] Warning: Failed to parse interval at line {i}: {e}")
-                        pass
-
-                i += 1
-
-            self.logger.info(f"[MFA] Successfully parsed {interval_count} intervals, created {len(segments)} segments")
-
-        except Exception as e:
-            self.logger.error(f"[MFA] ERROR: Failed to parse TextGrid: {e}")
-            raise
-
-        # Replace <unk> with original words using context
-        self._replace_unk_with_original(segments, original_transcript)
-
+        
+        # Use the alignment engine to parse the TextGrid
+        # segment_start_time=0.0 and segment_end_time=0.0 because MFA aligns from audio start
+        word_dicts = self.word_alignment_engine.parse_textgrid_to_word_dicts(
+            textgrid_path, original_transcript,
+            segment_start_time=0.0, segment_end_time=0.0,
+            speaker=speaker
+        )
+        
+        # Convert word dicts to WordSegment objects
+        segments = [
+            WordSegment(
+                text=wd["text"],
+                start=wd["start"],
+                end=wd["end"],
+                speaker=wd.get("speaker")
+            )
+            for wd in word_dicts
+        ]
+        
+        self.logger.info(f"[MFA] Parsed {len(segments)} word segments from TextGrid")
         return segments
 
-    def _replace_unk_with_original(self, segments: List[WordSegment], original_transcript: str) -> None:
-        """Replace <unk> tokens in aligned segments with words from the original transcript using two-pointer alignment."""
-        log_debug(f"[MFA UNK REPLACE] Starting <unk> replacement")
-        
-        aligned_texts = [seg.text for seg in segments]
-        original_words = original_transcript.split()
-        
-        log_debug(f"[MFA UNK REPLACE] Original transcript word count: {len(original_words)}")
-        log_debug(f"[MFA UNK REPLACE] MFA aligned word count before replacement: {len(aligned_texts)}")
-        log_debug(f"[MFA UNK REPLACE] Aligned texts ({len(aligned_texts)} words): {' '.join(aligned_texts[:10])} ... {' '.join(aligned_texts[-10:])}" if len(aligned_texts) > 20 else f"[MFA UNK REPLACE] Aligned texts: {' '.join(aligned_texts)}")
-        log_debug(f"[MFA UNK REPLACE] Original words ({len(original_words)} words): {' '.join(original_words[:10])} ... {' '.join(original_words[-10:])}" if len(original_words) > 20 else f"[MFA UNK REPLACE] Original words: {' '.join(original_words)}")
-        
-        ptr = 0
-        for i, seg in enumerate(segments):
-            if seg.text == "<unk>":
-                # Debug: show context
-                start_idx = max(0, i - 5)
-                end_idx = min(len(aligned_texts), i + 6)
-                aligned_context = aligned_texts[start_idx:end_idx]
-                
-                orig_start = max(0, ptr - 5)
-                orig_end = min(len(original_words), ptr + 6)
-                original_context = original_words[orig_start:orig_end]
-                
-                log_debug(f"[MFA UNK REPLACE] Replacing <unk> at position {i}: Aligned context: {' '.join(aligned_context)} | Original context around ptr {ptr}: {' '.join(original_context)}")
-                
-                if ptr < len(original_words):
-                    replacement = original_words[ptr]
-                    seg.text = replacement
-                    log_debug(f"[MFA UNK REPLACE] Replaced with: '{replacement}'")
-                    ptr += 1
-                else:
-                    log_debug(f"[MFA UNK REPLACE] No more original words available, leaving as <unk>")
-            else:
-                if ptr < len(original_words) and seg.text.lower() == original_words[ptr].lower():
-                    log_debug(f"[MFA UNK REPLACE] Matched '{seg.text}' with original '{original_words[ptr]}', advancing ptr to {ptr+1}")
-                    ptr += 1
-                else:
-                    log_debug(f"[MFA UNK REPLACE] No match for '{seg.text}' at ptr {ptr}, not advancing ptr")
-        
-        final_texts = [seg.text for seg in segments]
-        log_debug(f"[MFA UNK REPLACE] MFA aligned word count after replacement: {len(final_texts)}")
-        log_debug(f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts[:10])} ... {' '.join(final_texts[-10:])}" if len(final_texts) > 20 else f"[MFA UNK REPLACE] Final aligned texts: {' '.join(final_texts)}")
-
     def _simple_alignment(self, audio_path: str, transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
-        """Fallback to simple even-distribution alignment."""
+        """Fallback to simple even-distribution alignment.
+        
+        Delegates to the alignment engine for consistent behavior.
+        """
         import librosa
 
         # Get audio duration
         duration = librosa.get_duration(filename=audio_path)
+        
+        self.logger.info(f"[MFA] Simple alignment: Audio duration={duration:.2f}s")
 
-        # Split transcript into words
-        words = transcript.split()
-
-        if not words:
-            self.logger.info(f"[MFA] Simple alignment: No words in transcript")
-            return []
-
-        # Simple even distribution
-        word_duration = duration / len(words)
-
-        self.logger.info(f"[MFA] Simple alignment: Audio duration={duration:.2f}s, {len(words)} words, word_duration={word_duration:.3f}s")
-        log_debug(f"[MFA] First 5 words: {words[:5]}")
-        log_debug(f"[MFA] Last 5 words: {words[-5:]}")
-
-        segments = []
-        current_time = 0.0
-
-        for word in words:
-            segments.append(WordSegment(
-                text=word,
-                start=round(current_time, 2),
-                end=round(current_time + word_duration, 2),
-                speaker=speaker
-            ))
-            current_time += word_duration
-
+        # Use alignment engine for consistent simple alignment
+        word_dicts = self.word_alignment_engine.create_simple_alignment(
+            transcript, segment_start_time=0.0, segment_duration=duration, speaker=speaker
+        )
+        
+        # Convert to WordSegment objects
+        segments = [
+            WordSegment(
+                text=wd["text"],
+                start=wd["start"],
+                end=wd["end"],
+                speaker=wd.get("speaker")
+            )
+            for wd in word_dicts
+        ]
+        
+        self.logger.info(f"[MFA] Simple alignment: created {len(segments)} segments")
         return segments
 
     def align_transcript(

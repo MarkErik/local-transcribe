@@ -24,8 +24,8 @@ class GraniteModelManager:
     """
     
     MODEL_MAPPING = {
-        "granite-2b": "ibm-granite/granite-speech-3.3-2b",
-        "granite-8b": "ibm-granite/granite-speech-3.3-8b"
+        "granite-8b": "ibm-granite/granite-speech-3.3-8b",
+        "granite-2b": "ibm-granite/granite-speech-3.3-2b"
     }
     
     def __init__(

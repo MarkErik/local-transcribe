@@ -54,7 +54,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
 
     @property
     def description(self) -> str:
-        return "IBM Granite transcription (2B/8B) for speech-to-text"
+        return "IBM Granite transcription (8B or 2B) for speech-to-text"
 
     @property
     def has_builtin_alignment(self) -> bool:

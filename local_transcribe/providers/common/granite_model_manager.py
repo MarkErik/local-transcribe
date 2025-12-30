@@ -1,19 +1,25 @@
 # Granite Model Manager
 # Base implementation for shared Granite model management functionality
+#
+# Note: Heavy imports (torch, transformers) are lazily loaded when needed
+# to avoid slow startup times when this provider is not used.
 
 import pathlib
 import os
 import sys
 import re
 import gc
-from typing import Optional, Any, Dict, List, Callable
+from typing import Optional, Any, Dict, List, Callable, TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
-import torch
 
 # Import system capability utilities
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 from local_transcribe.lib.program_logger import log_progress, log_debug, log_completion
+
+# Type hints for lazy-loaded modules
+if TYPE_CHECKING:
+    import torch
 
 
 class GraniteModelManager:
@@ -211,6 +217,9 @@ class GraniteModelManager:
             raise RuntimeError("Granite tokenizer not loaded. Call _load_model() first.")
         
         try:
+            # Lazy import of torch
+            import torch
+            
             wav_tensor = torch.from_numpy(audio).unsqueeze(0)
             segment_duration = len(audio) / sample_rate
             
@@ -619,6 +628,7 @@ class GraniteModelManager:
             
             # Move model to the appropriate device
             try:
+                # Lazy import of torch
                 import torch
                 device = get_system_capability()
                 

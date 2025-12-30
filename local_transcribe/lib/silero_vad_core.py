@@ -9,12 +9,18 @@ audio preprocessing, and raw timestamp extraction.
 Higher-level modules build upon this core:
 - lib/vad_silero_segmenter.py: Adds segment combination and splitting logic
 - processing/vad/silero_vad.py: Adds pipeline-specific data structures
+
+Note: Heavy imports (torch) are lazily loaded when needed
+to avoid slow startup times when this module is not used.
 """
 
-from typing import List, Optional, Any, Callable
+from typing import List, Optional, Any, Callable, TYPE_CHECKING
 from pathlib import Path
 import numpy as np
-import torch
+
+# Type hints for lazy-loaded modules
+if TYPE_CHECKING:
+    import torch
 
 from local_transcribe.lib.program_logger import (
     get_logger,
@@ -85,6 +91,9 @@ class SileroVADCore:
         if self._model is not None:
             return
         
+        # Lazy import of torch
+        import torch
+        
         log_progress("Loading Silero VAD model...")
         
         try:
@@ -135,7 +144,7 @@ class SileroVADCore:
         """Check if the model is already loaded."""
         return self._model is not None
     
-    def load_audio(self, audio_path: str) -> torch.Tensor:
+    def load_audio(self, audio_path: str) -> "torch.Tensor":
         """
         Load and preprocess audio file for VAD.
         
@@ -147,6 +156,9 @@ class SileroVADCore:
         Returns:
             Audio tensor (16kHz mono)
         """
+        # Lazy import of torch
+        import torch
+        
         self._load_model()
         
         # Use silero_vad's read_audio if available
@@ -169,7 +181,7 @@ class SileroVADCore:
         self,
         audio_data: np.ndarray,
         sample_rate: int
-    ) -> torch.Tensor:
+    ) -> "torch.Tensor":
         """
         Convert and resample audio array for VAD.
         
@@ -180,6 +192,9 @@ class SileroVADCore:
         Returns:
             Audio tensor (16kHz mono)
         """
+        # Lazy import of torch
+        import torch
+        
         # Convert to tensor
         wav = torch.from_numpy(audio_data).float()
         
@@ -195,7 +210,7 @@ class SileroVADCore:
     
     def get_speech_timestamps(
         self,
-        wav: torch.Tensor,
+        wav: "torch.Tensor",
         sample_rate: int = 16000,
         return_seconds: bool = False,
         use_neg_threshold: bool = True,

@@ -6,14 +6,15 @@ The integrated stitcher produces continuous WordSegments output.
 Debug mode saves individual segment transcripts when DEBUG logging is enabled.
 
 Uses GraniteModelManager for consolidated model management and transcription.
+
+Note: Heavy imports (torch, librosa) are lazily loaded when needed
+to avoid slow startup times when this provider is not used.
 """
 
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, TYPE_CHECKING
 import os
 import pathlib
 from numpy.typing import NDArray
-import torch
-import librosa
 import tempfile
 import subprocess
 import json
@@ -21,10 +22,41 @@ from datetime import datetime
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
-from local_transcribe.lib.vad_silero_segmenter import SileroVADSegmenter
-from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
-from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
 from local_transcribe.processing.chunk_stitcher import ChunkStitcher
+
+# Type hints for lazy-loaded modules
+if TYPE_CHECKING:
+    import torch
+    import librosa
+
+# Lazy imports for heavy modules
+_granite_model_manager_class = None
+_mfa_word_alignment_engine_class = None
+_silero_vad_segmenter_class = None
+
+def _get_granite_model_manager_class():
+    """Lazily import GraniteModelManager to defer torch import."""
+    global _granite_model_manager_class
+    if _granite_model_manager_class is None:
+        from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
+        _granite_model_manager_class = GraniteModelManager
+    return _granite_model_manager_class
+
+def _get_mfa_word_alignment_engine_class():
+    """Lazily import MFAWordAlignmentEngine."""
+    global _mfa_word_alignment_engine_class
+    if _mfa_word_alignment_engine_class is None:
+        from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
+        _mfa_word_alignment_engine_class = MFAWordAlignmentEngine
+    return _mfa_word_alignment_engine_class
+
+def _get_silero_vad_segmenter_class():
+    """Lazily import SileroVADSegmenter to defer torch import."""
+    global _silero_vad_segmenter_class
+    if _silero_vad_segmenter_class is None:
+        from local_transcribe.lib.vad_silero_segmenter import SileroVADSegmenter
+        _silero_vad_segmenter_class = SileroVADSegmenter
+    return _silero_vad_segmenter_class
 
 
 class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
@@ -37,21 +69,35 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         self.logger = get_logger()
         self.logger.info("Initializing Granite VAD (Silero) MFA Transcriber Provider")
         
-        # Use GraniteModelManager for all Granite operations
-        self.model_manager = GraniteModelManager(self.logger)
-        
-        # Initialize WordAlignmentEngine for alignment operations
-        self.word_alignment_engine = MFAWordAlignmentEngine(self.logger)
+        # Model managers will be lazily initialized
+        self._model_manager = None
+        self._word_alignment_engine = None
         
         # Track selected model
         self.selected_model: Optional[str] = None
         
-        # Segmenter instance
-        self.vad_segmenter: Optional[SileroVADSegmenter] = None
+        # Segmenter instance (lazily initialized)
+        self.vad_segmenter = None
         self.models_dir: Optional[pathlib.Path] = None
         
         # MFA configuration
         self.mfa_models_dir: Optional[pathlib.Path] = None
+
+    @property
+    def model_manager(self):
+        """Lazily initialize the model manager to defer torch import."""
+        if self._model_manager is None:
+            GraniteModelManager = _get_granite_model_manager_class()
+            self._model_manager = GraniteModelManager(self.logger)
+        return self._model_manager
+    
+    @property
+    def word_alignment_engine(self):
+        """Lazily initialize the word alignment engine."""
+        if self._word_alignment_engine is None:
+            MFAWordAlignmentEngine = _get_mfa_word_alignment_engine_class()
+            self._word_alignment_engine = MFAWordAlignmentEngine(self.logger)
+        return self._word_alignment_engine
 
     @property
     def device(self) -> str:
@@ -103,6 +149,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     def _init_vad_segmenter(self) -> None:
         """Initialize the Silero VAD segmenter if not already done."""
         if self.vad_segmenter is None:
+            SileroVADSegmenter = _get_silero_vad_segmenter_class()
             self.vad_segmenter = SileroVADSegmenter(
                 device=self.device if self.device != "mps" else "cpu",  # Silero works best on CPU for MPS
                 models_dir=self.models_dir
@@ -714,6 +761,9 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             self.mfa_models_dir.mkdir(parents=True, exist_ok=True)
 
         self._ensure_mfa_models()
+
+        # Lazy import of librosa
+        import librosa
 
         # Load audio
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)

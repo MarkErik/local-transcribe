@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 """
 Aligner plugin using Wav2Vec2 forced alignment.
+
+Note: Heavy imports (torch, torchaudio, transformers, librosa) are lazily loaded when needed
+to avoid slow startup times when this provider is not used.
 """
 
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 import os
 import pathlib
 import warnings
-import torch
-import torchaudio
-import numpy as np
-import librosa
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
+
+# Type hints for lazy-loaded modules
+if TYPE_CHECKING:
+    import torch
+    import torchaudio
+    import numpy as np
+    import librosa
+    from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 
 
 class Wav2Vec2AlignerProvider(AlignerProvider):
@@ -166,6 +172,9 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             # We don't need to set HF_HOME, just let transformers find the models in the standard location
 
             try:
+                # Lazy import of transformers
+                from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
+                
                 token = os.getenv("HF_TOKEN")
                 # Models should be cached by preload_models, so use local_files_only=True
                 # Let transformers find models in the standard HuggingFace cache location
@@ -183,8 +192,12 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
                     log_debug(f"Cache directory contents: {list((models_root / 'huggingface' / 'hub').iterdir())}")
                 raise e
 
-    def _get_token_timestamps(self, emissions: torch.Tensor, transcript: str) -> List[tuple]:
+    def _get_token_timestamps(self, emissions: "torch.Tensor", transcript: str) -> List[tuple]:
         """Extract token timestamps using CTC alignment with frame-level paths."""
+        # Lazy import of torch and torchaudio
+        import torch
+        import torchaudio
+        
         # emissions shape: [batch=1, time, vocab]
         
         # Get the tokenizer's vocabulary
@@ -237,7 +250,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
             self.logger.warning(f"Forced alignment failed ({e}), using fallback method")
             return self._fallback_token_alignment(emissions, tokens)
 
-    def _extract_token_boundaries(self, aligned_labels: torch.Tensor, tokens: List[str], 
+    def _extract_token_boundaries(self, aligned_labels: "torch.Tensor", tokens: List[str], 
                                    token_ids: List[int], blank_id: int) -> List[tuple]:
         """Extract token boundaries from frame-level aligned labels.
         
@@ -302,8 +315,11 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         
         return token_timestamps
 
-    def _fallback_token_alignment(self, emissions: torch.Tensor, tokens: List[str]) -> List[tuple]:
+    def _fallback_token_alignment(self, emissions: "torch.Tensor", tokens: List[str]) -> List[tuple]:
         """Fallback token alignment using simple peak detection."""
+        # Lazy import of numpy
+        import numpy as np
+        
         token_timestamps = []
         emissions_np = emissions[0].cpu().numpy()  # [time, vocab]
         
@@ -450,6 +466,10 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
         speaker = kwargs.get('role') or kwargs.get('speaker')
         
         self._load_wav2vec2_model()
+
+        # Lazy import of torch and librosa
+        import torch
+        import librosa
 
         try:
             # Load audio

@@ -3,18 +3,24 @@
 Transcriber plugin using MLX Whisper for Apple Silicon.
 
 Supports chunked processing for long audio files with stitching.
+
+Note: Heavy imports (numpy, librosa, scipy, mlx_whisper) are lazily loaded when needed
+to avoid slow startup times when this provider is not used.
 """
 
-from typing import List, Optional, Union, Dict, Any
+from typing import List, Optional, Union, Dict, Any, TYPE_CHECKING
 import os
 import pathlib
 import math
 import tempfile
-import numpy as np
-import librosa
-from scipy.io import wavfile
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.program_logger import get_logger, log_completion, log_progress
+
+# Type hints for lazy-loaded modules
+if TYPE_CHECKING:
+    import numpy as np
+    import librosa
+    from scipy.io import wavfile
 
 
 class MLXWhisperTranscriberProvider(TranscriberProvider):
@@ -102,7 +108,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
 
     def _transcribe_single_chunk_with_timestamps(
         self,
-        chunk_audio: np.ndarray,
+        chunk_audio: "np.ndarray",
         sr: int,
         chunk_start_time: float,
         model_repo: str,
@@ -120,6 +126,10 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         Returns:
             List of word dicts with text, start, end, speaker (absolute timestamps)
         """
+        # Lazy imports
+        import numpy as np
+        from scipy.io import wavfile
+        
         try:
             import mlx_whisper
         except ImportError:
@@ -201,6 +211,9 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
         except ImportError:
             raise ImportError("mlx-whisper package is required. Install with: uv add mlx-whisper")
 
+        # Lazy import of librosa
+        import librosa
+
         # Set selected model from kwargs
         self.selected_model = kwargs.get('transcriber_model', 'base')
         model_repo = self.model_mapping.get(self.selected_model, self.model_mapping["base"])
@@ -279,6 +292,9 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
             if len(chunk_wav) < min_chunk_samples:
                 if prev_chunk_wav is not None and chunks_with_timestamps:
                     # Merge with previous chunk
+                    # Lazy import of numpy
+                    import numpy as np
+                    
                     non_overlapping_part = chunk_wav[overlap_samples:] if len(chunk_wav) > overlap_samples else chunk_wav
                     merged_wav = np.concatenate([prev_chunk_wav, non_overlapping_part])
                     

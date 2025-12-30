@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """
 PyAnnote diarization plugin implementation.
+
+Note: Heavy imports (torch, pyannote) are lazily loaded when needed
+to avoid slow startup times when this provider is not used.
 """
 
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 import os
 import pathlib
 import warnings
-import torch
-import soundfile as sf
-from pyannote.audio import Pipeline
 from local_transcribe.framework.plugin_interfaces import DiarizationProvider, WordSegment, Turn, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
+
+# Type hints for lazy-loaded modules
+if TYPE_CHECKING:
+    import torch
+    import soundfile as sf
+    from pyannote.audio import Pipeline
 
 
 class ModelNotFoundError(FileNotFoundError):
@@ -148,13 +154,17 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         return self._assign_speakers_to_words(audio_path, words, num_speakers, models_dir)
     
 
-    def _load_waveform_mono_32f(self, audio_path: str) -> tuple[torch.Tensor, int]:
+    def _load_waveform_mono_32f(self, audio_path: str) -> tuple["torch.Tensor", int]:
         """
         Load audio as float32 and return (waveform [1, T], sample_rate).
         
         Raises:
             AudioLoadError: If audio file cannot be read or is invalid
         """
+        # Lazy import of torch and soundfile
+        import torch
+        import soundfile as sf
+        
         try:
             data, sr = sf.read(audio_path, dtype="float32", always_2d=False)
         except sf.SoundFileError as e:
@@ -215,6 +225,10 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         pipeline = None
         waveform = None
         diarization = None
+        
+        # Lazy import of torch and pyannote
+        import torch
+        from pyannote.audio import Pipeline
         
         try:
             # Load pipeline from the specific snapshot directory

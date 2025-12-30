@@ -4,18 +4,34 @@ Transcriber plugin using IBM Granite.
 
 This provider uses GraniteModelManager for all model management and transcription,
 ensuring consistent behavior across all Granite-based transcribers.
+
+Note: Heavy imports (torch, librosa) are lazily loaded when needed
+to avoid slow startup times when this provider is not used.
 """
 
-from typing import List, Optional, Union, Dict, Any
+from typing import List, Optional, Union, Dict, Any, TYPE_CHECKING
 import os
 import pathlib
 import math
-import librosa
-import torch
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
-from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
+
+# Type hints for lazy-loaded modules
+if TYPE_CHECKING:
+    import torch
+    import librosa
+
+# Lazy import for GraniteModelManager to avoid torch import at module load
+_granite_model_manager_class = None
+
+def _get_granite_model_manager_class():
+    """Lazily import GraniteModelManager to defer torch import."""
+    global _granite_model_manager_class
+    if _granite_model_manager_class is None:
+        from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
+        _granite_model_manager_class = GraniteModelManager
+    return _granite_model_manager_class
 
 
 class GraniteTranscriberProvider(TranscriberProvider):
@@ -28,8 +44,8 @@ class GraniteTranscriberProvider(TranscriberProvider):
         self.logger = get_logger()
         self.logger.info("Initializing Granite Transcriber Provider")
         
-        # Initialize model manager for all Granite operations
-        self.model_manager = GraniteModelManager(self.logger)
+        # Model manager will be lazily initialized
+        self._model_manager = None
         
         # Chunking configuration
         self.chunk_length_seconds = 60.0
@@ -39,6 +55,14 @@ class GraniteTranscriberProvider(TranscriberProvider):
         # Track selected model
         self.selected_model: Optional[str] = None
         self.models_dir: Optional[pathlib.Path] = None
+
+    @property
+    def model_manager(self):
+        """Lazily initialize the model manager to defer torch import."""
+        if self._model_manager is None:
+            GraniteModelManager = _get_granite_model_manager_class()
+            self._model_manager = GraniteModelManager(self.logger)
+        return self._model_manager
 
     @property
     def device(self):
@@ -112,6 +136,9 @@ class GraniteTranscriberProvider(TranscriberProvider):
         # Load the model
         self._load_model()
 
+        # Lazy import of librosa
+        import librosa
+
         # Load audio
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)
         
@@ -157,6 +184,9 @@ class GraniteTranscriberProvider(TranscriberProvider):
             
             if len(chunk_wav) < min_chunk_samples:
                 if prev_chunk_wav is not None:
+                    # Lazy import of torch
+                    import torch
+                    
                     # Merge with previous chunk
                     non_overlapping_part = chunk_wav[overlap_samples:]
                     merged_tensor = torch.cat([torch.from_numpy(prev_chunk_wav), torch.from_numpy(non_overlapping_part)])

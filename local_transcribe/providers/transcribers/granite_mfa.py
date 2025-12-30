@@ -6,14 +6,15 @@ This plugin combines Granite's transcription capabilities with Montreal Forced A
 to produce chunked transcripts where each word has timestamps.
 
 Uses GraniteModelManager for consolidated model management and transcription.
+
+Note: Heavy imports (torch, librosa) are lazily loaded when needed
+to avoid slow startup times when this provider is not used.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 import os
 import pathlib
-import torch
 import math
-import librosa
 import tempfile
 import subprocess
 import json
@@ -21,8 +22,31 @@ from datetime import datetime
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
-from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
-from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
+
+# Type hints for lazy-loaded modules
+if TYPE_CHECKING:
+    import torch
+    import librosa
+
+# Lazy import for GraniteModelManager to avoid torch import at module load
+_granite_model_manager_class = None
+_mfa_word_alignment_engine_class = None
+
+def _get_granite_model_manager_class():
+    """Lazily import GraniteModelManager to defer torch import."""
+    global _granite_model_manager_class
+    if _granite_model_manager_class is None:
+        from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
+        _granite_model_manager_class = GraniteModelManager
+    return _granite_model_manager_class
+
+def _get_mfa_word_alignment_engine_class():
+    """Lazily import MFAWordAlignmentEngine."""
+    global _mfa_word_alignment_engine_class
+    if _mfa_word_alignment_engine_class is None:
+        from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
+        _mfa_word_alignment_engine_class = MFAWordAlignmentEngine
+    return _mfa_word_alignment_engine_class
 
 
 class GraniteMFATranscriberProvider(TranscriberProvider):
@@ -35,11 +59,9 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         self.logger = get_logger()
         self.logger.info("Initializing Granite MFA Transcriber Provider")
         
-        # Use GraniteModelManager for all Granite operations
-        self.model_manager = GraniteModelManager(self.logger)
-        
-        # Initialize MFA Word Alignment Engine
-        self.word_alignment_engine = MFAWordAlignmentEngine(self.logger)
+        # Model manager and alignment engine will be lazily initialized
+        self._model_manager = None
+        self._word_alignment_engine = None
         
         # Chunking configuration for MFA
         self.chunk_length_seconds = 30.0
@@ -51,6 +73,22 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         
         # MFA configuration
         self.mfa_models_dir: Optional[pathlib.Path] = None
+
+    @property
+    def model_manager(self):
+        """Lazily initialize the model manager to defer torch import."""
+        if self._model_manager is None:
+            GraniteModelManager = _get_granite_model_manager_class()
+            self._model_manager = GraniteModelManager(self.logger)
+        return self._model_manager
+    
+    @property
+    def word_alignment_engine(self):
+        """Lazily initialize the word alignment engine."""
+        if self._word_alignment_engine is None:
+            MFAWordAlignmentEngine = _get_mfa_word_alignment_engine_class()
+            self._word_alignment_engine = MFAWordAlignmentEngine(self.logger)
+        return self._word_alignment_engine
 
     @property
     def device(self):
@@ -361,6 +399,9 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
 
         self._ensure_mfa_models()
 
+        # Lazy import of librosa
+        import librosa
+
         # Load audio
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)
         duration = len(wav) / sr
@@ -405,6 +446,9 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             
             if len(chunk_wav) < min_chunk_samples:
                 if prev_chunk_wav is not None:
+                    # Lazy import of torch
+                    import torch
+                    
                     # Merge with previous chunk
                     non_overlapping_part = chunk_wav[overlap_samples:]
                     merged_tensor = torch.cat([torch.from_numpy(prev_chunk_wav), torch.from_numpy(non_overlapping_part)])

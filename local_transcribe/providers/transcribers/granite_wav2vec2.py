@@ -10,26 +10,42 @@ resulting in chunks that contain timestamped words ready for stitching.
 If Wav2Vec2 alignment fails, it falls back to MFA alignment if available.
 
 Uses GraniteModelManager for consolidated model management and transcription.
+
+Note: Heavy imports (torch, librosa, transformers, torchaudio) are lazily loaded when needed
+to avoid slow startup times when this provider is not used.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 import os
 import pathlib
-import torch
 import math
-import librosa
 import tempfile
 import subprocess
 import json
 import warnings
-import numpy as np
-import torchaudio
 from datetime import datetime
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.system_capability_utils import get_system_capability
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
-from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
+
+# Type hints for lazy-loaded modules
+if TYPE_CHECKING:
+    import torch
+    import numpy as np
+    import torchaudio
+    import librosa
+    from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
+
+# Lazy import for GraniteModelManager to avoid torch import at module load
+_granite_model_manager_class = None
+
+def _get_granite_model_manager_class():
+    """Lazily import GraniteModelManager to defer torch import."""
+    global _granite_model_manager_class
+    if _granite_model_manager_class is None:
+        from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
+        _granite_model_manager_class = GraniteModelManager
+    return _granite_model_manager_class
 
 
 class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
@@ -42,16 +58,16 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         self.logger = get_logger()
         self.logger.info("Initializing Granite Wav2Vec2 Transcriber Provider")
         
-        # Use GraniteModelManager for all Granite operations
-        self.model_manager = GraniteModelManager(self.logger)
+        # Model manager will be lazily initialized
+        self._model_manager = None
         
         # Track selected model
         self.selected_model: Optional[str] = None
         
         # Wav2Vec2 configuration
         self.wav2vec2_model_name = "facebook/wav2vec2-large-960h"
-        self.wav2vec2_processor: Optional[Wav2Vec2Processor] = None
-        self.wav2vec2_model: Optional[Wav2Vec2ForCTC] = None
+        self.wav2vec2_processor = None
+        self.wav2vec2_model = None
         
         # Chunking configuration
         self.chunk_length_seconds = 60.0
@@ -61,6 +77,14 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         # MFA fallback configuration
         self.mfa_models_dir: Optional[pathlib.Path] = None
         self.mfa_available: Optional[bool] = None
+
+    @property
+    def model_manager(self):
+        """Lazily initialize the model manager to defer torch import."""
+        if self._model_manager is None:
+            GraniteModelManager = _get_granite_model_manager_class()
+            self._model_manager = GraniteModelManager(self.logger)
+        return self._model_manager
 
     @property
     def device(self):
@@ -205,6 +229,9 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         if self.wav2vec2_model is None:
             log_progress("Loading Wav2Vec2 model for alignment...")
             
+            # Lazy import of transformers
+            from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
+            
             xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
             if xdg_cache_home:
                 models_root = pathlib.Path(xdg_cache_home)
@@ -234,8 +261,12 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         """Transcribe a single audio chunk using consolidated GraniteModelManager."""
         return self.model_manager.transcribe_segment(wav, sample_rate)
 
-    def _get_token_timestamps(self, emissions: torch.Tensor, transcript: str) -> List[tuple]:
+    def _get_token_timestamps(self, emissions: "torch.Tensor", transcript: str) -> List[tuple]:
         """Extract token timestamps using CTC alignment with frame-level paths."""
+        # Lazy imports
+        import torch
+        import torchaudio
+        
         vocab = self.wav2vec2_processor.tokenizer.get_vocab()
         dictionary = {c: i for i, c in enumerate(vocab.keys())}
         
@@ -276,7 +307,7 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             self.logger.warning(f"Forced alignment failed ({e}), using fallback method")
             return self._fallback_token_alignment(emissions, tokens)
 
-    def _extract_token_boundaries(self, aligned_labels: torch.Tensor, tokens: List[str],
+    def _extract_token_boundaries(self, aligned_labels: "torch.Tensor", tokens: List[str],
                                     token_ids: List[int], blank_id: int) -> List[tuple]:
         """Extract token boundaries from frame-level aligned labels.
         
@@ -368,8 +399,11 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         
         return token_timestamps
 
-    def _fallback_token_alignment(self, emissions: torch.Tensor, tokens: List[str]) -> List[tuple]:
+    def _fallback_token_alignment(self, emissions: "torch.Tensor", tokens: List[str]) -> List[tuple]:
         """Fallback token alignment using simple peak detection."""
+        # Lazy import of numpy
+        import numpy as np
+        
         token_timestamps = []
         emissions_np = emissions[0].cpu().numpy()
         
@@ -1112,6 +1146,9 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         
         self._load_wav2vec2_model()
 
+        # Lazy import of librosa
+        import librosa
+
         # Load audio
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)
         duration = len(wav) / sr
@@ -1167,6 +1204,8 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                             f"Short final chunk ({len(chunk_wav)} samples) smaller than overlap "
                             f"({overlap_samples} samples), using entire chunk"
                         )
+                    # Lazy import of torch
+                    import torch
                     merged_tensor = torch.cat([torch.from_numpy(prev_chunk_wav), torch.from_numpy(non_overlapping_part)])
                     merged_wav = merged_tensor.numpy()
                     

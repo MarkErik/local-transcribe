@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """
 Transcriber plugin using Faster-Whisper with built-in alignment.
+
+Note: Heavy imports (faster_whisper, torch) are lazily loaded when needed
+to avoid slow startup times when this provider is not used.
 """
 
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 import os
 import pathlib
-from faster_whisper import WhisperModel as FWModel
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
+
+# Type hints for lazy-loaded modules
+if TYPE_CHECKING:
+    from faster_whisper import WhisperModel as FWModel
 
 
 # CT2 (faster-whisper) repos to search locally under ./.models/transcribers/ct2/...
@@ -184,6 +190,9 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
 
         local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[transcriber_model])
 
+        # Lazy import of faster_whisper
+        from faster_whisper import WhisperModel as FWModel
+
         # Load CT2 model
         fw = FWModel(
             str(local_model_dir),
@@ -232,6 +241,9 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
         ct2_cache = models_root / "transcribers" / "ct2"
 
         local_model_dir = _latest_snapshot_dir_any(ct2_cache, _CT2_REPO_CHOICES[transcriber_model])
+
+        # Lazy import of faster_whisper
+        from faster_whisper import WhisperModel as FWModel
 
         # Load CT2 model
         fw = FWModel(

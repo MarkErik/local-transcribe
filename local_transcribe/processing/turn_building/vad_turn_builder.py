@@ -109,9 +109,99 @@ def _create_word_segments_from_block(
     return segments
 
 
+def _merge_consecutive_same_speaker_blocks(
+    primary_blocks: List[VADBlock],
+    interjection_blocks: List[VADBlock],
+    max_gap_s: float = 2.0,
+) -> List[VADBlock]:
+    """
+    Merge consecutive primary blocks from the same speaker when gap is small.
+    
+    This fixes fragmentation where a single thought is split across multiple
+    VAD blocks due to brief pauses. Blocks separated only by interjections
+    from the other speaker are also merged.
+    
+    Args:
+        primary_blocks: List of primary (non-interjection) blocks, sorted by time
+        interjection_blocks: List of interjection blocks
+        max_gap_s: Maximum gap between blocks to allow merging (seconds)
+        
+    Returns:
+        List of merged VADBlock objects
+    """
+    if not primary_blocks:
+        return []
+    
+    # Sort by start time to ensure correct order
+    sorted_blocks = sorted(primary_blocks, key=lambda b: b.start_s)
+    
+    merged: List[VADBlock] = []
+    current = sorted_blocks[0]
+    
+    for i in range(1, len(sorted_blocks)):
+        next_block = sorted_blocks[i]
+        gap = next_block.start_s - current.end_s
+        
+        # Check if same speaker and gap is small enough
+        if next_block.speaker_id == current.speaker_id and gap <= max_gap_s:
+            # Check if only interjections fill the gap (not primary speech from other speaker)
+            # Look for any primary blocks from OTHER speakers in the gap
+            gap_has_other_primary = False
+            for b in sorted_blocks[merged.__len__():i]:
+                if (b.speaker_id != current.speaker_id and 
+                    b.start_s >= current.end_s and 
+                    b.end_s <= next_block.start_s):
+                    gap_has_other_primary = True
+                    break
+            
+            if not gap_has_other_primary:
+                # Merge: extend current block to include next
+                current = VADBlock(
+                    block_id=current.block_id,
+                    speaker_id=current.speaker_id,
+                    start_s=current.start_s,
+                    end_s=next_block.end_s,
+                    source_segment_ids=current.source_segment_ids + next_block.source_segment_ids,
+                    is_interjection=False,
+                    overlap_with=_merge_overlap_lists(current.overlap_with, next_block.overlap_with),
+                    text=_merge_text(current.text, next_block.text),
+                )
+                continue
+        
+        # Can't merge - save current and start new
+        merged.append(current)
+        current = next_block
+    
+    # Don't forget the last block
+    merged.append(current)
+    
+    return merged
+
+
+def _merge_overlap_lists(
+    list1: Optional[List[int]], 
+    list2: Optional[List[int]]
+) -> Optional[List[int]]:
+    """Merge two overlap lists, removing duplicates."""
+    if list1 is None and list2 is None:
+        return None
+    combined = set(list1 or []) | set(list2 or [])
+    return sorted(combined) if combined else None
+
+
+def _merge_text(text1: str, text2: str) -> str:
+    """Merge two text strings with a space separator."""
+    t1 = text1.strip() if text1 else ""
+    t2 = text2.strip() if text2 else ""
+    if t1 and t2:
+        return f"{t1} {t2}"
+    return t1 or t2
+
+
 def _convert_blocks_to_transcript_flow(
     blocks: List[VADBlock],
     run_id: str,
+    max_gap_to_merge_s: float = 2.0,
 ) -> TranscriptFlow:
     """
     Convert VAD blocks into a TranscriptFlow.
@@ -119,9 +209,13 @@ def _convert_blocks_to_transcript_flow(
     Primary blocks become HierarchicalTurns, interjections become
     InterjectionSegments embedded in the appropriate turns.
     
+    Consecutive same-speaker primary blocks with small gaps are merged
+    to avoid fragmenting continuous thoughts.
+    
     Args:
         blocks: List of VADBlock with text populated
         run_id: Unique run identifier
+        max_gap_to_merge_s: Max gap between same-speaker blocks to merge (seconds)
         
     Returns:
         TranscriptFlow with conversation structure
@@ -133,8 +227,15 @@ def _convert_blocks_to_transcript_flow(
     primary_blocks = [b for b in blocks if not b.is_interjection]
     interjection_blocks = [b for b in blocks if b.is_interjection]
     
-    # Convert primary blocks to turns
-    for block in primary_blocks:
+    # Merge consecutive same-speaker primary blocks
+    merged_primary_blocks = _merge_consecutive_same_speaker_blocks(
+        primary_blocks, 
+        interjection_blocks,
+        max_gap_s=max_gap_to_merge_s,
+    )
+    
+    # Convert merged primary blocks to turns
+    for block in merged_primary_blocks:
         words = _create_word_segments_from_block(block)
         
         turn = HierarchicalTurn(

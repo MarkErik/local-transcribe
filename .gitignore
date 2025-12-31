@@ -19,6 +19,7 @@ wheels/
 data/
 test/
 out/
+output/
 examples/
 samples/
 *.wav

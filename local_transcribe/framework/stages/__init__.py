@@ -13,6 +13,7 @@ from local_transcribe.framework.stages.base import (
     PipelineStage,
     StageResult,
     StageError,
+    StageStatus,
 )
 
 from local_transcribe.framework.stages.early_stages import (
@@ -26,8 +27,10 @@ from local_transcribe.framework.stages.late_stages import (
     TurnBuildingStage,
     SpeakerNamingStage,
     OutputGenerationStage,
+    SingleSpeakerOutputStage,
     TranscriptPreparationStage,
     TranscriptCleanupStage,
+    CleanupStage,
 )
 
 from local_transcribe.framework.stages.executor import (
@@ -40,6 +43,7 @@ __all__ = [
     'PipelineStage',
     'StageResult',
     'StageError',
+    'StageStatus',
     # Early stages
     'AudioStandardizationStage',
     'TranscriptionAlignmentStage',
@@ -49,8 +53,10 @@ __all__ = [
     'TurnBuildingStage',
     'SpeakerNamingStage',
     'OutputGenerationStage',
+    'SingleSpeakerOutputStage',
     'TranscriptPreparationStage',
     'TranscriptCleanupStage',
+    'CleanupStage',
     # Executor
     'PipelineExecutor',
     'create_pipeline_for_mode',

@@ -805,6 +805,8 @@ def prompt_transcript_cleanup(args, registry) -> argparse.Namespace:
     """Prompt for optional transcript cleanup provider."""
     if hasattr(args, 'transcript_cleanup_provider') and args.transcript_cleanup_provider is not None:
         if args.transcript_cleanup_provider:
+            # Also set enable_cleanup when provider is set via CLI
+            args.enable_cleanup = True
             print(f"  ✓ Transcript cleanup: {args.transcript_cleanup_provider} (set via CLI)")
         else:
             print("  ✓ Transcript cleanup: None (set via CLI)")
@@ -832,9 +834,11 @@ def prompt_transcript_cleanup(args, registry) -> argparse.Namespace:
     
     if selected == -1:
         args.transcript_cleanup_provider = None
+        args.enable_cleanup = False
         print("  ✓ Transcript cleanup: None")
     else:
         args.transcript_cleanup_provider = options[selected][0]
+        args.enable_cleanup = True  # Enable cleanup when a provider is selected
         
         # If remote provider, ask for URL
         if args.transcript_cleanup_provider == "llm_transcript_cleanup":

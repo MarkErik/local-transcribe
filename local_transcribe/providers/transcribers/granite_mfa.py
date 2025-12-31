@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 # Lazy import for GraniteModelManager to avoid torch import at module load
 _granite_model_manager_class = None
-_mfa_word_alignment_engine_class = None
+_mfa_alignment_engine_class = None
 
 def _get_granite_model_manager_class():
     """Lazily import GraniteModelManager to defer torch import."""
@@ -40,13 +40,13 @@ def _get_granite_model_manager_class():
         _granite_model_manager_class = GraniteModelManager
     return _granite_model_manager_class
 
-def _get_mfa_word_alignment_engine_class():
-    """Lazily import MFAWordAlignmentEngine."""
-    global _mfa_word_alignment_engine_class
-    if _mfa_word_alignment_engine_class is None:
-        from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
-        _mfa_word_alignment_engine_class = MFAWordAlignmentEngine
-    return _mfa_word_alignment_engine_class
+def _get_mfa_alignment_engine_class():
+    """Lazily import MFAAlignmentEngine."""
+    global _mfa_alignment_engine_class
+    if _mfa_alignment_engine_class is None:
+        from local_transcribe.providers.common.mfa_alignment import MFAAlignmentEngine
+        _mfa_alignment_engine_class = MFAAlignmentEngine
+    return _mfa_alignment_engine_class
 
 
 class GraniteMFATranscriberProvider(TranscriberProvider):
@@ -61,7 +61,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
         
         # Model manager and alignment engine will be lazily initialized
         self._model_manager = None
-        self._word_alignment_engine = None
+        self._alignment_engine = None
         
         # Chunking configuration for MFA
         self.chunk_length_seconds = 30.0
@@ -84,11 +84,11 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
     
     @property
     def word_alignment_engine(self):
-        """Lazily initialize the word alignment engine."""
-        if self._word_alignment_engine is None:
-            MFAWordAlignmentEngine = _get_mfa_word_alignment_engine_class()
-            self._word_alignment_engine = MFAWordAlignmentEngine(self.logger)
-        return self._word_alignment_engine
+        """Lazily initialize the alignment engine."""
+        if self._alignment_engine is None:
+            MFAAlignmentEngine = _get_mfa_alignment_engine_class()
+            self._alignment_engine = MFAAlignmentEngine(self.logger)
+        return self._alignment_engine
 
     @property
     def device(self):

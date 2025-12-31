@@ -2,7 +2,7 @@
 """
 Aligner plugin using Montreal Forced Aligner (MFA).
 
-Uses MFAWordAlignmentEngine for TextGrid parsing and word alignment utilities.
+Uses MFAAlignmentEngine for TextGrid parsing and word alignment utilities.
 """
 
 from typing import List, Optional
@@ -14,21 +14,21 @@ from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSe
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
 # Lazy import to avoid loading torch at module import time
-_mfa_word_alignment_engine_class = None
+_mfa_alignment_engine_class = None
 
-def _get_mfa_word_alignment_engine_class():
-    """Lazily import MFAWordAlignmentEngine."""
-    global _mfa_word_alignment_engine_class
-    if _mfa_word_alignment_engine_class is None:
-        from local_transcribe.providers.common.mfa_word_alignment_engine import MFAWordAlignmentEngine
-        _mfa_word_alignment_engine_class = MFAWordAlignmentEngine
-    return _mfa_word_alignment_engine_class
+def _get_mfa_alignment_engine_class():
+    """Lazily import MFAAlignmentEngine."""
+    global _mfa_alignment_engine_class
+    if _mfa_alignment_engine_class is None:
+        from local_transcribe.providers.common.mfa_alignment import MFAAlignmentEngine
+        _mfa_alignment_engine_class = MFAAlignmentEngine
+    return _mfa_alignment_engine_class
 
 
 class MFAAlignerProvider(AlignerProvider):
     """Aligner provider using Montreal Forced Aligner for word-level timestamps.
     
-    Uses MFAWordAlignmentEngine for TextGrid parsing to avoid code duplication
+    Uses MFAAlignmentEngine for TextGrid parsing to avoid code duplication
     with the granite_mfa and granite_vad_silero_mfa transcribers.
     """
 
@@ -36,15 +36,15 @@ class MFAAlignerProvider(AlignerProvider):
         # MFA setup
         self.mfa_models_dir = None
         self.logger = get_logger()
-        self._word_alignment_engine = None
+        self._alignment_engine = None
     
     @property
     def word_alignment_engine(self):
-        """Lazily initialize the word alignment engine."""
-        if self._word_alignment_engine is None:
-            MFAWordAlignmentEngine = _get_mfa_word_alignment_engine_class()
-            self._word_alignment_engine = MFAWordAlignmentEngine(self.logger)
-        return self._word_alignment_engine
+        """Lazily initialize the alignment engine."""
+        if self._alignment_engine is None:
+            MFAAlignmentEngine = _get_mfa_alignment_engine_class()
+            self._alignment_engine = MFAAlignmentEngine(self.logger)
+        return self._alignment_engine
 
     @property
     def name(self) -> str:

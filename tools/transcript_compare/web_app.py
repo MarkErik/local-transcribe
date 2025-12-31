@@ -373,6 +373,18 @@ def compare_scripts():
         # Calculate LLM improvement metrics
         llm_metrics = _calculate_llm_metrics(raw_script, cleaned_script, diff_result, analysis_raw, analysis_cleaned)
         
+        # Build timeline data for audio synchronization
+        # Each entry has start time and optional end time (end of turn = start of next turn)
+        turn_timeline = []
+        for i, turn in enumerate(raw_script.turns):
+            next_timestamp = raw_script.turns[i + 1].timestamp if i + 1 < len(raw_script.turns) else None
+            turn_timeline.append({
+                "index": i,
+                "start": turn.timestamp,
+                "end": next_timestamp,  # Will be None for last turn
+                "speaker": turn.speaker,
+            })
+        
         response = {
             "success": True,
             "html_raw": html_raw,
@@ -393,6 +405,7 @@ def compare_scripts():
                 "speakers_cleaned": cleaned_script.speakers,
             },
             "turn_comparisons": turn_comparisons,
+            "turn_timeline": turn_timeline,  # For audio sync
             "llm_metrics": llm_metrics,
             "common_substitutions": [
                 {"word_a": s[0], "word_b": s[1], "count": s[2]}

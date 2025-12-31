@@ -152,6 +152,87 @@ class VADASRProcessor:
             f.write(f"{'-' * 60}\n\n")
             f.write(text if text else "[No transcription]")
             f.write("\n")
+    
+    def _save_per_speaker_transcripts(
+        self,
+        blocks: List[VADBlock],
+        speaker_audio_files: Dict[str, str],
+    ) -> None:
+        """
+        Save per-speaker transcript JSON files for debugging.
+        
+        Creates a separate JSON file for each speaker containing their
+        transcribed segments in chronological order.
+        
+        Args:
+            blocks: List of VAD blocks with text populated
+            speaker_audio_files: Mapping of speaker_id to audio file path
+        """
+        from local_transcribe.lib.program_logger import log_intermediate_save
+        import os
+        
+        # Group blocks by speaker
+        speaker_blocks: Dict[str, List[VADBlock]] = {}
+        for block in blocks:
+            if block.speaker_id not in speaker_blocks:
+                speaker_blocks[block.speaker_id] = []
+            speaker_blocks[block.speaker_id].append(block)
+        
+        # Sort each speaker's blocks by start time
+        for speaker_id in speaker_blocks:
+            speaker_blocks[speaker_id].sort(key=lambda b: b.start_s)
+        
+        for speaker_id, blocks_for_speaker in speaker_blocks.items():
+            # Determine filename based on audio file
+            audio_file = speaker_audio_files.get(speaker_id)
+            if audio_file:
+                base_name = os.path.splitext(os.path.basename(audio_file))[0]
+                filename = f"speaker_transcript_{base_name}.json"
+            else:
+                filename = f"speaker_transcript_{speaker_id}.json"
+            
+            output_file = self.transcription_debug_dir / filename
+            
+            # Build segments list
+            segments = []
+            total_words = 0
+            total_duration = 0.0
+            
+            for block in blocks_for_speaker:
+                block_text = block.text or ""
+                words = block_text.split() if block_text else []
+                word_count = len(words)
+                total_words += word_count
+                total_duration += block.duration_s
+                
+                segment_data = {
+                    "block_id": block.block_id,
+                    "source_segment_ids": block.source_segment_ids,
+                    "start_s": round(block.start_s, 3),
+                    "end_s": round(block.end_s, 3),
+                    "duration_s": round(block.duration_s, 3),
+                    "is_interjection": block.is_interjection,
+                    "word_count": word_count,
+                    "text": block_text,
+                    "words": words,
+                }
+                segments.append(segment_data)
+            
+            # Build output JSON
+            output_data = {
+                "speaker_id": speaker_id,
+                "audio_file": audio_file,
+                "total_segments": len(segments),
+                "total_words": total_words,
+                "total_speech_duration_s": round(total_duration, 3),
+                "words_per_minute": round((total_words / total_duration) * 60, 1) if total_duration > 0 else 0,
+                "segments": segments,
+            }
+            
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(output_data, f, indent=2, ensure_ascii=False)
+            
+            log_intermediate_save(str(output_file), f"Per-speaker transcript ({speaker_id}) saved to")
 
     def process_blocks(
         self,
@@ -203,6 +284,10 @@ class VADASRProcessor:
             except Exception as e:
                 self.logger.error(f"ASR failed for block {block.block_id}: {e}")
                 raise RuntimeError(f"ASR failed for block {block.block_id} ({block.speaker_id}): {e}")
+        
+        # Save per-speaker transcripts if debug is enabled
+        if self.debug_enabled and self.transcription_debug_dir:
+            self._save_per_speaker_transcripts(blocks, speaker_audio_files)
         
         log_completion(f"Transcription complete: {len(blocks)} blocks processed")
         return blocks

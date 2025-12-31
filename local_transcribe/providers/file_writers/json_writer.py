@@ -71,14 +71,14 @@ def _extract_turns_as_dicts(transcript: Any) -> List[Dict]:
     return []
 
 
-def write_word_segments_json(words: List[Union[WordSegment, Dict]], path: str | Path) -> None:
+def write_word_segments_json(words: List[Union[WordSegment, Dict[str, Any]]], path: str | Path) -> None:
     """Write word-level results as JSON with detailed timing information."""
     path = Path(path)
     
     # Convert WordSegment objects to dictionaries for JSON serialization
     word_data = []
     for w in words:
-        if hasattr(w, 'text'):
+        if isinstance(w, WordSegment):
             # WordSegment object
             word_dict = {
                 "text": w.text,

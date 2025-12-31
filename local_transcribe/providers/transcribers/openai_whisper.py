@@ -146,9 +146,12 @@ class OpenAIWhisperTranscriberProvider(TranscriberProvider):
         self.selected_model = kwargs.get('transcriber_model', 'base.en')
         self._load_whisper_model()
 
+        if self.whisper_model is None:
+            raise RuntimeError("Whisper model failed to load")
+        
         # Transcribe with Whisper
         result = self.whisper_model.transcribe(audio_path, language="en", fp16=False)
-        return result["text"].strip()
+        return str(result.get("text", "")).strip()
 
     def transcribe_with_alignment(
         self,

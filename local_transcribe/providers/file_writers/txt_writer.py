@@ -83,13 +83,13 @@ def write_plain_txt(turns: List[Dict], path: str | Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_word_segments(words: List[Union[WordSegment, Dict]], path: str | Path) -> None:
+def write_word_segments(words: List[Union[WordSegment, Dict[str, Any]]], path: str | Path) -> None:
     """Write word-level results as plain text without timestamps or speaker labels."""
     path = Path(path)
     lines: list[str] = []
     for w in words:
         # Handle both dict and WordSegment
-        if hasattr(w, 'text'):
+        if isinstance(w, WordSegment):
             text = w.text.strip()
         else:
             text = w.get("text", "").strip()

@@ -26,6 +26,12 @@ class TranscriptionMixin:
     - Generation parameter calculation
     """
     
+    # Type hints for attributes provided by the host class
+    model: Optional[Any]
+    processor: Optional[Any]
+    tokenizer: Optional[Any]
+    device: str
+    
     # Prompt fragment markers to filter from transcription output
     _PROMPT_FRAGMENTS = [
         "make sure to include disfluencies",

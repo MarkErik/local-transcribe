@@ -8,9 +8,21 @@ import importlib
 import os
 import pathlib
 import sys
-from typing import Any, Optional
+from typing import Any, Optional, Protocol, TYPE_CHECKING
 
 from local_transcribe.lib.system_capability_utils import get_system_capability
+
+if TYPE_CHECKING:
+    from .cache_management import CacheManager
+
+
+class _ModelLoadingHost(Protocol):
+    """Protocol defining attributes expected by ModelLoadingMixin from the host class."""
+    logger: Any
+    processor: Optional[Any]
+    model: Optional[Any]
+    tokenizer: Optional[Any]
+    _cache_manager: "CacheManager"
 
 
 class ModelLoadingMixin:
@@ -21,6 +33,13 @@ class ModelLoadingMixin:
     - Downloading models from HuggingFace
     - Reloading HuggingFace modules
     """
+    
+    # Type hints for attributes provided by the host class
+    logger: Any
+    processor: Optional[Any]
+    model: Optional[Any]
+    tokenizer: Optional[Any]
+    _cache_manager: "CacheManager"
     
     def _reload_huggingface_modules(self) -> None:
         """

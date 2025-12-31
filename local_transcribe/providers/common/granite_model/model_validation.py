@@ -3,7 +3,10 @@
 
 import os
 import pathlib
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .cache_management import CacheManager
 
 
 class ModelValidationMixin:
@@ -16,6 +19,16 @@ class ModelValidationMixin:
     - Ensuring models are available
     - Preloading models
     """
+    
+    # Type hints for attributes provided by the host class
+    logger: Any
+    selected_model: Optional[str]
+    MODEL_MAPPING: Dict[str, str]
+    _cache_manager: "CacheManager"
+    
+    def _reload_huggingface_modules(self) -> None:
+        """Reload HuggingFace modules (implemented in ModelLoadingMixin)."""
+        ...
     
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         """

@@ -83,21 +83,22 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
 
         # Get token from environment once
         token = os.getenv("HF_TOKEN", "")
+        current_model = "unknown"
 
         try:
             from huggingface_hub import snapshot_download
             
-            for model in models:
-                if model == self.DEFAULT_MODEL:
+            for current_model in models:
+                if current_model == self.DEFAULT_MODEL:
                     cache_dir = self._get_cache_dir(models_dir)
                     cache_dir.mkdir(parents=True, exist_ok=True)
                     
-                    snapshot_download(model, cache_dir=str(cache_dir), token=token if token else None)
-                    log_completion(f"{model} downloaded successfully.")
+                    snapshot_download(current_model, cache_dir=str(cache_dir), token=token if token else None)
+                    log_completion(f"{current_model} downloaded successfully.")
                 else:
-                    self.logger.warning(f"Unknown model {model}, skipping download")
+                    self.logger.warning(f"Unknown model {current_model}, skipping download")
         except Exception as e:
-            raise ModelDownloadError(f"Failed to download {model}: {e}") from e
+            raise ModelDownloadError(f"Failed to download {current_model}: {e}") from e
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
 
@@ -222,9 +223,9 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
         latest_snapshot_dir = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
 
         # Initialize variables for cleanup tracking
-        pipeline = None
-        waveform = None
-        diarization = None
+        pipeline: Optional["Pipeline"] = None
+        waveform: Optional["torch.Tensor"] = None
+        diarization: Optional[Any] = None
         
         # Lazy import of torch and pyannote
         import torch
@@ -239,7 +240,7 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
             
             # Move to GPU if available and supported
             device = get_system_capability()
-            if device != "cpu":
+            if device != "cpu" and pipeline is not None:
                 try:
                     if device == "cuda" and torch.cuda.is_available():
                         pipeline.to(torch.device("cuda"))
@@ -257,10 +258,14 @@ class PyAnnoteDiarizationProvider(DiarizationProvider):
 
             # Run diarization with no_grad to prevent gradient accumulation
             with torch.no_grad():
+                if pipeline is None:
+                    raise ModelNotFoundError("Failed to load PyAnnote pipeline")
                 diarization = pipeline({"waveform": waveform, "sample_rate": sample_rate, "num_speakers": num_speakers})
 
             # Assign speakers to words by majority overlap
             word_speakers = []
+            if diarization is None:
+                raise ValueError("Diarization failed to produce results")
             for word in words:
                 # Find overlapping diarization segments
                 overlaps = []

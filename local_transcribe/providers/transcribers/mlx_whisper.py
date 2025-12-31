@@ -109,7 +109,7 @@ class MLXWhisperTranscriberProvider(TranscriberProvider):
     def _transcribe_single_chunk_with_timestamps(
         self,
         chunk_audio: "np.ndarray",
-        sr: int,
+        sr: Union[int, float],
         chunk_start_time: float,
         model_repo: str,
         role: Optional[str] = None

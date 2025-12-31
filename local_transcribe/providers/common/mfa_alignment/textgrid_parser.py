@@ -166,8 +166,8 @@ class TextGridParser:
         Returns:
             Tuple of (start_line, end_line) for the word tier, or None if not found
         """
-        word_tier_start = None
-        word_tier_end = None
+        word_tier_start: Optional[int] = None
+        word_tier_end: Optional[int] = None
         
         for i, line in enumerate(lines):
             # Look for word tier declaration: name = "words"
@@ -178,13 +178,13 @@ class TextGridParser:
                 word_tier_end = i
                 break
         
-        # If we found word tier start but not phones tier, use end of file
-        if word_tier_start is not None and word_tier_end is None:
-            word_tier_end = len(lines)
-        
         # Return None if we didn't find the word tier
         if word_tier_start is None:
             return None
+        
+        # If we found word tier start but not phones tier, use end of file
+        if word_tier_end is None:
+            word_tier_end = len(lines)
             
         return (word_tier_start, word_tier_end)
     

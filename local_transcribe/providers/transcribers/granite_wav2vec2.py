@@ -15,7 +15,7 @@ Note: Heavy imports (torch, librosa, transformers, torchaudio) are lazily loaded
 to avoid slow startup times when this provider is not used.
 """
 
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
+from typing import List, Optional, Dict, Any, TYPE_CHECKING, Sequence, Union
 import os
 import pathlib
 import math
@@ -25,7 +25,7 @@ import json
 import warnings
 from datetime import datetime
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
-from local_transcribe.lib.system_capability_utils import get_system_capability
+from local_transcribe.lib.system_capability_utils import get_system_capability, clear_device_cache
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
 # Type hints for lazy-loaded modules
@@ -66,8 +66,8 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         
         # Wav2Vec2 configuration
         self.wav2vec2_model_name = "facebook/wav2vec2-large-960h"
-        self.wav2vec2_processor = None
-        self.wav2vec2_model = None
+        self.wav2vec2_processor: Optional[Any] = None
+        self.wav2vec2_model: Optional[Any] = None
         
         # Chunking configuration
         self.chunk_length_seconds = 60.0
@@ -267,7 +267,15 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         import torch
         import torchaudio
         
-        vocab = self.wav2vec2_processor.tokenizer.get_vocab()
+        if self.wav2vec2_processor is None:
+            raise RuntimeError("Wav2Vec2 processor not loaded")
+        
+        # Access tokenizer from processor
+        tokenizer = getattr(self.wav2vec2_processor, 'tokenizer', None)
+        if tokenizer is None:
+            raise RuntimeError("Wav2Vec2 processor has no tokenizer attribute")
+        
+        vocab = tokenizer.get_vocab()
         dictionary = {c: i for i, c in enumerate(vocab.keys())}
         
         transcript_normalized = transcript.upper()
@@ -286,19 +294,21 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         try:
             log_probs = emissions.log_softmax(dim=-1).cpu()
             
+            pad_token_id = getattr(tokenizer, 'pad_token_id', 0)
+            
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message=".*forced_align.*deprecated.*")
                 aligned_labels, scores = torchaudio.functional.forced_align(
                     log_probs,
                     torch.tensor([token_ids]),
-                    blank=self.wav2vec2_processor.tokenizer.pad_token_id
+                    blank=pad_token_id
                 )
             
             token_timestamps = self._extract_token_boundaries(
                 aligned_labels[0],
                 tokens,
                 token_ids,
-                self.wav2vec2_processor.tokenizer.pad_token_id
+                pad_token_id
             )
             
             return token_timestamps
@@ -407,7 +417,13 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         token_timestamps = []
         emissions_np = emissions[0].cpu().numpy()
         
-        dictionary = {c: i for i, c in enumerate(self.wav2vec2_processor.tokenizer.get_vocab().keys())}
+        if self.wav2vec2_processor is None:
+            raise RuntimeError("Wav2Vec2 processor not loaded")
+        tokenizer = getattr(self.wav2vec2_processor, 'tokenizer', None)
+        if tokenizer is None:
+            raise RuntimeError("Wav2Vec2 processor has no tokenizer attribute")
+        
+        dictionary = {c: i for i, c in enumerate(tokenizer.get_vocab().keys())}
         
         time_per_token = emissions_np.shape[0] / max(len(tokens), 1)
         
@@ -538,6 +554,9 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         If Wav2Vec2 fails, falls back to MFA alignment.
         """
         log_progress(f"Aligning transcript with Wav2Vec2 (chunk starts at {chunk_start_time:.2f}s)")
+        
+        if self.wav2vec2_processor is None or self.wav2vec2_model is None:
+            raise RuntimeError("Wav2Vec2 models not loaded. Call _load_wav2vec2_model() first.")
         
         try:
             # Process audio for Wav2Vec2

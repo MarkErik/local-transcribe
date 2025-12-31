@@ -7,7 +7,7 @@ transcription, alignment, diarization, and output writer components.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Sequence
 from dataclasses import dataclass
 import pathlib
 
@@ -113,7 +113,7 @@ class TranscriberProvider(ABC):
         role: Optional[str] = None,
         device: Optional[str] = None,
         **kwargs
-    ) -> List[WordSegment]:
+    ) -> Sequence[Union[WordSegment, Dict[str, Any]]]:
         """
         Transcribe audio file and return word-level segments with timestamps.
 
@@ -124,7 +124,7 @@ class TranscriberProvider(ABC):
             **kwargs: Provider-specific configuration options
 
         Returns:
-            List of WordSegment objects with text, timing, and speaker info
+            Sequence of WordSegment objects or Dict with text, timing, and speaker info
         """
         pass
 
@@ -366,7 +366,7 @@ class OutputWriter(ABC):
     @abstractmethod
     def write(
         self,
-        turns: List[Turn],
+        turns: Any,
         output_path: str,
         word_segments: Optional[List[WordSegment]] = None,
         **kwargs
@@ -375,7 +375,7 @@ class OutputWriter(ABC):
         Write conversation turns to output file.
 
         Args:
-            turns: List of conversation turns to write
+            turns: Transcript data (List[Turn], TranscriptFlow, or other supported format)
             output_path: Path where to write the output file
             word_segments: Optional list of word segments for detailed timing
             **kwargs: Writer-specific configuration options

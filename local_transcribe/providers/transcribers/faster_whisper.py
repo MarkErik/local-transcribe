@@ -159,7 +159,7 @@ class FasterWhisperTranscriberProvider(TranscriberProvider):
             log_debug(f"At error time - HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
             log_debug(f"At error time - HF_HOME: {os.environ.get('HF_HOME')}")
 
-            raise Exception(f"Failed to download {model}: {e}")
+            raise Exception(f"Failed to download model: {e}")
         finally:
             os.environ["HF_HUB_OFFLINE"] = offline_mode
 

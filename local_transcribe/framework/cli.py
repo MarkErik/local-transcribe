@@ -48,8 +48,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     # VAD pipeline arguments
     p.add_argument("--vad-pipeline", action="store_true", help="Use VAD-first pipeline for split audio files (recommended for interviews).")
     p.add_argument("--skip-alignment", action="store_true", default=True, help="Skip word-level alignment (default: True for VAD pipeline).")
-    p.add_argument("--vad-threshold", type=float, default=0.5, help="VAD speech probability threshold (0-1) [Default: 0.5]")
-    p.add_argument("--vad-merge-gap-ms", type=int, default=600, help="Maximum gap between VAD segments to merge (ms) [Default: 600]")
 
     args = p.parse_args(argv)
     
@@ -883,14 +881,20 @@ def interactive_vad_split_audio(args, api) -> argparse.Namespace:
     # System capability
     args = prompt_system_capability(args)
     
-    # Transcriber selection
+    # Transcriber selection - VAD pipeline requires pure transcribers only
     if args.transcriber_provider is None:
         args.transcriber_provider = select_transcriber_provider(
             registry,
+            filter_pure_only=True,
             default_provider="granite"
         )
         print(f"  ✓ Transcriber: {args.transcriber_provider}")
     else:
+        # Validate CLI-provided transcriber is compatible with VAD pipeline
+        provider = registry.get_transcriber_provider(args.transcriber_provider)
+        if provider.has_builtin_alignment:
+            print(f"  ⚠ Warning: {args.transcriber_provider} has built-in alignment and is not recommended for VAD pipeline.")
+            print(f"    Consider using: granite, openai_whisper, or remote")
         print(f"  ✓ Transcriber: {args.transcriber_provider} (set via CLI)")
     
     # Model selection
@@ -906,41 +910,6 @@ def interactive_vad_split_audio(args, api) -> argparse.Namespace:
     if args.transcriber_provider == "granite":
         args.output_format = "chunked"
         print("  ✓ Using chunk stitching for Granite")
-    
-    # VAD settings - show current values, allow modification
-    print("\n--- VAD Settings ---")
-    current_threshold = getattr(args, 'vad_threshold', 0.5)
-    current_merge_gap = getattr(args, 'vad_merge_gap_ms', 600)
-    
-    print(f"  Current VAD threshold: {current_threshold}")
-    print(f"  Current merge gap: {current_merge_gap}ms")
-    
-    modify_vad = _prompt_yes_no("Modify VAD settings?", default=False)
-    
-    if modify_vad:
-        # VAD threshold
-        threshold_input = input(f"  VAD threshold (0-1) [Default: {current_threshold}]: ").strip()
-        if threshold_input:
-            try:
-                args.vad_threshold = float(threshold_input)
-                if not 0 <= args.vad_threshold <= 1:
-                    print("  ⚠ Invalid threshold, using default")
-                    args.vad_threshold = current_threshold
-            except ValueError:
-                print("  ⚠ Invalid input, using default")
-                args.vad_threshold = current_threshold
-        
-        # Merge gap
-        gap_input = input(f"  Merge gap (ms) [Default: {current_merge_gap}]: ").strip()
-        if gap_input:
-            try:
-                args.vad_merge_gap_ms = int(gap_input)
-            except ValueError:
-                print("  ⚠ Invalid input, using default")
-                args.vad_merge_gap_ms = current_merge_gap
-    
-    print(f"  ✓ VAD threshold: {args.vad_threshold}")
-    print(f"  ✓ VAD merge gap: {args.vad_merge_gap_ms}ms")
     
     # De-identification note
     args = prompt_de_identification(args, PipelineMode.VAD_SPLIT_AUDIO)
@@ -1156,10 +1125,6 @@ def display_configuration_summary(args, mode: str):
         print(f"  Diarization: {args.diarization_provider}")
     if hasattr(args, 'num_speakers') and args.num_speakers:
         print(f"  Number of speakers: {args.num_speakers}")
-    
-    if mode == PipelineMode.VAD_SPLIT_AUDIO:
-        print(f"  VAD threshold: {getattr(args, 'vad_threshold', 0.5)}")
-        print(f"  VAD merge gap: {getattr(args, 'vad_merge_gap_ms', 600)}ms")
     
     print(f"  De-identification: {'Enabled (two-pass)' if getattr(args, 'de_identify', False) else 'Disabled'}")
     

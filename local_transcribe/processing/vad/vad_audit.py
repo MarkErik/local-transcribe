@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime
 import os
 
-from local_transcribe.processing.vad.data_structures import VADSegment, VADBlock
+from local_transcribe.processing.vad.types import VADSegment, VADBlock
 from local_transcribe.lib.program_logger import log_intermediate_save
 
 

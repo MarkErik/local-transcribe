@@ -5,6 +5,9 @@ Silero VAD wrapper for VAD-driven split-audio pipeline.
 This module provides a pipeline-specific interface to Silero VAD for
 speech detection in audio files, returning VADSegment objects.
 
+NOTE: This module is maintained for backward compatibility.
+For new code, use providers.vad.SileroVADProvider instead.
+
 For core VAD functionality, see: lib/silero_vad_core.py
 """
 
@@ -12,7 +15,7 @@ from typing import List, Optional
 from pathlib import Path
 import numpy as np
 
-from local_transcribe.processing.vad.data_structures import VADSegment
+from local_transcribe.processing.vad.types import VADSegment
 from local_transcribe.lib.program_logger import log_progress, log_completion, get_logger
 from local_transcribe.lib.silero_vad_core import SileroVADCore, DEFAULT_VAD_PARAMS
 

@@ -32,7 +32,8 @@ if TYPE_CHECKING:
 # Lazy imports for heavy modules
 _granite_model_manager_class = None
 _mfa_alignment_engine_class = None
-_silero_vad_segmenter_class = None
+_silero_vad_provider_class = None
+_vad_segmenter_func = None
 
 def _get_granite_model_manager_class():
     """Lazily import GraniteModelManager to defer torch import."""
@@ -50,13 +51,21 @@ def _get_mfa_alignment_engine_class():
         _mfa_alignment_engine_class = MFAAlignmentEngine
     return _mfa_alignment_engine_class
 
-def _get_silero_vad_segmenter_class():
-    """Lazily import SileroVADSegmenter to defer torch import."""
-    global _silero_vad_segmenter_class
-    if _silero_vad_segmenter_class is None:
-        from local_transcribe.lib.vad_silero_segmenter import SileroVADSegmenter
-        _silero_vad_segmenter_class = SileroVADSegmenter
-    return _silero_vad_segmenter_class
+def _get_silero_vad_provider_class():
+    """Lazily import SileroVADProvider to defer torch import."""
+    global _silero_vad_provider_class
+    if _silero_vad_provider_class is None:
+        from local_transcribe.providers.vad import SileroVADProvider
+        _silero_vad_provider_class = SileroVADProvider
+    return _silero_vad_provider_class
+
+def _get_vad_segmenter_func():
+    """Lazily import segment_for_asr function."""
+    global _vad_segmenter_func
+    if _vad_segmenter_func is None:
+        from local_transcribe.processing.vad.segmenter import segment_for_asr
+        _vad_segmenter_func = segment_for_asr
+    return _vad_segmenter_func
 
 
 class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
@@ -76,8 +85,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         # Track selected model
         self.selected_model: Optional[str] = None
         
-        # Segmenter instance (lazily initialized)
-        self.vad_segmenter = None
+        # VAD provider instance (lazily initialized)
+        self._vad_provider = None
         self.models_dir: Optional[pathlib.Path] = None
         
         # MFA configuration
@@ -98,6 +107,14 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             MFAAlignmentEngine = _get_mfa_alignment_engine_class()
             self._alignment_engine = MFAAlignmentEngine(self.logger)
         return self._alignment_engine
+    
+    @property
+    def vad_provider(self):
+        """Lazily initialize the VAD provider."""
+        if self._vad_provider is None:
+            SileroVADProvider = _get_silero_vad_provider_class()
+            self._vad_provider = SileroVADProvider(models_dir=self.models_dir)
+        return self._vad_provider
 
     @property
     def device(self) -> str:
@@ -119,6 +136,11 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     def has_builtin_alignment(self) -> bool:
         """This provider combines transcription and alignment."""
         return True
+
+    @property
+    def max_audio_chunk_duration_s(self) -> float:
+        """Maximum audio chunk duration this transcriber can handle."""
+        return 30.0
 
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         """Return required Granite models (MFA and Silero VAD models handled separately)."""
@@ -146,14 +168,11 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             # Load the model using the model manager
             self.model_manager._load_model(self.model_manager.get_required_models()[0])
 
-    def _init_vad_segmenter(self) -> None:
-        """Initialize the Silero VAD segmenter if not already done."""
-        if self.vad_segmenter is None:
-            SileroVADSegmenter = _get_silero_vad_segmenter_class()
-            self.vad_segmenter = SileroVADSegmenter(
-                device=self.device if self.device != "mps" else "cpu",  # Silero works best on CPU for MPS
-                models_dir=self.models_dir
-            )
+    def _init_vad_provider(self) -> None:
+        """Initialize the Silero VAD provider if not already done."""
+        if self._vad_provider is None:
+            SileroVADProvider = _get_silero_vad_provider_class()
+            self._vad_provider = SileroVADProvider(models_dir=self.models_dir)
 
     def _get_mfa_command(self) -> str:
         """Get the MFA command, checking local environment first."""
@@ -330,8 +349,12 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     # =========================================================================
     
     def _should_chunk_segment(self, segment_duration: float) -> bool:
-        """Returns True if segment_duration > 50 seconds."""
-        return segment_duration > 50.0
+        """Returns True if segment_duration > max_audio_chunk_duration_s.
+        
+        Note: With the intelligent segmenter, segments should already be ≤30s.
+        This is a fallback for edge cases where a segment still exceeds the limit.
+        """
+        return segment_duration > self.max_audio_chunk_duration_s
     
     def _chunk_segment(self, segment_wav: NDArray, segment_start: float, segment_end: float, sr: int) -> List[Tuple[NDArray, float, float]]:
         """
@@ -751,8 +774,8 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         # Load the Granite model
         self._load_granite_model()
 
-        # Initialize Silero VAD segmenter
-        self._init_vad_segmenter()
+        # Initialize Silero VAD provider
+        self._init_vad_provider()
 
         # Setup MFA
         if self.mfa_models_dir is None:
@@ -771,28 +794,31 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         
         log_progress(f"Audio duration: {duration:.1f}s")
         
-        # Step 1: Silero VAD segmentation
-        log_progress("Running Silero VAD segmentation...")
-        debug_file_path: pathlib.Path | None = debug_dir / "vad_segmentation_debug.txt" if debug_dir else None
-        csv_audit_path: pathlib.Path | None = debug_dir / "vad_segments_audit.csv" if debug_dir else None
-        if self.vad_segmenter is None:
-            raise RuntimeError("VAD segmenter not initialized")
-        vad_segments: List[Tuple[float, float]] = self.vad_segmenter.segment_audio(wav, int(sr), debug_file_path=str(debug_file_path) if debug_file_path else None, csv_audit_path=str(csv_audit_path) if csv_audit_path else None)
+        # Step 1: Silero VAD detection using new provider
+        log_progress("Running Silero VAD detection...")
+        raw_vad_segments = self.vad_provider.detect_speech_from_array(wav, int(sr), speaker_id=role or "Speaker")
         
-        log_progress(f"Silero VAD produced {len(vad_segments)} segments")
+        # Step 2: Use intelligent segmenter for ASR-ready chunks
+        segment_for_asr = _get_vad_segmenter_func()
+        combined_segments = segment_for_asr(
+            raw_vad_segments, 
+            max_segment_duration=self.max_audio_chunk_duration_s
+        )
+        
+        # Convert CombinedSegment to (start, end) tuples for processing
+        vad_segments: List[Tuple[float, float]] = [
+            (seg.start_s, seg.end_s) for seg in combined_segments
+        ]
+        
+        log_progress(f"Silero VAD produced {len(raw_vad_segments)} raw segments, combined into {len(vad_segments)} ASR chunks")
         
         # Save VAD segments info for debug
         if debug_dir:
             vad_info = {
                 "vad_engine": "silero",
-                "vad_params": {
-                    "threshold": self.vad_segmenter.threshold,
-                    "min_speech_duration_ms": self.vad_segmenter.min_speech_duration_ms,
-                    "min_silence_duration_ms": self.vad_segmenter.min_silence_duration_ms,
-                    "speech_pad_ms": self.vad_segmenter.speech_pad_ms,
-                    "max_segment_duration": self.vad_segmenter.max_segment_duration,
-                },
-                "total_segments": len(vad_segments),
+                "vad_params": self.vad_provider.config,
+                "raw_segments": len(raw_vad_segments),
+                "combined_segments": len(vad_segments),
                 "audio_duration": duration,
                 "segments": [
                     {"start": start, "end": end, "duration": end - start}
@@ -873,12 +899,10 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         self.model_manager.ensure_models_available(models, models_dir)
         
         # Preload Silero VAD model
-        log_progress("Preloading Silero VAD segmentation model...")
+        log_progress("Preloading Silero VAD model...")
         try:
-            self._init_vad_segmenter()
-            if self.vad_segmenter is None:
-                raise RuntimeError("VAD segmenter not initialized")
-            self.vad_segmenter.preload_models()
+            self._init_vad_provider()
+            self.vad_provider.preload_model()
             log_completion("Silero VAD model preloaded successfully")
         except Exception as e:
             log_progress(f"Failed to preload Silero VAD model: {e}")

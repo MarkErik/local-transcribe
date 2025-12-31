@@ -15,8 +15,8 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 from datetime import datetime
 
-from local_transcribe.processing.vad.data_structures import VADSegment, VADBlock, VADBlockBuilderConfig
-from local_transcribe.processing.vad.silero_vad import SileroVADProcessor
+from local_transcribe.processing.vad.types import VADSegment, VADBlock, VADBlockBuilderConfig
+from local_transcribe.providers.vad import SileroVADProvider
 from local_transcribe.processing.vad.vad_block_builder import VADBlockBuilder
 from local_transcribe.processing.vad.vad_asr_processor import VADASRProcessor
 from local_transcribe.processing.vad.vad_audit import (
@@ -240,7 +240,7 @@ def build_turns_vad_split_audio(
         config: VAD block building configuration
         intermediate_dir: Path for intermediate/debug files
         models_dir: Path to model cache directory
-        vad_threshold: VAD speech probability threshold (0-1)
+        vad_threshold: VAD speech probability threshold (0-1) - ignored, uses fixed params
         validate_durations: Whether to validate audio file durations match
         **kwargs: Additional arguments passed to transcriber
         
@@ -262,16 +262,14 @@ def build_turns_vad_split_audio(
         _validate_audio_durations(speaker_audio_files)
     
     # Create intermediate directory structure
+    vad_dir: Optional[Path] = None
     if intermediate_dir:
         intermediate_dir = Path(intermediate_dir)
         vad_dir = intermediate_dir / "vad"
         vad_dir.mkdir(parents=True, exist_ok=True)
     
-    # Initialize VAD processor
-    vad_processor = SileroVADProcessor(
-        threshold=vad_threshold,
-        models_dir=models_dir,
-    )
+    # Initialize VAD provider (uses fixed interview-optimized parameters)
+    vad_provider = SileroVADProvider(models_dir=models_dir)
     
     # 1. Run VAD on each speaker's audio
     log_status("Running VAD on speaker audio files")
@@ -280,9 +278,9 @@ def build_turns_vad_split_audio(
     
     for speaker_id, audio_path in speaker_audio_files.items():
         log_progress(f"Running VAD on {speaker_id}")
-        segments = vad_processor.process_audio(audio_path, speaker_id)
+        segments = vad_provider.detect_speech(audio_path, speaker_id)
         all_vad_segments[speaker_id] = segments
-        speaker_durations[speaker_id] = vad_processor.get_audio_duration(audio_path)
+        speaker_durations[speaker_id] = vad_provider.get_audio_duration(audio_path)
     
     # Write VAD audit
     if intermediate_dir:
@@ -292,7 +290,7 @@ def build_turns_vad_split_audio(
             run_id,
             speaker_audio_files=speaker_audio_files,
             speaker_durations=speaker_durations,
-            vad_config=vad_processor.config,
+            vad_config=vad_provider.config,
         )
     
     # 2. Build blocks from VAD segments

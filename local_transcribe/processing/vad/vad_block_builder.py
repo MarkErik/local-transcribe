@@ -7,7 +7,7 @@ blocks from all speakers, and classifies interjections and overlaps.
 """
 
 from typing import List, Dict, Optional
-from local_transcribe.processing.vad.data_structures import VADSegment, VADBlock, VADBlockBuilderConfig
+from local_transcribe.processing.vad.types import VADSegment, VADBlock, VADBlockBuilderConfig
 from local_transcribe.lib.program_logger import log_progress, log_debug, log_completion
 
 

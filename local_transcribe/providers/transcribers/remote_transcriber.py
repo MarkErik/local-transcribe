@@ -428,6 +428,13 @@ class RemoteTranscriberProvider(TranscriberProvider):
         """Remote transcription does not provide word-level alignment."""
         return False
 
+    @property
+    def max_audio_chunk_duration_s(self) -> float:
+        """Maximum audio chunk duration from server capabilities."""
+        if self._capabilities:
+            return self._capabilities.max_segment_duration_s
+        return 30.0  # Default before capabilities are fetched
+
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         """No local models required for remote transcription."""
         return []

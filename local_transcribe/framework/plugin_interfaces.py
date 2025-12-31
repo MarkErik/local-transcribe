@@ -128,6 +128,18 @@ class TranscriberProvider(ABC):
         """
         pass
 
+    @property
+    def max_audio_chunk_duration_s(self) -> float:
+        """Maximum audio chunk duration this transcriber can handle.
+        
+        Returns the maximum duration in seconds for audio segments
+        passed to this transcriber. Used by VAD segmentation to
+        ensure chunks don't exceed transcriber limits.
+        
+        Default: 30.0 seconds (conservative default for most models)
+        """
+        return 30.0
+
 
 class AlignerProvider(ABC):
     """Abstract base class for alignment providers."""

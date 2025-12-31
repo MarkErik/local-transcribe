@@ -28,8 +28,8 @@ from local_transcribe.framework.stages.late_stages import (
     SpeakerNamingStage,
     OutputGenerationStage,
     SingleSpeakerOutputStage,
-    TranscriptPreparationStage,
     TranscriptCleanupStage,
+    CleanedOutputGenerationStage,
     CleanupStage,
 )
 
@@ -54,8 +54,8 @@ __all__ = [
     'SpeakerNamingStage',
     'OutputGenerationStage',
     'SingleSpeakerOutputStage',
-    'TranscriptPreparationStage',
     'TranscriptCleanupStage',
+    'CleanedOutputGenerationStage',
     'CleanupStage',
     # Executor
     'PipelineExecutor',

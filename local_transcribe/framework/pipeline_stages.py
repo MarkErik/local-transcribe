@@ -26,8 +26,8 @@ from local_transcribe.framework.stages.late_stages import (
     TurnBuildingStage,
     SpeakerNamingStage,
     OutputGenerationStage,
-    TranscriptPreparationStage,
     TranscriptCleanupStage,
+    CleanedOutputGenerationStage,
 )
 
 # Re-export early stages
@@ -54,8 +54,8 @@ STAGE_REGISTRY = {
     "turn_building": TurnBuildingStage,
     "speaker_naming": SpeakerNamingStage,
     "output_generation": OutputGenerationStage,
-    "transcript_preparation": TranscriptPreparationStage,
     "transcript_cleanup": TranscriptCleanupStage,
+    "cleaned_output_generation": CleanedOutputGenerationStage,
 }
 
 

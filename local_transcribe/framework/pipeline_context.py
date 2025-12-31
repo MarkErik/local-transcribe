@@ -49,8 +49,8 @@ class PipelineContext:
     word_segments: Optional[List[Any]] = None  # List[WordSegment]
     speaker_word_segments: Optional[Dict[str, List[Any]]] = None  # Speaker -> segments mapping
     diarized_segments: Optional[List[Any]] = None  # List[WordSegment] with speakers
-    transcript: Optional[Any] = None  # TranscriptFlow
-    prep_result: Optional[Dict[str, Any]] = None  # Result from transcript preparation
+    transcript: Optional[Any] = None  # TranscriptFlow (raw)
+    cleaned_transcript: Optional[Any] = None  # TranscriptFlow (LLM-cleaned)
     deidentified_text: Optional[str] = None  # For single speaker text de-identification
     
     # Execution state
@@ -124,8 +124,8 @@ def get_stage_order() -> List[str]:
         "turn_building",
         "speaker_naming",
         "output_generation",
-        "transcript_preparation",
         "transcript_cleanup",
+        "cleaned_output_generation",
     ]
 
 
@@ -138,9 +138,9 @@ def get_stage_descriptions() -> Dict[str, str]:
         "diarization": "Assign speaker labels to word segments",
         "turn_building": "Group word segments into conversational turns",
         "speaker_naming": "Map speaker IDs to human-readable names",
-        "output_generation": "Generate output files in selected formats",
-        "transcript_preparation": "Prepare transcript for LLM processing",
-        "transcript_cleanup": "LLM-based transcript cleanup (optional)",
+        "output_generation": "Generate raw output files to Transcript_Raw/",
+        "transcript_cleanup": "LLM-based transcript cleanup (optional, use --enable-cleanup)",
+        "cleaned_output_generation": "Generate cleaned output files to Transcript_Processed/",
     }
 
 

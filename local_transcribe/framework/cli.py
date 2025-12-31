@@ -51,6 +51,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--vad-pipeline", action="store_true", help="Use VAD-first pipeline for split audio files (recommended for interviews).")
     p.add_argument("--skip-alignment", action="store_true", default=True, help="Skip word-level alignment (default: True for VAD pipeline).")
 
+    # LLM cleanup arguments
+    p.add_argument("--enable-cleanup", action="store_true", help="Enable LLM-based transcript cleanup stage (disabled by default). Requires --transcript-cleanup-provider to be set.")
+    p.add_argument("--cleanup-batch-words", type=int, default=500, help="Maximum words per batch for LLM cleanup [Default: 500]")
+    p.add_argument("--cleanup-batch-turns", type=int, default=20, help="Maximum turns per batch for LLM cleanup [Default: 20]")
+
     args = p.parse_args(argv)
     
     # Track whether certain arguments were explicitly provided via CLI
@@ -87,6 +92,11 @@ def show_defaults():
     print("  - VAD Threshold: 0.5 (speech probability)")
     print("  - VAD Merge Gap: 500ms (gap threshold for merging segments)")
     print("  - Skip Alignment: True (word alignment skipped in VAD mode)")
+    
+    print("\nLLM Cleanup Settings:")
+    print("  - Enable Cleanup: Disabled (use --enable-cleanup)")
+    print("  - Cleanup Batch Words: 500 (max words per LLM batch)")
+    print("  - Cleanup Batch Turns: 20 (max turns per LLM batch)")
     
     print("\nTranscription Options:")
     print("  - Include Disfluencies: True (um, uh, etc. included by default)")

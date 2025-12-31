@@ -152,6 +152,18 @@ def create_pipeline_for_mode(mode: str) -> List[PipelineStage]:
         
     Returns:
         List of PipelineStage instances in execution order
+    
+    Pipeline Order:
+        1. Audio Standardization - Convert audio to standard format
+        2. Transcription/Alignment - Transcribe and get word-level timing
+        3. De-identification - Remove personal identifiers (optional)
+        4. Diarization - Assign speakers (combined_audio only)
+        5. Turn Building - Group words into conversational turns
+        6. Speaker Naming - Map speaker IDs to names
+        7. Output Generation - Write raw transcript files to Transcript_Raw/
+        8. Transcript Cleanup - LLM-based cleanup (optional, disabled by default)
+        9. Cleaned Output Generation - Write cleaned files to Transcript_Processed/ (if cleanup ran)
+        10. Cleanup - Remove temporary files
     """
     from local_transcribe.framework.stages.early_stages import (
         AudioStandardizationStage,
@@ -164,8 +176,8 @@ def create_pipeline_for_mode(mode: str) -> List[PipelineStage]:
         SpeakerNamingStage,
         OutputGenerationStage,
         SingleSpeakerOutputStage,
-        TranscriptPreparationStage,
         TranscriptCleanupStage,
+        CleanedOutputGenerationStage,
         CleanupStage,
     )
     
@@ -187,8 +199,9 @@ def create_pipeline_for_mode(mode: str) -> List[PipelineStage]:
             TurnBuildingStage(),
             SpeakerNamingStage(),
             OutputGenerationStage(),
-            TranscriptPreparationStage(),
+            # LLM cleanup stages (optional, skipped if --enable-cleanup not set)
             TranscriptCleanupStage(),
+            CleanedOutputGenerationStage(),
             CleanupStage(),
         ]
     
@@ -201,8 +214,9 @@ def create_pipeline_for_mode(mode: str) -> List[PipelineStage]:
             TurnBuildingStage(),
             SpeakerNamingStage(),
             OutputGenerationStage(),
-            TranscriptPreparationStage(),
+            # LLM cleanup stages (optional, skipped if --enable-cleanup not set)
             TranscriptCleanupStage(),
+            CleanedOutputGenerationStage(),
             CleanupStage(),
         ]
     
@@ -216,6 +230,9 @@ def create_pipeline_for_mode(mode: str) -> List[PipelineStage]:
             # Turn building happens in VADTranscriptionStage
             SpeakerNamingStage(),
             OutputGenerationStage(),
+            # LLM cleanup stages (optional, skipped if --enable-cleanup not set)
+            TranscriptCleanupStage(),
+            CleanedOutputGenerationStage(),
             CleanupStage(),
         ]
     

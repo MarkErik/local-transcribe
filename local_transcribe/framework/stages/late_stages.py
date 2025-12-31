@@ -268,66 +268,21 @@ class SingleSpeakerOutputStage(PipelineStage):
         return context
 
 
-class TranscriptPreparationStage(PipelineStage):
-    """Stage for preparing transcript for LLM processing."""
-    
-    @property
-    def name(self) -> str:
-        return "transcript_preparation"
-    
-    @property
-    def description(self) -> str:
-        return "Prepare transcript for LLM processing"
-    
-    @property
-    def required_inputs(self) -> List[str]:
-        return ["transcript"]
-    
-    @property
-    def produces_outputs(self) -> List[str]:
-        return ["transcript", "prep_result"]
-    
-    @property
-    def applicable_modes(self) -> List[str]:
-        return ["combined_audio", "split_audio"]
-    
-    def execute(self, context: PipelineContext) -> PipelineContext:
-        from local_transcribe.processing.pre_LLM_transcript_preparation import prepare_transcript_for_llm
-        
-        args = context.args
-        
-        try:
-            prep_result = prepare_transcript_for_llm(
-                context.transcript,
-                max_words_per_segment=getattr(args, 'max_words_per_segment', 500),
-                preparation_mode=getattr(args, 'preparation_mode', 'basic'),
-                standardize_speakers=getattr(args, 'standardize_speakers', True),
-                normalize_whitespace=getattr(args, 'normalize_whitespace', True),
-                handle_special_chars=getattr(args, 'handle_special_chars', True)
-            )
-            
-            # Update transcript with processed turns
-            context.transcript = prep_result['turns']
-            
-            # Store prep_result for cleanup stage
-            context.prep_result = prep_result
-            
-            log_completion(f"Transcript preparation complete: {prep_result['stats']['segments_created']} segments created", {
-                "original_turns": prep_result['stats']['original_turns'],
-                "words_processed": prep_result['stats']['words_processed'],
-                "turns_split": prep_result['stats']['turns_split']
-            })
-            
-        except Exception as e:
-            log_status(f"Warning: Error during transcript preparation: {str(e)}", "WARNING")
-            log_progress("Continuing with original transcript")
-            context.prep_result = None
-        
-        return context
-
-
 class TranscriptCleanupStage(PipelineStage):
-    """Stage for LLM-based transcript cleanup."""
+    """
+    Stage for LLM-based transcript cleanup.
+    
+    This stage processes the TranscriptFlow through an LLM to clean up
+    the transcript text while preserving turn structure. It:
+    - Performs health check on LLM server
+    - Batches turns for efficient processing
+    - Creates a cleaned TranscriptFlow with smoothed text
+    - Preserves speaker assignments and timing boundaries
+    - Clears word-level timing (no longer valid after cleanup)
+    
+    The cleaned transcript is stored in context.cleaned_transcript and
+    can be written to Transcript_Processed/ by CleanedOutputGenerationStage.
+    """
     
     @property
     def name(self) -> str:
@@ -335,11 +290,139 @@ class TranscriptCleanupStage(PipelineStage):
     
     @property
     def description(self) -> str:
-        return "LLM-based transcript cleanup"
+        return "LLM-based transcript cleanup (optional)"
     
     @property
     def required_inputs(self) -> List[str]:
-        return ["transcript", "transcript_cleanup_provider"]
+        return ["transcript"]
+    
+    @property
+    def produces_outputs(self) -> List[str]:
+        return ["cleaned_transcript"]
+    
+    @property
+    def is_optional(self) -> bool:
+        return True
+    
+    @property
+    def applicable_modes(self) -> List[str]:
+        return ["combined_audio", "split_audio", "vad_split_audio"]
+    
+    def can_execute(self, context: PipelineContext) -> tuple[bool, str]:
+        """Check if cleanup stage should run."""
+        # Check if cleanup is explicitly enabled
+        enable_cleanup = getattr(context.args, 'enable_cleanup', False)
+        if not enable_cleanup:
+            return False, "Transcript cleanup is disabled (use --enable-cleanup to enable)"
+        
+        # Check if transcript is available
+        if context.transcript is None:
+            return False, "No transcript available for cleanup"
+        
+        # Check if cleanup provider is configured
+        if context.transcript_cleanup_provider is None:
+            return False, "No transcript cleanup provider configured"
+        
+        return True, ""
+    
+    def execute(self, context: PipelineContext) -> PipelineContext:
+        from local_transcribe.processing.transcript_cleanup import BatchProcessor
+        from local_transcribe.processing.transcript_cleanup.batch_processor import BatchConfig
+        
+        if context.transcript_cleanup_provider is None:
+            raise StageError(self.name, "No transcript cleanup provider configured")
+        
+        if context.transcript is None:
+            raise StageError(self.name, "No transcript available for cleanup")
+        
+        # Perform health check on LLM server
+        log_progress("Checking LLM server availability...")
+        
+        if hasattr(context.transcript_cleanup_provider, 'health_check'):
+            server_info = context.transcript_cleanup_provider.health_check(timeout=10.0)
+            
+            if not server_info.available:
+                error_msg = server_info.error or "Server not responding"
+                log_status(f"LLM server health check failed: {error_msg}", "WARNING")
+                log_progress("Skipping transcript cleanup - LLM server unavailable")
+                return context
+            
+            if server_info.is_harmony_format:
+                log_progress(f"LLM server uses Harmony format (model: {server_info.model_name})")
+            else:
+                log_progress(f"LLM server available (model: {server_info.model_name or 'unknown'})")
+        else:
+            log_progress("LLM provider does not support health check, proceeding anyway...")
+        
+        # Get batch configuration from args
+        max_words = getattr(context.args, 'cleanup_batch_words', 500)
+        max_turns = getattr(context.args, 'cleanup_batch_turns', 20)
+        
+        config = BatchConfig(
+            max_words_per_batch=max_words,
+            max_turns_per_batch=max_turns
+        )
+        
+        # Create batch processor
+        processor = BatchProcessor(config)
+        
+        # Progress callback
+        def progress_callback(batch_num: int, total_batches: int, status: str):
+            log_progress(f"[{batch_num}/{total_batches}] {status}")
+        
+        log_progress(f"Processing transcript with {len(context.transcript.turns)} turns...")
+        
+        try:
+            # Process transcript through LLM
+            cleaned_transcript = processor.process_transcript(
+                context.transcript,
+                context.transcript_cleanup_provider,
+                progress_callback=progress_callback
+            )
+            
+            # Store cleaned transcript in context
+            context.cleaned_transcript = cleaned_transcript
+            
+            # Log statistics
+            original_words = sum(len(t.text.split()) for t in context.transcript.turns)
+            cleaned_words = sum(len(t.text.split()) for t in cleaned_transcript.turns)
+            
+            log_completion(f"Transcript cleanup complete", {
+                "turns_processed": len(cleaned_transcript.turns),
+                "original_words": original_words,
+                "cleaned_words": cleaned_words,
+                "word_difference": cleaned_words - original_words
+            })
+            
+        except Exception as e:
+            log_status(f"Error during transcript cleanup: {str(e)}", "ERROR")
+            log_progress("Cleaned transcript will not be available")
+            # Don't fail the pipeline, just skip cleanup
+            context.cleaned_transcript = None
+        
+        return context
+
+
+class CleanedOutputGenerationStage(PipelineStage):
+    """
+    Stage for generating output files from cleaned transcript.
+    
+    This stage writes the LLM-cleaned transcript to Transcript_Processed/
+    using the existing output writers. Files are named with '_cleaned' suffix
+    to distinguish them from raw transcripts.
+    """
+    
+    @property
+    def name(self) -> str:
+        return "cleaned_output_generation"
+    
+    @property
+    def description(self) -> str:
+        return "Generate output files from cleaned transcript"
+    
+    @property
+    def required_inputs(self) -> List[str]:
+        return ["cleaned_transcript", "paths"]
     
     @property
     def produces_outputs(self) -> List[str]:
@@ -351,51 +434,74 @@ class TranscriptCleanupStage(PipelineStage):
     
     @property
     def applicable_modes(self) -> List[str]:
-        return ["combined_audio", "split_audio"]
+        return ["combined_audio", "split_audio", "vad_split_audio"]
     
     def can_execute(self, context: PipelineContext) -> tuple[bool, str]:
-        # Check base requirements
-        can_run, reason = super().can_execute(context)
-        if not can_run:
-            return can_run, reason
-        
-        # Need prep_result with segments
-        prep_result = getattr(context, 'prep_result', None)
-        if not prep_result or 'segments' not in prep_result:
-            return False, "No prepared segments available"
+        """Check if cleaned output generation should run."""
+        # Only run if we have a cleaned transcript
+        cleaned_transcript = getattr(context, 'cleaned_transcript', None)
+        if cleaned_transcript is None:
+            return False, "No cleaned transcript available"
         
         return True, ""
     
     def execute(self, context: PipelineContext) -> PipelineContext:
-        args = context.args
-        prep_result = context.prep_result
+        registry = context.api.get("registry")
+        if registry is None:
+            raise StageError(self.name, "Registry not found in api")
         
-        if not prep_result or 'segments' not in prep_result:
-            raise StageError(self.name, "No prepared segments available")
-        
-        if context.transcript_cleanup_provider is None:
-            raise StageError(self.name, "No transcript cleanup provider configured")
-        
-        log_progress(f"Processing {len(prep_result['segments'])} segments")
-        
-        # Process each segment through LLM
-        cleaned_segments = []
-        for idx, segment in enumerate(prep_result['segments']):
-            log_progress(f"[{idx+1}/{len(prep_result['segments'])}] Processing: {segment[:60]}...")
-            cleaned = context.transcript_cleanup_provider.transcript_cleanup_segment(segment)
-            cleaned_segments.append(cleaned)
-            log_progress(f"[{idx+1}/{len(prep_result['segments'])}] Cleaned: {cleaned[:60]}...")
-        
-        # Write cleaned transcript to processed directory
+        # Create processed output directory
         processed_dir = context.paths["root"] / "Transcript_Processed"
         processed_dir.mkdir(parents=True, exist_ok=True)
+        log_status(f"Writing cleaned outputs to {processed_dir}")
         
-        cleaned_text_file = processed_dir / "transcript_cleaned.txt"
-        cleaned_text_file.write_text('\n\n'.join(cleaned_segments) + '\n', encoding='utf-8')
+        cleaned_transcript = context.cleaned_transcript
         
-        log_completion(f"Transcript cleanup complete: {cleaned_text_file}")
-        log_progress("Raw transcript with timestamps available in Transcript_Raw/")
+        # Get selected outputs (same as raw, but with _cleaned suffix)
+        selected_outputs = getattr(context.args, 'selected_outputs', [])
+        if not selected_outputs:
+            selected_outputs = ['timestamped-txt', 'plain-txt', 'turns-json']
         
+        # Write each format with _cleaned suffix
+        try:
+            if 'timestamped-txt' in selected_outputs:
+                writer = registry.get_output_writer("timestamped-txt")
+                writer.write(cleaned_transcript, processed_dir / "transcript_cleaned.timestamped.txt")
+                log_progress("Written: transcript_cleaned.timestamped.txt")
+            
+            if 'plain-txt' in selected_outputs:
+                writer = registry.get_output_writer("plain-txt")
+                writer.write(cleaned_transcript, processed_dir / "transcript_cleaned.txt")
+                log_progress("Written: transcript_cleaned.txt")
+            
+            if 'markdown' in selected_outputs:
+                writer = registry.get_output_writer("markdown")
+                writer.write(cleaned_transcript, processed_dir / "transcript_cleaned.md")
+                log_progress("Written: transcript_cleaned.md")
+            
+            if 'dialogue-script' in selected_outputs:
+                writer = registry.get_output_writer("dialogue-script")
+                writer.write(cleaned_transcript, processed_dir / "transcript_cleaned.script.txt")
+                log_progress("Written: transcript_cleaned.script.txt")
+            
+            if 'turns-json' in selected_outputs:
+                writer = registry.get_output_writer("turns-json")
+                writer.write(cleaned_transcript, processed_dir / "transcript_cleaned.turns.json")
+                log_progress("Written: transcript_cleaned.turns.json")
+            
+            # Note: We skip html-timeline and video for cleaned transcripts
+            # because they rely on word-level timing which is no longer valid
+            if 'html-timeline' in selected_outputs:
+                log_progress("Skipping HTML timeline for cleaned transcript (word timing not available)")
+            
+            if 'video' in selected_outputs:
+                log_progress("Skipping video generation for cleaned transcript (word timing not available)")
+            
+        except Exception as e:
+            log_status(f"Error writing cleaned output: {e}", "ERROR")
+            raise StageError(self.name, f"Failed to write cleaned outputs: {e}")
+        
+        log_completion("Cleaned output generation complete")
         return context
 
 

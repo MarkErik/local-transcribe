@@ -36,7 +36,7 @@ def _get_granite_model_manager_class():
     """Lazily import GraniteModelManager to defer torch import."""
     global _granite_model_manager_class
     if _granite_model_manager_class is None:
-        from local_transcribe.providers.common.granite_model_manager import GraniteModelManager
+        from local_transcribe.providers.common.granite_model import GraniteModelManager
         _granite_model_manager_class = GraniteModelManager
     return _granite_model_manager_class
 

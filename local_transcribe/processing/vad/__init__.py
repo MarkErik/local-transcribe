@@ -19,7 +19,7 @@ Available components:
 - VADBlockBuilder: Builds conversation blocks from per-speaker VAD segments
 - VADASRProcessor: Processes VAD blocks through ASR with chunking
 
-- SileroVADProcessor: Legacy wrapper for Silero VAD (use providers.vad.SileroVADProvider instead)
+For VAD detection, use providers.vad.SileroVADProvider.
 """
 
 # Import from unified types module
@@ -44,9 +44,6 @@ from local_transcribe.processing.vad.vad_block_builder import VADBlockBuilder
 # Import ASR processor
 from local_transcribe.processing.vad.vad_asr_processor import VADASRProcessor
 
-# Import legacy processor for backward compatibility
-from local_transcribe.processing.vad.silero_vad import SileroVADProcessor
-
 # Import audit utilities
 from local_transcribe.processing.vad.vad_audit import (
     write_vad_audit,
@@ -67,7 +64,6 @@ __all__ = [
     'segment_for_asr',
     'VADSegmenter',
     # Processors
-    'SileroVADProcessor',  # Legacy - use providers.vad.SileroVADProvider
     'VADBlockBuilder',
     'VADASRProcessor',
     # Audit utilities
@@ -75,4 +71,3 @@ __all__ = [
     'write_turn_building_audit',
     'write_asr_chunks_audit',
 ]
-

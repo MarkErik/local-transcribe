@@ -259,6 +259,90 @@ def _find_best_split_points(
     
     return selected_splits
 
+def _find_force_split_points(
+    segment: CombinedSegment,
+    config: SegmentCombinationConfig
+) -> List[int]:
+    """Find split points for a segment that must be split, using relaxed criteria.
+    
+    This is a fallback when _find_best_split_points fails to find suitable splits
+    but the segment still exceeds max_segment_duration. It uses more relaxed
+    criteria to ensure segments can be split.
+    
+    Args:
+        segment: The segment to find split points for
+        config: Configuration parameters
+        
+    Returns:
+        List of split indices (positions in segment.segments)
+    """
+    if len(segment.segments) < 2:
+        return []
+    
+    # Calculate target segment duration
+    target_duration = config.max_segment_duration * 0.8  # Aim for 80% of max
+    
+    # Find all gaps with their indices and calculate cumulative durations
+    gaps_with_info = []
+    for i in range(1, len(segment.segments)):
+        gap = segment.segments[i].start_s - segment.segments[i-1].end_s
+        cumulative_duration = segment.segments[i].start_s - segment.segments[0].start_s
+        remaining_duration = segment.segments[-1].end_s - segment.segments[i].start_s
+        gaps_with_info.append((i, gap, cumulative_duration, remaining_duration))
+    
+    # Sort by gap size (prefer larger gaps)
+    gaps_with_info.sort(key=lambda x: x[1], reverse=True)
+    
+    selected_splits = []
+    current_start = segment.segments[0].start_s
+    segments_covered = set()
+    
+    # Greedy approach: select split points that create segments close to target duration
+    for split_idx, gap, cumulative_duration, remaining_duration in gaps_with_info:
+        if split_idx in segments_covered:
+            continue
+            
+        # Calculate the duration of segment if we split here
+        segment_before_split = cumulative_duration - (current_start - segment.segments[0].start_s)
+        
+        # Accept this split if:
+        # 1. It creates a reasonable segment before the split (>= 3s or whatever we can get)
+        # 2. The segment after wouldn't be too tiny (>= 3s)
+        min_acceptable = 3.0  # Minimum acceptable segment duration for force split
+        
+        if segment_before_split >= min_acceptable and remaining_duration >= min_acceptable:
+            selected_splits.append(split_idx)
+            segments_covered.add(split_idx)
+            
+            # Check if we've split enough
+            # Recalculate from the last split point to see if remaining segment is OK
+            last_split_start = segment.segments[split_idx].start_s
+            remaining_from_split = segment.segments[-1].end_s - last_split_start
+            
+            if remaining_from_split <= config.max_segment_duration:
+                break
+                
+            # Update current_start for next iteration
+            current_start = last_split_start
+    
+    # If we still haven't found enough splits, try time-based approach
+    if not selected_splits:
+        # Find split point closest to target duration
+        best_split = None
+        best_distance = float('inf')
+        
+        for i in range(1, len(segment.segments)):
+            duration_to_here = segment.segments[i].start_s - segment.segments[0].start_s
+            distance = abs(duration_to_here - target_duration)
+            
+            if distance < best_distance:
+                best_distance = distance
+                best_split = i
+        
+        if best_split is not None:
+            selected_splits = [best_split]
+    
+    return sorted(selected_splits)
 
 def _split_long_segments_enhanced(
     segments: List[CombinedSegment],
@@ -356,9 +440,17 @@ def _split_long_segments_second_pass(
                     split_points = _find_best_split_points(current_segment, config)
                     
                     if not split_points:
-                        # No good split points found, keep as is
-                        recursively_split_segments.append(current_segment)
-                        continue
+                        # No good split points found - try force split
+                        split_points = _find_force_split_points(current_segment, config)
+                        
+                        if not split_points:
+                            # Even force split didn't work, keep as is (very rare)
+                            logger.warning(
+                                f"Unable to split segment {current_segment.start_s:.2f}s - "
+                                f"{current_segment.end_s:.2f}s ({current_segment.duration_s:.2f}s)"
+                            )
+                            recursively_split_segments.append(current_segment)
+                            continue
                     
                     # Split the segment
                     original_segments = current_segment.segments

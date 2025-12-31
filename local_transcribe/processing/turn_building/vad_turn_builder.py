@@ -283,7 +283,7 @@ def build_turns_vad_split_audio(
         speaker_durations[speaker_id] = vad_provider.get_audio_duration(audio_path)
     
     # Write VAD audit
-    if intermediate_dir:
+    if vad_dir is not None:
         write_vad_audit(
             all_vad_segments,
             vad_dir,
@@ -300,7 +300,7 @@ def build_turns_vad_split_audio(
     blocks = block_builder.build_blocks(all_vad_segments)
     
     # Save intermediate VAD blocks (before ASR processing)
-    if intermediate_dir:
+    if vad_dir is not None:
         write_turn_building_audit(
             blocks,
             vad_dir,
@@ -325,7 +325,7 @@ def build_turns_vad_split_audio(
     )
     
     # Write turn building audit
-    if intermediate_dir:
+    if vad_dir is not None:
         chunk_data = asr_processor.get_chunk_audit_data()
         write_turn_building_audit(
             blocks,

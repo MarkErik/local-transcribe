@@ -397,6 +397,48 @@ class DeIdentificationStage(PipelineStage):
                 f"({len(result.discovered_names)} unique)"
             )
             
+        elif context.mode == "vad_split_audio":
+            # VAD pipeline - de-identify the transcript turns
+            log_status("Starting de-identification for VAD transcript")
+            
+            if context.transcript is None:
+                raise StageError(self.name, "No transcript available for de-identification")
+            
+            # Extract words per speaker from turns
+            speaker_words = self._extract_speaker_words_from_transcript(context.transcript)
+            
+            if not speaker_words:
+                log_progress("No speaker words found to de-identify")
+                return context
+            
+            # Run multi-speaker de-identification
+            results = orchestrator.de_identify_multi_speaker(speaker_words)
+            
+            # Build mapping of (word_start, word_text) -> new_text for quick lookup
+            replacement_map = {}
+            total_replacements = 0
+            for speaker_name, result in results.items():
+                # Map original segments to their de-identified versions
+                for orig, deident in zip(speaker_words[speaker_name], result.segments):
+                    if orig.text != deident.text:
+                        replacement_map[(round(orig.start, 3), orig.text)] = deident.text
+                total_replacements += result.total_replacements
+                
+                # Save de-identified segments
+                if intermediate_dir and registry:
+                    json_word_writer = registry.get_word_writer("word-segments-json")
+                    deidentified_file = intermediate_dir / "de_identification" / f"{speaker_name.lower()}_word_segments_deidentified.json"
+                    deidentified_file.parent.mkdir(parents=True, exist_ok=True)
+                    json_word_writer.write(result.segments, deidentified_file)
+                    log_intermediate_save(str(deidentified_file), f"De-identified segments saved for {speaker_name}")
+                
+                log_progress(f"De-identification for {speaker_name}: {result.total_replacements} names replaced")
+            
+            # Apply replacements to the transcript turns
+            self._apply_replacements_to_transcript(context.transcript, replacement_map)
+            
+            log_status(f"De-identification complete: {total_replacements} names replaced across all speakers")
+            
         else:
             # Multi-speaker de-identification (split_audio mode)
             log_status("Starting de-identification across all speakers")
@@ -429,6 +471,75 @@ class DeIdentificationStage(PipelineStage):
             log_status("De-identification complete for all speakers")
         
         return context
+    
+    def _extract_speaker_words_from_transcript(self, transcript) -> dict:
+        """Extract words per speaker from a TranscriptFlow object.
+        
+        Args:
+            transcript: TranscriptFlow object with turns
+            
+        Returns:
+            Dict mapping speaker_name -> list of WordSegment objects
+        """
+        from local_transcribe.framework.plugin_interfaces import WordSegment
+        from local_transcribe.processing.turn_building.turn_building_data_structures import TranscriptFlow
+        
+        speaker_words = {}
+        
+        # Handle TranscriptFlow object
+        if hasattr(transcript, 'turns'):
+            for turn in transcript.turns:
+                speaker = turn.primary_speaker
+                if speaker not in speaker_words:
+                    speaker_words[speaker] = []
+                
+                # Add words from the turn
+                if hasattr(turn, 'words') and turn.words:
+                    speaker_words[speaker].extend(turn.words)
+                
+                # Also process interjections
+                if hasattr(turn, 'interjections'):
+                    for interjection in turn.interjections:
+                        ij_speaker = interjection.speaker
+                        if ij_speaker not in speaker_words:
+                            speaker_words[ij_speaker] = []
+                        if hasattr(interjection, 'words') and interjection.words:
+                            speaker_words[ij_speaker].extend(interjection.words)
+        
+        return speaker_words
+    
+    def _apply_replacements_to_transcript(self, transcript, replacement_map: dict):
+        """Apply de-identification replacements to transcript turns in-place.
+        
+        Args:
+            transcript: TranscriptFlow object with turns
+            replacement_map: Dict of (start_time, original_text) -> new_text
+        """
+        if not hasattr(transcript, 'turns'):
+            return
+        
+        for turn in transcript.turns:
+            # Update words in the turn
+            if hasattr(turn, 'words') and turn.words:
+                for word in turn.words:
+                    key = (round(word.start, 3), word.text)
+                    if key in replacement_map:
+                        word.text = replacement_map[key]
+                
+                # Rebuild turn text from words
+                turn.text = ' '.join(w.text for w in turn.words)
+            
+            # Update words in interjections
+            if hasattr(turn, 'interjections'):
+                for interjection in turn.interjections:
+                    if hasattr(interjection, 'words') and interjection.words:
+                        for word in interjection.words:
+                            key = (round(word.start, 3), word.text)
+                            if key in replacement_map:
+                                word.text = replacement_map[key]
+                        
+                        # Rebuild interjection text from words
+                        interjection.text = ' '.join(w.text for w in interjection.words)
 
 
 class DiarizationStage(PipelineStage):

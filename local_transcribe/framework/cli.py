@@ -711,12 +711,6 @@ def prompt_de_identification(args, mode: str) -> argparse.Namespace:
     De-identification now automatically runs two-pass processing when enabled
     for multi-speaker transcripts, so there's no need to prompt separately.
     """
-    # De-identification not supported in VAD mode yet
-    if mode == PipelineMode.VAD_SPLIT_AUDIO:
-        print("\n  ⚠ Note: De-identification not yet implemented for VAD pipeline")
-        args.de_identify = False
-        return args
-    
     # Check if URL was explicitly provided via CLI (not just using default)
     url_was_set_via_cli = hasattr(args, '_llm_de_identifier_url_set') and args._llm_de_identifier_url_set
     

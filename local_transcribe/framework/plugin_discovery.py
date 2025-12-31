@@ -49,6 +49,12 @@ class PluginLoader:
             # Find all .py files in the directory
             for py_file in plugin_dir.rglob("*.py"):
                 if py_file.is_file():
+                    # Skip files in 'common' directories (shared utilities, not plugins)
+                    if 'common' in py_file.parts:
+                        continue
+                    # Skip __init__.py files
+                    if py_file.name == '__init__.py':
+                        continue
                     plugin_files.append(py_file)
 
         return plugin_files

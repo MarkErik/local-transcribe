@@ -384,6 +384,3 @@ class MFAAlignmentEngine:
             segment.get('speaker')
         )
 
-
-# Backward compatibility alias
-MFAWordAlignmentEngine = MFAAlignmentEngine

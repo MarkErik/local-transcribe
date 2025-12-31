@@ -281,7 +281,7 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
     def _parse_textgrid_to_word_dicts(self, textgrid_path: pathlib.Path, original_transcript: str, chunk_start_time: float = 0.0, chunk_end_time: float = 0.0, speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Parse MFA TextGrid and return list of word dicts with timestamps.
         
-        Uses the shared MFAWordAlignmentEngine for parsing.
+        Uses the shared MFAAlignmentEngine for parsing.
         """
         return self.word_alignment_engine.parse_textgrid_to_word_dicts(
             textgrid_path, original_transcript, chunk_start_time, chunk_end_time, speaker

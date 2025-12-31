@@ -151,7 +151,7 @@ class MFAAlignerProvider(AlignerProvider):
     def _parse_textgrid(self, textgrid_path: pathlib.Path, original_transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
         """Parse MFA TextGrid output to extract word timestamps.
         
-        Delegates to MFAWordAlignmentEngine for consistent TextGrid parsing
+        Delegates to MFAAlignmentEngine for consistent TextGrid parsing
         across all MFA-based providers.
         
         Args:

@@ -56,7 +56,6 @@ class ServerCapabilities:
     max_segment_duration_s: float  # Maximum audio segment length server accepts
     min_segment_duration_s: float  # Minimum audio segment length server accepts
     model_name: str                # Server's model (informational only)
-    supports_disfluencies: bool    # Whether disfluency mode is supported
     sample_rate: int               # Expected sample rate
 
 
@@ -247,7 +246,6 @@ class RemoteTranscriberClient:
                     max_segment_duration_s=float(max_duration),
                     min_segment_duration_s=float(min_duration),
                     model_name=model_name,
-                    supports_disfluencies=True,  # Assume true for now
                     sample_rate=int(sample_rate)
                 )
             else:
@@ -256,7 +254,6 @@ class RemoteTranscriberClient:
                     max_segment_duration_s=60.0,
                     min_segment_duration_s=1.0,
                     model_name="unknown",
-                    supports_disfluencies=True,
                     sample_rate=16000
                 )
         
@@ -372,6 +369,64 @@ def check_remote_transcriber_available(server_url: str) -> bool:
     except Exception:
         pass
     return False
+
+
+def get_remote_server_info(server_url: str) -> Optional[Dict[str, Any]]:
+    """
+    Get detailed information from a remote transcription server.
+    
+    Args:
+        server_url: URL of the remote transcription server
+    
+    Returns:
+        Server info dictionary with model and capabilities, or None if unavailable
+    """
+    try:
+        response = requests.get(
+            f"{server_url.rstrip('/')}/info",
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception:
+        pass
+    return None
+
+
+def check_server_supports_disfluencies(server_url: str) -> bool:
+    """
+    Check if a remote transcription server supports disfluency transcription.
+    
+    This checks the server's /info endpoint for the `supports_disfluency_filtering`
+    capability. If not explicitly reported, it infers support from the model name
+    (Granite models always include disfluencies).
+    
+    Args:
+        server_url: URL of the remote transcription server
+    
+    Returns:
+        True if the server supports disfluency transcription
+    """
+    info = get_remote_server_info(server_url)
+    if info is None:
+        return True  # Assume support if we can't check
+    
+    # Check if server explicitly reports disfluencies capability
+    capabilities = info.get("capabilities", {})
+    if "supports_disfluency_filtering" in capabilities:
+        return capabilities["supports_disfluency_filtering"]
+    # Also check alternate field name for compatibility
+    if "supports_disfluencies" in capabilities:
+        return capabilities["supports_disfluencies"]
+    
+    # Infer from model name - Granite models always include disfluencies
+    model_info = info.get("model", {})
+    model_name = model_info.get("name", "").lower()
+    if "granite" in model_name:
+        return True
+    
+    # Default to True for unknown models (most transcription models support this)
+    return True
 
 
 # =============================================================================

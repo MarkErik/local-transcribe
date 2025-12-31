@@ -34,7 +34,7 @@ class TranscriptionMixin:
     
     # Prompt fragment markers to filter from transcription output
     _PROMPT_FRAGMENTS = [
-        "make sure to include disfluencies",
+        "make sure to include disfluencies, stutters, and repeated fragments.",
         "can you transcribe the speech into a written format",
     ]
     
@@ -201,7 +201,7 @@ class TranscriptionMixin:
                 },
                 {
                     "role": "user",
-                    "content": "<|audio|>can you transcribe the speech into a written format? make sure to include disfluencies.",
+                    "content": "<|audio|>can you transcribe the speech into a written format?  make sure to include disfluencies, stutters, and repeated fragments.",
                 }
             ]
             

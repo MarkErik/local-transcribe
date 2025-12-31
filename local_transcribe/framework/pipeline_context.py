@@ -45,9 +45,13 @@ class PipelineContext:
     
     # Data flowing through pipeline
     standardized_audio: Optional[Path] = None
+    standardized_speaker_files: Optional[Dict[str, str]] = None  # For split audio mode
     word_segments: Optional[List[Any]] = None  # List[WordSegment]
+    speaker_word_segments: Optional[Dict[str, List[Any]]] = None  # Speaker -> segments mapping
     diarized_segments: Optional[List[Any]] = None  # List[WordSegment] with speakers
     transcript: Optional[Any] = None  # TranscriptFlow
+    prep_result: Optional[Dict[str, Any]] = None  # Result from transcript preparation
+    deidentified_text: Optional[str] = None  # For single speaker text de-identification
     
     # Execution state
     completed_stages: List[str] = field(default_factory=list)

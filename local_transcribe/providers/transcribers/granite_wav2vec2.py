@@ -7,7 +7,7 @@ to produce chunked transcripts where each word has timestamps. Unlike the separa
 granite + wav2vec2 pipeline, this processes each chunk with alignment before moving to the next,
 resulting in chunks that contain timestamped words ready for stitching.
 
-If Wav2Vec2 alignment fails, it falls back to MFA alignment if available.
+If Wav2Vec2 alignment fails, it falls back to simple timestamp distribution.
 
 Uses GraniteModelManager for consolidated model management and transcription.
 
@@ -19,8 +19,6 @@ from typing import List, Optional, Dict, Any, TYPE_CHECKING, Sequence, Union
 import os
 import pathlib
 import math
-import tempfile
-import subprocess
 import json
 import warnings
 from datetime import datetime
@@ -73,10 +71,6 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
         self.chunk_length_seconds = 60.0
         self.overlap_seconds = 4.0
         self.min_chunk_seconds = 7.0
-        
-        # MFA fallback configuration
-        self.mfa_models_dir: Optional[pathlib.Path] = None
-        self.mfa_available: Optional[bool] = None
 
     @property
     def model_manager(self):
@@ -551,7 +545,7 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                                     speaker: Optional[str] = None) -> List[Dict[str, Any]]:
         """Align a single chunk using Wav2Vec2 and return timestamped words.
         
-        If Wav2Vec2 fails, falls back to MFA alignment.
+        If Wav2Vec2 fails, falls back to simple timestamp distribution.
         """
         log_progress(f"Aligning transcript with Wav2Vec2 (chunk starts at {chunk_start_time:.2f}s)")
         
@@ -586,14 +580,14 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
                     return word_dicts
             
             # If we got here, Wav2Vec2 didn't produce good results
-            self.logger.warning("Wav2Vec2 alignment produced no words, trying MFA fallback")
-            return self._align_chunk_with_mfa_fallback(
+            self.logger.warning("Wav2Vec2 alignment produced no words, using simple timestamp distribution")
+            return self._simple_alignment_to_word_dicts(
                 chunk_wav, chunk_transcript, chunk_start_time, speaker
             )
             
         except Exception as e:
-            self.logger.warning(f"Wav2Vec2 alignment failed: {e}, trying MFA fallback")
-            return self._align_chunk_with_mfa_fallback(
+            self.logger.warning(f"Wav2Vec2 alignment failed: {e}, using simple timestamp distribution")
+            return self._simple_alignment_to_word_dicts(
                 chunk_wav, chunk_transcript, chunk_start_time, speaker
             )
         finally:
@@ -608,325 +602,6 @@ class GraniteWav2Vec2TranscriberProvider(TranscriberProvider):
             import gc
             gc.collect()
             clear_device_cache()
-
-    def _check_mfa_available(self) -> bool:
-        """Check if MFA is available for fallback alignment."""
-        if self.mfa_available is not None:
-            return self.mfa_available
-        
-        # Check if MFA is available in project-local environment
-        project_root = pathlib.Path(__file__).parent.parent.parent.parent
-        local_mfa_env = project_root / ".mfa_env" / "bin" / "mfa"
-        
-        if local_mfa_env.exists():
-            self.mfa_available = True
-            return True
-        
-        # Check system MFA
-        try:
-            result = subprocess.run(
-                ["mfa", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            self.mfa_available = result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            self.mfa_available = False
-        
-        return self.mfa_available
-
-    def _get_mfa_command(self):
-        """Get the MFA command, checking local environment first."""
-        project_root = pathlib.Path(__file__).parent.parent.parent.parent
-        local_mfa_env = project_root / ".mfa_env" / "bin" / "mfa"
-        
-        if local_mfa_env.exists():
-            return str(local_mfa_env)
-        
-        return "mfa"
-
-    def _ensure_mfa_models(self):
-        """Ensure MFA acoustic model and dictionary are downloaded."""
-        log_progress("Ensuring MFA models are available...")
-        
-        env = os.environ.copy()
-        env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
-
-        mfa_cmd = self._get_mfa_command()
-        
-        try:
-            result = subprocess.run(
-                [mfa_cmd, "model", "list", "acoustic"],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env
-            )
-
-            if "english_us_arpa" not in result.stdout:
-                log_progress("Downloading MFA English acoustic model...")
-                subprocess.run(
-                    [mfa_cmd, "model", "download", "acoustic", "english_us_arpa"],
-                    check=True,
-                    env=env
-                )
-
-            result = subprocess.run(
-                [mfa_cmd, "model", "list", "dictionary"],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env
-            )
-
-            if "english_us_arpa" not in result.stdout:
-                log_progress("Downloading MFA English dictionary...")
-                subprocess.run(
-                    [mfa_cmd, "model", "download", "dictionary", "english_us_arpa"],
-                    check=True,
-                    env=env
-                )
-
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to check/download MFA models: {e}")
-            raise
-
-    def _align_chunk_with_mfa_fallback(self, chunk_wav, chunk_transcript: str, 
-                                        chunk_start_time: float = 0.0, 
-                                        speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Fallback: Align a single chunk using MFA."""
-        if not self._check_mfa_available():
-            self.logger.warning("MFA not available, using simple timestamp distribution")
-            return self._simple_alignment_to_word_dicts(chunk_wav, chunk_transcript, chunk_start_time, speaker)
-        
-        log_progress(f"Aligning transcript with MFA fallback (chunk starts at {chunk_start_time:.2f}s)")
-        
-        # Setup MFA models directory if needed
-        if self.mfa_models_dir is None:
-            models_root = pathlib.Path(os.environ.get("HF_HOME", str(pathlib.Path.cwd() / ".models")))
-            self.mfa_models_dir = models_root / "aligners" / "mfa"
-            self.mfa_models_dir.mkdir(parents=True, exist_ok=True)
-        
-        try:
-            self._ensure_mfa_models()
-        except Exception as e:
-            self.logger.warning(f"MFA model setup failed: {e}, using simple distribution")
-            return self._simple_alignment_to_word_dicts(chunk_wav, chunk_transcript, chunk_start_time, speaker)
-        
-        chunk_duration = len(chunk_wav) / 16000.0
-        chunk_end_time = chunk_start_time + chunk_duration
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = pathlib.Path(temp_dir)
-            audio_dir = temp_path / "audio"
-            audio_dir.mkdir()
-
-            # Save chunk audio as WAV
-            audio_file = audio_dir / "chunk.wav"
-            import soundfile as sf
-            sf.write(str(audio_file), chunk_wav, 16000)
-
-            # Normalize transcript for MFA
-            normalized_transcript = ' '.join(
-                ''.join(c for c in word if c.isalnum() or c == "'")
-                for word in chunk_transcript.split()
-            )
-            
-            transcript_file = audio_dir / "chunk.lab"
-            transcript_file.write_text(normalized_transcript, encoding='utf-8')
-
-            output_dir = temp_path / "output"
-            output_dir.mkdir()
-
-            env = os.environ.copy()
-            env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
-            env["MFA_NO_HISTORY"] = "1"
-            
-            mfa_env_bin = pathlib.Path(self._get_mfa_command()).parent
-            env["PATH"] = str(mfa_env_bin) + os.pathsep + env.get("PATH", "")
-
-            textgrid_file = output_dir / "chunk.TextGrid"
-
-            project_root = pathlib.Path(__file__).parent.parent.parent.parent
-            mfa_cmd = self._get_mfa_command()
-            config_path = project_root / "mfa_config.yaml"
-            
-            cmd = [
-                mfa_cmd, "align_one",
-                str(audio_file),
-                str(transcript_file),
-                "english_us_arpa",
-                "english_us_arpa",
-                str(textgrid_file),
-                "--config_path", str(config_path),
-                "--single_speaker",
-                "--clean",
-                "--final_clean",
-            ]
-
-            try:
-                subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=env,
-                    timeout=600
-                )
-
-                if textgrid_file.exists():
-                    return self._parse_textgrid_to_word_dicts(
-                        textgrid_file, chunk_transcript, chunk_start_time, chunk_end_time, speaker
-                    )
-                else:
-                    return self._simple_alignment_to_word_dicts(chunk_wav, chunk_transcript, chunk_start_time, speaker)
-
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                self.logger.warning(f"MFA alignment failed: {e}")
-                return self._simple_alignment_to_word_dicts(chunk_wav, chunk_transcript, chunk_start_time, speaker)
-
-    def _parse_textgrid_to_word_dicts(self, textgrid_path: pathlib.Path, original_transcript: str, 
-                                       chunk_start_time: float = 0.0, chunk_end_time: float = 0.0, 
-                                       speaker: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Parse MFA TextGrid and return list of word dicts with timestamps.
-        
-        Args:
-            textgrid_path: Path to the TextGrid file
-            original_transcript: Original transcript text for word mapping
-            chunk_start_time: Absolute start time of the chunk in seconds
-            chunk_end_time: Absolute end time of the chunk in seconds
-            speaker: Optional speaker label
-            
-        Returns:
-            List of word dicts with "text", "start", "end", "speaker" keys
-        """
-        word_dicts = []
-
-        try:
-            with open(textgrid_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            if not lines:
-                self.logger.warning("TextGrid file is empty")
-                return self._simple_alignment_to_word_dicts(None, original_transcript, chunk_start_time, speaker)
-            
-            # Build mapping of normalized to original words
-            original_words = original_transcript.split()
-            normalized_to_original = {}
-            word_usage_count = {}
-            
-            for orig_word in original_words:
-                normalized = ''.join(c.lower() for c in orig_word if c.isalnum())
-                if normalized:
-                    if normalized not in normalized_to_original:
-                        normalized_to_original[normalized] = []
-                        word_usage_count[normalized] = 0
-                    normalized_to_original[normalized].append(orig_word)
-
-            # Find word tier
-            word_tier_start = None
-            word_tier_end = None
-            
-            for i, line in enumerate(lines):
-                if 'name = "words"' in line:
-                    word_tier_start = i
-                elif word_tier_start is not None and 'name = "phones"' in line:
-                    word_tier_end = i
-                    break
-
-            if word_tier_start is None:
-                raise ValueError("Could not find word tier in TextGrid")
-            
-            if word_tier_end is None:
-                word_tier_end = len(lines)
-
-            # Parse intervals with improved error handling
-            i = word_tier_start
-            parse_errors = 0
-            while i < word_tier_end:
-                line = lines[i].strip()
-                if line.startswith('intervals ['):
-                    i += 1
-                    if i >= word_tier_end:
-                        break
-                    xmin_line = lines[i].strip()
-                    i += 1
-                    if i >= word_tier_end:
-                        break
-                    xmax_line = lines[i].strip()
-                    i += 1
-                    if i >= word_tier_end:
-                        break
-                    text_line = lines[i].strip()
-
-                    try:
-                        # Defensive parsing with explicit checks
-                        if '=' not in xmin_line:
-                            log_debug(f"Malformed xmin line: {xmin_line}")
-                            parse_errors += 1
-                            i += 1
-                            continue
-                        if '=' not in xmax_line:
-                            log_debug(f"Malformed xmax line: {xmax_line}")
-                            parse_errors += 1
-                            i += 1
-                            continue
-                        if '=' not in text_line:
-                            log_debug(f"Malformed text line: {text_line}")
-                            parse_errors += 1
-                            i += 1
-                            continue
-                        
-                        start = float(xmin_line.split('=')[1].strip())
-                        end = float(xmax_line.split('=')[1].strip())
-                        
-                        # Handle text field which may contain '=' in the value
-                        text_parts = text_line.split('=', 1)  # Split only on first '='
-                        if len(text_parts) < 2:
-                            log_debug(f"Could not parse text from: {text_line}")
-                            parse_errors += 1
-                            i += 1
-                            continue
-                        mfa_text = text_parts[1].strip().strip('"')
-
-                        if mfa_text and mfa_text not in ["", "<eps>", "sil", "sp", "spn"]:
-                            normalized_key = mfa_text.lower()
-                            
-                            if normalized_key in normalized_to_original:
-                                word_list = normalized_to_original[normalized_key]
-                                usage_idx = word_usage_count[normalized_key] % len(word_list)
-                                original_text = word_list[usage_idx]
-                                word_usage_count[normalized_key] += 1
-                            else:
-                                original_text = mfa_text
-                            
-                            word_dicts.append({
-                                "text": original_text,
-                                "start": start + chunk_start_time,
-                                "end": end + chunk_start_time,
-                                "speaker": speaker
-                            })
-                    except (ValueError, IndexError) as e:
-                        log_debug(f"Failed to parse interval at line {i}: {e}")
-                        parse_errors += 1
-
-                i += 1
-            
-            if parse_errors > 0:
-                self.logger.warning(f"TextGrid parsing had {parse_errors} errors")
-
-        except Exception as e:
-            self.logger.warning(f"Failed to parse TextGrid: {e}")
-            return self._simple_alignment_to_word_dicts(None, original_transcript, chunk_start_time, speaker)
-
-        # Replace MFA words with Granite's original words if counts match
-        granite_words = original_transcript.split()
-        if len(word_dicts) == len(granite_words):
-            for i, word_dict in enumerate(word_dicts):
-                word_dict["text"] = granite_words[i]
-        
-        return word_dicts
 
     def _simple_alignment_to_word_dicts(self, chunk_wav, transcript: str, 
                                          chunk_start_time: float = 0.0, 

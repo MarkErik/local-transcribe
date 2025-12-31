@@ -52,6 +52,14 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--vad-merge-gap-ms", type=int, default=600, help="Maximum gap between VAD segments to merge (ms) [Default: 600]")
 
     args = p.parse_args(argv)
+    
+    # Track whether certain arguments were explicitly provided via CLI
+    # This is used to determine if we should prompt for values in interactive mode
+    import sys
+    raw_args = argv if argv is not None else sys.argv[1:]
+    args._llm_de_identifier_url_set = any(
+        arg.startswith('--llm-de-identifier-url') for arg in raw_args
+    )
 
     return args
 
@@ -662,6 +670,9 @@ def prompt_de_identification(args, mode: str) -> argparse.Namespace:
         args.de_identify = False
         return args
     
+    # Check if URL was explicitly provided via CLI (not just using default)
+    url_was_set_via_cli = hasattr(args, '_llm_de_identifier_url_set') and args._llm_de_identifier_url_set
+    
     # Prompt for de-identification if not already set via CLI
     if not args.de_identify:
         args.de_identify = _prompt_yes_no(
@@ -669,6 +680,12 @@ def prompt_de_identification(args, mode: str) -> argparse.Namespace:
             default=True
         )
         if args.de_identify:
+            # Prompt for LLM URL if not already set via CLI
+            if not url_was_set_via_cli:
+                args = _prompt_llm_de_identifier_url(args)
+            else:
+                print(f"  ✓ LLM de-identifier URL: {args.llm_de_identifier_url} (set via --llm-de-identifier-url)")
+            
             if mode == PipelineMode.SINGLE_SPEAKER:
                 print("  ✓ De-identification enabled")
             else:
@@ -676,10 +693,31 @@ def prompt_de_identification(args, mode: str) -> argparse.Namespace:
         else:
             print("  ✓ De-identification disabled")
     else:
+        # De-identification was set via CLI, prompt for URL if not also set
+        if not url_was_set_via_cli:
+            args = _prompt_llm_de_identifier_url(args)
+        else:
+            print(f"  ✓ LLM de-identifier URL: {args.llm_de_identifier_url} (set via --llm-de-identifier-url)")
+        
         if mode == PipelineMode.SINGLE_SPEAKER:
             print("  ✓ De-identification enabled (set via --de-identify)")
         else:
             print("  ✓ De-identification enabled (set via --de-identify, includes two-pass processing)")
+    
+    return args
+
+
+def _prompt_llm_de_identifier_url(args) -> argparse.Namespace:
+    """Prompt for the LLM de-identifier URL."""
+    default_url = args.llm_de_identifier_url
+    print(f"\n  Enter the LLM de-identifier URL, or press Enter for default [{default_url}]:")
+    user_input = input("  LLM URL: ").strip()
+    
+    if user_input:
+        args.llm_de_identifier_url = user_input
+        print(f"  ✓ LLM de-identifier URL: {args.llm_de_identifier_url}")
+    else:
+        print(f"  ✓ LLM de-identifier URL: {default_url} (default)")
     
     return args
 

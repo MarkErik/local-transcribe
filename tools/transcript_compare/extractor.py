@@ -5,9 +5,11 @@ Supported formats:
 1. word-level: {"metadata": {...}, "words": [{"text": "word", "start": 0.0, "end": 0.1, "speaker": "..."}, ...]}
 2. chunk-based: [{"chunk_id": 1, "words": ["word1", "word2", ...]}, ...]
 3. segment-based: {"segments": [{"text": "...", "words": ["word1", ...], "start_s": 0.0, ...}, ...]}
+4. script-based: .script.txt files with speaker turns and timestamps
 """
 
 import json
+import re
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
@@ -146,3 +148,158 @@ def extract_from_text(text: str, source_name: str = "text") -> ExtractedTranscri
         format_type="plain-text",
         metadata={},
     )
+
+
+@dataclass
+class ScriptTurn:
+    """A single turn in a script transcript."""
+    speaker: str
+    timestamp: float
+    text: str
+    interjections: list[tuple[str, float, str]] = field(default_factory=list)
+    
+    @property
+    def words(self) -> list[str]:
+        """Extract words from the turn text."""
+        result = []
+        for word in self.text.split():
+            cleaned = word.lower().strip(".,!?;:\"'()[]{}…-–—")
+            if cleaned:
+                result.append(cleaned)
+        return result
+
+
+@dataclass
+class ExtractedScript:
+    """Container for extracted script transcript data."""
+    turns: list[ScriptTurn]
+    source_file: str
+    metadata: dict = field(default_factory=dict)
+    
+    @property
+    def total_turns(self) -> int:
+        return len(self.turns)
+    
+    @property
+    def total_words(self) -> int:
+        return sum(len(t.words) for t in self.turns)
+    
+    @property
+    def speakers(self) -> list[str]:
+        return list(set(t.speaker for t in self.turns))
+    
+    @property
+    def all_words(self) -> list[str]:
+        """Get all words from all turns in order."""
+        words = []
+        for turn in self.turns:
+            words.extend(turn.words)
+        return words
+    
+    @property
+    def full_text(self) -> str:
+        """Get all text from all turns."""
+        return " ".join(t.text for t in self.turns)
+
+
+def extract_script_from_file(filepath: str | Path) -> ExtractedScript:
+    """Extract turns from a .script.txt file."""
+    import re
+    
+    filepath = Path(filepath)
+    
+    if not filepath.exists():
+        raise FileNotFoundError(f"File not found: {filepath}")
+    
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+    
+    return extract_script_from_text(content, str(filepath))
+
+
+def extract_script_from_text(content: str, source_name: str = "text") -> ExtractedScript:
+    """Extract turns from script-formatted text."""
+    import re
+    
+    lines = content.split("\n")
+    turns = []
+    metadata = {}
+    
+    # Parse header for metadata
+    for i, line in enumerate(lines[:10]):
+        if line.startswith("Duration:"):
+            # Extract duration, turns, speakers from header
+            parts = line.split("|")
+            for part in parts:
+                part = part.strip()
+                if part.startswith("Duration:"):
+                    metadata["duration"] = part.replace("Duration:", "").strip()
+                elif part.startswith("Turns:"):
+                    metadata["total_turns"] = part.replace("Turns:", "").strip()
+                elif part.startswith("Speakers:"):
+                    metadata["speakers"] = part.replace("Speakers:", "").strip()
+    
+    # Find turn blocks (separated by dashed lines)
+    turn_pattern = re.compile(
+        r'^([A-Z][A-Z0-9_\s]+):\s*\n'  # Speaker name
+        r'\s*\((\d+\.?\d*)s\)\s*'       # Timestamp
+        r'(.+?)(?=\n-{3,}|\n[A-Z][A-Z0-9_\s]+:\s*\n|\Z)',  # Content until next separator
+        re.MULTILINE | re.DOTALL
+    )
+    
+    # Interjection pattern (inline speaker notes)
+    interjection_pattern = re.compile(
+        r'\[([A-Z]+):\s*\((\d+\.?\d*)s\)\s*([^\]]*)\]'
+    )
+    
+    for match in turn_pattern.finditer(content):
+        speaker = match.group(1).strip()
+        timestamp = float(match.group(2))
+        raw_text = match.group(3).strip()
+        
+        # Extract interjections from the text
+        interjections = []
+        for interj_match in interjection_pattern.finditer(raw_text):
+            interj_speaker = interj_match.group(1)
+            interj_time = float(interj_match.group(2))
+            interj_text = interj_match.group(3).strip()
+            interjections.append((interj_speaker, interj_time, interj_text))
+        
+        # Clean up the text (remove interjections, normalize whitespace)
+        clean_text = interjection_pattern.sub("", raw_text)
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        # Remove tab characters that are often at the start of continuation lines
+        clean_text = clean_text.replace("\t", " ")
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        
+        if clean_text:  # Only add turns with actual content
+            turns.append(ScriptTurn(
+                speaker=speaker,
+                timestamp=timestamp,
+                text=clean_text,
+                interjections=interjections,
+            ))
+    
+    return ExtractedScript(
+        turns=turns,
+        source_file=source_name,
+        metadata=metadata,
+    )
+
+
+def is_script_format(filepath: str | Path) -> bool:
+    """Check if a file is in script format."""
+    filepath = Path(filepath)
+    
+    # Check file extension
+    if filepath.suffix.lower() in ['.txt']:
+        if 'script' in filepath.stem.lower():
+            return True
+        # Check content for script format markers
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                header = f.read(500)
+            return 'CONVERSATION TRANSCRIPT' in header or bool(re.search(r'^[A-Z]+:\s*\n\s*\(\d+\.?\d*s\)', header, re.MULTILINE))
+        except Exception:
+            pass
+    return False

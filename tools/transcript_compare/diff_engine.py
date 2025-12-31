@@ -6,9 +6,16 @@ Uses sequence matching to identify:
 - Insertions (words in one transcript but not the other)
 - Deletions
 - Substitutions (different words at same position)
+
+Also provides detailed analysis:
+- Repeated words/phrases detection
+- N-gram analysis
+- Filler word detection
+- Word frequency analysis
 """
 
 import difflib
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -64,6 +71,43 @@ class DiffResult:
     common_substitutions: list[tuple[str, str, int]] = field(default_factory=list)
     unique_to_a: list[tuple[str, int]] = field(default_factory=list)
     unique_to_b: list[tuple[str, int]] = field(default_factory=list)
+
+
+@dataclass
+class RepetitionInfo:
+    """Information about a repeated word or phrase."""
+    text: str
+    count: int
+    positions: list[int]  # Starting positions in word list
+    is_consecutive: bool  # True if it's a stutter (consecutive)
+
+
+@dataclass
+class TranscriptAnalysis:
+    """Detailed analysis of a single transcript."""
+    # Repetitions
+    repeated_words: list[RepetitionInfo] = field(default_factory=list)
+    repeated_phrases: list[RepetitionInfo] = field(default_factory=list)
+    consecutive_repetitions: list[RepetitionInfo] = field(default_factory=list)  # Stutters
+    
+    # Filler words
+    filler_words: dict[str, int] = field(default_factory=dict)
+    total_filler_count: int = 0
+    filler_percentage: float = 0.0
+    
+    # Word frequency
+    word_frequency: list[tuple[str, int]] = field(default_factory=list)
+    
+    # N-grams (common phrases)
+    bigrams: list[tuple[str, int]] = field(default_factory=list)
+    trigrams: list[tuple[str, int]] = field(default_factory=list)
+    
+    # Statistics
+    total_words: int = 0
+    unique_words: int = 0
+    vocabulary_richness: float = 0.0  # unique/total
+    avg_word_length: float = 0.0
+    total_characters: int = 0
 
 
 def compute_diff(words_a: list[str], words_b: list[str]) -> DiffResult:
@@ -297,3 +341,368 @@ def generate_unified_diff(result: DiffResult, context_lines: int = 3) -> str:
     )
     
     return "\n".join(diff)
+
+
+# Common filler words and hesitation markers
+FILLER_WORDS = {
+    "um", "uh", "umm", "uhh", "er", "err", "ah", "ahh",
+    "like", "you know", "i mean", "basically", "actually",
+    "literally", "right", "so", "well", "okay", "ok",
+    "kind of", "sort of", "kinda", "sorta",
+    "hmm", "hm", "mm", "mhm", "uh-huh", "yeah", "yep",
+}
+
+# Single-word fillers for easy detection
+SINGLE_FILLER_WORDS = {
+    "um", "uh", "umm", "uhh", "er", "err", "ah", "ahh",
+    "like", "basically", "actually", "literally", "right",
+    "so", "well", "okay", "ok", "hmm", "hm", "mm", "mhm",
+    "yeah", "yep",
+}
+
+
+def analyze_transcript(words: list[str]) -> TranscriptAnalysis:
+    """
+    Perform detailed analysis of a single transcript.
+    
+    Detects:
+    - Repeated words (words appearing multiple times)
+    - Repeated phrases (2-4 word sequences appearing multiple times)
+    - Consecutive repetitions (stutters like "the the" or "I I I")
+    - Filler words
+    - Word frequency
+    - N-grams
+    """
+    analysis = TranscriptAnalysis()
+    analysis.total_words = len(words)
+    
+    if not words:
+        return analysis
+    
+    # Normalize words for analysis
+    normalized = [w.lower().strip() for w in words]
+    
+    # Word frequency
+    word_counter = Counter(normalized)
+    analysis.word_frequency = word_counter.most_common(30)
+    analysis.unique_words = len(word_counter)
+    analysis.vocabulary_richness = analysis.unique_words / analysis.total_words if analysis.total_words > 0 else 0
+    
+    # Character statistics
+    analysis.total_characters = sum(len(w) for w in words)
+    analysis.avg_word_length = analysis.total_characters / analysis.total_words if analysis.total_words > 0 else 0
+    
+    # Find repeated words (appearing more than once)
+    repeated = [(word, count) for word, count in word_counter.items() 
+                if count > 1 and len(word) > 2]  # Ignore tiny words
+    repeated.sort(key=lambda x: -x[1])
+    
+    for word, count in repeated[:20]:
+        positions = [i for i, w in enumerate(normalized) if w == word]
+        analysis.repeated_words.append(RepetitionInfo(
+            text=word,
+            count=count,
+            positions=positions,
+            is_consecutive=False
+        ))
+    
+    # Find consecutive repetitions (stutters)
+    _find_consecutive_repetitions(normalized, analysis)
+    
+    # Find repeated phrases (bigrams, trigrams)
+    _analyze_ngrams(normalized, analysis)
+    
+    # Filler word analysis
+    _analyze_fillers(normalized, analysis)
+    
+    return analysis
+
+
+def _find_consecutive_repetitions(words: list[str], analysis: TranscriptAnalysis) -> None:
+    """Find consecutive word repetitions (stutters)."""
+    i = 0
+    while i < len(words):
+        word = words[i]
+        count = 1
+        start = i
+        
+        # Count consecutive occurrences
+        while i + count < len(words) and words[i + count] == word:
+            count += 1
+        
+        if count > 1:
+            analysis.consecutive_repetitions.append(RepetitionInfo(
+                text=word,
+                count=count,
+                positions=[start],
+                is_consecutive=True
+            ))
+        
+        i += count
+    
+    # Also look for repeated short phrases (2-3 words)
+    for phrase_len in [2, 3]:
+        i = 0
+        while i < len(words) - phrase_len * 2 + 1:
+            phrase = tuple(words[i:i + phrase_len])
+            next_phrase = tuple(words[i + phrase_len:i + phrase_len * 2])
+            
+            if phrase == next_phrase:
+                phrase_text = " ".join(phrase)
+                count = 2
+                # Check for more consecutive repetitions
+                while (i + phrase_len * (count + 1) <= len(words) and
+                       tuple(words[i + phrase_len * count:i + phrase_len * (count + 1)]) == phrase):
+                    count += 1
+                
+                analysis.consecutive_repetitions.append(RepetitionInfo(
+                    text=phrase_text,
+                    count=count,
+                    positions=[i],
+                    is_consecutive=True
+                ))
+                i += phrase_len * count
+            else:
+                i += 1
+
+
+def _analyze_ngrams(words: list[str], analysis: TranscriptAnalysis) -> None:
+    """Analyze bigrams and trigrams."""
+    if len(words) < 2:
+        return
+    
+    # Bigrams
+    bigrams = [" ".join(words[i:i+2]) for i in range(len(words) - 1)]
+    bigram_counter = Counter(bigrams)
+    # Filter to phrases that appear more than once
+    analysis.bigrams = [(phrase, count) for phrase, count in bigram_counter.most_common(20)
+                        if count > 1]
+    
+    # Trigrams
+    if len(words) >= 3:
+        trigrams = [" ".join(words[i:i+3]) for i in range(len(words) - 2)]
+        trigram_counter = Counter(trigrams)
+        analysis.trigrams = [(phrase, count) for phrase, count in trigram_counter.most_common(20)
+                             if count > 1]
+    
+    # Find repeated phrases (non-consecutive)
+    for phrase, count in analysis.bigrams + analysis.trigrams:
+        if count > 2:  # Only notable repetitions
+            phrase_words = phrase.split()
+            positions = []
+            for i in range(len(words) - len(phrase_words) + 1):
+                if words[i:i+len(phrase_words)] == phrase_words:
+                    positions.append(i)
+            
+            analysis.repeated_phrases.append(RepetitionInfo(
+                text=phrase,
+                count=count,
+                positions=positions,
+                is_consecutive=False
+            ))
+
+
+def _analyze_fillers(words: list[str], analysis: TranscriptAnalysis) -> None:
+    """Analyze filler words and hesitation markers."""
+    filler_counts = {}
+    
+    for word in words:
+        if word in SINGLE_FILLER_WORDS:
+            filler_counts[word] = filler_counts.get(word, 0) + 1
+    
+    # Also check for multi-word fillers
+    text = " ".join(words)
+    for filler in FILLER_WORDS:
+        if " " in filler:  # Multi-word filler
+            count = text.lower().count(filler)
+            if count > 0:
+                filler_counts[filler] = count
+    
+    analysis.filler_words = dict(sorted(filler_counts.items(), key=lambda x: -x[1]))
+    analysis.total_filler_count = sum(filler_counts.values())
+    analysis.filler_percentage = (analysis.total_filler_count / len(words) * 100) if words else 0
+
+
+def compare_analyses(analysis_a: TranscriptAnalysis, analysis_b: TranscriptAnalysis) -> dict:
+    """
+    Compare two transcript analyses and highlight differences.
+    
+    Returns a dictionary with comparison insights.
+    """
+    comparison = {
+        "vocabulary_comparison": {
+            "richness_a": round(analysis_a.vocabulary_richness * 100, 2),
+            "richness_b": round(analysis_b.vocabulary_richness * 100, 2),
+            "unique_words_a": analysis_a.unique_words,
+            "unique_words_b": analysis_b.unique_words,
+        },
+        "filler_comparison": {
+            "percentage_a": round(analysis_a.filler_percentage, 2),
+            "percentage_b": round(analysis_b.filler_percentage, 2),
+            "total_a": analysis_a.total_filler_count,
+            "total_b": analysis_b.total_filler_count,
+        },
+        "repetition_comparison": {
+            "stutters_a": len(analysis_a.consecutive_repetitions),
+            "stutters_b": len(analysis_b.consecutive_repetitions),
+            "repeated_phrases_a": len(analysis_a.repeated_phrases),
+            "repeated_phrases_b": len(analysis_b.repeated_phrases),
+        },
+        "length_comparison": {
+            "avg_word_length_a": round(analysis_a.avg_word_length, 2),
+            "avg_word_length_b": round(analysis_b.avg_word_length, 2),
+            "total_chars_a": analysis_a.total_characters,
+            "total_chars_b": analysis_b.total_characters,
+        }
+    }
+    
+    return comparison
+
+
+def serialize_analysis(analysis: TranscriptAnalysis) -> dict:
+    """Convert TranscriptAnalysis to JSON-serializable dict."""
+    return {
+        "total_words": analysis.total_words,
+        "unique_words": analysis.unique_words,
+        "vocabulary_richness": round(analysis.vocabulary_richness * 100, 2),
+        "avg_word_length": round(analysis.avg_word_length, 2),
+        "total_characters": analysis.total_characters,
+        "filler_words": analysis.filler_words,
+        "total_filler_count": analysis.total_filler_count,
+        "filler_percentage": round(analysis.filler_percentage, 2),
+        "word_frequency": [
+            {"word": w, "count": c} for w, c in analysis.word_frequency[:15]
+        ],
+        "repeated_words": [
+            {"text": r.text, "count": r.count, "positions": r.positions[:5]}
+            for r in analysis.repeated_words[:10]
+        ],
+        "consecutive_repetitions": [
+            {"text": r.text, "count": r.count, "position": r.positions[0] if r.positions else 0}
+            for r in analysis.consecutive_repetitions[:15]
+        ],
+        "repeated_phrases": [
+            {"text": r.text, "count": r.count}
+            for r in analysis.repeated_phrases[:10]
+        ],
+        "bigrams": [
+            {"phrase": p, "count": c} for p, c in analysis.bigrams[:10]
+        ],
+        "trigrams": [
+            {"phrase": p, "count": c} for p, c in analysis.trigrams[:10]
+        ],
+    }
+
+
+def find_similar_word_pairs(result: DiffResult) -> list[dict]:
+    """
+    Find word pairs from substitutions that are phonetically or visually similar.
+    These are likely transcription errors or homophones.
+    
+    Returns list of dicts with word_a, word_b, similarity, count.
+    """
+    similar_pairs = []
+    
+    for seg in result.segments:
+        if seg.diff_type != DiffType.REPLACE:
+            continue
+            
+        # Compare individual word pairs in the replacement
+        for wa, wb in zip(seg.words_a, seg.words_b):
+            wa_lower = wa.lower()
+            wb_lower = wb.lower()
+            
+            # Skip if they're the same after normalization
+            if wa_lower == wb_lower:
+                continue
+            
+            # Calculate similarity metrics
+            similarity_score = _calculate_word_similarity(wa_lower, wb_lower)
+            
+            if similarity_score >= 0.5:  # At least 50% similar
+                similar_pairs.append({
+                    "word_a": wa,
+                    "word_b": wb,
+                    "similarity": round(similarity_score * 100, 1),
+                    "likely_type": _classify_difference(wa_lower, wb_lower)
+                })
+    
+    # Deduplicate and count
+    pair_counts = Counter((p["word_a"].lower(), p["word_b"].lower()) for p in similar_pairs)
+    
+    unique_pairs = []
+    seen = set()
+    for pair in similar_pairs:
+        key = (pair["word_a"].lower(), pair["word_b"].lower())
+        if key not in seen:
+            seen.add(key)
+            pair["count"] = pair_counts[key]
+            unique_pairs.append(pair)
+    
+    # Sort by count, then by similarity
+    unique_pairs.sort(key=lambda x: (-x["count"], -x["similarity"]))
+    
+    return unique_pairs[:20]
+
+
+def _calculate_word_similarity(word_a: str, word_b: str) -> float:
+    """Calculate similarity between two words using multiple methods."""
+    if not word_a or not word_b:
+        return 0.0
+    
+    # Method 1: Levenshtein-based ratio
+    seq_ratio = difflib.SequenceMatcher(None, word_a, word_b).ratio()
+    
+    # Method 2: Shared character ratio
+    chars_a = set(word_a)
+    chars_b = set(word_b)
+    shared = len(chars_a & chars_b)
+    total = len(chars_a | chars_b)
+    char_ratio = shared / total if total > 0 else 0
+    
+    # Method 3: Length similarity
+    len_ratio = min(len(word_a), len(word_b)) / max(len(word_a), len(word_b))
+    
+    # Weighted combination
+    return (seq_ratio * 0.6) + (char_ratio * 0.25) + (len_ratio * 0.15)
+
+
+def _classify_difference(word_a: str, word_b: str) -> str:
+    """Classify the type of difference between two words."""
+    if len(word_a) == len(word_b):
+        # Same length - likely single character difference
+        diff_chars = sum(1 for a, b in zip(word_a, word_b) if a != b)
+        if diff_chars == 1:
+            return "single_char"
+        elif diff_chars == 2:
+            return "double_char"
+    
+    # Check for common suffixes/prefixes differing
+    if word_a.startswith(word_b) or word_b.startswith(word_a):
+        return "suffix_diff"
+    if word_a.endswith(word_b) or word_b.endswith(word_a):
+        return "prefix_diff"
+    
+    # Check for possible homophones (common patterns)
+    homophone_patterns = [
+        ("their", "there", "they're"),
+        ("your", "you're"),
+        ("its", "it's"),
+        ("to", "too", "two"),
+        ("than", "then"),
+        ("affect", "effect"),
+        ("weather", "whether"),
+        ("right", "write"),
+        ("hear", "here"),
+        ("know", "no"),
+    ]
+    
+    for pattern in homophone_patterns:
+        if word_a in pattern and word_b in pattern:
+            return "homophone"
+    
+    # Check for common transcription confusions
+    if abs(len(word_a) - len(word_b)) <= 2:
+        return "similar_sound"
+    
+    return "other"

@@ -14,7 +14,11 @@ from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 
 from .extractor import extract_from_file, extract_from_text, ExtractedTranscript
-from .diff_engine import compute_diff, generate_aligned_html, DiffResult, DiffType
+from .diff_engine import (
+    compute_diff, generate_aligned_html, DiffResult, DiffType,
+    analyze_transcript, compare_analyses, serialize_analysis,
+    find_similar_word_pairs
+)
 
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -147,6 +151,16 @@ def compare_transcripts():
         # Generate aligned HTML
         html_a, html_b = generate_aligned_html(diff_result)
         
+        # Perform detailed analysis on each transcript
+        analysis_a = analyze_transcript(current_state["transcript_a"].words)
+        analysis_b = analyze_transcript(current_state["transcript_b"].words)
+        
+        # Compare the analyses
+        analysis_comparison = compare_analyses(analysis_a, analysis_b)
+        
+        # Find similar word pairs (potential transcription errors)
+        similar_pairs = find_similar_word_pairs(diff_result)
+        
         # Build response
         response = {
             "success": True,
@@ -176,6 +190,11 @@ def compare_transcripts():
                 for w in diff_result.unique_to_b[:15]
             ],
             "diff_segments": _serialize_diff_segments(diff_result),
+            # New detailed analysis
+            "analysis_a": serialize_analysis(analysis_a),
+            "analysis_b": serialize_analysis(analysis_b),
+            "analysis_comparison": analysis_comparison,
+            "similar_word_pairs": similar_pairs,
         }
         
         return jsonify(response)

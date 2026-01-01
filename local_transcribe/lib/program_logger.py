@@ -25,8 +25,8 @@ class AudioProcessingError(TranscriptionError):
         self.audio_path = audio_path
 
 
-class TranscriptionError(TranscriptionError):
-    """Exception for transcription-related errors."""
+class ASRError(TranscriptionError):
+    """Exception for ASR (Automatic Speech Recognition) model errors."""
 
     def __init__(self, message: str, stage: str = "transcription", cause: Optional[Exception] = None, model: Optional[str] = None):
         super().__init__(message, stage=stage, cause=cause)
@@ -208,7 +208,7 @@ def log_exception(
         
         if isinstance(exception, AudioProcessingError) and exception.audio_path:
             extra["audio_path"] = exception.audio_path
-        elif isinstance(exception, TranscriptionError) and exception.model:
+        elif isinstance(exception, ASRError) and exception.model:
             extra["model"] = exception.model
         elif isinstance(exception, OutputError) and exception.output_path:
             extra["output_path"] = exception.output_path

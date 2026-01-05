@@ -249,7 +249,7 @@ def extract_script_from_text(content: str, source_name: str = "text") -> Extract
     
     # Interjection pattern (inline speaker notes)
     interjection_pattern = re.compile(
-        r'\[([A-Z]+):\s*\((\d+\.?\d*)s\)\s*([^\]]*)\]'
+        r'\[([A-Z][A-Z0-9_]+):\s*\((\d+\.?\d*)s\)\s*([^\]]*)\]'
     )
     
     for match in turn_pattern.finditer(content):

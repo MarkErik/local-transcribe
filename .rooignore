@@ -23,5 +23,5 @@ test/
 *.mp4
 *.json
 *.csv
-#*.txt
+*.txt
 #*.md

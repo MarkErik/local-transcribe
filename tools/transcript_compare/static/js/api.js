@@ -1,6 +1,17 @@
 // API communication functions
 
-export async function handleFileSelect(which, file) {
+// Import global state variables from app.js
+import {
+    filesLoaded,
+    scriptFilesLoaded,
+    turnComparisons,
+    diffSegments,
+    currentDiffIndex,
+    turnTimeline,
+    currentPlayingTurnIndex
+} from './app.js';
+
+export async function handleFileSelect(which, file, filesLoadedParam, updateCompareButtonParam) {
     if (!file) return;
     
     const formData = new FormData();
@@ -20,25 +31,25 @@ export async function handleFileSelect(which, file) {
             const info = data[`transcript_${which}`];
             infoEl.textContent = `✓ ${info.word_count} words (${info.format})`;
             infoEl.style.color = 'var(--success)';
-            filesLoaded[which] = true;
-            updateCompareButton();
+            filesLoadedParam[which] = true;
+            updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
         } else {
             const errorMsg = data.errors?.length ? data.errors.join(', ') : 'Unknown format or failed to parse';
             infoEl.textContent = `✗ ${errorMsg}`;
             infoEl.style.color = 'var(--danger)';
-            filesLoaded[which] = false;
-            updateCompareButton();
+            filesLoadedParam[which] = false;
+            updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
         }
     } catch (error) {
         console.error('Upload error:', error);
         infoEl.textContent = `✗ Upload failed: ${error.message}`;
         infoEl.style.color = 'var(--danger)';
-        filesLoaded[which] = false;
-        updateCompareButton();
+        filesLoadedParam[which] = false;
+        updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
     }
 }
 
-export async function handlePathInput(which, path) {
+export async function handlePathInput(which, path, filesLoadedParam, updateCompareButtonParam) {
     if (!path.trim()) return;
     
     const infoEl = document.getElementById(`info-${which}`);
@@ -57,21 +68,21 @@ export async function handlePathInput(which, path) {
             const info = data[`transcript_${which}`];
             infoEl.textContent = `✓ ${info.word_count} words (${info.format})`;
             infoEl.style.color = 'var(--success)';
-            filesLoaded[which] = true;
-            updateCompareButton();
+            filesLoadedParam[which] = true;
+            updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
         } else {
             const errorMsg = data.errors?.length ? data.errors.join(', ') : 'File not found or unknown format';
             infoEl.textContent = `✗ ${errorMsg}`;
             infoEl.style.color = 'var(--danger)';
-            filesLoaded[which] = false;
-            updateCompareButton();
+            filesLoadedParam[which] = false;
+            updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
         }
     } catch (error) {
         console.error('Load error:', error);
         infoEl.textContent = `✗ Load failed: ${error.message}`;
         infoEl.style.color = 'var(--danger)';
-        filesLoaded[which] = false;
-        updateCompareButton();
+        filesLoadedParam[which] = false;
+        updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
     }
 }
 
@@ -90,8 +101,10 @@ export async function handleAudioSelect(file) {
         
         if (data.success && data.audio_file) {
             document.getElementById('info-audio').textContent = `✓ ${data.audio_file}`;
-            audioPlayer.src = `/api/audio/${data.audio_file}`;
-            audioSection.classList.remove('hidden');
+            const audioPlayer = document.getElementById('audio-player');
+            const audioSection = document.getElementById('audio-section');
+            if (audioPlayer) audioPlayer.src = `/api/audio/${data.audio_file}`;
+            if (audioSection) audioSection.classList.remove('hidden');
         }
     } catch (error) {
         console.error('Audio upload error:', error);
@@ -111,15 +124,17 @@ export async function handleAudioPath(path) {
         
         if (data.success && data.audio_file) {
             document.getElementById('info-audio').textContent = `✓ ${data.audio_file}`;
-            audioPlayer.src = `/api/audio/${data.audio_file}`;
-            audioSection.classList.remove('hidden');
+            const audioPlayer = document.getElementById('audio-player');
+            const audioSection = document.getElementById('audio-section');
+            if (audioPlayer) audioPlayer.src = `/api/audio/${data.audio_file}`;
+            if (audioSection) audioSection.classList.remove('hidden');
         }
     } catch (error) {
         console.error('Audio load error:', error);
     }
 }
 
-export async function handleScriptFileSelect(which, file) {
+export async function handleScriptFileSelect(which, file, scriptFilesLoadedParam, updateScriptCompareButtonParam) {
     if (!file) return;
     
     const formData = new FormData();
@@ -139,25 +154,25 @@ export async function handleScriptFileSelect(which, file) {
             const info = data[`script_${which}`];
             infoEl.textContent = `✓ ${info.total_turns} turns, ${info.total_words} words`;
             infoEl.style.color = 'var(--success)';
-            scriptFilesLoaded[which] = true;
-            updateScriptCompareButton();
+            scriptFilesLoadedParam[which] = true;
+            updateScriptCompareButtonParam(scriptFilesLoaded, document.getElementById('btn-compare-scripts'));
         } else {
             const errorMsg = data.errors?.length ? data.errors.join(', ') : 'Unknown format or failed to parse';
             infoEl.textContent = `✗ ${errorMsg}`;
             infoEl.style.color = 'var(--danger)';
-            scriptFilesLoaded[which] = false;
-            updateScriptCompareButton();
+            scriptFilesLoadedParam[which] = false;
+            updateScriptCompareButtonParam(scriptFilesLoaded, document.getElementById('btn-compare-scripts'));
         }
     } catch (error) {
         console.error('Upload error:', error);
         infoEl.textContent = `✗ Upload failed: ${error.message}`;
         infoEl.style.color = 'var(--danger)';
-        scriptFilesLoaded[which] = false;
-        updateScriptCompareButton();
+        scriptFilesLoadedParam[which] = false;
+        updateScriptCompareButtonParam(scriptFilesLoaded, document.getElementById('btn-compare-scripts'));
     }
 }
 
-export async function handleScriptPathInput(which, path) {
+export async function handleScriptPathInput(which, path, scriptFilesLoadedParam, updateScriptCompareButtonParam) {
     if (!path.trim()) return;
     
     const infoEl = document.getElementById(`info-script-${which}`);
@@ -176,21 +191,21 @@ export async function handleScriptPathInput(which, path) {
             const info = data[`script_${which}`];
             infoEl.textContent = `✓ ${info.total_turns} turns, ${info.total_words} words`;
             infoEl.style.color = 'var(--success)';
-            scriptFilesLoaded[which] = true;
-            updateScriptCompareButton();
+            scriptFilesLoadedParam[which] = true;
+            updateScriptCompareButtonParam(scriptFilesLoaded, document.getElementById('btn-compare-scripts'));
         } else {
             const errorMsg = data.errors?.length ? data.errors.join(', ') : 'File not found or unknown format';
             infoEl.textContent = `✗ ${errorMsg}`;
             infoEl.style.color = 'var(--danger)';
-            scriptFilesLoaded[which] = false;
-            updateScriptCompareButton();
+            scriptFilesLoadedParam[which] = false;
+            updateScriptCompareButtonParam(scriptFilesLoaded, document.getElementById('btn-compare-scripts'));
         }
     } catch (error) {
         console.error('Load error:', error);
         infoEl.textContent = `✗ Load failed: ${error.message}`;
         infoEl.style.color = 'var(--danger)';
-        scriptFilesLoaded[which] = false;
-        updateScriptCompareButton();
+        scriptFilesLoadedParam[which] = false;
+        updateScriptCompareButtonParam(scriptFilesLoaded, document.getElementById('btn-compare-scripts'));
     }
 }
 
@@ -209,8 +224,10 @@ export async function handleScriptAudioSelect(file) {
         
         if (data.success && data.audio_file) {
             document.getElementById('info-script-audio').textContent = `✓ ${data.audio_file}`;
-            scriptAudioPlayer.src = `/api/audio/${data.audio_file}`;
-            scriptAudioSection.classList.remove('hidden');
+            const scriptAudioPlayer = document.getElementById('script-audio-player');
+            const scriptAudioSection = document.getElementById('script-audio-section');
+            if (scriptAudioPlayer) scriptAudioPlayer.src = `/api/audio/${data.audio_file}`;
+            if (scriptAudioSection) scriptAudioSection.classList.remove('hidden');
         }
     } catch (error) {
         console.error('Audio upload error:', error);
@@ -230,24 +247,29 @@ export async function handleScriptAudioPath(path) {
         
         if (data.success && data.audio_file) {
             document.getElementById('info-script-audio').textContent = `✓ ${data.audio_file}`;
-            scriptAudioPlayer.src = `/api/audio/${data.audio_file}`;
-            scriptAudioSection.classList.remove('hidden');
+            const scriptAudioPlayer = document.getElementById('script-audio-player');
+            const scriptAudioSection = document.getElementById('script-audio-section');
+            if (scriptAudioPlayer) scriptAudioPlayer.src = `/api/audio/${data.audio_file}`;
+            if (scriptAudioSection) scriptAudioSection.classList.remove('hidden');
         }
     } catch (error) {
         console.error('Audio load error:', error);
     }
 }
 
-export async function runComparison() {
-    btnCompare.textContent = 'Comparing...';
-    btnCompare.disabled = true;
+export async function runComparison(diffSegmentsParam, currentDiffIndexParam, displayResultsParam) {
+    const btnCompare = document.getElementById('btn-compare');
+    if (btnCompare) {
+        btnCompare.textContent = 'Comparing...';
+        btnCompare.disabled = true;
+    }
     
     try {
         const response = await fetch('/api/compare', { method: 'POST' });
         const data = await response.json();
         
         if (data.success) {
-            displayResults(data);
+            displayResultsParam(data, diffSegments, currentDiffIndex);
         } else {
             alert(data.error || 'Comparison failed');
         }
@@ -255,21 +277,26 @@ export async function runComparison() {
         console.error('Comparison error:', error);
         alert('Comparison failed: ' + error.message);
     } finally {
-        btnCompare.textContent = 'Compare Transcripts';
-        btnCompare.disabled = false;
+        if (btnCompare) {
+            btnCompare.textContent = 'Compare Transcripts';
+            btnCompare.disabled = false;
+        }
     }
 }
 
-export async function runScriptComparison() {
-    btnCompareScripts.textContent = 'Comparing...';
-    btnCompareScripts.disabled = true;
+export async function runScriptComparison(turnTimelineParam, currentPlayingTurnIndexParam, turnComparisonsParam, displayScriptResultsParam) {
+    const btnCompareScripts = document.getElementById('btn-compare-scripts');
+    if (btnCompareScripts) {
+        btnCompareScripts.textContent = 'Comparing...';
+        btnCompareScripts.disabled = true;
+    }
     
     try {
         const response = await fetch('/api/compare-scripts', { method: 'POST' });
         const data = await response.json();
         
         if (data.success) {
-            displayScriptResults(data);
+            displayScriptResultsParam(data, turnTimeline, { value: currentPlayingTurnIndex }, turnComparisons);
         } else {
             alert(data.error || 'Comparison failed');
             console.error(data.traceback);
@@ -278,7 +305,9 @@ export async function runScriptComparison() {
         console.error('Comparison error:', error);
         alert('Comparison failed: ' + error.message);
     } finally {
-        btnCompareScripts.textContent = 'Compare Scripts';
-        btnCompareScripts.disabled = false;
+        if (btnCompareScripts) {
+            btnCompareScripts.textContent = 'Compare Scripts';
+            btnCompareScripts.disabled = false;
+        }
     }
 }

@@ -1,109 +1,134 @@
 // DOM manipulation and UI updates
 
-export function updateCompareButton() {
-    btnCompare.disabled = !(filesLoaded.a && filesLoaded.b);
+// Import global state variables from app.js
+import {
+    filesLoaded,
+    scriptFilesLoaded,
+    turnComparisons,
+    turnTimeline,
+    currentPlayingTurnIndex,
+    diffSegments,
+    currentDiffIndex
+} from './app.js';
+
+export function updateCompareButton(filesLoaded, btnCompare) {
+    const btnCompare = document.getElementById('btn-compare');
+    if (btnCompare) {
+        btnCompare.disabled = !(filesLoaded.a && filesLoaded.b);
+    }
 }
 
-export function updateScriptCompareButton() {
-    btnCompareScripts.disabled = !(scriptFilesLoaded.raw && scriptFilesLoaded.cleaned);
+export function updateScriptCompareButton(scriptFilesLoaded, btnCompareScripts) {
+    if (btnCompareScripts) {
+        btnCompareScripts.disabled = !(scriptFilesLoaded.raw && scriptFilesLoaded.cleaned);
+    }
 }
 
-export function displayResults(data) {
-    resultsSection.classList.remove('hidden');
-    
-    // Statistics
-    document.getElementById('stat-words-a').textContent = data.statistics.total_words_a;
-    document.getElementById('stat-words-b').textContent = data.statistics.total_words_b;
-    document.getElementById('stat-matching').textContent = data.statistics.matching_words;
-    document.getElementById('stat-similarity').textContent = data.statistics.similarity_ratio + '%';
-    document.getElementById('stat-wer').textContent = data.statistics.word_error_rate + '%';
-    
-    const totalDiffs = data.statistics.inserted_words + 
-                      data.statistics.deleted_words + 
-                      data.statistics.replaced_words_a;
-    document.getElementById('stat-diffs').textContent = totalDiffs;
-    
-    // Transcript content
-    document.getElementById('content-a').innerHTML = data.html_a;
-    document.getElementById('content-b').innerHTML = data.html_b;
-    document.getElementById('count-a').textContent = `${data.statistics.total_words_a} words`;
-    document.getElementById('count-b').textContent = `${data.statistics.total_words_b} words`;
-    
-    // Diff segments for navigation
-    diffSegments = data.diff_segments;
-    currentDiffIndex = -1;
-    document.getElementById('total-diffs').textContent = diffSegments.length;
-    document.getElementById('current-diff').textContent = '0';
-    
-    // Analysis lists
-    displaySubstitutions(data.common_substitutions);
-    displaySimilarPairs(data.similar_word_pairs);
-    displayUniqueWords('unique-a-list', data.unique_to_a, 'danger');
-    displayUniqueWords('unique-b-list', data.unique_to_b, 'success');
-    
-    // Detailed analysis
-    displayDetailedAnalysis(data);
-    
-    // Scroll to results
-    resultsSection.scrollIntoView({ behavior: 'smooth' });
+export function displayResults(data, diffSegments, currentDiffIndex) {
+    const resultsSection = document.getElementById('results-section');
+    if (resultsSection) {
+        resultsSection.classList.remove('hidden');
+        
+        // Statistics
+        document.getElementById('stat-words-a').textContent = data.statistics.total_words_a;
+        document.getElementById('stat-words-b').textContent = data.statistics.total_words_b;
+        document.getElementById('stat-matching').textContent = data.statistics.matching_words;
+        document.getElementById('stat-similarity').textContent = data.statistics.similarity_ratio + '%';
+        document.getElementById('stat-wer').textContent = data.statistics.word_error_rate + '%';
+        
+        const totalDiffs = data.statistics.inserted_words +
+                          data.statistics.deleted_words +
+                          data.statistics.replaced_words_a;
+        document.getElementById('stat-diffs').textContent = totalDiffs;
+        
+        // Transcript content
+        document.getElementById('content-a').innerHTML = data.html_a;
+        document.getElementById('content-b').innerHTML = data.html_b;
+        document.getElementById('count-a').textContent = `${data.statistics.total_words_a} words`;
+        document.getElementById('count-b').textContent = `${data.statistics.total_words_b} words`;
+        
+        // Diff segments for navigation
+        diffSegments.length = 0;
+        diffSegments.push(...data.diff_segments);
+        currentDiffIndex.value = -1;
+        document.getElementById('total-diffs').textContent = diffSegments.length;
+        document.getElementById('current-diff').textContent = '0';
+        
+        // Analysis lists
+        displaySubstitutions(data.common_substitutions);
+        displaySimilarPairs(data.similar_word_pairs);
+        displayUniqueWords('unique-a-list', data.unique_to_a, 'danger');
+        displayUniqueWords('unique-b-list', data.unique_to_b, 'success');
+        
+        // Detailed analysis
+        displayDetailedAnalysis(data);
+        
+        // Scroll to results
+        resultsSection.scrollIntoView({ behavior: 'smooth' });
+    }
 }
 
-export function displayScriptResults(data) {
-    scriptResultsSection.classList.remove('hidden');
-    
-    // Store timeline data for audio sync
-    turnTimeline = data.turn_timeline || [];
-    currentPlayingTurnIndex = -1;
-    
-    // LLM Improvement Score
-    const score = data.llm_metrics.overall_improvement_score;
-    document.getElementById('improvement-score').textContent = score.score;
-    document.getElementById('improvement-label').textContent = score.label;
-    document.getElementById('improvement-desc').textContent = score.description;
-    
-    // LLM Metrics
-    const filler = data.llm_metrics.filler_reduction;
-    document.getElementById('metric-filler-reduction').textContent = filler.reduction;
-    document.getElementById('metric-filler-detail').textContent = `${filler.raw_count} → ${filler.cleaned_count} (${filler.reduction_percentage}% reduction)`;
-    
-    const stutter = data.llm_metrics.stutter_reduction;
-    document.getElementById('metric-stutter-reduction').textContent = stutter.reduction;
-    document.getElementById('metric-stutter-detail').textContent = `${stutter.raw_count} → ${stutter.cleaned_count}`;
-    
-    const turns = data.llm_metrics.turn_consolidation;
-    document.getElementById('metric-turns-merged').textContent = turns.turns_merged;
-    document.getElementById('metric-turns-detail').textContent = `${turns.raw_turns} → ${turns.cleaned_turns} turns`;
-    
-    const mods = data.llm_metrics.modification_summary;
-    document.getElementById('metric-modification-rate').textContent = mods.modification_rate + '%';
-    document.getElementById('metric-mod-detail').textContent = `+${mods.words_added} / -${mods.words_removed} / ~${mods.words_replaced}`;
-    
-    // Statistics
-    document.getElementById('script-stat-words-raw').textContent = data.statistics.total_words_raw;
-    document.getElementById('script-stat-words-cleaned').textContent = data.statistics.total_words_cleaned;
-    document.getElementById('script-stat-turns-raw').textContent = data.statistics.total_turns_raw;
-    document.getElementById('script-stat-turns-cleaned').textContent = data.statistics.total_turns_cleaned;
-    document.getElementById('script-stat-similarity').textContent = data.statistics.similarity_ratio + '%';
-    document.getElementById('script-stat-wer').textContent = data.statistics.word_error_rate + '%';
-    
-    // Transcript content
-    document.getElementById('script-content-raw').innerHTML = data.html_raw;
-    document.getElementById('script-content-cleaned').innerHTML = data.html_cleaned;
-    document.getElementById('script-count-raw').textContent = `${data.statistics.total_words_raw} words`;
-    document.getElementById('script-count-cleaned').textContent = `${data.statistics.total_words_cleaned} words`;
-    
-    // Turn-by-turn comparison
-    turnComparisons = data.turn_comparisons;
-    displayTurnComparisons(turnComparisons);
-    
-    // Analysis lists
-    displayScriptSubstitutions(data.common_substitutions);
-    displayScriptSimilarPairs(data.similar_word_pairs);
-    displayScriptUniqueWords('script-unique-raw-list', data.unique_to_raw, 'danger');
-    displayScriptUniqueWords('script-unique-cleaned-list', data.unique_to_cleaned, 'success');
-    
-    // Scroll to results
-    scriptResultsSection.scrollIntoView({ behavior: 'smooth' });
+export function displayScriptResults(data, turnTimeline, currentPlayingTurnIndex, turnComparisons) {
+    const scriptResultsSection = document.getElementById('script-results-section');
+    if (scriptResultsSection) {
+        scriptResultsSection.classList.remove('hidden');
+        
+        // Store timeline data for audio sync
+        turnTimeline.length = 0;
+        turnTimeline.push(...(data.turn_timeline || []));
+        currentPlayingTurnIndex.value = -1;
+        
+        // LLM Improvement Score
+        const score = data.llm_metrics.overall_improvement_score;
+        document.getElementById('improvement-score').textContent = score.score;
+        document.getElementById('improvement-label').textContent = score.label;
+        document.getElementById('improvement-desc').textContent = score.description;
+        
+        // LLM Metrics
+        const filler = data.llm_metrics.filler_reduction;
+        document.getElementById('metric-filler-reduction').textContent = filler.reduction;
+        document.getElementById('metric-filler-detail').textContent = `${filler.raw_count} → ${filler.cleaned_count} (${filler.reduction_percentage}% reduction)`;
+        
+        const stutter = data.llm_metrics.stutter_reduction;
+        document.getElementById('metric-stutter-reduction').textContent = stutter.reduction;
+        document.getElementById('metric-stutter-detail').textContent = `${stutter.raw_count} → ${stutter.cleaned_count}`;
+        
+        const turns = data.llm_metrics.turn_consolidation;
+        document.getElementById('metric-turns-merged').textContent = turns.turns_merged;
+        document.getElementById('metric-turns-detail').textContent = `${turns.raw_turns} → ${turns.cleaned_turns} turns`;
+        
+        const mods = data.llm_metrics.modification_summary;
+        document.getElementById('metric-modification-rate').textContent = mods.modification_rate + '%';
+        document.getElementById('metric-mod-detail').textContent = `+${mods.words_added} / -${mods.words_removed} / ~${mods.words_replaced}`;
+        
+        // Statistics
+        document.getElementById('script-stat-words-raw').textContent = data.statistics.total_words_raw;
+        document.getElementById('script-stat-words-cleaned').textContent = data.statistics.total_words_cleaned;
+        document.getElementById('script-stat-turns-raw').textContent = data.statistics.total_turns_raw;
+        document.getElementById('script-stat-turns-cleaned').textContent = data.statistics.total_turns_cleaned;
+        document.getElementById('script-stat-similarity').textContent = data.statistics.similarity_ratio + '%';
+        document.getElementById('script-stat-wer').textContent = data.statistics.word_error_rate + '%';
+        
+        // Transcript content
+        document.getElementById('script-content-raw').innerHTML = data.html_raw;
+        document.getElementById('script-content-cleaned').innerHTML = data.html_cleaned;
+        document.getElementById('script-count-raw').textContent = `${data.statistics.total_words_raw} words`;
+        document.getElementById('script-count-cleaned').textContent = `${data.statistics.total_words_cleaned} words`;
+        
+        // Turn-by-turn comparison
+        turnComparisons.length = 0;
+        turnComparisons.push(...data.turn_comparisons);
+        displayTurnComparisons(turnComparisons);
+        
+        // Analysis lists
+        displayScriptSubstitutions(data.common_substitutions);
+        displayScriptSimilarPairs(data.similar_word_pairs);
+        displayScriptUniqueWords('script-unique-raw-list', data.unique_to_raw, 'danger');
+        displayScriptUniqueWords('script-unique-cleaned-list', data.unique_to_cleaned, 'success');
+        
+        // Scroll to results
+        scriptResultsSection.scrollIntoView({ behavior: 'smooth' });
+    }
 }
 
 export function displaySubstitutions(substitutions) {

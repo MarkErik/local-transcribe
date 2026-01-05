@@ -45,44 +45,51 @@ import {
 // Main application initialization
 
 // State
-let diffSegments = [];
-let currentDiffIndex = -1;
-let filesLoaded = { a: false, b: false };
-let scriptFilesLoaded = { raw: false, cleaned: false };
+export const diffSegments = [];
+export const currentDiffIndex = { value: -1 };
+export const filesLoaded = { a: false, b: false };
+export const scriptFilesLoaded = { raw: false, cleaned: false };
 let currentMode = 'word';
-let turnComparisons = [];
-let turnTimeline = [];  // For audio sync
-let currentPlayingTurnIndex = -1;  // Track currently highlighted turn
+export const turnComparisons = [];
+export const turnTimeline = [];  // For audio sync
+export const currentPlayingTurnIndex = { value: -1 };  // Track currently highlighted turn
 
 // DOM Elements - Word Mode
-const fileA = document.getElementById('file-a');
-const fileB = document.getElementById('file-b');
-const fileAudio = document.getElementById('file-audio');
-const pathA = document.getElementById('path-a');
-const pathB = document.getElementById('path-b');
-const pathAudio = document.getElementById('path-audio');
-const btnCompare = document.getElementById('btn-compare');
-const resultsSection = document.getElementById('results-section');
-const audioPlayer = document.getElementById('audio-player');
-const audioSection = document.getElementById('audio-section');
+let fileA, fileB, fileAudio, pathA, pathB, pathAudio, btnCompare, resultsSection, audioPlayer, audioSection;
 
 // DOM Elements - Script Mode
-const fileScriptRaw = document.getElementById('file-script-raw');
-const fileScriptCleaned = document.getElementById('file-script-cleaned');
-const fileScriptAudio = document.getElementById('file-script-audio');
-const pathScriptRaw = document.getElementById('path-script-raw');
-const pathScriptCleaned = document.getElementById('path-script-cleaned');
-const pathScriptAudio = document.getElementById('path-script-audio');
-const btnCompareScripts = document.getElementById('btn-compare-scripts');
-const scriptResultsSection = document.getElementById('script-results-section');
-const scriptAudioPlayer = document.getElementById('script-audio-player');
-const scriptAudioSection = document.getElementById('script-audio-section');
+let fileScriptRaw, fileScriptCleaned, fileScriptAudio, pathScriptRaw, pathScriptCleaned, pathScriptAudio,
+    btnCompareScripts, scriptResultsSection, scriptAudioPlayer, scriptAudioSection;
 
 // Initialize the application
 function init() {
+    // Get DOM elements
+    fileA = document.getElementById('file-a');
+    fileB = document.getElementById('file-b');
+    fileAudio = document.getElementById('file-audio');
+    pathA = document.getElementById('path-a');
+    pathB = document.getElementById('path-b');
+    pathAudio = document.getElementById('path-audio');
+    btnCompare = document.getElementById('btn-compare');
+    resultsSection = document.getElementById('results-section');
+    audioPlayer = document.getElementById('audio-player');
+    audioSection = document.getElementById('audio-section');
+    
+    // Script Mode Elements
+    fileScriptRaw = document.getElementById('file-script-raw');
+    fileScriptCleaned = document.getElementById('file-script-cleaned');
+    fileScriptAudio = document.getElementById('file-script-audio');
+    pathScriptRaw = document.getElementById('path-script-raw');
+    pathScriptCleaned = document.getElementById('path-script-cleaned');
+    pathScriptAudio = document.getElementById('path-script-audio');
+    btnCompareScripts = document.getElementById('btn-compare-scripts');
+    scriptResultsSection = document.getElementById('script-results-section');
+    scriptAudioPlayer = document.getElementById('script-audio-player');
+    scriptAudioSection = document.getElementById('script-audio-section');
+    
     // Hide audio sections initially
-    audioSection.classList.add('hidden');
-    scriptAudioSection.classList.add('hidden');
+    if (audioSection) audioSection.classList.add('hidden');
+    if (scriptAudioSection) scriptAudioSection.classList.add('hidden');
     
     // Initialize audio sync when DOM is ready
     initializeAudioSync();
@@ -90,12 +97,36 @@ function init() {
 
 // Explicit initialization function that initializes all modules
 function initializeApp() {
+    // Get DOM elements
+    fileA = document.getElementById('file-a');
+    fileB = document.getElementById('file-b');
+    fileAudio = document.getElementById('file-audio');
+    pathA = document.getElementById('path-a');
+    pathB = document.getElementById('path-b');
+    pathAudio = document.getElementById('path-audio');
+    btnCompare = document.getElementById('btn-compare');
+    resultsSection = document.getElementById('results-section');
+    audioPlayer = document.getElementById('audio-player');
+    audioSection = document.getElementById('audio-section');
+    
+    // Script Mode Elements
+    fileScriptRaw = document.getElementById('file-script-raw');
+    fileScriptCleaned = document.getElementById('file-script-cleaned');
+    fileScriptAudio = document.getElementById('file-script-audio');
+    pathScriptRaw = document.getElementById('path-script-raw');
+    pathScriptCleaned = document.getElementById('path-script-cleaned');
+    pathScriptAudio = document.getElementById('path-script-audio');
+    btnCompareScripts = document.getElementById('btn-compare-scripts');
+    scriptResultsSection = document.getElementById('script-results-section');
+    scriptAudioPlayer = document.getElementById('script-audio-player');
+    scriptAudioSection = document.getElementById('script-audio-section');
+    
     // Hide audio sections initially
-    audioSection.classList.add('hidden');
-    scriptAudioSection.classList.add('hidden');
+    if (audioSection) audioSection.classList.add('hidden');
+    if (scriptAudioSection) scriptAudioSection.classList.add('hidden');
     
     // Initialize audio module
-    initializeAudioSync();
+    initializeAudioSync(turnTimeline, { value: currentPlayingTurnIndex });
     
     // Additional module initializations can be added here as needed
 }

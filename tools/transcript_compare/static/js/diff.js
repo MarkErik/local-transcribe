@@ -1,25 +1,31 @@
 // Diff visualization logic
 
-export function navigateDiff(direction) {
+// Import global state variables from app.js
+import {
+    diffSegments,
+    currentDiffIndex
+} from './app.js';
+
+export function navigateDiff(direction, diffSegments, currentDiffIndex) {
     if (diffSegments.length === 0) return;
     
-    currentDiffIndex += direction;
-    if (currentDiffIndex < 0) currentDiffIndex = diffSegments.length - 1;
-    if (currentDiffIndex >= diffSegments.length) currentDiffIndex = 0;
+    currentDiffIndex.value += direction;
+    if (currentDiffIndex.value < 0) currentDiffIndex.value = diffSegments.length - 1;
+    if (currentDiffIndex.value >= diffSegments.length) currentDiffIndex.value = 0;
     
-    document.getElementById('current-diff').textContent = currentDiffIndex + 1;
+    document.getElementById('current-diff').textContent = currentDiffIndex.value + 1;
     
     // Highlight and scroll to the diff
-    highlightCurrentDiff();
+    highlightCurrentDiff(diffSegments, currentDiffIndex);
 }
 
-export function highlightCurrentDiff() {
+export function highlightCurrentDiff(diffSegments, currentDiffIndex) {
     // Remove previous highlights
     document.querySelectorAll('.current-highlight').forEach(el => {
         el.classList.remove('current-highlight');
     });
     
-    const segment = diffSegments[currentDiffIndex];
+    const segment = diffSegments[currentDiffIndex.value];
     if (!segment) return;
     
     // Find and highlight the corresponding spans
@@ -31,11 +37,11 @@ export function highlightCurrentDiff() {
     const spansB = contentB.querySelectorAll('.replace, .insert');
     
     // Simple approach: highlight by index
-    if (spansA[currentDiffIndex]) {
-        spansA[currentDiffIndex].classList.add('current-highlight');
-        spansA[currentDiffIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (spansA[currentDiffIndex.value]) {
+        spansA[currentDiffIndex.value].classList.add('current-highlight');
+        spansA[currentDiffIndex.value].scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-    if (spansB[currentDiffIndex]) {
-        spansB[currentDiffIndex].classList.add('current-highlight');
+    if (spansB[currentDiffIndex.value]) {
+        spansB[currentDiffIndex.value].classList.add('current-highlight');
     }
 }

@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcript Comparison Tool</title>
+    <link rel="stylesheet" href="static/css/main.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Transcript Comparison Tool</h1>
+            <p>Compare transcripts side-by-side and analyze differences</p>
+        </header>
+
+        <!-- Mode Selection -->
+        <div class="mode-selection">
+            <h3>Select Comparison Mode</h3>
+            <div class="mode-buttons">
+                <button class="mode-btn active" data-mode="word">
+                    <span class="mode-icon">📝</span>
+                    <span class="mode-title">Individual Speaker Transcripts</span>
+                    <span class="mode-desc">Compare raw JSON transcripts from separate speakers</span>
+                </button>
+                <button class="mode-btn disabled" data-mode="multi-speaker" disabled>
+                    <span class="mode-icon">👥</span>
+                    <span class="mode-title">Multi-Speaker Raw (Coming Soon)</span>
+                    <span class="mode-desc">Compare raw transcripts with multiple speakers</span>
+                </button>
+                <button class="mode-btn" data-mode="script">
+                    <span class="mode-icon">✨</span>
+                    <span class="mode-title">Raw vs LLM-Cleaned</span>
+                    <span class="mode-desc">Compare raw transcript with LLM post-processed version</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Word Mode: File Input Section -->
+        <div id="word-mode-section" class="mode-content active">
+            <div class="file-section">
+                <div class="file-input-group">
+                    <h3>Transcript A</h3>
+                    <input type="file" id="file-a" accept=".json,.txt">
+                    <input type="text" id="path-a" placeholder="Or enter file path...">
+                    <div class="file-info" id="info-a"></div>
+                </div>
+                <div class="file-input-group">
+                    <h3>Transcript B</h3>
+                    <input type="file" id="file-b" accept=".json,.txt">
+                    <input type="text" id="path-b" placeholder="Or enter file path...">
+                    <div class="file-info" id="info-b"></div>
+                </div>
+                <div class="file-input-group">
+                    <h3>Audio File (Optional)</h3>
+                    <input type="file" id="file-audio" accept="audio/*,.m4a,.mp3,.wav,.flac">
+                    <input type="text" id="path-audio" placeholder="Or enter file path...">
+                    <div class="file-info" id="info-audio"></div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn btn-primary" id="btn-compare" disabled>Compare Transcripts</button>
+            </div>
+        </div>
+
+        <!-- Script Mode: File Input Section -->
+        <div id="script-mode-section" class="mode-content hidden">
+            <div class="file-section">
+                <div class="file-input-group">
+                    <h3>🔴 Raw Transcript (.script.txt)</h3>
+                    <input type="file" id="file-script-raw" accept=".txt">
+                    <input type="text" id="path-script-raw" placeholder="Or enter file path...">
+                    <div class="file-info" id="info-script-raw"></div>
+                </div>
+                <div class="file-input-group">
+                    <h3>✨ LLM-Cleaned Transcript (.script.txt)</h3>
+                    <input type="file" id="file-script-cleaned" accept=".txt">
+                    <input type="text" id="path-script-cleaned" placeholder="Or enter file path...">
+                    <div class="file-info" id="info-script-cleaned"></div>
+                </div>
+                <div class="file-input-group">
+                    <h3>Audio File (Optional)</h3>
+                    <input type="file" id="file-script-audio" accept="audio/*,.m4a,.mp3,.wav,.flac">
+                    <input type="text" id="path-script-audio" placeholder="Or enter file path...">
+                    <div class="file-info" id="info-script-audio"></div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn btn-primary" id="btn-compare-scripts" disabled>Compare Scripts</button>
+            </div>
+        </div>
+
+        <!-- Word Mode Results Section (hidden until comparison) -->
+        <div id="results-section" class="hidden">
+            
+            <!-- Statistics -->
+            <div class="stats-section" id="stats-section">
+                <div class="stat-card">
+                    <div class="value" id="stat-words-a">0</div>
+                    <div class="label">Words in A</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="stat-words-b">0</div>
+                    <div class="label">Words in B</div>
+                </div>
+                <div class="stat-card success">
+                    <div class="value" id="stat-matching">0</div>
+                    <div class="label">Matching Words</div>
+                </div>
+                <div class="stat-card success">
+                    <div class="value" id="stat-similarity">0%</div>
+                    <div class="label">Similarity</div>
+                </div>
+                <div class="stat-card warning">
+                    <div class="value" id="stat-wer">0%</div>
+                    <div class="label">Word Error Rate</div>
+                </div>
+                <div class="stat-card danger">
+                    <div class="value" id="stat-diffs">0</div>
+                    <div class="label">Differences</div>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color equal"></div>
+                    <span>Matching</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color insert"></div>
+                    <span>Only in B (inserted)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color delete"></div>
+                    <span>Only in A (deleted)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color replace"></div>
+                    <span>Different (replaced)</span>
+                </div>
+            </div>
+
+            <!-- Diff Navigator -->
+            <div class="diff-navigator">
+                <button class="nav-btn" id="btn-prev-diff">← Previous</button>
+                <span class="nav-info">
+                    Difference <span id="current-diff">0</span> of <span id="total-diffs">0</span>
+                </span>
+                <button class="nav-btn" id="btn-next-diff">Next →</button>
+            </div>
+
+            <!-- Audio Player -->
+            <div class="audio-section" id="audio-section">
+                <h3>🎧 Audio Review</h3>
+                <div class="audio-controls">
+                    <audio id="audio-player" controls></audio>
+                    <div class="speed-control">
+                        <label>Playback Speed:</label>
+                        <div class="speed-buttons">
+                            <button class="speed-btn" data-speed="0.5">0.5x</button>
+                            <button class="speed-btn" data-speed="0.75">0.75x</button>
+                            <button class="speed-btn active" data-speed="1">1x</button>
+                            <button class="speed-btn" data-speed="1.25">1.25x</button>
+                            <button class="speed-btn" data-speed="1.5">1.5x</button>
+                            <button class="speed-btn" data-speed="2">2x</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side-by-side Diff -->
+            <div class="diff-section">
+                <div class="transcript-panel">
+                    <div class="panel-header">
+                        <h3>📄 Transcript A</h3>
+                        <span class="word-count" id="count-a"></span>
+                    </div>
+                    <div class="transcript-content" id="content-a">
+                        <div class="loading">Load transcripts to begin comparison</div>
+                    </div>
+                </div>
+                <div class="transcript-panel">
+                    <div class="panel-header">
+                        <h3>📄 Transcript B</h3>
+                        <span class="word-count" id="count-b"></span>
+                    </div>
+                    <div class="transcript-content" id="content-b">
+                        <div class="loading">Load transcripts to begin comparison</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analysis Cards -->
+            <div class="analysis-section">
+                <div class="analysis-card">
+                    <h3>🔄 Common Substitutions</h3>
+                    <ul class="analysis-list" id="substitutions-list">
+                    </ul>
+                </div>
+                <div class="analysis-card">
+                    <h3>🎯 Similar Word Pairs</h3>
+                    <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 10px;">Likely transcription errors or homophones</p>
+                    <ul class="analysis-list" id="similar-pairs-list">
+                    </ul>
+                </div>
+                <div class="analysis-card">
+                    <h3>📕 Words Only in A</h3>
+                    <ul class="analysis-list" id="unique-a-list">
+                    </ul>
+                </div>
+                <div class="analysis-card">
+                    <h3>📗 Words Only in B</h3>
+                    <ul class="analysis-list" id="unique-b-list">
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Detailed Analysis Section -->
+            <div class="detailed-analysis-section">
+                <div class="analysis-header">
+                    <h2>📊 Detailed Transcript Analysis</h2>
+                    <div class="analysis-tabs">
+                        <button class="tab-btn active" data-tab="repetitions">Repetitions</button>
+                        <button class="tab-btn" data-tab="fillers">Filler Words</button>
+                        <button class="tab-btn" data-tab="frequency">Word Frequency</button>
+                        <button class="tab-btn" data-tab="phrases">Common Phrases</button>
+                        <button class="tab-btn" data-tab="comparison">Comparison</button>
+                    </div>
+                </div>
+
+                <!-- Repetitions Tab -->
+                <div class="tab-content active" id="tab-repetitions">
+                    <div class="analysis-grid">
+                        <div class="analysis-panel">
+                            <div class="analysis-panel-header">
+                                <h4>📄 Transcript A - Repetitions</h4>
+                                <span class="word-count" id="repetition-count-a">0 found</span>
+                            </div>
+                            <div class="analysis-panel-content">
+                                <h5 style="color: var(--text-secondary); margin-bottom: 10px; font-size: 0.8rem;">CONSECUTIVE REPETITIONS (Stutters)</h5>
+                                <ul class="repetition-list" id="stutters-a"></ul>
+                                <h5 style="color: var(--text-secondary); margin: 15px 0 10px; font-size: 0.8rem;">REPEATED WORDS</h5>
+                                <ul class="repetition-list" id="repeated-words-a"></ul>
+                            </div>
+                        </div>
+                        <div class="analysis-panel">
+                            <div class="analysis-panel-header">
+                                <h4>📄 Transcript B - Repetitions</h4>
+                                <span class="word-count" id="repetition-count-b">0 found</span>
+                            </div>
+                            <div class="analysis-panel-content">
+                                <h5 style="color: var(--text-secondary); margin-bottom: 10px; font-size: 0.8rem;">CONSECUTIVE REPETITIONS (Stutters)</h5>
+                                <ul class="repetition-list" id="stutters-b"></ul>
+                                <h5 style="color: var(--text-secondary); margin: 15px 0 10px; font-size: 0.8rem;">REPEATED WORDS</h5>
+                                <ul class="repetition-list" id="repeated-words-b"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filler Words Tab -->
+                <div class="tab-content" id="tab-fillers">
+                    <div class="comparison-stats">
+                        <div class="comparison-stat">
+                            <div class="label">Filler Word %</div>
+                            <div class="comparison-values">
+                                <span class="value a" id="filler-pct-a">0%</span>
+                                <span class="vs">vs</span>
+                                <span class="value b" id="filler-pct-b">0%</span>
+                            </div>
+                        </div>
+                        <div class="comparison-stat">
+                            <div class="label">Total Fillers</div>
+                            <div class="comparison-values">
+                                <span class="value a" id="filler-total-a">0</span>
+                                <span class="vs">vs</span>
+                                <span class="value b" id="filler-total-b">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="analysis-grid">
+                        <div class="analysis-panel">
+                            <div class="analysis-panel-header">
+                                <h4>📄 Transcript A - Filler Words</h4>
+                            </div>
+                            <div class="analysis-panel-content">
+                                <div class="filler-grid" id="fillers-a"></div>
+                            </div>
+                        </div>
+                        <div class="analysis-panel">
+                            <div class="analysis-panel-header">
+                                <h4>📄 Transcript B - Filler Words</h4>
+                            </div>
+                            <div class="analysis-panel-content">
+                                <div class="filler-grid" id="fillers-b"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Word Frequency Tab -->
+                <div class="tab-content" id="tab-frequency">
+                    <div class="comparison-stats">
+                        <div class="comparison-stat">
+                            <div class="label">Unique Words</div>
+                            <div class="comparison-values">
+                                <span class="value a" id="unique-count-a">0</span>
+                                <span class="vs">vs</span>
+                                <span class="value b" id="unique-count-b">0</span>
+                            </div>
+                        </div>
+                        <div class="comparison-stat">
+                            <div class="label">Vocabulary Richness</div>
+                            <div class="comparison-values">
+                                <span class="value a" id="vocab-richness-a">0%</span>
+                                <span class="vs">vs</span>
+                                <span class="value b" id="vocab-richness-b">0%</span>
+                            </div>
+                        </div>
+                        <div class="comparison-stat">
+                            <div class="label">Avg Word Length</div>
+                            <div class="comparison-values">
+                                <span class="value a" id="avg-length-a">0</span>
+                                <span class="vs">vs</span>
+                                <span class="value b" id="avg-length-b">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="analysis-grid">
+                        <div class="analysis-panel">
+                            <div class="analysis-panel-header">
+                                <h4>📄 Transcript A - Top Words</h4>
+                            </div>
+                            <div class="analysis-panel-content" id="frequency-a"></div>
+                        </div>
+                        <div class="analysis-panel">
+                            <div class="analysis-panel-header">
+                                <h4>📄 Transcript B - Top Words</h4>
+                            </div>
+                            <div class="analysis-panel-content" id="frequency-b"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Common Phrases Tab -->
+                <div class="tab-content" id="tab-phrases">
+                    <div class="analysis-grid">
+                        <div class="analysis-panel">
+                            <div class="analysis-panel-header">
+                                <h4>📄 Transcript A - Common Phrases</h4>
+                            </div>
+                            <div class="analysis-panel-content">
+                                <h5 style="color: var(--text-secondary); margin-bottom: 10px; font-size: 0.8rem;">BIGRAMS (2-word phrases)</h5>
+                                <ul class="phrase-list" id="bigrams-a"></ul>
+                                <h5 style="color: var(--text-secondary); margin: 15px 0 10px; font-size: 0.8rem;">TRIGRAMS (3-word phrases)</h5>
+                                <ul class="phrase-list" id="trigrams-a"></ul>
+                            </div>
+                        </div>
+                        <div class="analysis-panel">
+                            <div class="analysis-panel-header">
+                                <h4>📄 Transcript B - Common Phrases</h4>
+                            </div>
+                            <div class="analysis-panel-content">
+                                <h5 style="color: var(--text-secondary); margin-bottom: 10px; font-size: 0.8rem;">BIGRAMS (2-word phrases)</h5>
+                                <ul class="phrase-list" id="bigrams-b"></ul>
+                                <h5 style="color: var(--text-secondary); margin: 15px 0 10px; font-size: 0.8rem;">TRIGRAMS (3-word phrases)</h5>
+                                <ul class="phrase-list" id="trigrams-b"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comparison Tab -->
+                <div class="tab-content" id="tab-comparison">
+                    <div class="comparison-stats" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                        <div class="comparison-stat">
+                            <div class="label">Total Words</div>
+                            <div class="comparison-values">
+                                <span class="value a" id="cmp-words-a">0</span>
+                                <span class="vs">vs</span>
+                                <span class="value b" id="cmp-words-b">0</span>
+                            </div>
+                        </div>
+                        <div class="comparison-stat">
+                            <div class="label">Total Characters</div>
+                            <div class="comparison-values">
+                                <span class="value a" id="cmp-chars-a">0</span>
+                                <span class="vs">vs</span>
+                                <span class="value b" id="cmp-chars-b">0</span>
+                            </div>
+                        </div>
+                        <div class="comparison-stat">
+                            <div class="label">Stutters Found</div>
+                            <div class="comparison-values">
+                                <span class="value a" id="cmp-stutters-a">0</span>
+                                <span class="vs">vs</span>
+                                <span class="value b" id="cmp-stutters-b">0</span>
+                            </div>
+                        </div>
+                        <div class="comparison-stat">
+                            <div class="label">Repeated Phrases</div>
+                            <div class="comparison-values">
+                                <span class="value a" id="cmp-phrases-a">0</span>
+                                <span class="vs">vs</span>
+                                <span class="value b" id="cmp-phrases-b">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="analysis-panel" style="margin-top: 20px;">
+                        <div class="analysis-panel-header">
+                            <h4>📋 Summary Insights</h4>
+                        </div>
+                        <div class="analysis-panel-content" id="summary-insights">
+                            <p style="color: var(--text-secondary);">Run a comparison to see insights.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Script Mode Results Section -->
+        <div id="script-results-section" class="hidden">
+            
+            <!-- LLM Improvement Score -->
+            <div class="improvement-score-card" id="improvement-score-section">
+                <div class="score" id="improvement-score">0</div>
+                <div class="score-label" id="improvement-label">Calculating...</div>
+                <div class="score-desc" id="improvement-desc"></div>
+            </div>
+
+            <!-- LLM Metrics -->
+            <div class="llm-metrics-section" style="margin-top: 20px;">
+                <div class="llm-metric-card positive">
+                    <div class="metric-icon">🗑️</div>
+                    <div class="metric-value" id="metric-filler-reduction">0</div>
+                    <div class="metric-label">Filler Words Removed</div>
+                    <div class="metric-detail" id="metric-filler-detail"></div>
+                </div>
+                <div class="llm-metric-card positive">
+                    <div class="metric-icon">🔄</div>
+                    <div class="metric-value" id="metric-stutter-reduction">0</div>
+                    <div class="metric-label">Stutters Cleaned</div>
+                    <div class="metric-detail" id="metric-stutter-detail"></div>
+                </div>
+                <div class="llm-metric-card info">
+                    <div class="metric-icon">🔗</div>
+                    <div class="metric-value" id="metric-turns-merged">0</div>
+                    <div class="metric-label">Turns Consolidated</div>
+                    <div class="metric-detail" id="metric-turns-detail"></div>
+                </div>
+                <div class="llm-metric-card warning">
+                    <div class="metric-icon">✏️</div>
+                    <div class="metric-value" id="metric-modification-rate">0%</div>
+                    <div class="metric-label">Modification Rate</div>
+                    <div class="metric-detail" id="metric-mod-detail"></div>
+                </div>
+            </div>
+
+            <!-- Statistics -->
+            <div class="stats-section" id="script-stats-section">
+                <div class="stat-card">
+                    <div class="value" id="script-stat-words-raw">0</div>
+                    <div class="label">Raw Words</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="script-stat-words-cleaned">0</div>
+                    <div class="label">Cleaned Words</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="script-stat-turns-raw">0</div>
+                    <div class="label">Raw Turns</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="script-stat-turns-cleaned">0</div>
+                    <div class="label">Cleaned Turns</div>
+                </div>
+                <div class="stat-card success">
+                    <div class="value" id="script-stat-similarity">0%</div>
+                    <div class="label">Similarity</div>
+                </div>
+                <div class="stat-card warning">
+                    <div class="value" id="script-stat-wer">0%</div>
+                    <div class="label">Word Error Rate</div>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color equal"></div>
+                    <span>Matching</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color insert"></div>
+                    <span>Added in Cleaned</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color delete"></div>
+                    <span>Removed from Raw</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color replace"></div>
+                    <span>Modified</span>
+                </div>
+            </div>
+
+            <!-- Audio Player -->
+            <div class="audio-section" id="script-audio-section">
+                <h3>🎧 Audio Review</h3>
+                <div class="audio-controls">
+                    <audio id="script-audio-player" controls></audio>
+                    <div class="speed-control">
+                        <label>Playback Speed:</label>
+                        <div class="speed-buttons">
+                            <button class="speed-btn-script" data-speed="0.5">0.5x</button>
+                            <button class="speed-btn-script" data-speed="0.75">0.75x</button>
+                            <button class="speed-btn-script active" data-speed="1">1x</button>
+                            <button class="speed-btn-script" data-speed="1.25">1.25x</button>
+                            <button class="speed-btn-script" data-speed="1.5">1.5x</button>
+                            <button class="speed-btn-script" data-speed="2">2x</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side-by-side Full Diff -->
+            <div class="diff-section">
+                <div class="transcript-panel">
+                    <div class="panel-header">
+                        <h3>🔴 Raw Transcript</h3>
+                        <span class="word-count" id="script-count-raw"></span>
+                    </div>
+                    <div class="transcript-content" id="script-content-raw">
+                        <div class="loading">Load script transcripts to begin comparison</div>
+                    </div>
+                </div>
+                <div class="transcript-panel">
+                    <div class="panel-header">
+                        <h3>✨ LLM-Cleaned Transcript</h3>
+                        <span class="word-count" id="script-count-cleaned"></span>
+                    </div>
+                    <div class="transcript-content" id="script-content-cleaned">
+                        <div class="loading">Load script transcripts to begin comparison</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Turn-by-Turn Comparison -->
+            <div class="turn-comparison-section">
+                <div class="turn-comparison-header">
+                    <h2>📝 Turn-by-Turn Comparison</h2>
+                    <div class="turn-filter-buttons">
+                        <button class="filter-btn active" data-filter="all">All Turns</button>
+                        <button class="filter-btn" data-filter="changed">Changed Only</button>
+                        <button class="filter-btn" data-filter="unchanged">Unchanged Only</button>
+                    </div>
+                </div>
+                <div class="turn-list" id="turn-list">
+                    <!-- Turn cards will be inserted here -->
+                </div>
+            </div>
+
+            <!-- Analysis Cards -->
+            <div class="analysis-section">
+                <div class="analysis-card">
+                    <h3>🔄 Common Substitutions</h3>
+                    <ul class="analysis-list" id="script-substitutions-list">
+                    </ul>
+                </div>
+                <div class="analysis-card">
+                    <h3>🎯 Similar Word Pairs</h3>
+                    <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 10px;">Likely transcription adjustments</p>
+                    <ul class="analysis-list" id="script-similar-pairs-list">
+                    </ul>
+                </div>
+                <div class="analysis-card">
+                    <h3>📕 Removed from Raw</h3>
+                    <ul class="analysis-list" id="script-unique-raw-list">
+                    </ul>
+                </div>
+                <div class="analysis-card">
+                    <h3>📗 Added in Cleaned</h3>
+                    <ul class="analysis-list" id="script-unique-cleaned-list">
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- External JavaScript modules -->
+    <script src="static/js/utils.js"></script>
+    <script src="static/js/api.js"></script>
+    <script src="static/js/ui.js"></script>
+    <script src="static/js/audio.js"></script>
+    <script src="static/js/diff.js"></script>
+    <script src="static/js/file-upload.js"></script>
+    <script src="static/js/app.js"></script>
+</body>
+</html>

@@ -32,7 +32,6 @@ samples/
 *.m4a
 *.json
 *.mp4
-*.html
 *.pdf
 *.TextGrid
 

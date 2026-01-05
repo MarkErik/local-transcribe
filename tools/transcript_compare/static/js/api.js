@@ -1,6 +1,6 @@
 // API communication functions
 
-async function handleFileSelect(which, file) {
+export async function handleFileSelect(which, file) {
     if (!file) return;
     
     const formData = new FormData();
@@ -38,7 +38,7 @@ async function handleFileSelect(which, file) {
     }
 }
 
-async function handlePathInput(which, path) {
+export async function handlePathInput(which, path) {
     if (!path.trim()) return;
     
     const infoEl = document.getElementById(`info-${which}`);
@@ -75,7 +75,7 @@ async function handlePathInput(which, path) {
     }
 }
 
-async function handleAudioSelect(file) {
+export async function handleAudioSelect(file) {
     if (!file) return;
     
     const formData = new FormData();
@@ -98,7 +98,7 @@ async function handleAudioSelect(file) {
     }
 }
 
-async function handleAudioPath(path) {
+export async function handleAudioPath(path) {
     if (!path.trim()) return;
     
     try {
@@ -119,7 +119,7 @@ async function handleAudioPath(path) {
     }
 }
 
-async function handleScriptFileSelect(which, file) {
+export async function handleScriptFileSelect(which, file) {
     if (!file) return;
     
     const formData = new FormData();
@@ -157,7 +157,7 @@ async function handleScriptFileSelect(which, file) {
     }
 }
 
-async function handleScriptPathInput(which, path) {
+export async function handleScriptPathInput(which, path) {
     if (!path.trim()) return;
     
     const infoEl = document.getElementById(`info-script-${which}`);
@@ -194,7 +194,7 @@ async function handleScriptPathInput(which, path) {
     }
 }
 
-async function handleScriptAudioSelect(file) {
+export async function handleScriptAudioSelect(file) {
     if (!file) return;
     
     const formData = new FormData();
@@ -217,7 +217,7 @@ async function handleScriptAudioSelect(file) {
     }
 }
 
-async function handleScriptAudioPath(path) {
+export async function handleScriptAudioPath(path) {
     if (!path.trim()) return;
     
     try {
@@ -238,7 +238,7 @@ async function handleScriptAudioPath(path) {
     }
 }
 
-async function runComparison() {
+export async function runComparison() {
     btnCompare.textContent = 'Comparing...';
     btnCompare.disabled = true;
     
@@ -260,7 +260,7 @@ async function runComparison() {
     }
 }
 
-async function runScriptComparison() {
+export async function runScriptComparison() {
     btnCompareScripts.textContent = 'Comparing...';
     btnCompareScripts.disabled = true;
     

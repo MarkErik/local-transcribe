@@ -7,7 +7,7 @@
 /**
  * Find the turn index that corresponds to a given time in seconds
  */
-function findTurnIndexAtTime(timeSeconds) {
+export function findTurnIndexAtTime(timeSeconds) {
     if (!turnTimeline || turnTimeline.length === 0) return -1;
     
     for (let i = turnTimeline.length - 1; i >= 0; i--) {
@@ -25,7 +25,7 @@ function findTurnIndexAtTime(timeSeconds) {
 /**
  * Highlight the turn that matches the current audio playback time
  */
-function highlightTurnAtTime(timeSeconds) {
+export function highlightTurnAtTime(timeSeconds) {
     const turnIndex = findTurnIndexAtTime(timeSeconds);
     
     if (turnIndex === currentPlayingTurnIndex) return; // No change needed
@@ -62,7 +62,7 @@ function highlightTurnAtTime(timeSeconds) {
 /**
  * Seek audio to a specific timestamp (called when clicking a turn)
  */
-function seekAudioToTurn(timestampSeconds) {
+export function seekAudioToTurn(timestampSeconds) {
     if (!scriptAudioPlayer.src || scriptAudioPlayer.src === window.location.href) {
         // No audio loaded
         return;
@@ -85,7 +85,7 @@ function seekAudioToTurn(timestampSeconds) {
 /**
  * Initialize audio sync event listeners
  */
-function initializeAudioSync() {
+export function initializeAudioSync() {
     // Update highlight during playback
     scriptAudioPlayer.addEventListener('timeupdate', () => {
         highlightTurnAtTime(scriptAudioPlayer.currentTime);

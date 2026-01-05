@@ -1,14 +1,14 @@
 // DOM manipulation and UI updates
 
-function updateCompareButton() {
+export function updateCompareButton() {
     btnCompare.disabled = !(filesLoaded.a && filesLoaded.b);
 }
 
-function updateScriptCompareButton() {
+export function updateScriptCompareButton() {
     btnCompareScripts.disabled = !(scriptFilesLoaded.raw && scriptFilesLoaded.cleaned);
 }
 
-function displayResults(data) {
+export function displayResults(data) {
     resultsSection.classList.remove('hidden');
     
     // Statistics
@@ -48,7 +48,7 @@ function displayResults(data) {
     resultsSection.scrollIntoView({ behavior: 'smooth' });
 }
 
-function displayScriptResults(data) {
+export function displayScriptResults(data) {
     scriptResultsSection.classList.remove('hidden');
     
     // Store timeline data for audio sync
@@ -106,7 +106,7 @@ function displayScriptResults(data) {
     scriptResultsSection.scrollIntoView({ behavior: 'smooth' });
 }
 
-function displaySubstitutions(substitutions) {
+export function displaySubstitutions(substitutions) {
     const list = document.getElementById('substitutions-list');
     list.innerHTML = substitutions.map(s => `
         <li>
@@ -120,7 +120,7 @@ function displaySubstitutions(substitutions) {
     `).join('');
 }
 
-function displaySimilarPairs(pairs) {
+export function displaySimilarPairs(pairs) {
     const list = document.getElementById('similar-pairs-list');
     if (!pairs || pairs.length === 0) {
         list.innerHTML = '<li style="color: var(--text-secondary);">No similar word pairs found</li>';
@@ -154,7 +154,7 @@ function displaySimilarPairs(pairs) {
     }).join('');
 }
 
-function displayUniqueWords(listId, words, colorClass) {
+export function displayUniqueWords(listId, words, colorClass) {
     const list = document.getElementById(listId);
     list.innerHTML = words.map(w => `
         <li>
@@ -164,7 +164,7 @@ function displayUniqueWords(listId, words, colorClass) {
     `).join('');
 }
 
-function displayScriptSubstitutions(substitutions) {
+export function displayScriptSubstitutions(substitutions) {
     const list = document.getElementById('script-substitutions-list');
     list.innerHTML = substitutions.map(s => `
         <li>
@@ -178,7 +178,7 @@ function displayScriptSubstitutions(substitutions) {
     `).join('');
 }
 
-function displayScriptSimilarPairs(pairs) {
+export function displayScriptSimilarPairs(pairs) {
     const list = document.getElementById('script-similar-pairs-list');
     if (!pairs || pairs.length === 0) {
         list.innerHTML = '<li style="color: var(--text-secondary);">No similar word pairs found</li>';
@@ -201,7 +201,7 @@ function displayScriptSimilarPairs(pairs) {
     }).join('');
 }
 
-function displayScriptUniqueWords(listId, words, colorClass) {
+export function displayScriptUniqueWords(listId, words, colorClass) {
     const list = document.getElementById(listId);
     if (!words || words.length === 0) {
         list.innerHTML = '<li style="color: var(--text-secondary);">None</li>';
@@ -215,7 +215,7 @@ function displayScriptUniqueWords(listId, words, colorClass) {
     `).join('');
 }
 
-function displayTurnComparisons(turns) {
+export function displayTurnComparisons(turns) {
     const container = document.getElementById('turn-list');
     container.innerHTML = turns.map((turn, index) => {
         const similarity = turn.turn_similarity || 100;
@@ -256,7 +256,7 @@ function displayTurnComparisons(turns) {
     }).join('');
 }
 
-function filterTurns(filter) {
+export function filterTurns(filter) {
     const cards = document.querySelectorAll('.turn-card');
     cards.forEach(card => {
         const isChanged = card.dataset.changed === 'true';
@@ -270,7 +270,7 @@ function filterTurns(filter) {
     });
 }
 
-function displayDetailedAnalysis(data) {
+export function displayDetailedAnalysis(data) {
     const analysisA = data.analysis_a;
     const analysisB = data.analysis_b;
     const comparison = data.analysis_comparison;
@@ -319,7 +319,7 @@ function displayDetailedAnalysis(data) {
     displaySummaryInsights(data);
 }
 
-function displayRepetitions(analysis, which) {
+export function displayRepetitions(analysis, which) {
     // Consecutive repetitions (stutters)
     const stuttersList = document.getElementById(`stutters-${which}`);
     if (analysis.consecutive_repetitions.length > 0) {
@@ -351,7 +351,7 @@ function displayRepetitions(analysis, which) {
     document.getElementById(`repetition-count-${which}`).textContent = `${totalReps} found`;
 }
 
-function displayFillers(analysis, which) {
+export function displayFillers(analysis, which) {
     const container = document.getElementById(`fillers-${which}`);
     const fillers = Object.entries(analysis.filler_words);
     
@@ -367,7 +367,7 @@ function displayFillers(analysis, which) {
     }
 }
 
-function displayFrequency(analysis, which) {
+export function displayFrequency(analysis, which) {
     const container = document.getElementById(`frequency-${which}`);
     const maxCount = analysis.word_frequency.length > 0 ? analysis.word_frequency[0].count : 1;
     
@@ -385,7 +385,7 @@ function displayFrequency(analysis, which) {
     }).join('');
 }
 
-function displayPhrases(analysis, which) {
+export function displayPhrases(analysis, which) {
     // Bigrams
     const bigramsList = document.getElementById(`bigrams-${which}`);
     if (analysis.bigrams.length > 0) {
@@ -413,7 +413,7 @@ function displayPhrases(analysis, which) {
     }
 }
 
-function displaySummaryInsights(data) {
+export function displaySummaryInsights(data) {
     const container = document.getElementById('summary-insights');
     const stats = data.statistics;
     const analysisA = data.analysis_a;

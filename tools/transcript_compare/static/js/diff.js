@@ -1,6 +1,6 @@
 // Diff visualization logic
 
-function navigateDiff(direction) {
+export function navigateDiff(direction) {
     if (diffSegments.length === 0) return;
     
     currentDiffIndex += direction;
@@ -13,7 +13,7 @@ function navigateDiff(direction) {
     highlightCurrentDiff();
 }
 
-function highlightCurrentDiff() {
+export function highlightCurrentDiff() {
     // Remove previous highlights
     document.querySelectorAll('.current-highlight').forEach(el => {
         el.classList.remove('current-highlight');

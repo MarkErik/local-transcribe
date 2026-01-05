@@ -1,3 +1,47 @@
+import { escapeHtml } from './utils.js';
+import {
+  handleFileSelect,
+  handlePathInput,
+  handleAudioSelect,
+  handleAudioPath,
+  handleScriptFileSelect,
+  handleScriptPathInput,
+  handleScriptAudioSelect,
+  handleScriptAudioPath,
+  runComparison,
+  runScriptComparison
+} from './api.js';
+import {
+  updateCompareButton,
+  updateScriptCompareButton,
+  displayResults,
+  displayScriptResults,
+  displaySubstitutions,
+  displaySimilarPairs,
+  displayUniqueWords,
+  displayScriptSubstitutions,
+  displayScriptSimilarPairs,
+  displayScriptUniqueWords,
+  displayTurnComparisons,
+  filterTurns,
+  displayDetailedAnalysis,
+  displayRepetitions,
+  displayFillers,
+  displayFrequency,
+  displayPhrases,
+  displaySummaryInsights
+} from './ui.js';
+import {
+  findTurnIndexAtTime,
+  highlightTurnAtTime,
+  seekAudioToTurn,
+  initializeAudioSync
+} from './audio.js';
+import {
+  navigateDiff,
+  highlightCurrentDiff
+} from './diff.js';
+
 // Main application initialization
 
 // State
@@ -44,5 +88,17 @@ function init() {
     initializeAudioSync();
 }
 
+// Explicit initialization function that initializes all modules
+function initializeApp() {
+    // Hide audio sections initially
+    audioSection.classList.add('hidden');
+    scriptAudioSection.classList.add('hidden');
+    
+    // Initialize audio module
+    initializeAudioSync();
+    
+    // Additional module initializations can be added here as needed
+}
+
 // Run initialization when DOM is loaded
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', initializeApp);

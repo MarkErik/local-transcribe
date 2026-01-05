@@ -32,20 +32,20 @@ export async function handleFileSelect(which, file, filesLoadedParam, updateComp
             infoEl.textContent = `✓ ${info.word_count} words (${info.format})`;
             infoEl.style.color = 'var(--success)';
             filesLoadedParam[which] = true;
-            updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
+            updateCompareButtonParam(filesLoaded);
         } else {
             const errorMsg = data.errors?.length ? data.errors.join(', ') : 'Unknown format or failed to parse';
             infoEl.textContent = `✗ ${errorMsg}`;
             infoEl.style.color = 'var(--danger)';
             filesLoadedParam[which] = false;
-            updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
+            updateCompareButtonParam(filesLoaded);
         }
     } catch (error) {
         console.error('Upload error:', error);
         infoEl.textContent = `✗ Upload failed: ${error.message}`;
         infoEl.style.color = 'var(--danger)';
         filesLoadedParam[which] = false;
-        updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
+        updateCompareButtonParam(filesLoaded);
     }
 }
 
@@ -69,20 +69,20 @@ export async function handlePathInput(which, path, filesLoadedParam, updateCompa
             infoEl.textContent = `✓ ${info.word_count} words (${info.format})`;
             infoEl.style.color = 'var(--success)';
             filesLoadedParam[which] = true;
-            updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
+            updateCompareButtonParam(filesLoaded);
         } else {
             const errorMsg = data.errors?.length ? data.errors.join(', ') : 'File not found or unknown format';
             infoEl.textContent = `✗ ${errorMsg}`;
             infoEl.style.color = 'var(--danger)';
             filesLoadedParam[which] = false;
-            updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
+            updateCompareButtonParam(filesLoaded);
         }
     } catch (error) {
         console.error('Load error:', error);
         infoEl.textContent = `✗ Load failed: ${error.message}`;
         infoEl.style.color = 'var(--danger)';
         filesLoadedParam[which] = false;
-        updateCompareButtonParam(filesLoaded, document.getElementById('btn-compare'));
+        updateCompareButtonParam(filesLoaded);
     }
 }
 

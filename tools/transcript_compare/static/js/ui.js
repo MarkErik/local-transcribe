@@ -11,7 +11,7 @@ import {
     currentDiffIndex
 } from './app.js';
 
-export function updateCompareButton(filesLoaded, btnCompare) {
+export function updateCompareButton(filesLoaded) {
     const btnCompare = document.getElementById('btn-compare');
     if (btnCompare) {
         btnCompare.disabled = !(filesLoaded.a && filesLoaded.b);

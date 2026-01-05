@@ -1,0 +1,15 @@
+:root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-card: #1f2940;
+    --text-primary: #eee;
+    --text-secondary: #a0a0a0;
+    --accent: #4a9eff;
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --equal-bg: transparent;
+    --insert-bg: rgba(74, 222, 128, 0.2);
+    --delete-bg: rgba(248, 113, 113, 0.2);
+    --replace-bg: rgba(251, 191, 36, 0.2);
+}

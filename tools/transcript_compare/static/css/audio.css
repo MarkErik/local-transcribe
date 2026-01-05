@@ -1,0 +1,81 @@
+/* Audio Player Section */
+.audio-section {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.audio-section h3 {
+    margin-bottom: 15px;
+    font-size: 1rem;
+    color: var(--text-secondary);
+}
+
+.audio-controls {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+#audio-player {
+    flex: 1;
+    min-width: 300px;
+}
+
+.speed-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.speed-control label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.speed-buttons {
+    display: flex;
+    gap: 5px;
+}
+
+.speed-btn {
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.speed-btn:hover {
+    background: var(--accent);
+}
+
+.speed-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.speed-btn-script {
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.speed-btn-script:hover {
+    background: var(--accent);
+}
+
+.speed-btn-script.active {
+    background: var(--accent);
+    border-color: var(--accent);
+}

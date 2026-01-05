@@ -1,0 +1,123 @@
+.transcript-content .equal {
+    background: var(--equal-bg);
+}
+
+.transcript-content .insert {
+    background: var(--insert-bg);
+    color: var(--success);
+    border-bottom: 2px solid var(--success);
+}
+
+.transcript-content .delete {
+    background: var(--delete-bg);
+    color: var(--danger);
+    border-bottom: 2px solid var(--danger);
+}
+
+.transcript-content .replace {
+    background: var(--replace-bg);
+    color: var(--warning);
+    border-bottom: 2px solid var(--warning);
+}
+
+.transcript-content .gap {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* Legend */
+.legend {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+}
+
+.legend-color {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+}
+
+.legend-color.equal { background: var(--equal-bg); border: 1px solid rgba(255,255,255,0.2); }
+.legend-color.insert { background: var(--insert-bg); border: 2px solid var(--success); }
+.legend-color.delete { background: var(--delete-bg); border: 2px solid var(--danger); }
+.legend-color.replace { background: var(--replace-bg); border: 2px solid var(--warning); }
+
+/* Diff Navigator */
+.diff-navigator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: var(--bg-card);
+    border-radius: 12px;
+}
+
+.diff-navigator .nav-info {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.nav-btn {
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.nav-btn:hover {
+    background: var(--accent);
+}
+
+.nav-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Similar pairs styling */
+.similarity-badge {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 5px;
+}
+
+.similarity-badge.high {
+    background: rgba(74, 222, 128, 0.2);
+    color: var(--success);
+}
+
+.similarity-badge.medium {
+    background: rgba(251, 191, 36, 0.2);
+    color: var(--warning);
+}
+
+.type-badge {
+    font-size: 0.65rem;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: rgba(74, 158, 255, 0.2);
+    color: var(--accent);
+    margin-left: 5px;
+}
+
+/* Add highlight style */
+.current-highlight {
+    outline: 3px solid var(--accent) !important;
+    outline-offset: 2px;
+}

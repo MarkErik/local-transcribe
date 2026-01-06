@@ -1,5 +1,8 @@
 // DOM manipulation and UI updates
 
+// Import utility functions
+import { escapeHtml } from './utils.js';
+
 // Import global state variables from app.js
 import {
     filesLoaded,
@@ -246,7 +249,8 @@ export function displayTurnComparisons(turns) {
         const similarity = turn.turn_similarity || 100;
         const simClass = similarity >= 95 ? '' : (similarity >= 80 ? 'medium' : 'low');
         const cardClass = turn.has_match && similarity < 95 ? 'changed' : (turn.has_match ? 'unchanged' : 'changed');
-        const hasAudio = scriptAudioPlayer.src && scriptAudioPlayer.src !== window.location.href;
+        const scriptAudioPlayer = document.getElementById('script-audio-player');
+        const hasAudio = scriptAudioPlayer && scriptAudioPlayer.src && scriptAudioPlayer.src !== window.location.href;
         
         return `
             <div class="turn-card ${cardClass}" 

@@ -93,6 +93,16 @@ export function seekAudioToTurn(timestampSeconds, turnTimeline, currentPlayingTu
     }
 }
 
+// Make seekAudioToTurn globally available for inline event handlers
+window.seekAudioToTurn = function(timestampSeconds) {
+    // Import the required modules dynamically
+    import('./app.js').then(app => {
+        import('./audio.js').then(audio => {
+            audio.seekAudioToTurn(timestampSeconds, app.turnTimeline, app.currentPlayingTurnIndex);
+        });
+    });
+};
+
 /**
  * Initialize audio sync event listeners
  */

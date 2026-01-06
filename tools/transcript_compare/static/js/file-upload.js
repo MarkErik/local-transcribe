@@ -11,6 +11,31 @@ import {
     turnComparisons
 } from './app.js';
 
+import {
+    handleFileSelect,
+    handlePathInput,
+    handleAudioSelect,
+    handleAudioPath,
+    handleScriptFileSelect,
+    handleScriptPathInput,
+    handleScriptAudioSelect,
+    handleScriptAudioPath,
+    runComparison,
+    runScriptComparison
+} from './api.js';
+
+import {
+    updateCompareButton,
+    updateScriptCompareButton,
+    displayResults,
+    displayScriptResults,
+    filterTurns
+} from './ui.js';
+
+import {
+    navigateDiff
+} from './diff.js';
+
 // Initialize event listeners when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     // Get DOM elements
@@ -81,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            filterTurns(btn.dataset.filter);
+            filterTurns(btn.dataset.filter, turnComparisons);
         });
     });
 

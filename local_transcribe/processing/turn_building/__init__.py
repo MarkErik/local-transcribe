@@ -86,9 +86,6 @@ def build_turns_vad_split_audio(speaker_audio_files, **kwargs) -> TranscriptFlow
     """
     Build conversation turns using VAD-first approach for split audio files.
     
-    This is the recommended approach for interview-style recordings where
-    each speaker has their own audio track.
-    
     Args:
         speaker_audio_files: Dict mapping speaker_id -> audio file path
         **kwargs: Configuration options including:
@@ -115,7 +112,7 @@ def build_turns(words_or_files, mode: str, **kwargs) -> TranscriptFlow:
     selects the appropriate processor based on the mode:
     - "combined_audio": Uses rule-based turn building with interjection detection
     - "split_audio": Turn building for split audio mode (delegates to combined for now)
-    - "vad_split_audio": VAD-first approach for split audio files (recommended)
+    - "vad_split_audio": VAD-first approach for split audio files
     
     Args:
         words_or_files: Either List[WordSegment] or Dict[str, str] (speaker -> audio path)

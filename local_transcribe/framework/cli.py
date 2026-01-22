@@ -48,7 +48,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--list-stages", action="store_true", help="List available pipeline stages and exit.")
 
     # VAD pipeline arguments
-    p.add_argument("--vad-pipeline", action="store_true", help="Use VAD-first pipeline for split audio files (recommended for interviews).")
+    p.add_argument("--vad-pipeline", action="store_true", help="Use VAD-first pipeline for split audio files.")
     p.add_argument("--skip-alignment", action="store_true", default=True, help="Skip word-level alignment (default: True for VAD pipeline).")
 
     # LLM cleanup arguments
@@ -940,7 +940,7 @@ def interactive_vad_split_audio(args, api) -> argparse.Namespace:
         # Validate CLI-provided transcriber is compatible with VAD pipeline
         provider = registry.get_transcriber_provider(args.transcriber_provider)
         if provider.has_builtin_alignment:
-            print(f"  ⚠ Warning: {args.transcriber_provider} has built-in alignment and is not recommended for VAD pipeline.")
+            print(f"  ⚠ Warning: {args.transcriber_provider} has built-in alignment.")
             print(f"    Consider using: granite, openai_whisper, or remote")
         print(f"  ✓ Transcriber: {args.transcriber_provider} (set via CLI)")
     
@@ -1071,10 +1071,8 @@ def interactive_split_audio(args, api) -> argparse.Namespace:
     
     # Offer VAD pipeline as an option
     print("\n--- Pipeline Selection ---")
-    print("  The VAD pipeline is recommended for interviews with separate audio tracks.")
-    print("  It uses Voice Activity Detection for more accurate turn segmentation.")
     
-    use_vad = _prompt_yes_no("Use VAD pipeline? (recommended)", default=True)
+    use_vad = _prompt_yes_no("Use VAD pipeline?", default=True)
     
     if use_vad:
         args.vad_pipeline = True

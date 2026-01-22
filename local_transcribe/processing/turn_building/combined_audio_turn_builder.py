@@ -456,8 +456,7 @@ def _calculate_conversation_metrics(turns: List[HierarchicalTurn]) -> Dict[str, 
             "avg_turn_duration": 0.0,
             "avg_turn_words": 0.0,
             "avg_speaking_rate": 0.0,
-            "interjection_rate": 0.0,
-            "avg_flow_continuity": 0.0
+            "interjection_rate": 0.0
         }
     
     total_interjections = sum(len(t.interjections) for t in turns)
@@ -472,19 +471,8 @@ def _calculate_conversation_metrics(turns: List[HierarchicalTurn]) -> Dict[str, 
         "avg_turn_duration": round(sum(t.duration for t in turns) / len(turns), 2),
         "avg_turn_words": round(total_words / len(turns), 1),
         "avg_speaking_rate": round(sum(t.speaking_rate for t in turns) / len(turns), 1),
-        "interjection_rate": round((total_interjections / total_duration) * 60, 2) if total_duration > 0 else 0,
-        "avg_flow_continuity": round(sum(t.flow_continuity for t in turns) / len(turns), 3),
-        "turn_type_distribution": _count_turn_types(turns)
+        "interjection_rate": round((total_interjections / total_duration) * 60, 2) if total_duration > 0 else 0
     }
-
-
-def _count_turn_types(turns: List[HierarchicalTurn]) -> Dict[str, int]:
-    """Count turns by type."""
-    distribution = {"monologue": 0, "acknowledged": 0, "interrupted": 0}
-    for turn in turns:
-        if turn.turn_type in distribution:
-            distribution[turn.turn_type] += 1
-    return distribution
 
 
 def _calculate_speaker_statistics(turns: List[HierarchicalTurn]) -> Dict[str, Dict[str, Any]]:
@@ -505,8 +493,7 @@ def _calculate_speaker_statistics(turns: List[HierarchicalTurn]) -> Dict[str, Di
             "total_duration": 0.0,
             "total_interjections": 0,  # Times this speaker interjected
             "avg_turn_duration": 0.0,
-            "avg_speaking_rate": 0.0,
-            "avg_flow_continuity": 0.0
+            "avg_speaking_rate": 0.0
         }
     
     # Calculate primary turn stats
@@ -531,9 +518,6 @@ def _calculate_speaker_statistics(turns: List[HierarchicalTurn]) -> Dict[str, Di
         if speaker_turns:
             s["avg_speaking_rate"] = round(
                 sum(t.speaking_rate for t in speaker_turns) / len(speaker_turns), 1
-            )
-            s["avg_flow_continuity"] = round(
-                sum(t.flow_continuity for t in speaker_turns) / len(speaker_turns), 3
             )
     
     return stats

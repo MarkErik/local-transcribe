@@ -87,7 +87,6 @@ class RawSegment:
     is_interjection: Optional[bool] = None
     interjection_confidence: float = 0.0
     interjection_type: str = "unclear"
-    interrupt_level: str = "none"
     classification_method: str = "unclassified"
     
     # Flag for potential diarization errors
@@ -117,7 +116,6 @@ class RawSegment:
             "is_interjection": self.is_interjection,
             "interjection_confidence": self.interjection_confidence,
             "interjection_type": self.interjection_type,
-            "interrupt_level": self.interrupt_level,
             "classification_method": self.classification_method,
             "likely_diarization_error": self.likely_diarization_error
         }
@@ -140,7 +138,6 @@ class InterjectionSegment:
     # Classification details
     confidence: float  # 0-1, how confident we are this is an interjection
     interjection_type: str  # "acknowledgment", "question", "reaction", "unclear"
-    interrupt_level: str  # "none", "low", "medium", "high"
     classification_method: str  # "rule", "llm", "hybrid"
     
     # Flag for potential diarization errors
@@ -167,7 +164,6 @@ class InterjectionSegment:
             "duration": round(self.duration, 3),
             "confidence": round(self.confidence, 3),
             "interjection_type": self.interjection_type,
-            "interrupt_level": self.interrupt_level,
             "classification_method": self.classification_method,
             "likely_diarization_error": self.likely_diarization_error
         }
@@ -193,8 +189,6 @@ class HierarchicalTurn:
     interjections: List[InterjectionSegment] = field(default_factory=list)
     
     # Metrics (calculated after construction)
-    flow_continuity: float = 1.0  # 0-1, how uninterrupted (1.0 = no interjections)
-    turn_type: str = "monologue"  # "monologue", "acknowledged", "interrupted"
     word_count: int = 0
     duration: float = 0.0
     speaking_rate: float = 0.0  # words per minute
@@ -204,7 +198,7 @@ class HierarchicalTurn:
         self._calculate_metrics()
     
     def _calculate_metrics(self):
-        """Calculate word count, duration, speaking rate, and flow continuity."""
+        """Calculate word count, duration, and speaking rate."""
         self.word_count = len(self.words)
         self.duration = round(self.end - self.start, 3)
         
@@ -213,53 +207,6 @@ class HierarchicalTurn:
             self.speaking_rate = round((self.word_count / self.duration) * 60, 1)
         else:
             self.speaking_rate = 0.0
-        
-        # Calculate flow continuity based on interjections
-        self._calculate_flow_continuity()
-        
-        # Determine turn type
-        self._determine_turn_type()
-    
-    def _calculate_flow_continuity(self):
-        """
-        Calculate flow continuity (0-1) based on interjections.
-        
-        1.0 = completely uninterrupted
-        Lower values indicate more interruptions
-        """
-        if not self.interjections or self.duration == 0:
-            self.flow_continuity = 1.0
-            return
-        
-        # Calculate total interjection duration
-        interjection_duration = sum(ij.duration for ij in self.interjections)
-        
-        # Primary ratio: how much of the turn duration is actual primary speech
-        primary_ratio = max(0, (self.duration - interjection_duration) / self.duration)
-        
-        # Penalty for number of interjections (each one disrupts flow somewhat)
-        interjection_penalty = min(len(self.interjections) * 0.1, 0.5)
-        
-        # Additional penalty for high interrupt levels
-        high_interrupt_penalty = sum(
-            0.1 for ij in self.interjections 
-            if ij.interrupt_level in ("medium", "high")
-        )
-        high_interrupt_penalty = min(high_interrupt_penalty, 0.3)
-        
-        self.flow_continuity = round(
-            max(0, primary_ratio * (1 - interjection_penalty) - high_interrupt_penalty),
-            3
-        )
-    
-    def _determine_turn_type(self):
-        """Determine turn type based on interjections."""
-        if not self.interjections:
-            self.turn_type = "monologue"
-        elif any(ij.interrupt_level in ("medium", "high") for ij in self.interjections):
-            self.turn_type = "interrupted"
-        else:
-            self.turn_type = "acknowledged"
     
     def recalculate_metrics(self):
         """Recalculate all metrics. Call after modifying interjections."""
@@ -276,8 +223,6 @@ class HierarchicalTurn:
             "word_count": self.word_count,
             "duration": self.duration,
             "speaking_rate": self.speaking_rate,
-            "flow_continuity": self.flow_continuity,
-            "turn_type": self.turn_type,
             "interjections": [ij.to_dict() for ij in self.interjections]
         }
 

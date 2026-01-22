@@ -33,7 +33,6 @@ from local_transcribe.processing.turn_building.turn_building_base import (
     classify_segments,
     classify_interjection_type,
     is_potential_interjection,
-    calculate_interrupt_level,
     raw_segment_to_interjection
 )
 
@@ -77,7 +76,6 @@ __all__ = [
     'classify_segments',
     'classify_interjection_type',
     'is_potential_interjection',
-    'calculate_interrupt_level',
     'raw_segment_to_interjection',
 ]
 

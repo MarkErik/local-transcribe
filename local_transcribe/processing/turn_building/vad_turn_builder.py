@@ -262,7 +262,6 @@ def _convert_blocks_to_transcript_flow(
             words=words,
             confidence=0.8,  # Default confidence for VAD-detected interjections
             interjection_type="acknowledgment",  # Default type
-            interrupt_level="low",  # Default level
             classification_method="vad",
             likely_diarization_error=False,
         )

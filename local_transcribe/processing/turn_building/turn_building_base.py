@@ -107,8 +107,6 @@ class TurnBuildingAuditLog:
                 "word_count": turn.word_count,
                 "duration": turn.duration,
                 "interjection_count": len(turn.interjections),
-                "flow_continuity": turn.flow_continuity,
-                "turn_type": turn.turn_type,
                 "merged_from_segments": merged_from,
                 "text_preview": turn.text[:100] + "..." if len(turn.text) > 100 else turn.text
             }
@@ -426,65 +424,6 @@ def is_potential_interjection(
 
 
 # =============================================================================
-# Interrupt Level Calculation
-# =============================================================================
-
-def calculate_interrupt_level(
-    interjection_segment: RawSegment,
-    prev_segment: Optional[RawSegment],
-    next_segment: Optional[RawSegment]
-) -> str:
-    """
-    Calculate how disruptive an interjection is based on timing.
-    
-    Args:
-        interjection_segment: The interjection segment
-        prev_segment: Previous segment (may be None)
-        next_segment: Next segment (may be None)
-        
-    Returns:
-        Interrupt level: "none", "low", "medium", "high"
-    """
-    gap_before = interjection_segment.gap_before
-    gap_after = interjection_segment.gap_after
-    
-    # Check for overlaps (negative gaps indicate overlap)
-    has_overlap_before = gap_before is not None and gap_before < 0
-    has_overlap_after = gap_after is not None and gap_after < 0
-    
-    if has_overlap_before and has_overlap_after:
-        # Overlaps both sides - high interruption
-        return "high"
-    elif has_overlap_before or has_overlap_after:
-        # Overlaps one side
-        overlap_amount: float = 0.0
-        if has_overlap_before:
-            overlap_amount = abs(float(gap_before)) if gap_before is not None else 0.0
-        if has_overlap_after:
-            overlap_amount = float(max(overlap_amount, abs(float(gap_after)))) if gap_after is not None else overlap_amount
-        
-        if overlap_amount > 0.5:
-            return "high"
-        elif overlap_amount > 0.2:
-            return "medium"
-        else:
-            return "low"
-    else:
-        # No overlaps - check gap sizes
-        # Small gaps suggest interjection during brief pause
-        min_gap = float('inf')
-        if gap_before is not None:
-            min_gap = min(min_gap, gap_before)
-        if gap_after is not None:
-            min_gap = min(min_gap, gap_after)
-        
-        if min_gap < 0.3:
-            return "low"
-        else:
-            return "none"
-
-
-# =============================================================================
 # Segment Classification
 # =============================================================================
 
@@ -522,10 +461,6 @@ def classify_segments(
         segment.interjection_confidence = confidence
         segment.interjection_type = interjection_type
         segment.classification_method = "rule"
-        
-        # Calculate interrupt level if it's an interjection
-        if is_interjection:
-            segment.interrupt_level = calculate_interrupt_level(segment, prev_seg, next_seg)
         
         # Check for potential diarization errors
         # Single word that doesn't match any pattern and appears between same-speaker segments
@@ -579,7 +514,6 @@ def raw_segment_to_interjection(segment: RawSegment) -> InterjectionSegment:
         words=segment.words,
         confidence=segment.interjection_confidence,
         interjection_type=segment.interjection_type,
-        interrupt_level=segment.interrupt_level,
         classification_method=segment.classification_method,
         likely_diarization_error=segment.likely_diarization_error
     )

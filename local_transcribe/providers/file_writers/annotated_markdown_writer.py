@@ -94,8 +94,6 @@ def write_annotated_markdown(transcript: TranscriptFlow, path: str | Path) -> No
         end = getattr(turn, 'end', 0)
         text = getattr(turn, 'text', '')
         interjections = getattr(turn, 'interjections', [])
-        flow_continuity = getattr(turn, 'flow_continuity', 1.0)
-        turn_type = getattr(turn, 'turn_type', 'monologue')
         word_count = getattr(turn, 'word_count', 0)
         speaking_rate = getattr(turn, 'speaking_rate', 0)
         
@@ -127,8 +125,7 @@ def write_annotated_markdown(transcript: TranscriptFlow, path: str | Path) -> No
             lines.append("")
         
         # Turn metadata footer
-        flow_str = format_percentage(flow_continuity)
-        lines.append(f"*Flow: {flow_str} continuous | Type: {turn_type} | {word_count} words @ {speaking_rate:.1f} wpm*")
+        lines.append(f"*{word_count} words @ {speaking_rate:.1f} wpm*")
         lines.append("")
         lines.append("---")
         lines.append("")

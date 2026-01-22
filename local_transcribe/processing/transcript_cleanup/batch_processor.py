@@ -316,8 +316,6 @@ def apply_cleaned_text_to_transcript(
             text=cleaned_text,
             words=[],  # Clear words - timing no longer valid
             interjections=deepcopy(turn.interjections),  # Preserve interjections
-            flow_continuity=turn.flow_continuity,
-            turn_type=turn.turn_type,
         )
         
         # Manually set word count and duration since we cleared words

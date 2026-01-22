@@ -93,8 +93,6 @@ def _build_html_document(
             "text": getattr(turn, 'text', ''),
             "wordCount": getattr(turn, 'word_count', 0),
             "speakingRate": getattr(turn, 'speaking_rate', 0),
-            "flowContinuity": getattr(turn, 'flow_continuity', 1.0),
-            "turnType": getattr(turn, 'turn_type', 'monologue'),
             "interjections": []
         }
         
@@ -1174,7 +1172,6 @@ def _generate_conversation_html(
         text = getattr(turn, 'text', '')
         word_count = getattr(turn, 'word_count', 0)
         speaking_rate = getattr(turn, 'speaking_rate', 0)
-        turn_type = getattr(turn, 'turn_type', 'monologue')
         interjections = getattr(turn, 'interjections', [])
         
         colors = speaker_colors.get(speaker, {"bg": "#f0f0f0", "text": "#333", "accent": "#666"})
@@ -1211,12 +1208,6 @@ def _generate_conversation_html(
                 </div>
             '''
         
-        # Build badges
-        badges_html = ""
-        if turn_type != "monologue":
-            badge_text = "acknowledged" if turn_type == "acknowledged" else "interrupted"
-            badges_html = f'<span class="turn-badge">{badge_text}</span>'
-        
         html_parts.append(f'''
             <div class="turn-block" data-turn-id="{turn_id}">
                 <div class="turn-card">
@@ -1227,7 +1218,6 @@ def _generate_conversation_html(
                         <div class="turn-header">
                             <span class="turn-speaker" style="color: {colors['text']}">{escape_html(format_speaker_name(speaker))}</span>
                             <span class="turn-time">{time_str} ({duration:.1f}s, {word_count} words)</span>
-                            <div class="turn-badges">{badges_html}</div>
                         </div>
                         <div class="turn-text">{escape_html(text)}</div>
                         {interjections_html}
@@ -1332,10 +1322,6 @@ def _generate_stats_panel_html(
                     <div class="stat-item">
                         <span class="stat-label">Interjections</span>
                         <span class="stat-value">{stats.get('total_interjections', 0)}</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label">Avg Flow</span>
-                        <span class="stat-value">{format_percentage(stats.get('avg_flow_continuity', 1.0))}</span>
                     </div>
                 </div>
             </div>

@@ -11,11 +11,11 @@ Available components:
 - VADBlock: Merged block of contiguous VAD segments (a turn)
 - VADBlockBuilderConfig: Configuration for merging VAD segments
 - CombinedSegment: Combined segment for ASR processing
-- SegmentCombinationConfig: Configuration for intelligent segmentation
+- SegmentCombinationConfig: Configuration for segmentation
 - ASRChunk: Audio chunk prepared for ASR
 
-- segment_for_asr: Stateless function for intelligent segment combination/splitting
-- VADSegmenter: Convenience class for intelligent segmentation
+- segment_for_asr: Stateless function for segment combination/splitting
+- VADSegmenter: Convenience class for segmentation
 - VADBlockBuilder: Builds conversation blocks from per-speaker VAD segments
 - VADASRProcessor: Processes VAD blocks through ASR with chunking
 

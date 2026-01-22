@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Intelligent VAD segment combination and splitting for ASR.
+VAD segment combination and splitting for ASR.
 
 This module provides stateless functions for combining raw VAD segments into
 natural conversation chunks and splitting long segments at natural pause
@@ -27,7 +27,7 @@ def segment_for_asr(
 ) -> List[CombinedSegment]:
     """Combine and split raw VAD segments into ASR-ready chunks.
     
-    Uses intelligent pause analysis to split at natural boundaries.
+    Uses pause analysis to split at natural boundaries.
     This is the main entry point for the segmentation logic.
     
     Args:

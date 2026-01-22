@@ -369,7 +369,7 @@ def build_turns_vad_split_audio(
         vad_dir = intermediate_dir / "vad"
         vad_dir.mkdir(parents=True, exist_ok=True)
     
-    # Initialize VAD provider (uses fixed interview-optimized parameters)
+    # Initialize VAD provider
     vad_provider = SileroVADProvider(models_dir=models_dir)
     
     # 1. Run VAD on each speaker's audio

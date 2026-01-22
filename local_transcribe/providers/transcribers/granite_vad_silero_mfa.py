@@ -351,7 +351,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     def _should_chunk_segment(self, segment_duration: float) -> bool:
         """Returns True if segment_duration > max_audio_chunk_duration_s.
         
-        Note: With the intelligent segmenter, segments should already be ≤30s.
+        Note: Segments should already be ≤30s.
         This is a fallback for edge cases where a segment still exceeds the limit.
         """
         return segment_duration > self.max_audio_chunk_duration_s
@@ -798,7 +798,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
         log_progress("Running Silero VAD detection...")
         raw_vad_segments = self.vad_provider.detect_speech_from_array(wav, int(sr), speaker_id=role or "Speaker")
         
-        # Step 2: Use intelligent segmenter for ASR-ready chunks
+        # Step 2: Use segmenter for ASR-ready chunks
         segment_for_asr = _get_vad_segmenter_func()
         combined_segments = segment_for_asr(
             raw_vad_segments, 

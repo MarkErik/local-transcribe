@@ -240,12 +240,12 @@ class ASRChunk:
 
 @dataclass
 class SegmentCombinationConfig:
-    """Configuration for intelligent segment combination/splitting.
+    """Configuration for segment combination/splitting.
     
     Controls how raw VAD segments are combined into ASR-ready chunks
     and how long segments are split at natural boundaries.
     """
-    # Core combination thresholds (interview-optimized defaults)
+    # Core combination thresholds
     micro_pause_threshold: float = 0.5      # Gaps < this always combined
     thinking_pause_threshold: float = 2.0   # Gaps in this range use context
     natural_boundary_threshold: float = 5.0 # Gaps >= this never combined

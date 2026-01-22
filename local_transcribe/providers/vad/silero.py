@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Silero VAD provider for interview audio.
+Silero VAD provider.
 
-This module provides voice activity detection using the Silero VAD model,
-optimized for interview audio with fixed, interview-optimized parameters.
+This module provides voice activity detection using the Silero VAD model.
 """
 
 from typing import List, Optional, Any, Callable, TYPE_CHECKING, Tuple
@@ -22,7 +21,7 @@ if TYPE_CHECKING:
     from local_transcribe.processing.vad.types import VADSegment
 
 
-# Fixed interview-optimized VAD parameters
+# VAD parameters
 INTERVIEW_VAD_PARAMS = {
     "threshold": 0.45,
     "min_speech_duration_ms": 300,
@@ -32,9 +31,9 @@ INTERVIEW_VAD_PARAMS = {
 
 
 class SileroVADProvider:
-    """Silero VAD provider optimized for interview audio.
+    """Silero VAD provider.
     
-    Uses fixed, interview-optimized parameters. No configuration needed.
+    Uses fixed parameters. No configuration needed.
     This provider handles:
     - Lazy model loading with fallback (silero-vad package → torch.hub)
     - Audio loading and preprocessing
@@ -44,7 +43,7 @@ class SileroVADProvider:
     # Standard sample rate for Silero VAD
     SAMPLE_RATE = 16000
     
-    # Fixed interview-optimized parameters
+    # Parameters
     THRESHOLD = INTERVIEW_VAD_PARAMS["threshold"]
     NEG_THRESHOLD = THRESHOLD - 0.15  # 0.30
     MIN_SPEECH_DURATION_MS = INTERVIEW_VAD_PARAMS["min_speech_duration_ms"]
@@ -70,7 +69,7 @@ class SileroVADProvider:
     
     @property
     def description(self) -> str:
-        return "Silero VAD for interview audio (fixed parameters)"
+        return "Silero VAD"
     
     def _load_model(self) -> None:
         """Load the Silero VAD model (lazy loading)."""

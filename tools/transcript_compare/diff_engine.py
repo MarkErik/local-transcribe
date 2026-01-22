@@ -114,7 +114,7 @@ def compute_diff(words_a: list[str], words_b: list[str]) -> DiffResult:
     """
     Compute the diff between two word lists.
     
-    Uses SequenceMatcher to find the optimal alignment between transcripts.
+    Uses SequenceMatcher to find alignment between transcripts.
     """
     matcher = difflib.SequenceMatcher(None, words_a, words_b)
     opcodes = matcher.get_opcodes()

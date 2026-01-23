@@ -110,26 +110,6 @@ def format_speaker_name(speaker: str, capitalize: bool = True) -> str:
     return speaker
 
 
-def get_interjection_symbol(interjection_type: str) -> str:
-    """
-    Get a symbol/emoji for an interjection type.
-    
-    Args:
-        interjection_type: Type of interjection
-    
-    Returns:
-        Symbol representing the interjection type
-    """
-    symbols = {
-        "acknowledgment": "✓",
-        "question": "?",
-        "reaction": "!",
-        "unclear": "·",
-        "overlap": "≈"
-    }
-    return symbols.get(interjection_type.lower(), "·")
-
-
 def get_interjection_verb(interjection_type: str) -> str:
     """
     Get a verb describing the interjection action.

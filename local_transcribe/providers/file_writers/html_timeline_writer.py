@@ -18,8 +18,6 @@ from local_transcribe.providers.file_writers.format_utils import (
     format_timestamp,
     format_duration,
     format_speaker_name,
-    get_interjection_symbol,
-    get_interjection_verb,
     escape_html,
     get_speaker_color,
     calculate_position_percent,

@@ -110,26 +110,6 @@ def format_speaker_name(speaker: str, capitalize: bool = True) -> str:
     return speaker
 
 
-def get_interjection_verb(interjection_type: str) -> str:
-    """
-    Get a verb describing the interjection action.
-    
-    Args:
-        interjection_type: Type of interjection
-    
-    Returns:
-        Verb describing the action (e.g., "acknowledges", "questions")
-    """
-    verbs = {
-        "acknowledgment": "acknowledges",
-        "question": "questions",
-        "reaction": "reacts",
-        "unclear": "interjects",
-        "overlap": "overlaps"
-    }
-    return verbs.get(interjection_type.lower(), "interjects")
-
-
 def wrap_text(text: str, width: int = 70, initial_indent: str = "", subsequent_indent: str = "") -> str:
     """
     Word wrap text with proper indentation.

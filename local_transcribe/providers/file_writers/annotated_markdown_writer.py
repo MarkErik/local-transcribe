@@ -17,7 +17,6 @@ from local_transcribe.providers.file_writers.format_utils import (
     format_timestamp,
     format_duration,
     format_speaker_name,
-    get_interjection_verb,
     format_percentage,
     wrap_text
 )
@@ -114,10 +113,8 @@ def write_annotated_markdown(transcript: TranscriptFlow, path: str | Path) -> No
                 ij_speaker = getattr(ij, 'speaker', 'Unknown')
                 ij_start = getattr(ij, 'start', 0)
                 ij_text = getattr(ij, 'text', '')
-                ij_type = getattr(ij, 'interjection_type', 'unclear')
                 
-                verb = get_interjection_verb(ij_type)
-                lines.append(f"  → *[{format_timestamp(ij_start, 'seconds')}] {format_speaker_name(ij_speaker)} {verb}: \"{ij_text}\"*")
+                lines.append(f"  → *[{format_timestamp(ij_start, 'seconds')}] {format_speaker_name(ij_speaker)}: \"{ij_text}\"*")
             
             lines.append("")
         else:

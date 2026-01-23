@@ -45,7 +45,7 @@ class SileroVADProvider:
     
     # Parameters
     THRESHOLD = INTERVIEW_VAD_PARAMS["threshold"]
-    NEG_THRESHOLD = THRESHOLD - 0.15  # 0.30
+    NEG_THRESHOLD = THRESHOLD - 0.15
     MIN_SPEECH_DURATION_MS = INTERVIEW_VAD_PARAMS["min_speech_duration_ms"]
     MIN_SILENCE_DURATION_MS = INTERVIEW_VAD_PARAMS["min_silence_duration_ms"]
     WINDOW_SIZE_SAMPLES = 512

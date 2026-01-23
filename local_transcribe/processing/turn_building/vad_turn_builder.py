@@ -260,9 +260,6 @@ def _convert_blocks_to_transcript_flow(
             end=ij_block.end_s,
             text=ij_block.text,
             words=words,
-            confidence=0.8,  # Default confidence for VAD-detected interjections
-            interjection_type="acknowledgment",  # Default type
-            classification_method="vad",
             likely_diarization_error=False,
         )
         

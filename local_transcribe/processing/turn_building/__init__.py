@@ -31,7 +31,6 @@ from local_transcribe.processing.turn_building.turn_building_base import (
     normalize_word_timestamps,
     group_words_by_speaker,
     classify_segments,
-    classify_interjection_type,
     is_potential_interjection,
     raw_segment_to_interjection
 )
@@ -74,7 +73,6 @@ __all__ = [
     'normalize_word_timestamps',
     'group_words_by_speaker',
     'classify_segments',
-    'classify_interjection_type',
     'is_potential_interjection',
     'raw_segment_to_interjection',
 ]

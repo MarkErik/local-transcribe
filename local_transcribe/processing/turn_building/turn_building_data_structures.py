@@ -34,34 +34,12 @@ class TurnBuilderConfig:
     # Turn merging threshold
     max_gap_to_merge_turns: float = 3.0  # seconds - merge same-speaker turns if gap is smaller
     
-    # Interjection patterns by type
-    interjection_patterns: Dict[str, List[str]] = field(default_factory=lambda: {
-        "acknowledgment": [
-            "yeah", "yea", "yep", "yup", "yes",
-            "uh-huh", "uh huh", "uhuh",
-            "mm-hmm", "mm hmm", "mmhmm", "mhm", "mm", "hmm", "hm",
-            "right", "okay", "ok", "sure", "gotcha", "got it",
-            "i see", "i know", "true", "exactly", "absolutely",
-            "definitely", "totally", "for sure"
-        ],
-        "question": [
-            "what", "why", "how", "really", "huh", "pardon",
-            "sorry", "excuse me", "come again"
-        ],
-        "reaction": [
-            "wow", "oh", "ah", "whoa", "nice", "cool", 
-            "interesting", "amazing", "great", "awesome",
-            "no way", "seriously", "oh my", "oh god", "oh no"
-        ],
-    })
-    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "max_interjection_duration": self.max_interjection_duration,
             "max_interjection_words": self.max_interjection_words,
             "max_gap_to_merge_turns": self.max_gap_to_merge_turns,
-            "interjection_patterns": self.interjection_patterns
         }
 
 
@@ -85,9 +63,6 @@ class RawSegment:
     
     # Classification results (set during analysis)
     is_interjection: Optional[bool] = None
-    interjection_confidence: float = 0.0
-    interjection_type: str = "unclear"
-    classification_method: str = "unclassified"
     
     # Flag for potential diarization errors
     likely_diarization_error: bool = False
@@ -114,9 +89,6 @@ class RawSegment:
             "gap_before": self.gap_before,
             "gap_after": self.gap_after,
             "is_interjection": self.is_interjection,
-            "interjection_confidence": self.interjection_confidence,
-            "interjection_type": self.interjection_type,
-            "classification_method": self.classification_method,
             "likely_diarization_error": self.likely_diarization_error
         }
 
@@ -134,11 +106,6 @@ class InterjectionSegment:
     end: float
     text: str
     words: List[WordSegment]
-    
-    # Classification details
-    confidence: float  # 0-1, how confident we are this is an interjection
-    interjection_type: str  # "acknowledgment", "question", "reaction", "unclear"
-    classification_method: str  # "rule", "llm", "hybrid"
     
     # Flag for potential diarization errors
     likely_diarization_error: bool = False
@@ -162,9 +129,6 @@ class InterjectionSegment:
             "text": self.text,
             "word_count": self.word_count,
             "duration": round(self.duration, 3),
-            "confidence": round(self.confidence, 3),
-            "interjection_type": self.interjection_type,
-            "classification_method": self.classification_method,
             "likely_diarization_error": self.likely_diarization_error
         }
 

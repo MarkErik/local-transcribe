@@ -71,8 +71,6 @@ class TurnBuildingAuditLog:
         self, 
         segment: RawSegment, 
         is_interjection: bool,
-        confidence: float,
-        interjection_type: str,
         reason: str
     ):
         """Log a segment classification decision."""
@@ -87,8 +85,6 @@ class TurnBuildingAuditLog:
                 "word_count": segment.word_count,
                 "text": segment.text,
                 "is_interjection": is_interjection,
-                "confidence": confidence,
-                "interjection_type": interjection_type,
                 "reason": reason
             }
         )
@@ -126,7 +122,6 @@ class TurnBuildingAuditLog:
                 "interjection_speaker": interjection.speaker,
                 "interjection_text": interjection.text,
                 "interjection_start": interjection.start,
-                "interjection_type": interjection.interjection_type,
                 "target_turn_id": turn_id,
                 "attachment_reason": reason
             }
@@ -328,54 +323,22 @@ def _calculate_segment_gaps(segments: List[RawSegment]) -> None:
 
 
 # =============================================================================
-# Interjection Pattern Matching
+# Interjection Detection
 # =============================================================================
-
-def classify_interjection_type(
-    text: str,
-    config: TurnBuilderConfig
-) -> Tuple[str, float]:
-    """
-    Classify interjection type based on text patterns.
-    
-    Args:
-        text: The text to classify
-        config: Configuration with interjection patterns
-        
-    Returns:
-        Tuple of (interjection_type, confidence_boost)
-    """
-    text_lower = text.lower().strip()
-    
-    # Check each category
-    for category, patterns in config.interjection_patterns.items():
-        for pattern in patterns:
-            # Check for exact match or pattern at start/end
-            if text_lower == pattern:
-                return (category, 0.3)  # High confidence for exact match
-            elif text_lower.startswith(pattern + " ") or text_lower.endswith(" " + pattern):
-                return (category, 0.2)  # Medium confidence for partial match
-            elif pattern in text_lower:
-                return (category, 0.1)  # Lower confidence for contains
-    
-    return ("unclear", 0.0)
-
 
 def is_potential_interjection(
     segment: RawSegment,
-    config: TurnBuilderConfig,
-    audit_log: Optional[TurnBuildingAuditLog] = None
-) -> Tuple[bool, float, str, str]:
+    config: TurnBuilderConfig
+) -> Tuple[bool, str]:
     """
-    Determine if a segment is likely an interjection.
+    Determine if a segment is likely an interjection based on thresholds.
     
     Args:
         segment: The RawSegment to classify
         config: Configuration with thresholds
-        audit_log: Optional audit logger
         
     Returns:
-        Tuple of (is_interjection, confidence, interjection_type, reason)
+        Tuple of (is_interjection, reason)
     """
     reasons = []
     
@@ -394,33 +357,14 @@ def is_potential_interjection(
         reasons.append(f"word_count {segment.word_count} > {config.max_interjection_words} threshold")
     
     # Must pass BOTH thresholds to be considered an interjection
-    if not (duration_ok and word_count_ok):
+    is_interjection = duration_ok and word_count_ok
+    
+    if is_interjection:
+        reason = f"Classified as interjection: {'; '.join(reasons)}"
+    else:
         reason = f"Failed thresholds: {'; '.join(reasons)}"
-        return (False, 0.0, "none", reason)
     
-    # Calculate base confidence from how far under thresholds
-    duration_confidence = 1.0 - (segment.duration / config.max_interjection_duration)
-    word_count_confidence = 1.0 - (segment.word_count / config.max_interjection_words)
-    base_confidence = (duration_confidence + word_count_confidence) / 2
-    
-    # Check for pattern match
-    interjection_type, pattern_boost = classify_interjection_type(segment.text, config)
-    
-    if pattern_boost > 0:
-        reasons.append(f"pattern_match: {interjection_type} (+{pattern_boost:.1f})")
-    
-    # Final confidence
-    confidence = min(1.0, base_confidence + pattern_boost)
-    
-    # Determine if it's an interjection
-    # High confidence with pattern match -> definitely interjection
-    # Medium confidence without pattern -> likely interjection
-    # Low confidence without pattern -> uncertain, but still classify as interjection if meets thresholds
-    is_interjection = True
-    
-    reason = f"Classified as interjection: {'; '.join(reasons)}"
-    
-    return (is_interjection, confidence, interjection_type, reason)
+    return (is_interjection, reason)
 
 
 # =============================================================================
@@ -452,20 +396,14 @@ def classify_segments(
         next_seg = segments[i + 1] if i < len(segments) - 1 else None
         
         # Classify
-        is_interjection, confidence, interjection_type, reason = is_potential_interjection(
-            segment, config, audit_log
-        )
+        is_interjection, reason = is_potential_interjection(segment, config)
         
         # Update segment with classification
         segment.is_interjection = is_interjection
-        segment.interjection_confidence = confidence
-        segment.interjection_type = interjection_type
-        segment.classification_method = "rule"
         
         # Check for potential diarization errors
-        # Single word that doesn't match any pattern and appears between same-speaker segments
-        if (segment.word_count == 1 and 
-            interjection_type == "unclear" and
+        # Single word that doesn't meet interjection criteria and appears between same-speaker segments
+        if (segment.word_count == 1 and
             prev_seg and next_seg and
             prev_seg.speaker == next_seg.speaker and
             prev_seg.speaker != segment.speaker):
@@ -473,9 +411,7 @@ def classify_segments(
             reason += " [LIKELY DIARIZATION ERROR]"
         
         if audit_log:
-            audit_log.log_segment_classification(
-                segment, is_interjection, confidence, interjection_type, reason
-            )
+            audit_log.log_segment_classification(segment, is_interjection, reason)
     
     # Split into primary and interjection lists
     primary_segments = [s for s in segments if not s.is_interjection]
@@ -512,8 +448,5 @@ def raw_segment_to_interjection(segment: RawSegment) -> InterjectionSegment:
         end=segment.end,
         text=segment.text,
         words=segment.words,
-        confidence=segment.interjection_confidence,
-        interjection_type=segment.interjection_type,
-        classification_method=segment.classification_method,
         likely_diarization_error=segment.likely_diarization_error
     )

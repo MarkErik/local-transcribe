@@ -100,7 +100,6 @@ def _build_html_document(
                 "start": getattr(ij, 'start', 0),
                 "end": getattr(ij, 'end', 0),
                 "text": getattr(ij, 'text', ''),
-                "type": getattr(ij, 'interjection_type', 'unclear')
             })
         
         turns_data.append(turn_dict)
@@ -1187,14 +1186,12 @@ def _generate_conversation_html(
                 ij_speaker = getattr(ij, 'speaker', 'Unknown')
                 ij_text = getattr(ij, 'text', '')
                 ij_start = getattr(ij, 'start', 0)
-                ij_type = getattr(ij, 'interjection_type', 'unclear')
                 ij_colors = speaker_colors.get(ij_speaker, {"bg": "#f0f0f0", "text": "#333", "accent": "#666"})
                 
                 ij_items.append(f'''
                     <div class="interjection-item">
                         <span class="interjection-speaker" style="color: {ij_colors['text']}">{escape_html(format_speaker_name(ij_speaker))}:</span>
                         <span class="interjection-text">"{escape_html(ij_text)}"</span>
-                        <span class="interjection-type">{ij_type}</span>
                         <span class="interjection-time">{_format_time_label(ij_start)}</span>
                     </div>
                 ''')

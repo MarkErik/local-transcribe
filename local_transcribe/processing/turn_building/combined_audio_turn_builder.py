@@ -314,7 +314,6 @@ def _build_hierarchical_turns(
                 {
                     "speaker": segment.speaker,
                     "start": segment.start,
-                    "type": segment.interjection_type
                 }
             )
         else:

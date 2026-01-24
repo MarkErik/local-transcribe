@@ -49,7 +49,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
     # VAD pipeline arguments
     p.add_argument("--vad-pipeline", action="store_true", help="Use VAD-first pipeline for split audio files.")
-    p.add_argument("--skip-alignment", action="store_true", default=True, help="Skip word-level alignment (default: True for VAD pipeline).")
 
     # LLM cleanup arguments
     p.add_argument("--enable-cleanup", action="store_true", help="Enable LLM-based transcript cleanup stage (disabled by default). Requires --transcript-cleanup-provider to be set.")
@@ -91,7 +90,6 @@ def show_defaults():
     print("  - VAD Pipeline: Disabled (use --vad-pipeline for split audio)")
     print("  - VAD Threshold: 0.5 (speech probability)")
     print("  - VAD Merge Gap: 500ms (gap threshold for merging segments)")
-    print("  - Skip Alignment: True (word alignment skipped in VAD mode)")
     
     print("\nLLM Cleanup Settings:")
     print("  - Enable Cleanup: Disabled (use --enable-cleanup)")

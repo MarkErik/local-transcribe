@@ -21,15 +21,6 @@ if TYPE_CHECKING:
     from local_transcribe.processing.vad.types import VADSegment
 
 
-# VAD parameters
-INTERVIEW_VAD_PARAMS = {
-    "threshold": 0.45,
-    "min_speech_duration_ms": 300,
-    "min_silence_duration_ms": 150,
-    "speech_pad_ms": 60,
-}
-
-
 class SileroVADProvider:
     """Silero VAD provider.
     
@@ -44,12 +35,12 @@ class SileroVADProvider:
     SAMPLE_RATE = 16000
     
     # Parameters
-    THRESHOLD = INTERVIEW_VAD_PARAMS["threshold"]
+    THRESHOLD = 0.45
     NEG_THRESHOLD = THRESHOLD - 0.15
-    MIN_SPEECH_DURATION_MS = INTERVIEW_VAD_PARAMS["min_speech_duration_ms"]
-    MIN_SILENCE_DURATION_MS = INTERVIEW_VAD_PARAMS["min_silence_duration_ms"]
+    MIN_SPEECH_DURATION_MS = 300
+    MIN_SILENCE_DURATION_MS = 150
     WINDOW_SIZE_SAMPLES = 512
-    SPEECH_PAD_MS = INTERVIEW_VAD_PARAMS["speech_pad_ms"]
+    SPEECH_PAD_MS = 60
     
     def __init__(self, models_dir: Optional[Path] = None):
         """Initialize the Silero VAD provider.

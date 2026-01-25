@@ -75,11 +75,12 @@ class TranscriptionMixin:
         
         # Step 3: Strip echoed prompt fragments
         # Build fragments from the canonical prompt to ensure they stay in sync
-        # Include both with and without trailing punctuation since the model may omit it
-        prompt_fragments = [
-            self._TRANSCRIPTION_PROMPT.lower(),
-            self._TRANSCRIPTION_PROMPT.lower().rstrip("."),
-        ]
+        # Split by sentence boundaries so we catch partial echoes (e.g., just the second sentence)
+        prompt_fragments = []
+        for sentence in re.split(r'[.?!]\s*', self._TRANSCRIPTION_PROMPT.lower()):
+            sentence = sentence.strip()
+            if sentence:
+                prompt_fragments.append(sentence)
         
         for fragment in prompt_fragments:
             text = re.sub(re.escape(fragment), '', text, flags=re.IGNORECASE)

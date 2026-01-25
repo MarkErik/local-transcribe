@@ -854,7 +854,6 @@ def interactive_vad_split_audio(args, api) -> argparse.Namespace:
     print("\n" + "-" * 50)
     print("MODE: VAD Pipeline (Split Audio)")
     print("Using Voice Activity Detection for turn segmentation")
-    print("Requires: Transcriber only (no aligner or diarization)")
     print("-" * 50)
     
     # System capability

@@ -4,6 +4,7 @@
 from . import txt_writer
 from . import json_writer
 from . import video_renderer
+from . import vad_video_renderer  # VAD-specific video writer
 
 # New hierarchical format writers
 from . import format_utils

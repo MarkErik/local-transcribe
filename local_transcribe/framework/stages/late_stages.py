@@ -186,8 +186,9 @@ class OutputGenerationStage(PipelineStage):
         # Determine word segments for detailed timing
         word_segments = self._get_word_segments(context)
         
-        # Check if video generation is supported for this mode
-        generate_video = context.mode != "vad_split_audio"
+        # Video generation is now supported for all multi-speaker modes
+        # VAD mode uses vad-video writer, others use standard video writer
+        generate_video = True
         
         log_progress(f"Writing outputs with formats: {selected_outputs}")
         
@@ -200,7 +201,8 @@ class OutputGenerationStage(PipelineStage):
             selected_outputs,
             audio_config,
             generate_video=generate_video,
-            word_segments=word_segments
+            word_segments=word_segments,
+            mode=context.mode,
         )
         
         log_completion("Output generation complete")

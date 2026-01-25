@@ -26,7 +26,8 @@ class OutputManager:
     
     def write_selected_outputs(self, transcript: List[Any], paths: Dict[str, pathlib.Path],
                              selected_formats: List[str], audio_config: Optional[Union[pathlib.Path, Dict[str, str], list[pathlib.Path]]] = None,
-                             generate_video: bool = True, word_segments: Optional[List] = None) -> None:
+                             generate_video: bool = True, word_segments: Optional[List] = None,
+                             mode: str = "combined_audio") -> None:
         """
         Write selected outputs for merged transcript.
         
@@ -40,18 +41,20 @@ class OutputManager:
                 - List of audio paths (legacy format)
             generate_video: Whether to generate video output (default: True)
             word_segments: Optional list of word segments for detailed timing in outputs
+            mode: Pipeline mode (combined_audio, split_audio, vad_split_audio)
         """
         print(f"[*] Writing output files...")
         print(f"[i] Selected formats: {selected_formats}")
         print(f"[i] Generate video: {generate_video}")
+        print(f"[i] Mode: {mode}")
         
         # Write text-based outputs
         self._write_text_outputs(transcript, paths["merged"], selected_formats, word_segments)
         
-        # Write video output (includes SRT generation internally)
+        # Write video output (includes SRT/ASS generation internally)
         if 'video' in selected_formats and generate_video:
             print(f"[i] Video format detected, attempting to generate...")
-            self._write_video_output(transcript, paths["merged"], audio_config, word_segments)
+            self._write_video_output(transcript, paths["merged"], audio_config, word_segments, mode)
         else:
             print(f"[i] Video skipped - format not in {selected_formats} or generate_video={generate_video}")
         
@@ -97,17 +100,32 @@ class OutputManager:
     
     def _write_video_output(self, transcript: List[Any], merged_dir: pathlib.Path,
                            audio_config: Optional[Union[pathlib.Path, Dict[str, str], list[pathlib.Path]]] = None,
-                           word_segments: Optional[List] = None) -> None:
-        """Write video output with subtitles."""
+                           word_segments: Optional[List] = None,
+                           mode: str = "combined_audio") -> None:
+        """Write video output with subtitles.
+        
+        Args:
+            transcript: Transcript data (TranscriptFlow or list of turns)
+            merged_dir: Output directory
+            audio_config: Audio configuration for the video
+            word_segments: Word segments for detailed timing (not used in VAD mode)
+            mode: Pipeline mode - determines which video writer to use
+        """
         print(f"[*] Rendering video with subtitles...")
         try:
-            # Check if video writer is available
-            video_writer = self._registry.get_output_writer("video")
+            # Select appropriate video writer based on mode
+            if mode == "vad_split_audio":
+                video_writer = self._registry.get_output_writer("vad-video")
+                writer_name = "vad-video"
+            else:
+                video_writer = self._registry.get_output_writer("video")
+                writer_name = "video"
+            
             if video_writer is None:
-                print("[!] Warning: Video writer not found in registry")
+                print(f"[!] Warning: Video writer '{writer_name}' not found in registry")
                 return
                 
-            print(f"[i] Found video writer: {video_writer.name}")
+            print(f"[i] Found video writer: {video_writer.name} (mode: {mode})")
             video_path = merged_dir / "video_with_subtitles.mp4"
             
             # Check audio config

@@ -71,6 +71,46 @@ def _extract_turns_as_dicts(transcript: Any) -> List[Dict]:
     return []
 
 
+def _check_ffmpeg_filter_available(filter_name: str) -> bool:
+    """Check if an FFmpeg filter is available in the current installation."""
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-filters"],
+            capture_output=True,
+            text=True,
+        )
+        # Filter list format: " TSC filtername  V->V  Description"
+        # Look for the filter name as a complete word
+        for line in result.stdout.split('\n'):
+            parts = line.split()
+            if len(parts) >= 2:
+                # Filter name is typically the second column after flags
+                if filter_name in parts:
+                    return True
+        return False
+    except Exception:
+        return False
+
+
+def _escape_ffmpeg_filter_path(path: Path) -> str:
+    """
+    Escape a file path for use in FFmpeg filter syntax.
+    
+    FFmpeg filters require special characters to be escaped.
+    """
+    escaped = path.as_posix()
+    # Escape backslashes first (before other escapes add more backslashes)
+    escaped = escaped.replace("\\", "\\\\\\\\")
+    # Escape single quotes (need to break out of quoting: ' -> '\''  )
+    escaped = escaped.replace("'", "'\\''")
+    # Escape colons and brackets for FFmpeg filter syntax
+    escaped = escaped.replace(":", "\\:")
+    escaped = escaped.replace("[", "\\[")
+    escaped = escaped.replace("]", "\\]")
+    # Wrap the entire path in single quotes to handle spaces
+    return f"'{escaped}'"
+
+
 def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Union[str, Path, Dict[str, str]], width: int = 1920, height: int = 1080, word_segments: Optional[List[WordSegment]] = None):
     """
     Create a video with a black background and burned-in subtitles + original audio.
@@ -86,9 +126,26 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Un
         width: Video width (default 1920)
         height: Video height (default 1080)
         word_segments: Optional word segments for [REDACTED] audio blanking
+    
+    Raises:
+        RuntimeError: If FFmpeg is not installed or missing required filters
     """
     subs_path = Path(subs_path)
     output_mp4 = Path(output_mp4)
+    
+    # Check if the 'subtitles' filter is available in FFmpeg
+    if not _check_ffmpeg_filter_available("subtitles"):
+        raise RuntimeError(
+            "FFmpeg 'subtitles' filter is not available. This filter requires FFmpeg to be "
+            "compiled with libass support.\n"
+            "On macOS, you can install FFmpeg with libass using:\n"
+            "  brew tap homebrew-ffmpeg/ffmpeg\n"
+            "  brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-libass\n"
+            "The subtitle file has been saved and can be used with other tools."
+        )
+    
+    # Escape subtitle path for FFmpeg filter syntax
+    escaped_subs_path = _escape_ffmpeg_filter_path(subs_path)
 
     # Collect [REDACTED] time ranges for audio blanking
     mute_ranges = []
@@ -109,7 +166,7 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Un
                 "ffmpeg", "-y",
                 "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r=30",
                 "-i", str(audio_path),
-                "-filter_complex", f"[1:a]{volume_filter}[a];[0:v]subtitles={subs_path.as_posix()}[v]",
+                "-filter_complex", f"[1:a]{volume_filter}[a];[0:v]subtitles={escaped_subs_path}[v]",
                 "-map", "[v]", "-map", "[a]",
                 "-c:v", "libx264", "-tune", "stillimage",
                 "-c:a", "aac", "-shortest",
@@ -121,7 +178,7 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Un
                 "ffmpeg", "-y",
                 "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r=30",
                 "-i", str(audio_path),
-                "-vf", f"subtitles={subs_path.as_posix()}",
+                "-vf", f"subtitles={escaped_subs_path}",
                 "-c:v", "libx264", "-tune", "stillimage",
                 "-c:a", "aac", "-shortest",
                 str(output_mp4),
@@ -148,11 +205,11 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Un
             # Single track - check if muting needed
             if mute_ranges:
                 volume_filter = _build_volume_mute_filter(mute_ranges)
-                cmd.extend(["-filter_complex", f"[1:a]{volume_filter}[a];[0:v]subtitles={subs_path.as_posix()}[v]"])
+                cmd.extend(["-filter_complex", f"[1:a]{volume_filter}[a];[0:v]subtitles={escaped_subs_path}[v]"])
                 cmd.extend(["-map", "[v]", "-map", "[a]"])
             else:
                 cmd.extend(["-map", "0:v", "-map", "1:a"])
-                cmd.extend(["-vf", f"subtitles={subs_path.as_posix()}"])
+                cmd.extend(["-vf", f"subtitles={escaped_subs_path}"])
         else:
             # Multiple tracks - merge them
             input_labels = [f"[{i+1}:a]" for i in range(len(audio_paths))]
@@ -171,7 +228,7 @@ def render_video(subs_path: str | Path, output_mp4: str | Path, audio_config: Un
         # Add subtitle filter if not already in filter_complex
         if not mute_ranges or len(audio_paths) > 1:
             if "-vf" not in cmd:
-                cmd.extend(["-vf", f"subtitles={subs_path.as_posix()}"])
+                cmd.extend(["-vf", f"subtitles={escaped_subs_path}"])
         
         # Add output settings
         cmd.extend(["-c:v", "libx264", "-tune", "stillimage"])

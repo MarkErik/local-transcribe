@@ -394,6 +394,27 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return header
 
 
+def _check_ffmpeg_filter_available(filter_name: str) -> bool:
+    """Check if an FFmpeg filter is available in the current installation."""
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-filters"],
+            capture_output=True,
+            text=True,
+        )
+        # Filter list format: " TSC filtername  V->V  Description"
+        # Look for the filter name as a complete word
+        for line in result.stdout.split('\n'):
+            parts = line.split()
+            if len(parts) >= 2:
+                # Filter name is typically the second column after flags
+                if filter_name in parts:
+                    return True
+        return False
+    except Exception:
+        return False
+
+
 def render_vad_video(
     ass_path: Path,
     output_mp4: Path,
@@ -410,20 +431,45 @@ def render_vad_video(
         audio_config: Dict mapping speaker names to audio file paths
         width: Video width
         height: Video height
+    
+    Raises:
+        RuntimeError: If FFmpeg is not installed or missing required filters
     """
+    # Check if the 'ass' filter is available in FFmpeg
+    if not _check_ffmpeg_filter_available("ass"):
+        raise RuntimeError(
+            "FFmpeg 'ass' filter is not available. This filter requires FFmpeg to be "
+            "compiled with libass support.\n"
+            "On macOS, you can install FFmpeg with libass using:\n"
+            "  brew uninstall ffmpeg\n"
+            "  brew install ffmpeg --with-libass\n"
+            "Or install via Homebrew tap:\n"
+            "  brew tap homebrew-ffmpeg/ffmpeg\n"
+            "  brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-libass\n"
+            "The ASS subtitle file has been saved and can be used with other tools."
+        )
+    
     audio_paths = list(audio_config.values())
     
     if not audio_paths:
         raise ValueError("No audio paths provided in audio_config")
     
     # Escape the ASS path for FFmpeg filter syntax
-    # FFmpeg filters need special characters escaped: \ : ' [ ]
+    # FFmpeg filters need special characters escaped with multiple levels:
+    # 1. Backslash escape for FFmpeg filter parser: \ : ' [ ]
+    # 2. Single quotes around the path to handle spaces and special chars
+    # The order matters: first escape special chars, then wrap in quotes
     escaped_ass_path = ass_path.as_posix()
-    escaped_ass_path = escaped_ass_path.replace("\\", "\\\\")
+    # Escape backslashes first (before other escapes add more backslashes)
+    escaped_ass_path = escaped_ass_path.replace("\\", "\\\\\\\\")
+    # Escape single quotes (need to break out of quoting: ' -> '\''  )
+    escaped_ass_path = escaped_ass_path.replace("'", "'\\''")
+    # Escape colons and brackets for FFmpeg filter syntax
     escaped_ass_path = escaped_ass_path.replace(":", "\\:")
-    escaped_ass_path = escaped_ass_path.replace("'", "\\'")
     escaped_ass_path = escaped_ass_path.replace("[", "\\[")
     escaped_ass_path = escaped_ass_path.replace("]", "\\]")
+    # Wrap the entire path in single quotes to handle spaces
+    escaped_ass_path = f"'{escaped_ass_path}'"
     
     # Build FFmpeg command
     cmd = ["ffmpeg", "-y"]

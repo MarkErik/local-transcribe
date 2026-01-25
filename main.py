@@ -27,12 +27,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         # Default to CPU if not specified (will be overridden in interactive mode)
         set_system_capability("cpu")
 
-    # Handle show-defaults flag (doesn't require other args)
-    if args.show_defaults:
-        from local_transcribe.framework.cli import show_defaults
-        show_defaults()
-        return 0
-
     # Handle list-stages flag (doesn't require other args)
     if args.list_stages:
         from local_transcribe.framework.cli import list_stages

@@ -34,7 +34,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
-    p.add_argument("--show-defaults", action="store_true", help="Show all default values and exit.")
 
     # Pipeline re-entry arguments
     p.add_argument("--from-diarized-json", metavar="JSON_FILE", help="Resume pipeline from a corrected diarized word segments JSON file. Starts from turn-building stage.")
@@ -63,43 +62,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
 
     return args
-
-def show_defaults():
-    """Display all default values used by the application."""
-    print("\n=== Default Values ===")
-    print("\nSystem Capability:")
-    print("  - Default: Auto-detected preference (MPS > CUDA > CPU)")
-    
-    print("\nProviders:")
-    print("  - Transcriber Provider: Auto-selected based on availability")
-    print("  - Transcriber Model: Provider-specific default model")
-    print("  - Aligner Provider: Auto-selected if needed based on transcriber")
-    print("  - Diarization Provider: Auto-selected if needed for single audio files")
-    print("  - Transcript Cleanup Provider: None (disabled)")
-    
-    print("\nConfiguration:")
-    print("  - Number of Speakers: 2")
-    print("  - Output Formats: All available formats")
-    print("  - Single Speaker Audio: Disabled (use -s to enable)")
-    print("  - Chunking (Granite): Always enabled with local stitching")
-    
-    print("\nVAD Pipeline Settings:")
-    print("  - VAD Pipeline: Disabled (use --vad-pipeline for split audio)")
-    print("  - VAD Threshold: 0.5 (speech probability)")
-    print("  - VAD Merge Gap: 500ms (gap threshold for merging segments)")
-    
-    print("\nLLM Cleanup Settings:")
-    print("  - Enable Cleanup: Disabled (use --enable-cleanup)")
-    print("  - Cleanup Batch Words: 500 (max words per LLM batch)")
-    print("  - Cleanup Batch Turns: 20 (max turns per LLM batch)")
-    
-    print("\nURLs:")
-    print("  - LLM Turn Builder URL: http://0.0.0.0:8080")
-    print("  - LLM Transcript Cleanup URL: http://0.0.0.0:8080")
-    print("  - Remote Transcriber URL: http://0.0.0.0:7070")
-    
-    print("\nNote: Some defaults may be overridden by system capabilities or provider availability.")
-
 
 def list_stages():
     """Display available pipeline stages."""

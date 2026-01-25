@@ -416,6 +416,15 @@ def render_vad_video(
     if not audio_paths:
         raise ValueError("No audio paths provided in audio_config")
     
+    # Escape the ASS path for FFmpeg filter syntax
+    # FFmpeg filters need special characters escaped: \ : ' [ ]
+    escaped_ass_path = ass_path.as_posix()
+    escaped_ass_path = escaped_ass_path.replace("\\", "\\\\")
+    escaped_ass_path = escaped_ass_path.replace(":", "\\:")
+    escaped_ass_path = escaped_ass_path.replace("'", "\\'")
+    escaped_ass_path = escaped_ass_path.replace("[", "\\[")
+    escaped_ass_path = escaped_ass_path.replace("]", "\\]")
+    
     # Build FFmpeg command
     cmd = ["ffmpeg", "-y"]
     
@@ -429,14 +438,14 @@ def render_vad_video(
     # Build filter complex
     if len(audio_paths) == 1:
         # Single audio track
-        filter_complex = f"[0:v]ass={ass_path.as_posix()}[v]"
+        filter_complex = f"[0:v]ass={escaped_ass_path}[v]"
         cmd.extend(["-filter_complex", filter_complex])
         cmd.extend(["-map", "[v]", "-map", "1:a"])
     else:
         # Multiple audio tracks - merge them
         input_labels = [f"[{i+1}:a]" for i in range(len(audio_paths))]
         audio_merge = f"{''.join(input_labels)}amerge=inputs={len(audio_paths)}[a]"
-        video_filter = f"[0:v]ass={ass_path.as_posix()}[v]"
+        video_filter = f"[0:v]ass={escaped_ass_path}[v]"
         filter_complex = f"{audio_merge};{video_filter}"
         cmd.extend(["-filter_complex", filter_complex])
         cmd.extend(["-map", "[v]", "-map", "[a]"])

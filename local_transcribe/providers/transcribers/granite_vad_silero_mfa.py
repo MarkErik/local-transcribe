@@ -497,7 +497,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
             
             log_debug(f"Transcribing chunk {chunk_id} ({chunk_start_time:.2f}s)")
             
-            # Transcribe the chunk (GraniteModelManager handles cleaning and prompt stripping)
+            # Transcribe the chunk
             chunk_text: str = self._transcribe_single_segment(chunk_audio_data, sample_rate=sr)
             
             if not chunk_text.strip():

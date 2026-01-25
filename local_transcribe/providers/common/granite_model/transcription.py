@@ -31,7 +31,7 @@ class TranscriptionMixin:
     
     # Prompt fragment markers to filter from transcription output
     _PROMPT_FRAGMENTS = [
-        "make sure to include disfluencies repeated words.",
+        "make sure to include disfluencies and repeated words.",
         "can you transcribe the speech into a written format",
     ]
     
@@ -198,7 +198,7 @@ class TranscriptionMixin:
                 },
                 {
                     "role": "user",
-                    "content": "<|audio|>can you transcribe the speech into a written format?  make sure to include disfluencies, stutters, and repeated fragments.",
+                    "content": "<|audio|>can you transcribe the speech into a written format?  make sure to include disfluencies and repeated words.",
                 }
             ]
             
@@ -245,10 +245,6 @@ class TranscriptionMixin:
             
             cleaned_text = self._clean_transcription_output(output_text[0].strip())
             final_text = self._strip_prompt_fragments(cleaned_text)
-            
-            # Log if prompt fragments were removed
-            if final_text != cleaned_text:
-                log_debug("Removed prompt fragments from transcription output")
             
             return final_text
             

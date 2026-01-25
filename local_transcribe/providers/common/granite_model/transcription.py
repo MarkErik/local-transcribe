@@ -29,47 +29,33 @@ class TranscriptionMixin:
     tokenizer: Optional[Any]
     device: str
     
-    # Prompt fragment markers to filter from transcription output
-    _PROMPT_FRAGMENTS = [
-        "make sure to include disfluencies and repeated words.",
-        "can you transcribe the speech into a written format",
-    ]
+    # Single source of truth for the transcription prompt
+    # This is used both when sending to the model and when cleaning the output
+    _TRANSCRIPTION_PROMPT = (
+        "can you transcribe the speech into a written format? "
+        "make sure to include disfluencies and repeated words."
+    )
     
-    def _strip_prompt_fragments(self, text: str) -> str:
-        """Strip prompt fragments from the transcription output.
+    def _clean_transcription_output(self, text: str) -> str:
+        """Clean the transcription output by removing artifacts from model generation.
         
-        Sometimes the model echoes parts of the prompt in its output.
-        This method removes those fragments.
+        The Granite model sometimes includes unwanted content in its output:
+        - Dialogue markers like "User:" or "Assistant:"
+        - Quotation marks around the transcription
+        - Echoed prompt fragments
+        
+        This method removes all such artifacts to produce clean transcription text.
+        
+        Args:
+            text: Raw transcription output from the model
+            
+        Returns:
+            Cleaned transcription text
         """
         if not text:
             return text
-            
-        lower_text = text.lower()
-        cleaned_text = text
         
-        for fragment in self._PROMPT_FRAGMENTS:
-            idx = lower_text.find(fragment)
-            if idx != -1:
-                # Remove the fragment and everything before it
-                cleaned_text = cleaned_text[:idx]
-                lower_text = cleaned_text.lower()
-        
-        # Clean up any trailing punctuation or whitespace
-        cleaned_text = cleaned_text.rstrip(" .,\n\t")
-        
-        # If we removed everything, return the original text
-        if not cleaned_text.strip():
-            return text.strip()
-            
-        return cleaned_text.strip()
-    
-    def _clean_transcription_output(self, text: str) -> str:
-        """Clean the transcription output by removing dialogue markers and quotation marks.
-        
-        The Granite model sometimes adds dialogue markers like "User:" or "Assistant:"
-        and quotation marks around the transcription. This method removes them.
-        """
-        # Count labels before removal for debug logging
+        # Step 1: Remove dialogue markers
         user_count = len(re.findall(r'\bUser:\s*', text, flags=re.IGNORECASE))
         assistant_count = len(re.findall(r'\bAI Assistant:\s*', text, flags=re.IGNORECASE))
         assistant_short_count = len(re.findall(r'\bAssistant:\s*', text, flags=re.IGNORECASE))
@@ -79,15 +65,33 @@ class TranscriptionMixin:
         text = re.sub(r'\bAI Assistant:\s*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\bAssistant:\s*', '', text, flags=re.IGNORECASE)
         
-        text = text.replace('"', '')
-        text = text.replace('\u201C', '')
-        text = text.replace('\u201D', '')
-        
-        text = re.sub(r'\s+', ' ', text).strip()
-        
-        # Log count if any labels were removed
         if total_removed > 0:
             log_debug(f"Removed {total_removed} dialogue labels from transcript.")
+        
+        # Step 2: Remove quotation marks (straight and curly)
+        text = text.replace('"', '')
+        text = text.replace('\u201C', '')  # Left double quotation mark
+        text = text.replace('\u201D', '')  # Right double quotation mark
+        
+        # Step 3: Strip echoed prompt fragments
+        # Build fragments from the canonical prompt to ensure they stay in sync
+        prompt_fragments = [
+            self._TRANSCRIPTION_PROMPT.lower(),
+            "make sure to include disfluencies and repeated words.",
+            "can you transcribe the speech into a written format",
+        ]
+        
+        lower_text = text.lower()
+        for fragment in prompt_fragments:
+            idx = lower_text.find(fragment)
+            if idx != -1:
+                # Remove the fragment and everything before it
+                text = text[:idx]
+                lower_text = text.lower()
+        
+        # Step 4: Final cleanup - normalize whitespace and trim
+        text = text.rstrip(" .,\n\t")
+        text = re.sub(r'\s+', ' ', text).strip()
         
         return text
     
@@ -198,7 +202,7 @@ class TranscriptionMixin:
                 },
                 {
                     "role": "user",
-                    "content": "<|audio|>can you transcribe the speech into a written format?  make sure to include disfluencies and repeated words.",
+                    "content": f"<|audio|>{self._TRANSCRIPTION_PROMPT}",
                 }
             ]
             
@@ -243,10 +247,7 @@ class TranscriptionMixin:
                 new_tokens, add_special_tokens=False, skip_special_tokens=True
             )
             
-            cleaned_text = self._clean_transcription_output(output_text[0].strip())
-            final_text = self._strip_prompt_fragments(cleaned_text)
-            
-            return final_text
+            return self._clean_transcription_output(output_text[0].strip())
             
         finally:
             # Explicit memory cleanup

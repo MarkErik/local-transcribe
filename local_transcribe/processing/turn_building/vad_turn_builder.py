@@ -337,7 +337,6 @@ def build_turns_vad_split_audio(
         config: VAD block building configuration
         intermediate_dir: Path for intermediate/debug files
         models_dir: Path to model cache directory
-        vad_threshold: VAD speech probability threshold (0-1) - ignored, uses fixed params
         validate_durations: Whether to validate audio file durations match
         **kwargs: Additional arguments passed to transcriber
         

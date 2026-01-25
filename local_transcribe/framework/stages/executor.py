@@ -280,11 +280,6 @@ class VADTranscriptionStage(PipelineStage):
         
         log_status("Using VAD-first pipeline for split audio files")
         
-        # Build VAD config from CLI args
-        vad_config = VADBlockBuilderConfig(
-            merge_gap_threshold_ms=getattr(args, 'vad_merge_gap_ms', 500),
-        )
-        
         # Build speaker audio files dict (need absolute paths)
         speaker_audio_paths = {}
         for speaker_name, audio_file in context.speaker_files.items():
@@ -301,10 +296,8 @@ class VADTranscriptionStage(PipelineStage):
         transcript = build_turns_vad_split_audio(
             speaker_audio_files=speaker_audio_paths,
             transcriber_provider=context.transcriber_provider,
-            config=vad_config,
             intermediate_dir=intermediate_dir,
             models_dir=context.models_dir,
-            vad_threshold=getattr(args, 'vad_threshold', 0.5),
             **transcription_kwargs,
         )
         

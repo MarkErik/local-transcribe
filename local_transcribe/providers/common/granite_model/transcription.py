@@ -81,12 +81,8 @@ class TranscriptionMixin:
             self._TRANSCRIPTION_PROMPT.lower().rstrip("."),
         ]
         
-        lower_text = text.lower()
         for fragment in prompt_fragments:
-            idx = lower_text.find(fragment)
-            if idx != -1:
-                text = text[:idx]
-                lower_text = text.lower()
+            text = re.sub(re.escape(fragment), '', text, flags=re.IGNORECASE)
         
         # Step 4: Final cleanup - normalize whitespace and trim
         text = text.rstrip(" .,\n\t")

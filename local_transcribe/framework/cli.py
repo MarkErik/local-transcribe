@@ -30,10 +30,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--llm-de-identifier-url", default="http://0.0.0.0:8080", help="URL for LLM personal information de-identifier processor (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
     p.add_argument("--llm-transcript-cleanup-url", default="http://0.0.0.0:8080", help="URL for remote transcript cleanup provider (e.g., http://ip:port for LLM server) [Default: http://0.0.0.0:8080]")
     
-    # Remote transcription server URL (used when selecting 'remote' transcriber)
     p.add_argument("--remote-transcriber-url", default="http://0.0.0.0:7070", help="URL for remote transcription server when using 'remote' transcriber provider [Default: http://0.0.0.0:7070]")
-    p.add_argument("--include-disfluencies", action="store_true", dest="include_disfluencies", default=None, help="Include disfluencies (um, uh, etc.) in transcription output [Default: True, prompted in interactive mode for remote transcriber]")
-    p.add_argument("--no-disfluencies", action="store_false", dest="include_disfluencies", help="Exclude disfluencies from transcription output")
 
     p.add_argument("--only-final-transcript", action="store_true", help="Only create the final merged timestamped transcript (timestamped-txt), skip other outputs.")
     p.add_argument("--list-plugins", action="store_true", help="List available plugins and exit.")
@@ -95,9 +92,6 @@ def show_defaults():
     print("  - Enable Cleanup: Disabled (use --enable-cleanup)")
     print("  - Cleanup Batch Words: 500 (max words per LLM batch)")
     print("  - Cleanup Batch Turns: 20 (max turns per LLM batch)")
-    
-    print("\nTranscription Options:")
-    print("  - Include Disfluencies: True (um, uh, etc. included by default)")
     
     print("\nURLs:")
     print("  - LLM Turn Builder URL: http://0.0.0.0:8080")
@@ -655,7 +649,6 @@ def prompt_remote_transcriber_url(args) -> argparse.Namespace:
     # Check server availability
     from local_transcribe.providers.transcribers.remote_transcriber import (
         check_remote_transcriber_available,
-        check_server_supports_disfluencies,
         get_remote_server_info
     )
     print(f"  Checking connection to {args.remote_transcriber_url}...")
@@ -671,23 +664,6 @@ def prompt_remote_transcriber_url(args) -> argparse.Namespace:
             model_info = server_info.get("model", {})
             model_name = model_info.get("name", "unknown")
             print(f"  ✓ Server model: {model_name}")
-        
-        # Prompt for disfluencies if not already set via CLI
-        if args.include_disfluencies is None:
-            supports_disfluencies = check_server_supports_disfluencies(args.remote_transcriber_url)
-            if supports_disfluencies:
-                args.include_disfluencies = _prompt_yes_no(
-                    "Include disfluencies (um, uh, etc.) in transcription?",
-                    default=True
-                )
-                status = "enabled" if args.include_disfluencies else "disabled"
-                print(f"  ✓ Disfluencies: {status}")
-            else:
-                print("  ⚠ Server does not support disfluency options")
-                args.include_disfluencies = True  # Use server default
-        else:
-            status = "enabled" if args.include_disfluencies else "disabled"
-            print(f"  ✓ Disfluencies: {status} (set via CLI)")
     else:
         print(f"  ⚠ Remote server not available at {args.remote_transcriber_url}")
         fallback = _prompt_yes_no("Continue anyway (will fail if server unavailable)?", default=False)
@@ -695,10 +671,6 @@ def prompt_remote_transcriber_url(args) -> argparse.Namespace:
             # User wants to choose a different transcriber
             print("  ✓ Please select a different transcriber")
             args.transcriber_provider = None  # Reset to force re-selection
-        else:
-            # Set disfluencies default if continuing without server check
-            if args.include_disfluencies is None:
-                args.include_disfluencies = True
     
     return args
 

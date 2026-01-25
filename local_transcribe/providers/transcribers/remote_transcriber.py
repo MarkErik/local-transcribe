@@ -263,16 +263,13 @@ class RemoteTranscriberClient:
         self,
         audio: NDArray[np.floating],
         sample_rate: int = 16000,
-        include_disfluencies: bool = True
     ) -> str:
         """
         Transcribe audio using the remote server.
         
         Args:
             audio: 1D numpy array of audio samples (mono, preferably float32)
-            sample_rate: Sample rate of the audio (should be 16000)
-            include_disfluencies: Whether to include disfluencies (um, uh) in output
-        
+            sample_rate: Sample rate of the audio (should be 16000)        
         Returns:
             Transcribed text string
         
@@ -291,9 +288,6 @@ class RemoteTranscriberClient:
             "sample_rate": sample_rate,
             "audio_format": "float32",
             "segment_duration": segment_duration,
-            "options": {
-                "include_disfluencies": include_disfluencies
-            }
         }
         
         try:
@@ -391,42 +385,6 @@ def get_remote_server_info(server_url: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
     return None
-
-
-def check_server_supports_disfluencies(server_url: str) -> bool:
-    """
-    Check if a remote transcription server supports disfluency transcription.
-    
-    This checks the server's /info endpoint for the `supports_disfluency_filtering`
-    capability. If not explicitly reported, it infers support from the model name
-    (Granite models always include disfluencies).
-    
-    Args:
-        server_url: URL of the remote transcription server
-    
-    Returns:
-        True if the server supports disfluency transcription
-    """
-    info = get_remote_server_info(server_url)
-    if info is None:
-        return True  # Assume support if we can't check
-    
-    # Check if server explicitly reports disfluencies capability
-    capabilities = info.get("capabilities", {})
-    if "supports_disfluency_filtering" in capabilities:
-        return capabilities["supports_disfluency_filtering"]
-    # Also check alternate field name for compatibility
-    if "supports_disfluencies" in capabilities:
-        return capabilities["supports_disfluencies"]
-    
-    # Infer from model name - Granite models always include disfluencies
-    model_info = info.get("model", {})
-    model_name = model_info.get("name", "").lower()
-    if "granite" in model_name:
-        return True
-    
-    # Default to True for unknown models (most transcription models support this)
-    return True
 
 
 # =============================================================================
@@ -568,17 +526,13 @@ class RemoteTranscriberProvider(TranscriberProvider):
             audio_path: Path to the audio file
             device: Ignored for remote transcription
             **kwargs: Additional options:
-                - server_url: Override the server URL
-                - include_disfluencies: Include disfluencies in output (default: True)
-        
+                - server_url: Override the server URL        
         Returns:
             List of dictionaries with chunk data (chunk_id, words, text)
         """
         # Configure server URL if provided
         if 'server_url' in kwargs:
             self.configure(server_url=kwargs['server_url'])
-        
-        include_disfluencies = kwargs.get('include_disfluencies', True)
         
         # Check server availability
         client = self._get_client()
@@ -606,27 +560,24 @@ class RemoteTranscriberProvider(TranscriberProvider):
                     log_debug(f"Padded short audio from {duration:.1f}s to {self.min_chunk_seconds}s")
             
             log_progress(f"Audio duration: {duration:.1f}s - transcribing as single segment")
-            text = client.transcribe_audio(wav, sr, include_disfluencies)
+            text = client.transcribe_audio(wav, sr)
             return [{"chunk_id": 0, "words": text.split(), "text": text}]
         
         # For long audio, process in chunks
         log_progress(f"Audio duration: {duration:.1f}s - processing in chunks")
-        return self._transcribe_chunked(wav, sr, include_disfluencies)
+        return self._transcribe_chunked(wav, sr)
 
     def _transcribe_chunked(
         self,
         wav: NDArray,
         sr: int,
-        include_disfluencies: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Transcribe long audio in chunks with overlap and stitching.
         
         Args:
             wav: Audio samples
-            sr: Sample rate
-            include_disfluencies: Include disfluencies in output
-            
+            sr: Sample rate            
         Returns:
             List of chunk dictionaries
         """
@@ -661,17 +612,17 @@ class RemoteTranscriberProvider(TranscriberProvider):
                     merged_wav = np.concatenate([prev_chunk_wav, non_overlapping_part])
                     
                     # Re-transcribe merged chunk
-                    chunk_text = client.transcribe_audio(merged_wav, sr, include_disfluencies)
+                    chunk_text = client.transcribe_audio(merged_wav, sr)
                     existing_id = chunks[-1]["chunk_id"]
                     chunks[-1] = {"chunk_id": existing_id, "words": chunk_text.split(), "text": chunk_text}
                 else:
                     # Pad short chunk
                     padded_wav = np.pad(chunk_wav, (0, min_chunk_samples - len(chunk_wav)), mode='constant')
-                    chunk_text = client.transcribe_audio(padded_wav, sr, include_disfluencies)
+                    chunk_text = client.transcribe_audio(padded_wav, sr)
                     chunks.append({"chunk_id": chunk_num, "words": chunk_text.split(), "text": chunk_text})
             else:
                 # Normal chunk processing
-                chunk_text = client.transcribe_audio(chunk_wav, sr, include_disfluencies)
+                chunk_text = client.transcribe_audio(chunk_wav, sr)
                 chunks.append({"chunk_id": chunk_num, "words": chunk_text.split(), "text": chunk_text})
             
             prev_chunk_wav = chunk_wav

@@ -114,11 +114,6 @@ class TranscriptionAlignmentStage(PipelineStage):
             "output_format": getattr(args, 'output_format', 'stitched'),
         }
         
-        # Pass include_disfluencies setting if specified (for remote transcriber)
-        include_disfluencies = getattr(args, 'include_disfluencies', None)
-        if include_disfluencies is not None:
-            transcribe_kwargs["include_disfluencies"] = include_disfluencies
-        
         if context.mode == "single_speaker_audio":
             # Transcription only (no alignment) for single speaker
             words = self._transcribe_only(context, transcribe_kwargs)

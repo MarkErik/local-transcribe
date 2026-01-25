@@ -31,7 +31,7 @@ class TranscriptionMixin:
     
     # Prompt fragment markers to filter from transcription output
     _PROMPT_FRAGMENTS = [
-        "make sure to include disfluencies, stutters, and repeated fragments.",
+        "make sure to include disfluencies repeated words.",
         "can you transcribe the speech into a written format",
     ]
     
@@ -190,7 +190,7 @@ class TranscriptionMixin:
             wav_tensor = torch.from_numpy(audio).unsqueeze(0)
             segment_duration = len(audio) / sample_rate
             
-            # Build chat prompt with disfluencies request for better transcript quality
+            # Build chat prompt
             chat = [
                 {
                     "role": "system",

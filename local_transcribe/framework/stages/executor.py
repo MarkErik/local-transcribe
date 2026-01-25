@@ -297,11 +297,6 @@ class VADTranscriptionStage(PipelineStage):
         if getattr(args, 'transcriber_model', None):
             transcription_kwargs['transcriber_model'] = args.transcriber_model
         
-        # Pass include_disfluencies setting if specified (for remote transcriber)
-        include_disfluencies = getattr(args, 'include_disfluencies', None)
-        if include_disfluencies is not None:
-            transcription_kwargs['include_disfluencies'] = include_disfluencies
-        
         # Run VAD pipeline
         transcript = build_turns_vad_split_audio(
             speaker_audio_files=speaker_audio_paths,

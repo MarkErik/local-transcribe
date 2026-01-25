@@ -2,8 +2,6 @@
 """
 PyAnnote diarization plugin implementation.
 
-Note: Heavy imports (torch, pyannote) are lazily loaded when needed
-to avoid slow startup times when this provider is not used.
 """
 
 from typing import List, Optional, TYPE_CHECKING

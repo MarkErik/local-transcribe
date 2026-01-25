@@ -7,8 +7,6 @@ Debug mode saves individual segment transcripts when DEBUG logging is enabled.
 
 Uses GraniteModelManager for consolidated model management and transcription.
 
-Note: Heavy imports (torch, librosa) are lazily loaded when needed
-to avoid slow startup times when this provider is not used.
 """
 
 from typing import List, Optional, Dict, Any, Tuple, TYPE_CHECKING

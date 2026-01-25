@@ -11,8 +11,6 @@ If Wav2Vec2 alignment fails, it falls back to simple timestamp distribution.
 
 Uses GraniteModelManager for consolidated model management and transcription.
 
-Note: Heavy imports (torch, librosa, transformers, torchaudio) are lazily loaded when needed
-to avoid slow startup times when this provider is not used.
 """
 
 from typing import List, Optional, Dict, Any, TYPE_CHECKING, Sequence, Union

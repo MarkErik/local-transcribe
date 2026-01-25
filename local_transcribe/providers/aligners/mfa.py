@@ -26,11 +26,7 @@ def _get_mfa_alignment_engine_class():
 
 
 class MFAAlignerProvider(AlignerProvider):
-    """Aligner provider using Montreal Forced Aligner for word-level timestamps.
-    
-    Uses MFAAlignmentEngine for TextGrid parsing to avoid code duplication
-    with the granite_mfa and granite_vad_silero_mfa transcribers.
-    """
+    """Aligner provider using Montreal Forced Aligner for word-level timestamps."""
 
     def __init__(self):
         # MFA setup

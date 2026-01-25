@@ -7,8 +7,6 @@ to produce chunked transcripts where each word has timestamps.
 
 Uses GraniteModelManager for consolidated model management and transcription.
 
-Note: Heavy imports (torch, librosa) are lazily loaded when needed
-to avoid slow startup times when this provider is not used.
 """
 
 from typing import List, Optional, Dict, Any, TYPE_CHECKING

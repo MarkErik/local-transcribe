@@ -1,8 +1,5 @@
 # Granite Model Manager
 # Main manager class that orchestrates all Granite model functionality
-#
-# Note: Heavy imports (torch, transformers) are lazily loaded when needed
-# to avoid slow startup times when this provider is not used.
 
 import pathlib
 from typing import Any, Optional, TYPE_CHECKING

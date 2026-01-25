@@ -1,8 +1,5 @@
 # Granite Model Loading
 # Handles model loading and downloading for Granite models
-#
-# Note: Heavy imports (torch, transformers) are lazily loaded when needed
-# to avoid slow startup times when this provider is not used.
 
 import importlib
 import os

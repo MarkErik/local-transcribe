@@ -5,8 +5,6 @@ Transcriber plugin using IBM Granite.
 This provider uses GraniteModelManager for all model management and transcription,
 ensuring consistent behavior across all Granite-based transcribers.
 
-Note: Heavy imports (torch, librosa) are lazily loaded when needed
-to avoid slow startup times when this provider is not used.
 """
 
 from typing import List, Optional, Union, Dict, Any, TYPE_CHECKING

@@ -4,8 +4,6 @@ Transcriber plugin using MLX Whisper for Apple Silicon.
 
 Supports chunked processing for long audio files with stitching.
 
-Note: Heavy imports (numpy, librosa, scipy, mlx_whisper) are lazily loaded when needed
-to avoid slow startup times when this provider is not used.
 """
 
 from typing import List, Optional, Union, Dict, Any, TYPE_CHECKING

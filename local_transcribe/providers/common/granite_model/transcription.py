@@ -75,17 +75,16 @@ class TranscriptionMixin:
         
         # Step 3: Strip echoed prompt fragments
         # Build fragments from the canonical prompt to ensure they stay in sync
+        # Include both with and without trailing punctuation since the model may omit it
         prompt_fragments = [
             self._TRANSCRIPTION_PROMPT.lower(),
-            "make sure to include disfluencies and repeated words.",
-            "can you transcribe the speech into a written format",
+            self._TRANSCRIPTION_PROMPT.lower().rstrip("."),
         ]
         
         lower_text = text.lower()
         for fragment in prompt_fragments:
             idx = lower_text.find(fragment)
             if idx != -1:
-                # Remove the fragment and everything before it
                 text = text[:idx]
                 lower_text = text.lower()
         
@@ -97,9 +96,6 @@ class TranscriptionMixin:
     
     def _calculate_generation_params(self, segment_duration: float, input_length: int) -> Dict[str, Any]:
         """Calculate generation parameters based on segment duration.
-        
-        Longer segments need more tokens and benefit from repetition penalty.
-        Shorter segments work better with fewer tokens and no logits processor.
         
         Args:
             segment_duration: Duration of audio segment in seconds

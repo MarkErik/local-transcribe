@@ -908,7 +908,6 @@ def interactive_combined_audio(args, api) -> argparse.Namespace:
     print("\n" + "-" * 50)
     print("MODE: Combined Audio")
     print("Single audio file with multiple speakers")
-    print("Requires: Transcriber, Aligner (if needed), Diarization")
     print("-" * 50)
     
     # System capability
@@ -997,13 +996,12 @@ def interactive_split_audio(args, api) -> argparse.Namespace:
     print("\n" + "-" * 50)
     print("MODE: Split Audio")
     print("Separate audio files per speaker")
-    print("Requires: Transcriber, Aligner (if needed)")
     print("-" * 50)
     
     # Offer VAD pipeline as an option
     print("\n--- Pipeline Selection ---")
     
-    use_vad = _prompt_yes_no("Use VAD pipeline?", default=True)
+    use_vad = _prompt_yes_no("Use VAD for Turn Building?", default=True)
     
     if use_vad:
         args.vad_pipeline = True
@@ -1049,7 +1047,6 @@ def interactive_split_audio(args, api) -> argparse.Namespace:
     
     # No diarization needed for split audio
     args.diarization_provider = None
-    print("  ✓ Diarization: Not needed (speakers are in separate files)")
     
     # Granite-specific settings
     if args.transcriber_provider and 'granite' in args.transcriber_provider:
@@ -1082,7 +1079,7 @@ def display_configuration_summary(args, mode: str):
         PipelineMode.SINGLE_SPEAKER: "Single Speaker Audio",
         PipelineMode.COMBINED_AUDIO: "Combined Audio (Multi-Speaker)",
         PipelineMode.SPLIT_AUDIO: "Split Audio (Standard)",
-        PipelineMode.VAD_SPLIT_AUDIO: "Split Audio (VAD Pipeline)",
+        PipelineMode.VAD_SPLIT_AUDIO: "Split Audio (VAD Turn Building)",
     }
     
     print(f"\n  Mode: {mode_names.get(mode, mode)}")

@@ -29,8 +29,8 @@ class VADASRProcessor:
     transcribing each chunk, and stitching the results together.
     """
     
-    # Chunk size parameters from implementation plan
-    MAX_CHUNK_DURATION_S = 30.0
+    # Chunk size parameters
+    MAX_CHUNK_DURATION_S = 36.0
     OVERLAP_DURATION_S = 4.0
     MIN_CHUNK_DURATION_S = 7.0  # Minimum viable chunk size
     

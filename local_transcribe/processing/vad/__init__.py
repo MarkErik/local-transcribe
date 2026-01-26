@@ -14,8 +14,12 @@ Available components:
 - SegmentCombinationConfig: Configuration for segmentation
 - ASRChunk: Audio chunk prepared for ASR
 
-- segment_for_asr: Stateless function for segment combination/splitting
+Segmentation (see segmenter.py, segment_combiner.py, segment_splitter.py):
+- segment_for_asr: Main entry point for segment combination/splitting
 - VADSegmenter: Convenience class for segmentation
+- combine_segments: Combine nearby VAD segments based on gap analysis
+- split_long_segments: Split long segments at natural boundaries
+
 - VADBlockBuilder: Builds conversation blocks from per-speaker VAD segments
 - VADASRProcessor: Processes VAD blocks through ASR with chunking
 
@@ -32,10 +36,25 @@ from local_transcribe.processing.vad.types import (
     SegmentCombinationConfig,
 )
 
-# Import segmenter
+# Import segmenter (orchestrates combination and splitting)
 from local_transcribe.processing.vad.segmenter import (
     segment_for_asr,
     VADSegmenter,
+)
+
+# Import segment combiner
+from local_transcribe.processing.vad.segment_combiner import (
+    combine_segments,
+    should_combine_segments,
+)
+
+# Import segment splitter
+from local_transcribe.processing.vad.segment_splitter import (
+    split_long_segments,
+    split_long_segments_recursive,
+    find_best_split_points,
+    find_force_split_points,
+    calculate_split_score,
 )
 
 # Import block builder
@@ -60,9 +79,18 @@ __all__ = [
     'ASRChunk',
     'CombinedSegment',
     'SegmentCombinationConfig',
-    # Segmentation
+    # Segmentation (main entry point)
     'segment_for_asr',
     'VADSegmenter',
+    # Segment combination
+    'combine_segments',
+    'should_combine_segments',
+    # Segment splitting
+    'split_long_segments',
+    'split_long_segments_recursive',
+    'find_best_split_points',
+    'find_force_split_points',
+    'calculate_split_score',
     # Processors
     'VADBlockBuilder',
     'VADASRProcessor',

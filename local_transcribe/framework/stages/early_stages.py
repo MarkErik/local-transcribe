@@ -325,7 +325,7 @@ class DeIdentificationStage(PipelineStage):
     
     @property
     def required_inputs(self) -> List[str]:
-        return ["word_segments"]
+        return ["word_segments", "transcript"]  # Different modes use different inputs
     
     @property
     def produces_outputs(self) -> List[str]:
@@ -339,11 +339,16 @@ class DeIdentificationStage(PipelineStage):
         # Check base requirements first
         can_run, reason = super().can_execute(context)
         if not can_run:
-            return can_run, reason
+            # For VAD split audio, we need 'transcript' instead of 'word_segments'
+            if context.mode == "vad_split_audio":
+                if not hasattr(context, 'transcript') or context.transcript is None:
+                    return False, "Missing required input: transcript"
+            else:
+                return can_run, reason
         
         # Only run if de_identify flag is set
         if not getattr(context.args, 'de_identify', False):
-            return False, "De-identification not enabled (use --de-identify flag)"
+            return False, "De-identification not enabled"
         
         return True, ""
     
@@ -361,7 +366,7 @@ class DeIdentificationStage(PipelineStage):
         
         if context.mode == "single_speaker_audio":
             # Text-based de-identification for single speaker
-            log_progress("De-identifying transcript (text mode)")
+            log_progress("De-identifying transcript")
             # For single speaker mode, word_segments holds text as a string
             transcript_text = str(context.word_segments) if context.word_segments else ""
             deidentified_text = orchestrator.de_identify_text(transcript_text)
@@ -394,7 +399,7 @@ class DeIdentificationStage(PipelineStage):
             
         elif context.mode == "vad_split_audio":
             # VAD pipeline - de-identify the transcript turns
-            log_status("Starting de-identification for VAD transcript")
+            log_status("Starting de-identification")
             
             if context.transcript is None:
                 raise StageError(self.name, "No transcript available for de-identification")

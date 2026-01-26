@@ -36,6 +36,117 @@ class TranscriptionMixin:
         "make sure to include disfluencies and repeated words."
     )
     
+    # Anchor word for partial leakage detection (must appear in the prompt)
+    _ANCHOR_WORD = "disfluencies"
+    
+    @classmethod
+    def _get_prompt_words_around_anchor(cls) -> tuple[list[str], list[str]]:
+        """Derive words before/after anchor from the prompt (cached).
+        
+        Returns:
+            Tuple of (words_before_anchor, words_after_anchor)
+        """
+        # Use a cached result to avoid recomputing each time
+        if not hasattr(cls, '_cached_prompt_words'):
+            # Extract the sentence containing the anchor word
+            sentences = re.split(r'[.?!]\s*', cls._TRANSCRIPTION_PROMPT.lower())
+            anchor_sentence = None
+            for sentence in sentences:
+                if cls._ANCHOR_WORD in sentence:
+                    anchor_sentence = sentence.strip()
+                    break
+            
+            if anchor_sentence is None:
+                cls._cached_prompt_words = ([], [])
+            else:
+                # Split into words and find anchor position
+                words = anchor_sentence.split()
+                try:
+                    anchor_idx = words.index(cls._ANCHOR_WORD)
+                    words_before = words[:anchor_idx]
+                    words_after = words[anchor_idx + 1:]
+                    cls._cached_prompt_words = (words_before, words_after)
+                except ValueError:
+                    cls._cached_prompt_words = ([], [])
+        
+        return cls._cached_prompt_words
+    
+    def _remove_partial_prompt_leakage(self, text: str) -> str:
+        """Remove partial prompt leakage anchored on the word 'disfluencies'.
+        
+        Sometimes the model leaks only a portion of the second prompt sentence
+        (e.g., "include disfluencies and repeated words" appears in the transcript).
+        
+        Algorithm:
+        1. Find the word "disfluencies" in the text
+        2. Walk backwards, counting consecutive matches against prompt words
+        3. Walk forwards, counting consecutive matches against prompt words
+        4. If ≥1 match left AND ≥2 matches right, remove the entire matched span
+        
+        This is conservative to avoid removing actual participant speech that
+        coincidentally contains "disfluencies".
+        
+        Args:
+            text: Text that may contain partial prompt leakage
+            
+        Returns:
+            Text with partial prompt leakage removed (if criteria met)
+        """
+        # Tokenize text into words while preserving positions for reconstruction
+        words = text.split()
+        words_lower = [w.lower().strip('.,!?;:') for w in words]
+        
+        # Find anchor word "disfluencies"
+        try:
+            anchor_idx = words_lower.index(self._ANCHOR_WORD)
+        except ValueError:
+            # Anchor word not found, nothing to remove
+            return text
+        
+        # Get prompt words before/after anchor (derived from _TRANSCRIPTION_PROMPT)
+        prompt_words_before, prompt_words_after = self._get_prompt_words_around_anchor()
+        
+        # Walk backwards from anchor, matching against prompt words (in reverse order)
+        left_matches = 0
+        prompt_left = list(reversed(prompt_words_before))
+        for i, prompt_word in enumerate(prompt_left):
+            text_idx = anchor_idx - 1 - i
+            if text_idx < 0:
+                break
+            if words_lower[text_idx] == prompt_word:
+                left_matches += 1
+            else:
+                break
+        
+        # Walk forwards from anchor, matching against prompt words
+        right_matches = 0
+        prompt_right = prompt_words_after
+        for i, prompt_word in enumerate(prompt_right):
+            text_idx = anchor_idx + 1 + i
+            if text_idx >= len(words):
+                break
+            if words_lower[text_idx] == prompt_word:
+                right_matches += 1
+            else:
+                break
+        
+        # Check criteria: need ≥1 left AND ≥2 right to be confident this is leakage
+        if left_matches >= 1 and right_matches >= 2:
+            # Calculate span to remove
+            start_idx = anchor_idx - left_matches
+            end_idx = anchor_idx + right_matches  # inclusive
+            
+            # Build the phrase being removed for logging
+            removed_phrase = ' '.join(words[start_idx:end_idx + 1])
+            log_debug(f"Removing partial prompt leakage: '{removed_phrase}' "
+                     f"(left_matches={left_matches}, right_matches={right_matches})")
+            
+            # Remove the span
+            words = words[:start_idx] + words[end_idx + 1:]
+            return ' '.join(words)
+        
+        return text
+    
     def _clean_transcription_output(self, text: str) -> str:
         """Clean the transcription output by removing artifacts from model generation.
         
@@ -84,6 +195,12 @@ class TranscriptionMixin:
         
         for fragment in prompt_fragments:
             text = re.sub(re.escape(fragment), '', text, flags=re.IGNORECASE)
+        
+        # Step 3b: Remove partial prompt leakage anchored on "disfluencies"
+        # Sometimes only a portion of the second prompt sentence leaks into the transcript.
+        # We locate "disfluencies" and walk outward to find contiguous matching words.
+        # Criteria: must find ≥1 match to the left AND ≥2 matches to the right.
+        text = self._remove_partial_prompt_leakage(text)
         
         # Step 4: Final cleanup - normalize whitespace and trim
         text = text.rstrip(" .,\n\t")

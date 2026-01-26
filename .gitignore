@@ -48,3 +48,6 @@ samples/
 #used to keep track of debugging issues
 issue
 TODO.list
+
+#Ignore temporarily
+tools/

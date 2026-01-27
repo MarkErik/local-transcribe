@@ -264,7 +264,7 @@ class LLMDeIdentifierClient:
                 all_attempts.append(attempt_info)
                 
                 if validation.passed:
-                    # Success! Add retry info to validation
+                    # Add retry info to validation
                     # Note: Don't store all_attempts reference here to avoid circular reference
                     # when serializing to JSON (attempts are available via attempt_logs)
                     validation.details['total_attempts'] = attempt_number

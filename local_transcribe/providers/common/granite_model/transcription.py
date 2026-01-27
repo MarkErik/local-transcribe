@@ -287,7 +287,6 @@ class TranscriptionMixin:
         Returns:
             Cleaned transcription text
         """
-        log_progress("Transcribing audio segment with Granite")
         
         # Ensure model is loaded
         if self.model is None:

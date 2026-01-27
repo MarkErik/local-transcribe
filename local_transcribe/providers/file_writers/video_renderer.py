@@ -344,6 +344,11 @@ class VideoWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".mp4"]
     
+    @property
+    def supported_modes(self) -> List[str]:
+        """VideoWriter supports combined and split audio modes but not VAD."""
+        return ["combined_audio", "split_audio"]
+    
     def write(self, turns: Any, output_path: str, word_segments: Optional[List[WordSegment]] = None, **kwargs) -> None:
         """Write MP4 video with subtitles.
         

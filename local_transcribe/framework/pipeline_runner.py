@@ -192,11 +192,13 @@ def _set_default_outputs(args, mode: str, api: Dict[str, Any]) -> None:
     elif getattr(args, 'only_final_transcript', False):
         args.selected_outputs = ['timestamped-txt']
     else:
+        from local_transcribe.framework.cli import get_available_writers
         registry = api.get("registry")
         if registry:
-            all_writers = list(registry.list_output_writers().keys())
-            print(f"[i] Available output writers: {all_writers}")
-            args.selected_outputs = all_writers
+            # Get only writers compatible with the current mode
+            available_writers = get_available_writers(mode, registry, exclude_internal=True)
+            args.selected_outputs = list(available_writers.keys())
+            print(f"[i] Available output writers for mode '{mode}': {args.selected_outputs}")
         else:
             args.selected_outputs = ['timestamped-txt', 'plain-txt']
 

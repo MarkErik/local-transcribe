@@ -169,8 +169,10 @@ def run_pipeline_from_checkpoint(args, api, root) -> int:
         if getattr(args, 'only_final_transcript', False):
             args.selected_outputs = ['timestamped-txt']
         else:
-            all_writers = list(api["registry"].list_output_writers().keys())
-            args.selected_outputs = all_writers
+            from local_transcribe.framework.cli import get_available_writers
+            # Get only writers compatible with the current mode
+            available_writers = get_available_writers(mode, api["registry"], exclude_internal=True)
+            args.selected_outputs = list(available_writers.keys())
     
     # Configure logging
     api["configure_global_logging"](log_level=args.log_level)

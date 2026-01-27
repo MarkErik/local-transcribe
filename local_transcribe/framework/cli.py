@@ -142,10 +142,8 @@ def interactive_reentry_prompt(args, api, checkpoint_result):
     print("STEP 2: Output Format Selection")
     print("-" * 40)
     
-    output_writers = registry.list_output_writers()
-    # Filter out SRT as it's handled internally by video
-    filtered_writers = {name: desc for name, desc in output_writers.items()
-                       if name not in ['srt']}
+    # Get mode-compatible writers (mode was determined from checkpoint metadata or CLI)
+    filtered_writers = get_available_writers(mode, registry, exclude_internal=True)
     
     print("\nAvailable Output Formats:")
     for i, (name, desc) in enumerate(filtered_writers.items(), 1):
@@ -695,16 +693,110 @@ def _prompt_llm_de_identifier_url(args) -> argparse.Namespace:
     return args
 
 
-def prompt_output_formats(args, registry) -> argparse.Namespace:
-    """Prompt for output format selection if not already set."""
+# =============================================================================
+# Output Writer Filtering Helpers
+# =============================================================================
+
+def get_available_writers(mode: str, registry, exclude_internal: bool = True) -> dict:
+    """
+    Get output writers available for a specific pipeline mode.
+    
+    Filters the registry's output writers to only include those that support
+    the given mode. This keeps UI code mode-aware without scattering mode
+    checks throughout the codebase.
+    
+    Args:
+        mode: Pipeline mode (e.g., 'combined_audio', 'split_audio', 'vad_split_audio')
+        registry: Plugin registry instance
+        exclude_internal: If True, exclude internal writers like 'srt' (default: True)
+        
+    Returns:
+        Dictionary mapping writer names to their descriptions for compatible writers
+    """
+    all_writers = registry.list_output_writers_with_metadata()
+    filtered = {}
+    
+    # Internal writers that shouldn't be shown in UI
+    internal_writers = {'srt'} if exclude_internal else set()
+    
+    for name, metadata in all_writers.items():
+        # Skip internal writers
+        if name in internal_writers:
+            continue
+            
+        # Check if writer supports this mode
+        supported_modes = metadata.get('supported_modes', [])
+        if mode in supported_modes:
+            filtered[name] = metadata['description']
+    
+    return filtered
+
+
+def filter_incompatible_writers(selected: list, mode: str, registry) -> tuple:
+    """
+    Filter out writers that are incompatible with the selected mode.
+    
+    Validates user selections and removes any writer not compatible with
+    the current mode, warning the user about removed selections.
+    
+    Args:
+        selected: List of selected writer names
+        mode: Pipeline mode (e.g., 'combined_audio', 'split_audio', 'vad_split_audio')
+        registry: Plugin registry instance
+        
+    Returns:
+        Tuple of (compatible_writers, removed_writers) where:
+        - compatible_writers: List of writer names that are compatible
+        - removed_writers: List of writer names that were removed
+    """
+    all_writers = registry.list_output_writers_with_metadata()
+    compatible = []
+    removed = []
+    
+    for name in selected:
+        if name not in all_writers:
+            # Unknown writer - skip it
+            removed.append(name)
+            continue
+            
+        metadata = all_writers[name]
+        supported_modes = metadata.get('supported_modes', [])
+        
+        if mode in supported_modes:
+            compatible.append(name)
+        else:
+            removed.append(name)
+    
+    return compatible, removed
+
+
+def prompt_output_formats(args, registry, mode: str = None) -> argparse.Namespace:
+    """Prompt for output format selection if not already set.
+    
+    Args:
+        args: Parsed command line arguments
+        registry: Plugin registry instance
+        mode: Pipeline mode for filtering compatible writers. If None, uses
+              mode from args or defaults to 'combined_audio'
+    
+    Returns:
+        Updated args namespace with selected_outputs populated
+    """
+    # Determine the mode to use for filtering
+    if mode is None:
+        mode = getattr(args, 'mode', None) or 'combined_audio'
+    
     if hasattr(args, 'selected_outputs') and args.selected_outputs:
+        # Validate pre-configured selections against mode
+        compatible, removed = filter_incompatible_writers(args.selected_outputs, mode, registry)
+        if removed:
+            print(f"  ⚠ Removed incompatible writers for mode '{mode}': {', '.join(removed)}")
+            args.selected_outputs = compatible
         print(f"  ✓ Output formats: {', '.join(args.selected_outputs)} (pre-configured)")
         return args
     
-    # Filter out SRT as it's handled internally by video
-    output_writers = registry.list_output_writers()
-    filtered_writers = {name: desc for name, desc in output_writers.items()
-                       if name not in ['srt']}
+    # Get writers compatible with current mode (excludes internal writers like 'srt')
+    filtered_writers = get_available_writers(mode, registry, exclude_internal=True)
     
     print("\nAvailable Output Formats:")
     for i, (name, desc) in enumerate(filtered_writers.items(), 1):
@@ -892,8 +984,8 @@ def interactive_vad_split_audio(args, api) -> argparse.Namespace:
     # De-identification note
     args = prompt_de_identification(args, PipelineMode.VAD_SPLIT_AUDIO)
     
-    # Output formats
-    args = prompt_output_formats(args, registry)
+    # Output formats (filtered for VAD mode)
+    args = prompt_output_formats(args, registry, mode=PipelineMode.VAD_SPLIT_AUDIO)
     
     # Transcript cleanup
     args = prompt_transcript_cleanup(args, registry)
@@ -980,8 +1072,8 @@ def interactive_combined_audio(args, api) -> argparse.Namespace:
     # De-identification
     args = prompt_de_identification(args, PipelineMode.COMBINED_AUDIO)
     
-    # Output formats
-    args = prompt_output_formats(args, registry)
+    # Output formats (filtered for combined audio mode)
+    args = prompt_output_formats(args, registry, mode=PipelineMode.COMBINED_AUDIO)
     
     # Transcript cleanup
     args = prompt_transcript_cleanup(args, registry)
@@ -1056,8 +1148,8 @@ def interactive_split_audio(args, api) -> argparse.Namespace:
     # De-identification
     args = prompt_de_identification(args, PipelineMode.SPLIT_AUDIO)
     
-    # Output formats
-    args = prompt_output_formats(args, registry)
+    # Output formats (filtered for split audio mode)
+    args = prompt_output_formats(args, registry, mode=PipelineMode.SPLIT_AUDIO)
     
     # Transcript cleanup
     args = prompt_transcript_cleanup(args, registry)

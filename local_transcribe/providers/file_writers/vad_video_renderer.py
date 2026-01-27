@@ -524,6 +524,11 @@ class VADVideoWriter(OutputWriter):
     def supported_formats(self) -> List[str]:
         return [".mp4"]
     
+    @property
+    def supported_modes(self) -> List[str]:
+        """VADVideoWriter only supports the VAD split audio mode."""
+        return ["vad_split_audio"]
+    
     def write(
         self,
         turns: Any,

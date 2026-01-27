@@ -181,7 +181,10 @@ class OutputGenerationStage(PipelineStage):
         # Get selected outputs
         selected_outputs = getattr(context.args, 'selected_outputs', [])
         if not selected_outputs:
-            selected_outputs = list(registry.list_output_writers().keys())
+            from local_transcribe.framework.cli import get_available_writers
+            # Get only writers compatible with the current mode
+            available_writers = get_available_writers(context.mode, registry, exclude_internal=True)
+            selected_outputs = list(available_writers.keys())
         
         # Determine word segments for detailed timing
         word_segments = self._get_word_segments(context)

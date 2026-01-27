@@ -375,6 +375,17 @@ class OutputWriter(ABC):
         """Return list of file extensions this writer supports (e.g., ['.txt', '.srt'])."""
         pass
 
+    @property
+    def supported_modes(self) -> List[str]:
+        """Return list of pipeline modes this writer supports.
+        
+        Supported modes: 'combined_audio', 'split_audio', 'vad_split_audio', 'single_speaker_audio'
+        
+        Default implementation returns all standard multi-speaker modes.
+        Override in subclass to restrict to specific modes.
+        """
+        return ["combined_audio", "split_audio", "vad_split_audio"]
+
     @abstractmethod
     def write(
         self,
@@ -495,6 +506,29 @@ class PluginRegistry:
     def list_output_writers(self) -> Dict[str, str]:
         """List all registered output writers with their descriptions."""
         return {name: writer.description for name, writer in self._output_writers.items()}
+
+    def list_output_writers_with_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """List all registered output writers with full metadata.
+        
+        Returns:
+            Dictionary mapping writer names to metadata:
+            {
+                "writer-name": {
+                    "description": "Human-readable description",
+                    "supported_modes": ["combined_audio", "split_audio", ...],
+                    "supported_formats": [".txt", ".json", ...]
+                },
+                ...
+            }
+        """
+        return {
+            name: {
+                "description": writer.description,
+                "supported_modes": writer.supported_modes,
+                "supported_formats": writer.supported_formats,
+            }
+            for name, writer in self._output_writers.items()
+        }
 
 
 # Global registry instance

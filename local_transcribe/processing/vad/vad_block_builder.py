@@ -118,7 +118,7 @@ class VADBlockBuilder:
         blocks: List[VADBlock] = []
         current_start = sorted_segments[0].start_s
         current_end = sorted_segments[0].end_s
-        current_segment_ids = [sorted_segments[0].segment_id]
+        current_segments = [sorted_segments[0]]  # Store actual VADSegment objects
         
         for i in range(1, len(sorted_segments)):
             segment = sorted_segments[i]
@@ -127,7 +127,7 @@ class VADBlockBuilder:
             if gap <= merge_gap_s:
                 # Merge with current block
                 current_end = max(current_end, segment.end_s)
-                current_segment_ids.append(segment.segment_id)
+                current_segments.append(segment)
             else:
                 # Create block from accumulated segments
                 block = VADBlock(
@@ -135,14 +135,14 @@ class VADBlockBuilder:
                     speaker_id=speaker_id,
                     start_s=current_start,
                     end_s=current_end,
-                    source_segment_ids=current_segment_ids,
+                    source_segments=current_segments,
                 )
                 blocks.append(block)
                 
                 # Start new accumulation
                 current_start = segment.start_s
                 current_end = segment.end_s
-                current_segment_ids = [segment.segment_id]
+                current_segments = [segment]
         
         # Don't forget the last block
         block = VADBlock(
@@ -150,7 +150,7 @@ class VADBlockBuilder:
             speaker_id=speaker_id,
             start_s=current_start,
             end_s=current_end,
-            source_segment_ids=current_segment_ids,
+            source_segments=current_segments,
         )
         blocks.append(block)
         

@@ -2,19 +2,28 @@
 """
 VAD ASR Processor for transcribing VAD blocks with chunking and stitching.
 
-This module handles the transcription of VAD blocks through an ASR provider,
-with automatic chunking of long blocks and stitching of overlapping results.
 """
 
 import json
 import tempfile
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Tuple
 from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from local_transcribe.processing.vad.types import VADBlock, ASRChunk
+from local_transcribe.processing.vad.types import (
+    VADBlock, 
+    ASRChunk, 
+    VADSegment,
+    CombinedSegment,
+    SegmentCombinationConfig,
+)
+from local_transcribe.processing.vad.segment_splitter import (
+    find_best_split_points,
+    find_force_split_points,
+    split_segment_at_points,
+)
 from local_transcribe.processing.chunk_stitching import ChunkStitcher
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment
 from local_transcribe.lib.program_logger import log_progress, log_debug, log_completion, get_logger, get_output_context
@@ -25,14 +34,10 @@ class VADASRProcessor:
     """
     Processes VAD blocks through ASR with chunking and stitching.
     
-    Handles long blocks by splitting them into chunks with overlap,
-    transcribing each chunk, and stitching the results together.
+    Handles long blocks by splitting them at natural pause boundaries
+    detected from VAD segments, transcribing each chunk, and stitching
+    the results together.
     """
-    
-    # Chunk size parameters
-    MAX_CHUNK_DURATION_S = 30.0
-    OVERLAP_DURATION_S = 4.0
-    MIN_CHUNK_DURATION_S = 7.0  # Minimum viable chunk size
     
     # Minimum audio duration for ASR (seconds)
     # Short audio will be padded with silence to reach this threshold
@@ -46,6 +51,7 @@ class VADASRProcessor:
         transcriber_provider: TranscriberProvider,
         models_dir: Optional[Path] = None,
         intermediate_dir: Optional[Path] = None,
+        config: Optional[SegmentCombinationConfig] = None,
     ):
         """
         Initialize the VAD ASR processor.
@@ -54,11 +60,15 @@ class VADASRProcessor:
             transcriber_provider: ASR provider to use for transcription
             models_dir: Path to model cache directory
             intermediate_dir: Path for intermediate/debug files
+            config: Configuration for segment splitting (uses defaults if None)
         """
         self.transcriber = transcriber_provider
         self.models_dir = models_dir
         self.intermediate_dir = intermediate_dir
         self.logger = get_logger()
+        
+        # Use provided config or create default
+        self.config = config or SegmentCombinationConfig()
         
         # Track chunk info for audit
         self._chunk_audit_data: List[Dict[str, Any]] = []
@@ -264,13 +274,14 @@ class VADASRProcessor:
             log_debug(f"Loaded audio for {speaker_id}: {len(audio_array)/sr:.1f}s")
         
         # Process each block
+        max_duration = self.config.max_segment_duration
         blocks_needing_chunking = 0
         for i, block in enumerate(blocks):
-            if block.duration_s > self.MAX_CHUNK_DURATION_S:
+            if block.duration_s > max_duration:
                 blocks_needing_chunking += 1
         
         if blocks_needing_chunking > 0:
-            log_progress(f"{blocks_needing_chunking} blocks require chunking (>{self.MAX_CHUNK_DURATION_S}s)")
+            log_progress(f"{blocks_needing_chunking} blocks require chunking (>{max_duration}s)")
         
         for i, block in enumerate(blocks):
             if (i + 1) % 10 == 0 or i == 0:
@@ -302,9 +313,9 @@ class VADASRProcessor:
         """
         Process a single block through ASR.
         
-        If block duration > 30s, splits into chunks with 4s overlap,
-        then stitches results. Small final chunks (<7s) are merged with
-        the previous chunk to avoid poor ASR quality on very short segments.
+        If block duration exceeds max_segment_duration, splits at natural
+        pause boundaries detected from VAD segments, then stitches results.
+        This avoids cutting words in half at arbitrary time boundaries.
         
         Args:
             block: VAD block to transcribe
@@ -320,18 +331,20 @@ class VADASRProcessor:
         end_sample = int(block.end_s * sample_rate)
         block_audio = audio_data[start_sample:end_sample]
         
-        if block.duration_s <= self.MAX_CHUNK_DURATION_S:
+        max_duration = self.config.max_segment_duration
+        
+        if block.duration_s <= max_duration:
             # Direct transcription for short blocks
             text = self._transcribe_audio(block_audio, sample_rate, block.speaker_id, block=block, **kwargs)
             # Save debug output for non-chunked block
             self._save_block_transcription_debug(block, text, was_chunked=False, chunk_count=1)
             return text
         
-        # Long block - need to chunk
-        log_debug(f"Block {block.block_id} duration {block.duration_s:.1f}s > {self.MAX_CHUNK_DURATION_S}s, chunking")
+        # Long block - need to chunk using intelligent VAD-based splitting
+        log_debug(f"Block {block.block_id} duration {block.duration_s:.1f}s > {max_duration}s, splitting at VAD boundaries")
         
-        # Split into chunks
-        chunks = self._split_block_into_chunks(block, block_audio, sample_rate)
+        # Split into chunks at natural pause boundaries
+        chunks = self._split_block_at_vad_boundaries(block, block_audio, sample_rate)
         
         # Transcribe each chunk
         chunk_results: List[Dict[str, Any]] = []
@@ -353,9 +366,10 @@ class VADASRProcessor:
                 "end_s": chunk.end_s,
                 "duration_s": chunk.duration_s,
                 "word_count": len(text.split()),
+                "split_method": chunk.split_method if hasattr(chunk, 'split_method') else "vad_boundary",
             })
         
-        # Stitch results
+        # Stitch results - since we split at natural pauses, minimal overlap expected
         if len(chunk_results) == 1:
             result_text = chunk_results[0]["text"]
             self._save_block_transcription_debug(block, result_text, was_chunked=True, chunk_count=1)
@@ -366,22 +380,148 @@ class VADASRProcessor:
         self._save_block_transcription_debug(block, result_text, was_chunked=True, chunk_count=len(chunks))
         return result_text
     
-    def _split_block_into_chunks(
+    def _split_block_at_vad_boundaries(
         self,
         block: VADBlock,
         audio_data: np.ndarray,
         sample_rate: int
     ) -> List[ASRChunk]:
         """
-        Split a long block into <=30s chunks with 4s overlap.
+        Split a long block at natural pause boundaries using VAD segment data.
         
-        Logic:
-        1. Calculate effective chunk length (30s - 4s overlap = 26s advance)
-        2. Iterate through audio creating chunks of MAX_CHUNK_DURATION_S
-        3. Each subsequent chunk starts overlap_duration before previous chunk ends
-        4. If final remaining chunk is < MIN_CHUNK_DURATION_S (7s):
-           - Merge it with the previous chunk by extending the previous chunk
-           - Do NOT create a separate small chunk
+        Uses the intelligent splitting logic from segment_splitter which finds
+        optimal split points based on gaps between VAD segments, avoiding
+        cutting words in half.
+        
+        Args:
+            block: Source VAD block with source_segments
+            audio_data: Audio samples for this block
+            sample_rate: Sample rate
+            
+        Returns:
+            List of ASRChunk objects ready for transcription
+        """
+        # If block only has one segment, we can't split at VAD boundaries
+        # Fall back to time-based splitting
+        if len(block.source_segments) < 2:
+            log_debug(f"Block {block.block_id} has only {len(block.source_segments)} segment(s), using time-based split")
+            return self._split_block_time_based(block, audio_data, sample_rate)
+        
+        # Create a CombinedSegment from the block's source segments for splitting
+        combined = CombinedSegment(block.source_segments)
+        
+        # Find best split points using the segment splitter logic
+        split_points = find_best_split_points(combined, self.config)
+        
+        if not split_points:
+            # No good natural boundaries found - try force split
+            split_points = find_force_split_points(combined, self.config)
+            split_method = "force_split"
+            
+            if not split_points:
+                # Even force split didn't work - fall back to time-based
+                log_debug(f"Block {block.block_id}: No VAD boundaries found, using time-based split")
+                return self._split_block_time_based(block, audio_data, sample_rate)
+        else:
+            split_method = "vad_boundary"
+        
+        # Split the combined segment at the identified points
+        split_segments = split_segment_at_points(combined, split_points)
+        
+        log_debug(
+            f"Block {block.block_id}: Split into {len(split_segments)} chunks "
+            f"at {len(split_points)} VAD boundary point(s) using {split_method}"
+        )
+        
+        # Recursively handle segments that are still too long
+        final_segments = self._recursively_split_segments(split_segments)
+        
+        # Convert split segments to ASRChunks with audio data
+        chunks = []
+        for chunk_id, segment in enumerate(final_segments):
+            # Calculate audio boundaries relative to the block
+            chunk_start_relative = segment.start_s - block.start_s
+            chunk_end_relative = segment.end_s - block.start_s
+            
+            start_sample = int(chunk_start_relative * sample_rate)
+            end_sample = int(chunk_end_relative * sample_rate)
+            
+            # Ensure we don't exceed array bounds
+            start_sample = max(0, start_sample)
+            end_sample = min(len(audio_data), end_sample)
+            
+            chunk_audio = audio_data[start_sample:end_sample]
+            
+            chunk = ASRChunk(
+                chunk_id=chunk_id,
+                speaker_id=block.speaker_id,
+                source_block_id=block.block_id,
+                start_s=segment.start_s,
+                end_s=segment.end_s,
+                audio_segment=chunk_audio,
+                overlap_start_s=0,  # No overlap needed when splitting at natural pauses
+            )
+            chunks.append(chunk)
+        
+        return chunks
+    
+    def _recursively_split_segments(
+        self,
+        segments: List[CombinedSegment]
+    ) -> List[CombinedSegment]:
+        """
+        Recursively split segments that are still too long after initial split.
+        
+        Args:
+            segments: List of combined segments to check/split
+            
+        Returns:
+            List of segments all within max_segment_duration
+        """
+        max_duration = self.config.max_segment_duration
+        final_segments = []
+        
+        for segment in segments:
+            if segment.duration_s <= max_duration:
+                final_segments.append(segment)
+                continue
+            
+            # Need to split further
+            if len(segment.segments) < 2:
+                # Can't split further at VAD boundaries - accept as-is
+                log_debug(
+                    f"Segment {segment.start_s:.2f}s-{segment.end_s:.2f}s "
+                    f"({segment.duration_s:.2f}s) cannot be split further"
+                )
+                final_segments.append(segment)
+                continue
+            
+            # Try to find more split points
+            split_points = find_best_split_points(segment, self.config)
+            if not split_points:
+                split_points = find_force_split_points(segment, self.config)
+            
+            if split_points:
+                split_results = split_segment_at_points(segment, split_points)
+                # Recursively handle the results
+                final_segments.extend(self._recursively_split_segments(split_results))
+            else:
+                # Accept as-is
+                final_segments.append(segment)
+        
+        return final_segments
+    
+    def _split_block_time_based(
+        self,
+        block: VADBlock,
+        audio_data: np.ndarray,
+        sample_rate: int
+    ) -> List[ASRChunk]:
+        """
+        Fallback: Split a long block into chunks using time-based approach with overlap.
+        
+        Used when VAD-based splitting is not possible (e.g., single segment block).
+        Uses overlap to handle potential word boundary issues.
         
         Args:
             block: Source VAD block
@@ -394,9 +534,14 @@ class VADASRProcessor:
         total_samples = len(audio_data)
         total_duration = total_samples / sample_rate
         
-        max_chunk_samples = int(self.MAX_CHUNK_DURATION_S * sample_rate)
-        overlap_samples = int(self.OVERLAP_DURATION_S * sample_rate)
-        min_chunk_samples = int(self.MIN_CHUNK_DURATION_S * sample_rate)
+        # Time-based splitting parameters
+        max_chunk_duration = self.config.max_segment_duration
+        overlap_duration = 4.0  # Fixed overlap for time-based splitting
+        min_chunk_duration = self.config.min_split_segment_duration
+        
+        max_chunk_samples = int(max_chunk_duration * sample_rate)
+        overlap_samples = int(overlap_duration * sample_rate)
+        min_chunk_samples = int(min_chunk_duration * sample_rate)
         
         # Effective stride between chunk starts
         stride_samples = max_chunk_samples - overlap_samples

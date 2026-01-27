@@ -161,7 +161,7 @@ def _merge_consecutive_same_speaker_blocks(
                     speaker_id=current.speaker_id,
                     start_s=current.start_s,
                     end_s=next_block.end_s,
-                    source_segment_ids=current.source_segment_ids + next_block.source_segment_ids,
+                    source_segments=current.source_segments + next_block.source_segments,
                     is_interjection=False,
                     overlap_with=_merge_overlap_lists(current.overlap_with, next_block.overlap_with),
                     text=_merge_text(current.text, next_block.text),

@@ -138,12 +138,16 @@ class VADBlock:
     Represents a speaking turn created by merging nearby VAD segments
     from a single speaker. May contain interjection flags and overlap
     information when interleaved with other speakers.
+    
+    The source_segments field stores the actual VADSegment objects that
+    formed this block, enabling intelligent splitting at natural pause
+    boundaries when the block exceeds ASR chunk duration limits.
     """
     block_id: int
     speaker_id: str
     start_s: float
     end_s: float
-    source_segment_ids: List[int]  # Original VAD segment IDs that formed this block
+    source_segments: List['VADSegment']  # Original VAD segments that formed this block
     is_interjection: bool = False
     overlap_with: Optional[List[int]] = None  # block_ids this overlaps with
     text: str = ""  # Transcript text (filled after ASR)
@@ -152,6 +156,11 @@ class VADBlock:
     def duration_s(self) -> float:
         """Duration of this block in seconds."""
         return round(self.end_s - self.start_s, 3)
+    
+    @property
+    def source_segment_ids(self) -> List[int]:
+        """Get IDs of source segments (for backward compatibility)."""
+        return [seg.segment_id for seg in self.source_segments]
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -162,6 +171,7 @@ class VADBlock:
             "end_s": self.end_s,
             "duration_s": self.duration_s,
             "source_segment_ids": self.source_segment_ids,
+            "source_segments": [seg.to_dict() for seg in self.source_segments],
             "is_interjection": self.is_interjection,
             "overlap_with": self.overlap_with,
             "text": self.text,
@@ -170,12 +180,28 @@ class VADBlock:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'VADBlock':
         """Create from dictionary."""
+        # Handle both old format (source_segment_ids) and new format (source_segments)
+        if "source_segments" in data:
+            source_segments = [VADSegment.from_dict(seg) for seg in data["source_segments"]]
+        else:
+            # Legacy format: reconstruct minimal VADSegments from IDs
+            # Note: This loses timing information, but maintains compatibility
+            source_segments = [
+                VADSegment(
+                    segment_id=seg_id,
+                    speaker_id=data["speaker_id"],
+                    start_s=data["start_s"],  # Approximate
+                    end_s=data["end_s"],  # Approximate
+                )
+                for seg_id in data.get("source_segment_ids", [])
+            ]
+        
         return cls(
             block_id=data["block_id"],
             speaker_id=data["speaker_id"],
             start_s=data["start_s"],
             end_s=data["end_s"],
-            source_segment_ids=data["source_segment_ids"],
+            source_segments=source_segments,
             is_interjection=data.get("is_interjection", False),
             overlap_with=data.get("overlap_with"),
             text=data.get("text", ""),

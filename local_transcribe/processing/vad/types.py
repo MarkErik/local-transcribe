@@ -245,6 +245,7 @@ class ASRChunk:
     end_s: float                # Absolute end time
     audio_segment: np.ndarray   # Audio samples (16kHz mono)
     overlap_start_s: float      # Start of overlap region (for stitching)
+    split_method: str = "vad_boundary"  # How this chunk was split from source
     
     @property
     def duration_s(self) -> float:
@@ -261,6 +262,7 @@ class ASRChunk:
             "end_s": self.end_s,
             "duration_s": self.duration_s,
             "overlap_start_s": self.overlap_start_s,
+            "split_method": self.split_method,
         }
 
 

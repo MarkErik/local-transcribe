@@ -201,7 +201,7 @@ class VADASRProcessor:
             else:
                 filename = f"speaker_transcript_{speaker_id}.json"
             
-            output_file = self.transcription_debug_dir / filename
+            output_file = (self.transcription_debug_dir or Path()) / filename
             
             # Build segments list
             segments = []

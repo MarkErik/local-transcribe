@@ -14,7 +14,7 @@ from .core import Chunk
 
 
 def chunk_word_segments(
-    segments: List[Any],  # List[WordSegment]
+    segments: List[Any],
     chunk_size: int = 400,
     overlap_size: int = 70,
     min_final_chunk: int = 200
@@ -40,11 +40,8 @@ def chunk_word_segments(
         chunk_text = " ".join(seg.text for seg in chunk_segments)
         
         log_debug(
-            f"Creating chunk {len(chunks)+1} with {len(chunk_segments)} segments "
-            f"(words: {len(chunk_text.split())})"
+            f"Creating chunk {len(chunks)+1} with {len(chunk_segments)} segments"
         )
-        if chunk_text.split():
-            log_debug(f"First few words: {chunk_text.split()[:5]}")
         
         chunks.append(Chunk(
             text=chunk_text,
@@ -106,8 +103,6 @@ def chunk_plain_text(
         log_debug(
             f"Creating text chunk {len(chunks)+1} with {len(chunk_words)} words"
         )
-        if chunk_words:
-            log_debug(f"First few words: {chunk_words[:5]}")
         
         chunks.append(Chunk(
             text=chunk_text,

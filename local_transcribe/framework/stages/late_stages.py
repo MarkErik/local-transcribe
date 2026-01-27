@@ -359,13 +359,10 @@ class TranscriptCleanupStage(PipelineStage):
         else:
             log_progress("LLM provider does not support health check, proceeding anyway...")
         
-        # Get batch configuration from args
-        max_words = getattr(context.args, 'cleanup_batch_words', 500)
-        max_turns = getattr(context.args, 'cleanup_batch_turns', 20)
-        
+        # Internal batch configuration defaults
         config = BatchConfig(
-            max_words_per_batch=max_words,
-            max_turns_per_batch=max_turns
+            max_words_per_batch=500,
+            max_turns_per_batch=20
         )
         
         # Create batch processor

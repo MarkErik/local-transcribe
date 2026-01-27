@@ -48,8 +48,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
     # LLM cleanup arguments
     p.add_argument("--enable-cleanup", action="store_true", help="Enable LLM-based transcript cleanup stage (disabled by default). Requires --transcript-cleanup-provider to be set.")
-    p.add_argument("--cleanup-batch-words", type=int, default=500, help="Maximum words per batch for LLM cleanup [Default: 500]")
-    p.add_argument("--cleanup-batch-turns", type=int, default=20, help="Maximum turns per batch for LLM cleanup [Default: 20]")
 
     args = p.parse_args(argv)
     

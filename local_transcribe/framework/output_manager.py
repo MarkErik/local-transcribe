@@ -52,12 +52,15 @@ class OutputManager:
         self._write_text_outputs(transcript, paths["merged"], selected_formats, word_segments)
         
         # Write video output (includes SRT/ASS generation internally)
-        if 'video' in selected_formats and generate_video:
-            print(f"[i] Video format detected, attempting to generate...")
+        # Determine which video format to check based on mode
+        video_format = "vad-video" if mode == "vad_split_audio" else "video"
+
+        if video_format in selected_formats and generate_video:
+            print(f"[i] Video format detected ({video_format}), attempting to generate...")
             self._write_video_output(transcript, paths["merged"], audio_config, word_segments, mode)
         else:
-            print(f"[i] Video skipped - format not in {selected_formats} or generate_video={generate_video}")
-        
+            print(f"[i] Video skipped - format '{video_format}' not in {selected_formats} or generate_video={generate_video}")
+                
         # Print completion message
         print("[✓] Output files written successfully.")
     

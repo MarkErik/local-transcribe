@@ -144,6 +144,13 @@ def find_force_split_points(
     if len(segment.segments) < 2:
         return []
     
+    # Calculate dynamic max splits based on duration (same as find_best_split_points)
+    # 30-45s: 1 split (2 chunks), 45-60s: 2 splits (3 chunks), 60+s: 3 splits (4 chunks)
+    if segment.duration_s <= 30:
+        max_splits = 0
+    else:
+        max_splits = min(3, max(1, int((segment.duration_s - 30) / 15) + 1))
+    
     # Calculate target segment duration
     target_duration = config.max_segment_duration * 0.8  # Aim for 80% of max
     
@@ -178,6 +185,10 @@ def find_force_split_points(
         if segment_before_split >= min_acceptable and remaining_duration >= min_acceptable:
             selected_splits.append(split_idx)
             segments_covered.add(split_idx)
+            
+            # Stop if we've reached the maximum allowed splits
+            if len(selected_splits) >= max_splits:
+                break
             
             # Check if we've split enough
             # Recalculate from the last split point to see if remaining segment is OK

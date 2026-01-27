@@ -290,6 +290,10 @@ def _convert_blocks_to_transcript_flow(
             "interjection_count": sum(1 for b in speaker_blocks if b.is_interjection),
         }
     
+    # Calculate total duration and extract unique speakers
+    total_duration = max(b.end_s for b in blocks) - min(b.start_s for b in blocks) if blocks else 0
+    unique_speakers = list(set(b.speaker_id for b in blocks))
+    
     transcript = TranscriptFlow(
         turns=turns,
         metadata={
@@ -299,9 +303,11 @@ def _convert_blocks_to_transcript_flow(
             "total_blocks": len(blocks),
             "total_turns": len(turns),
             "total_interjections": len(interjection_blocks),
+            "duration": total_duration,
+            "speakers": unique_speakers,
         },
         conversation_metrics={
-            "total_duration_s": max(b.end_s for b in blocks) - min(b.start_s for b in blocks) if blocks else 0,
+            "total_duration": total_duration,
             "overlap_count": sum(1 for b in blocks if b.overlap_with),
         },
         speaker_statistics=speaker_stats,

@@ -440,16 +440,23 @@ class VADASRProcessor:
         else:
             split_method = "vad_boundary"
         
+        # Calculate gaps at split points for logging
+        split_gaps = []
+        for split_idx in split_points:
+            gap = combined.segments[split_idx].start_s - combined.segments[split_idx-1].end_s
+            split_gaps.append(f"{gap:.2f}s")
+        
         # Split the combined segment at the identified points
         split_segments = split_segment_at_points(combined, split_points)
         
-        log_debug(
-            f"Block {block.block_id}: Split into {len(split_segments)} chunks "
-            f"at {len(split_points)} VAD boundary point(s) using {split_method}"
-        )
-        
         # Recursively handle segments that are still too long
         final_segments = self._recursively_split_segments(split_segments)
+        
+        log_debug(
+            f"Block {block.block_id}: Split into {len(final_segments)} chunks "
+            f"at {len(split_points)} VAD boundary point(s) using {split_method}"
+            f"(gaps: {', '.join(split_gaps)})"
+        )
         
         # Convert split segments to ASRChunks with audio data
         chunks = []

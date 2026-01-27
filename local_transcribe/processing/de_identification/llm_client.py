@@ -279,8 +279,6 @@ class LLMDeIdentifierClient:
                     )
                 else:
                     last_validation = validation
-                    if attempt < max_retries:
-                        log_progress(f"Validation failed: {validation.reason}")
                     
             except requests.RequestException as e:
                 log_progress(f"LLM request failed (attempt {attempt_number}): {e}")

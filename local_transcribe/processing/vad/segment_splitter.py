@@ -81,6 +81,13 @@ def find_best_split_points(
     Returns:
         List of split indices (positions in segment.segments)
     """
+    # Calculate dynamic max splits based on duration
+    # 30-45s: 1 split, 45-60s: 2 splits, 60+s: 3 splits
+    if segment.duration_s <= 30:
+        max_splits = 0
+    else:
+        max_splits = min(3, max(1, int((segment.duration_s - 30) / 15) + 1))
+    
     potential_splits = []
     
     for i in range(1, len(segment.segments)):
@@ -104,7 +111,7 @@ def find_best_split_points(
     last_split_idx = 0
     
     for split_idx, gap, score, first_duration, second_duration in potential_splits:
-        if len(selected_splits) >= config.max_splits_per_segment:
+        if len(selected_splits) >= max_splits:
             break
             
         # Ensure this split is not too close to the previous one

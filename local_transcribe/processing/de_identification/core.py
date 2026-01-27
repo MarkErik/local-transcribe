@@ -26,8 +26,8 @@ class DeIdentificationConfig:
     
     # LLM settings
     llm_url: str = "http://0.0.0.0:8080"
-    llm_timeout: int = 300             # Seconds
-    temperature: float = 1.0           # Temperature for LLM
+    llm_timeout: int = 360             # Seconds
+    temperature: float = 0.7           # Temperature for LLM
     max_retries: int = 3               # Number of retries on validation failure
     temperature_decay: float = 0.15    # Reduce temperature on each retry
     

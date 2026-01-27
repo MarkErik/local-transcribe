@@ -47,7 +47,7 @@ class Wav2Vec2AlignerProvider(AlignerProvider):
 
     @property
     def description(self) -> str:
-        return "Wav2Vec2 forced alignment for accurate word-level timestamps"
+        return "Wav2Vec2 forced alignment for word-level timestamps"
 
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         return [self.wav2vec2_model_name]

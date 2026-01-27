@@ -64,7 +64,7 @@ def ensure_models_exist(models_dir: pathlib.Path) -> None:
     aligner_dir = models_dir / "aligners"
     if not (transcriber_dir.exists() or aligner_dir.exists()):
         print("Warning: Provider models not found in ./.models/. Models will be downloaded automatically on first run.")
-    # We won't strictly validate HF cache layout; downloader guarantees presence.
+    # We won't strictly validate HF cache layout; downloader handles presence.
 
 def ensure_file(path: str, label: str) -> pathlib.Path:
     p = pathlib.Path(path).expanduser().resolve()

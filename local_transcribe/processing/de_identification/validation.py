@@ -3,7 +3,7 @@
 Validation rules for LLM de-identification output.
 
 Contains validators for both first-pass and second-pass de-identification
-to ensure LLM output meets quality requirements.
+to check LLM output meets format requirements.
 """
 
 from typing import Dict, Any

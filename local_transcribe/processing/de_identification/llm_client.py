@@ -2,7 +2,7 @@
 """
 LLM client for de-identification with auto-detection of response format.
 
-Handles all communication with the LLM server, including retry logic,
+Handles communication with the LLM server, including retry logic,
 response parsing, and automatic detection of Harmony format.
 """
 

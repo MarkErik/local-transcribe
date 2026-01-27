@@ -71,7 +71,7 @@ class RemoteTranscriberClient:
     - Check server health and availability
     - Query server capabilities
     - Send audio for transcription
-    - Handle errors and retries gracefully
+    - Handle errors and retries with exponential backoff
     
     Example usage:
         client = RemoteTranscriberClient("http://192.168.1.100:7070")
@@ -401,7 +401,7 @@ class RemoteTranscriberProvider(TranscriberProvider):
     
     Features:
     - Automatic chunking for long audio files based on server limits
-    - Chunk stitching for seamless transcription of long recordings
+    - Chunk stitching for continuous transcription of long recordings
     - No local model loading required
     
     Note: This provider does NOT support alignment (has_builtin_alignment = False).

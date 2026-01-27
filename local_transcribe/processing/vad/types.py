@@ -140,8 +140,8 @@ class VADBlock:
     information when interleaved with other speakers.
     
     The source_segments field stores the actual VADSegment objects that
-    formed this block, enabling intelligent splitting at natural pause
-    boundaries when the block exceeds ASR chunk duration limits.
+    formed this block, enabling splitting at natural pause boundaries
+    when the block exceeds ASR chunk duration limits.
     """
     block_id: int
     speaker_id: str

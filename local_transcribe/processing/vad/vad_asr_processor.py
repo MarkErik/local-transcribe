@@ -340,7 +340,7 @@ class VADASRProcessor:
             self._save_block_transcription_debug(block, text, was_chunked=False, chunk_count=1)
             return text
         
-        # Long block - need to chunk using intelligent VAD-based splitting
+        # Long block - need to chunk using VAD-based splitting
         log_debug(f"Block {block.block_id} duration {block.duration_s:.1f}s > {max_duration}s, splitting at VAD boundaries")
         
         # Split into chunks at natural pause boundaries
@@ -405,9 +405,8 @@ class VADASRProcessor:
         """
         Split a long block at natural pause boundaries using VAD segment data.
         
-        Uses the intelligent splitting logic from segment_splitter which finds
-        optimal split points based on gaps between VAD segments, avoiding
-        cutting words in half.
+        Uses the scoring logic from segment_splitter which finds split points
+        based on gaps between VAD segments, avoiding cutting words in half.
         
         Args:
             block: Source VAD block with source_segments

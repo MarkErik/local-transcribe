@@ -2,8 +2,7 @@
 """
 Interactive HTML Conversation Viewer for hierarchical transcripts.
 
-This writer produces a self-contained HTML file with an elegant,
-easy-to-read conversation view with timeline navigation.
+This writer produces a self-contained HTML file with a conversation view with timeline navigation.
 """
 
 from __future__ import annotations

@@ -52,7 +52,7 @@ class MFAAlignerProvider(AlignerProvider):
 
     @property
     def description(self) -> str:
-        return "Montreal Forced Aligner for precise word-level timestamps"
+        return "Montreal Forced Aligner for word-level timestamps"
 
     def get_required_models(self, selected_model: Optional[str] = None) -> List[str]:
         # MFA doesn't use Hugging Face models, but we return empty list for compatibility

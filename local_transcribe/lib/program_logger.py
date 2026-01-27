@@ -114,7 +114,7 @@ def setup_logging(
     structured_output: bool = False
 ) -> logging.Logger:
     """
-    Set up comprehensive logging for the transcription pipeline.
+    Set up logging for the transcription pipeline.
     
     Parameters
     ----------

@@ -559,13 +559,13 @@ class RemoteTranscriberProvider(TranscriberProvider):
                     wav = np.pad(wav, (0, min_samples - len(wav)), mode='constant')
                     log_debug(f"Padded short audio from {duration:.1f}s to {self.min_chunk_seconds}s")
             
-            log_progress(f"Audio duration: {duration:.1f}s - transcribing as single segment")
-            text = client.transcribe_audio(wav, sr)
+            log_progress(f"Audio segment duration: {duration:.1f}s")
+            text = client.transcribe_audio(wav, int(sr))
             return [{"chunk_id": 0, "words": text.split(), "text": text}]
         
         # For long audio, process in chunks
         log_progress(f"Audio duration: {duration:.1f}s - processing in chunks")
-        return self._transcribe_chunked(wav, sr)
+        return self._transcribe_chunked(wav, int(sr))
 
     def _transcribe_chunked(
         self,

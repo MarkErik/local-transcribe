@@ -147,7 +147,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
         if duration < self.chunk_length_seconds:
             if duration < 1.0:
                 raise ValueError(f"Audio duration ({duration:.1f}s) is too short for transcription. Please provide audio longer than 1 second.")
-            log_progress(f"Audio duration: {duration:.1f}s - transcribing as single segment")
+            log_progress(f"Audio segment duration: {duration:.1f}s")
             text = self.model_manager.transcribe_segment(wav, int(sr))
             return [{"chunk_id": 0, "words": text.split(), "text": text}]
         

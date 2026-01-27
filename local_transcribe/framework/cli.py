@@ -421,60 +421,79 @@ def _prompt_url(prompt_text: str, default_url: str) -> str:
 # Provider Selection Helpers
 # =============================================================================
 
-def select_transcriber_provider(registry, filter_pure_only: bool = False, default_provider: Optional[str] = None):
+def _select_provider(
+    registry,
+    provider_type: str,
+    display_title: str,
+    default_provider: Optional[str] = None,
+    filter_func: Optional[callable] = None,
+    default_to_first: bool = True
+) -> str:
     """
-    Select a transcriber provider with optional filtering.
+    Generic provider selection function.
     
     Args:
         registry: Plugin registry
-        filter_pure_only: If True, only show providers without built-in alignment
+        provider_type: Type of provider ('transcriber', 'aligner', 'diarization')
+        display_title: Title to display (e.g., 'Transcriber Providers')
         default_provider: Name of default provider (if any)
+        filter_func: Optional function(provider) -> bool to filter providers
+        default_to_first: If True and no default_provider matches, default to first option
         
     Returns:
         str: Selected provider name
     """
-    providers = registry.list_transcriber_providers()
+    # Get providers and getter based on type
+    list_method = getattr(registry, f'list_{provider_type}_providers')
+    get_method = getattr(registry, f'get_{provider_type}_provider')
     
-    # Apply filter if needed
-    if filter_pure_only:
-        filtered = {}
-        for name, desc in providers.items():
-            provider = registry.get_transcriber_provider(name)
-            if not provider.has_builtin_alignment:
-                filtered[name] = desc
-        providers = filtered
+    providers = list_method()
+    
+    # Apply filter if provided
+    if filter_func:
+        providers = {
+            name: desc for name, desc in providers.items()
+            if filter_func(get_method(name))
+        }
     
     if not providers:
-        raise ValueError("No suitable transcriber providers available.")
+        raise ValueError(f"No suitable {provider_type} providers available.")
     
     # Build options list with display names
     options = []
     default_index = None
     for i, (name, desc) in enumerate(providers.items()):
-        provider = registry.get_transcriber_provider(name)
+        provider = get_method(name)
         display_name = getattr(provider, 'short_name', desc)
         options.append((name, display_name))
         if name == default_provider:
             default_index = i
     
-    print("\nAvailable Transcriber Providers:")
-    selected = _prompt_selection(options, "Select transcriber (number)", default_index)
+    # Default to first if not specified and allowed
+    if default_index is None and default_to_first:
+        default_index = 0
+    
+    print(f"\nAvailable {display_title}:")
+    selected = _prompt_selection(options, f"Select {provider_type} (number)", default_index)
     
     return options[selected][0]
 
 
+def select_transcriber_provider(
+    registry,
+    filter_pure_only: bool = False,
+    default_provider: Optional[str] = None
+) -> str:
+    """Select a transcriber provider with optional filtering for pure transcribers."""
+    filter_func = (lambda p: not p.has_builtin_alignment) if filter_pure_only else None
+    return _select_provider(
+        registry, 'transcriber', 'Transcriber Providers',
+        default_provider, filter_func, default_to_first=False
+    )
+
+
 def select_transcriber_model(registry, provider_name: str, default_model: Optional[str] = None) -> Optional[str]:
-    """
-    Select a model for the given transcriber provider.
-    
-    Args:
-        registry: Plugin registry
-        provider_name: Name of transcriber provider
-        default_model: Default model name (if any)
-        
-    Returns:
-        str: Selected model name, or None if only one model
-    """
+    """Select a model for the given transcriber provider."""
     provider = registry.get_transcriber_provider(provider_name)
     available_models = provider.get_available_models()
     
@@ -485,18 +504,11 @@ def select_transcriber_model(registry, provider_name: str, default_model: Option
         print(f"  ✓ Using model: {available_models[0]}")
         return available_models[0]
     
-    # Find default index
-    default_index = None
-    
     # For granite, default to 8b
     if provider_name == "granite" and default_model is None:
         default_model = "granite-8b"
     
-    if default_model and default_model in available_models:
-        default_index = available_models.index(default_model)
-    elif default_index is None:
-        default_index = 0  # First model as default
-    
+    default_index = available_models.index(default_model) if default_model in available_models else 0
     options = [(m, m) for m in available_models]
     
     print(f"\nAvailable models for {getattr(provider, 'short_name', provider_name)}:")
@@ -505,56 +517,14 @@ def select_transcriber_model(registry, provider_name: str, default_model: Option
     return available_models[selected]
 
 
-def select_aligner_provider(registry, default_provider: Optional[str] = None):
+def select_aligner_provider(registry, default_provider: Optional[str] = None) -> str:
     """Select an aligner provider."""
-    providers = registry.list_aligner_providers()
-    
-    if not providers:
-        raise ValueError("No aligner providers available.")
-    
-    options = []
-    default_index = None
-    for i, (name, desc) in enumerate(providers.items()):
-        provider = registry.get_aligner_provider(name)
-        display_name = getattr(provider, 'short_name', desc)
-        options.append((name, display_name))
-        if name == default_provider:
-            default_index = i
-    
-    # Default to first if not specified
-    if default_index is None:
-        default_index = 0
-    
-    print("\nAvailable Aligner Providers:")
-    selected = _prompt_selection(options, "Select aligner (number)", default_index)
-    
-    return options[selected][0]
+    return _select_provider(registry, 'aligner', 'Aligner Providers', default_provider)
 
 
-def select_diarization_provider(registry, default_provider: Optional[str] = None):
+def select_diarization_provider(registry, default_provider: Optional[str] = None) -> str:
     """Select a diarization provider."""
-    providers = registry.list_diarization_providers()
-    
-    if not providers:
-        raise ValueError("No diarization providers available.")
-    
-    options = []
-    default_index = None
-    for i, (name, desc) in enumerate(providers.items()):
-        provider = registry.get_diarization_provider(name)
-        display_name = getattr(provider, 'short_name', desc)
-        options.append((name, display_name))
-        if name == default_provider:
-            default_index = i
-    
-    # Default to first if not specified
-    if default_index is None:
-        default_index = 0
-    
-    print("\nAvailable Diarization Providers:")
-    selected = _prompt_selection(options, "Select diarization provider (number)", default_index)
-    
-    return options[selected][0]
+    return _select_provider(registry, 'diarization', 'Diarization Providers', default_provider)
 
 
 # =============================================================================
@@ -876,40 +846,51 @@ def prompt_transcript_cleanup(args, registry) -> argparse.Namespace:
 
 
 # =============================================================================
-# Mode-Specific Interactive Flows
+# Common Configuration Helpers
 # =============================================================================
 
-def interactive_single_speaker(args, api) -> argparse.Namespace:
-    """Interactive prompts for single speaker audio mode."""
-    registry = api["registry"]
+def _configure_transcriber(
+    args,
+    registry,
+    require_pure: bool = False,
+    default_provider: str = "granite_mfa",
+    warn_builtin_alignment: bool = False
+) -> argparse.Namespace:
+    """
+    Configure transcriber provider and model with consistent logic.
     
-    print("\n" + "-" * 50)
-    print("MODE: Single Speaker Audio")
-    print("Transcription only, output as CSV")
-    print("-" * 50)
-    
-    # System capability
-    args = prompt_system_capability(args)
-    
-    # Transcriber selection (pure transcribers only)
+    Args:
+        args: Command line arguments
+        registry: Plugin registry
+        require_pure: If True, only allow pure transcribers (no built-in alignment)
+        default_provider: Default provider name for selection
+        warn_builtin_alignment: If True, warn but allow providers with built-in alignment
+        
+    Returns:
+        Updated args namespace
+    """
     if args.transcriber_provider is None:
         args.transcriber_provider = select_transcriber_provider(
-            registry, 
-            filter_pure_only=True,
-            default_provider="granite"
+            registry,
+            filter_pure_only=require_pure,
+            default_provider=default_provider
         )
         print(f"  ✓ Transcriber: {args.transcriber_provider}")
     else:
-        # Validate it's a pure transcriber
+        # Validate CLI-provided transcriber
         provider = registry.get_transcriber_provider(args.transcriber_provider)
-        if provider.has_builtin_alignment:
+        if require_pure and provider.has_builtin_alignment:
             print(f"  ⚠ Provider '{args.transcriber_provider}' has built-in alignment.")
-            print("    Single speaker mode requires a pure transcriber (granite or openai_whisper).")
+            print("    This mode requires a pure transcriber (granite, openai_whisper, or remote).")
             args.transcriber_provider = select_transcriber_provider(
                 registry,
                 filter_pure_only=True,
-                default_provider="granite"
+                default_provider=default_provider
             )
+        elif warn_builtin_alignment and provider.has_builtin_alignment:
+            print(f"  ⚠ Warning: {args.transcriber_provider} has built-in alignment.")
+            print(f"    Consider using: granite, openai_whisper, or remote")
+            print(f"  ✓ Transcriber: {args.transcriber_provider} (set via CLI)")
         else:
             print(f"  ✓ Transcriber: {args.transcriber_provider} (set via CLI)")
     
@@ -923,11 +904,81 @@ def interactive_single_speaker(args, api) -> argparse.Namespace:
     args = prompt_remote_transcriber_url(args)
     
     # Granite-specific settings
-    if args.transcriber_provider == "granite":
+    if args.transcriber_provider and 'granite' in args.transcriber_provider:
         args.output_format = "chunked"
         print("  ✓ Using chunk stitching for Granite")
     
-    # De-identification
+    return args
+
+
+def _configure_aligner_if_needed(args, registry) -> argparse.Namespace:
+    """Configure aligner provider if transcriber doesn't have built-in alignment."""
+    transcriber = registry.get_transcriber_provider(args.transcriber_provider)
+    if not transcriber.has_builtin_alignment:
+        if args.aligner_provider is None:
+            args.aligner_provider = select_aligner_provider(registry)
+            print(f"  ✓ Aligner: {args.aligner_provider}")
+        else:
+            print(f"  ✓ Aligner: {args.aligner_provider} (set via CLI)")
+    else:
+        print("  ✓ Aligner: Not needed (transcriber has built-in alignment)")
+        args.aligner_provider = None
+    return args
+
+
+def _configure_diarization(args, registry) -> argparse.Namespace:
+    """Configure diarization provider."""
+    if args.diarization_provider is None:
+        args.diarization_provider = select_diarization_provider(registry)
+        print(f"  ✓ Diarization: {args.diarization_provider}")
+    else:
+        print(f"  ✓ Diarization: {args.diarization_provider} (set via CLI)")
+    return args
+
+
+def _configure_num_speakers(args) -> argparse.Namespace:
+    """Configure number of speakers for diarization."""
+    if not hasattr(args, 'num_speakers') or args.num_speakers is None:
+        print("\n--- Speaker Configuration ---")
+        while True:
+            num_input = input("  Number of speakers expected [Default: 2]: ").strip()
+            if not num_input:
+                args.num_speakers = 2
+                break
+            try:
+                num = int(num_input)
+                if num > 0:
+                    args.num_speakers = num
+                    break
+                print("  Error: Please enter a positive number.")
+            except ValueError:
+                print("  Error: Please enter a valid number.")
+        print(f"  ✓ Number of speakers: {args.num_speakers}")
+    else:
+        print(f"  ✓ Number of speakers: {args.num_speakers} (set via --num-speakers)")
+    return args
+
+
+def _print_mode_header(mode_name: str, description: str) -> None:
+    """Print consistent mode header."""
+    print("\n" + "-" * 50)
+    print(f"MODE: {mode_name}")
+    print(description)
+    print("-" * 50)
+
+
+# =============================================================================
+# Mode-Specific Interactive Flows
+# =============================================================================
+
+def interactive_single_speaker(args, api) -> argparse.Namespace:
+    """Interactive prompts for single speaker audio mode."""
+    registry = api["registry"]
+    
+    _print_mode_header("Single Speaker Audio", "Transcription only, output as CSV")
+    
+    args = prompt_system_capability(args)
+    args = _configure_transcriber(args, registry, require_pure=True, default_provider="granite")
     args = prompt_de_identification(args, PipelineMode.SINGLE_SPEAKER)
     
     # Output is fixed to CSV for single speaker
@@ -941,43 +992,10 @@ def interactive_vad_split_audio(args, api) -> argparse.Namespace:
     """Interactive prompts for VAD-first pipeline with split audio."""
     registry = api["registry"]
     
-    print("\n" + "-" * 50)
-    print("MODE: VAD Pipeline (Split Audio)")
-    print("Using Voice Activity Detection for turn segmentation")
-    print("-" * 50)
+    _print_mode_header("VAD Pipeline (Split Audio)", "Using Voice Activity Detection for turn segmentation")
     
-    # System capability
     args = prompt_system_capability(args)
-    
-    # Transcriber selection - VAD pipeline requires pure transcribers only
-    if args.transcriber_provider is None:
-        args.transcriber_provider = select_transcriber_provider(
-            registry,
-            filter_pure_only=True,
-            default_provider="granite"
-        )
-        print(f"  ✓ Transcriber: {args.transcriber_provider}")
-    else:
-        # Validate CLI-provided transcriber is compatible with VAD pipeline
-        provider = registry.get_transcriber_provider(args.transcriber_provider)
-        if provider.has_builtin_alignment:
-            print(f"  ⚠ Warning: {args.transcriber_provider} has built-in alignment.")
-            print(f"    Consider using: granite, openai_whisper, or remote")
-        print(f"  ✓ Transcriber: {args.transcriber_provider} (set via CLI)")
-    
-    # Model selection
-    if args.transcriber_model is None:
-        args.transcriber_model = select_transcriber_model(registry, args.transcriber_provider)
-    else:
-        print(f"  ✓ Model: {args.transcriber_model} (set via CLI)")
-    
-    # Remote transcriber URL prompt (if remote transcriber selected)
-    args = prompt_remote_transcriber_url(args)
-    
-    # Granite-specific settings
-    if args.transcriber_provider == "granite":
-        args.output_format = "chunked"
-        print("  ✓ Using chunk stitching for Granite")
+    args = _configure_transcriber(args, registry, require_pure=True, default_provider="granite", warn_builtin_alignment=True)
     
     # De-identification note
     args = prompt_de_identification(args, PipelineMode.VAD_SPLIT_AUDIO)
@@ -995,85 +1013,15 @@ def interactive_combined_audio(args, api) -> argparse.Namespace:
     """Interactive prompts for combined audio (single file, multiple speakers)."""
     registry = api["registry"]
     
-    print("\n" + "-" * 50)
-    print("MODE: Combined Audio")
-    print("Single audio file with multiple speakers")
-    print("-" * 50)
+    _print_mode_header("Combined Audio", "Single audio file with multiple speakers")
     
-    # System capability
     args = prompt_system_capability(args)
-    
-    # Transcriber selection
-    if args.transcriber_provider is None:
-        args.transcriber_provider = select_transcriber_provider(
-            registry,
-            default_provider="granite_mfa"
-        )
-        print(f"  ✓ Transcriber: {args.transcriber_provider}")
-    else:
-        print(f"  ✓ Transcriber: {args.transcriber_provider} (set via CLI)")
-    
-    # Model selection
-    if args.transcriber_model is None:
-        args.transcriber_model = select_transcriber_model(registry, args.transcriber_provider)
-    else:
-        print(f"  ✓ Model: {args.transcriber_model} (set via CLI)")
-    
-    # Remote transcriber URL prompt (if remote transcriber selected)
-    args = prompt_remote_transcriber_url(args)
-    
-    # Check if aligner is needed
-    transcriber = registry.get_transcriber_provider(args.transcriber_provider)
-    if not transcriber.has_builtin_alignment:
-        if args.aligner_provider is None:
-            args.aligner_provider = select_aligner_provider(registry)
-            print(f"  ✓ Aligner: {args.aligner_provider}")
-        else:
-            print(f"  ✓ Aligner: {args.aligner_provider} (set via CLI)")
-    else:
-        print("  ✓ Aligner: Not needed (transcriber has built-in alignment)")
-        args.aligner_provider = None
-    
-    # Diarization (always needed for combined audio)
-    if args.diarization_provider is None:
-        args.diarization_provider = select_diarization_provider(registry)
-        print(f"  ✓ Diarization: {args.diarization_provider}")
-    else:
-        print(f"  ✓ Diarization: {args.diarization_provider} (set via CLI)")
-    
-    # Number of speakers
-    if not hasattr(args, 'num_speakers') or args.num_speakers is None:
-        print("\n--- Speaker Configuration ---")
-        while True:
-            num_input = input("  Number of speakers expected [Default: 2]: ").strip()
-            if not num_input:
-                args.num_speakers = 2
-                break
-            try:
-                num = int(num_input)
-                if num > 0:
-                    args.num_speakers = num
-                    break
-                else:
-                    print("  Error: Please enter a positive number.")
-            except ValueError:
-                print("  Error: Please enter a valid number.")
-        print(f"  ✓ Number of speakers: {args.num_speakers}")
-    else:
-        print(f"  ✓ Number of speakers: {args.num_speakers} (set via --num-speakers)")
-    
-    # Granite-specific settings
-    if args.transcriber_provider and 'granite' in args.transcriber_provider:
-        args.output_format = "chunked"
-        print("  ✓ Using chunk stitching for Granite")
-    
-    # De-identification
+    args = _configure_transcriber(args, registry, default_provider="granite_mfa")
+    args = _configure_aligner_if_needed(args, registry)
+    args = _configure_diarization(args, registry)
+    args = _configure_num_speakers(args)
     args = prompt_de_identification(args, PipelineMode.COMBINED_AUDIO)
-    
-    # Output formats (filtered for combined audio mode)
     args = prompt_output_formats(args, registry, mode=PipelineMode.COMBINED_AUDIO)
-    
-    # Transcript cleanup
     args = prompt_transcript_cleanup(args, registry)
     
     return args
@@ -1083,10 +1031,7 @@ def interactive_split_audio(args, api) -> argparse.Namespace:
     """Interactive prompts for split audio (separate files per speaker)."""
     registry = api["registry"]
     
-    print("\n" + "-" * 50)
-    print("MODE: Split Audio")
-    print("Separate audio files per speaker")
-    print("-" * 50)
+    _print_mode_header("Split Audio", "Separate audio files per speaker")
     
     # Offer VAD pipeline as an option
     print("\n--- Pipeline Selection ---")
@@ -1101,55 +1046,15 @@ def interactive_split_audio(args, api) -> argparse.Namespace:
     args.vad_pipeline = False
     print("\n  Continuing with standard split audio pipeline...")
     
-    # System capability
     args = prompt_system_capability(args)
-    
-    # Transcriber selection
-    if args.transcriber_provider is None:
-        args.transcriber_provider = select_transcriber_provider(
-            registry,
-            default_provider="granite_mfa"
-        )
-        print(f"  ✓ Transcriber: {args.transcriber_provider}")
-    else:
-        print(f"  ✓ Transcriber: {args.transcriber_provider} (set via CLI)")
-    
-    # Model selection
-    if args.transcriber_model is None:
-        args.transcriber_model = select_transcriber_model(registry, args.transcriber_provider)
-    else:
-        print(f"  ✓ Model: {args.transcriber_model} (set via CLI)")
-    
-    # Remote transcriber URL prompt (if remote transcriber selected)
-    args = prompt_remote_transcriber_url(args)
-    
-    # Check if aligner is needed
-    transcriber = registry.get_transcriber_provider(args.transcriber_provider)
-    if not transcriber.has_builtin_alignment:
-        if args.aligner_provider is None:
-            args.aligner_provider = select_aligner_provider(registry)
-            print(f"  ✓ Aligner: {args.aligner_provider}")
-        else:
-            print(f"  ✓ Aligner: {args.aligner_provider} (set via CLI)")
-    else:
-        print("  ✓ Aligner: Not needed (transcriber has built-in alignment)")
-        args.aligner_provider = None
+    args = _configure_transcriber(args, registry, default_provider="granite_mfa")
+    args = _configure_aligner_if_needed(args, registry)
     
     # No diarization needed for split audio
     args.diarization_provider = None
     
-    # Granite-specific settings
-    if args.transcriber_provider and 'granite' in args.transcriber_provider:
-        args.output_format = "chunked"
-        print("  ✓ Using chunk stitching for Granite")
-    
-    # De-identification
     args = prompt_de_identification(args, PipelineMode.SPLIT_AUDIO)
-    
-    # Output formats (filtered for split audio mode)
     args = prompt_output_formats(args, registry, mode=PipelineMode.SPLIT_AUDIO)
-    
-    # Transcript cleanup
     args = prompt_transcript_cleanup(args, registry)
     
     return args

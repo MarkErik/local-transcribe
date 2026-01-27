@@ -348,6 +348,9 @@ class VADASRProcessor:
         
         # Transcribe each chunk
         chunk_results: List[Dict[str, Any]] = []
+        # Track if any chunks have overlap (need stitching) vs VAD-split (no overlap)
+        has_overlapping_chunks = False
+        
         for chunk in chunks:
             text = self._transcribe_audio(chunk.audio_segment, sample_rate, chunk.speaker_id, block=block, chunk=chunk, **kwargs)
             chunk_results.append({
@@ -356,7 +359,13 @@ class VADASRProcessor:
                 "text": text,
                 "start_s": chunk.start_s,
                 "end_s": chunk.end_s,
+                "split_method": chunk.split_method,
             })
+            
+            # Check if this chunk has overlap with the next one
+            # Time-based splits have overlap_start_s > 0, VAD-boundary splits have overlap_start_s = 0
+            if chunk.overlap_start_s > 0:
+                has_overlapping_chunks = True
             
             # Record for audit
             self._chunk_audit_data.append({
@@ -366,16 +375,23 @@ class VADASRProcessor:
                 "end_s": chunk.end_s,
                 "duration_s": chunk.duration_s,
                 "word_count": len(text.split()),
-                "split_method": chunk.split_method if hasattr(chunk, 'split_method') else "vad_boundary",
+                "split_method": chunk.split_method,
             })
         
-        # Stitch results - since we split at natural pauses, minimal overlap expected
+        # Handle single chunk case
         if len(chunk_results) == 1:
             result_text = chunk_results[0]["text"]
             self._save_block_transcription_debug(block, result_text, was_chunked=True, chunk_count=1)
             return result_text
         
-        result_text = self._stitch_chunk_transcripts(chunk_results, block)
+        # Determine whether to stitch or concatenate based on split method
+        # VAD-boundary splits have no overlap, so chunks should be concatenated directly
+        # Time-based splits have overlap regions that require stitching
+        if has_overlapping_chunks:
+            result_text = self._stitch_chunk_transcripts(chunk_results, block)
+        else:
+            # VAD-split chunks: simply concatenate (no overlap to resolve)
+            result_text = self._concatenate_chunk_transcripts(chunk_results, block)
         # Save debug output for chunked block
         self._save_block_transcription_debug(block, result_text, was_chunked=True, chunk_count=len(chunks))
         return result_text
@@ -592,6 +608,7 @@ class VADASRProcessor:
                 end_s=block.start_s + chunk_end / sample_rate,
                 audio_segment=chunk_audio,
                 overlap_start_s=block.start_s + (chunk_start + overlap_samples) / sample_rate if chunk_start > 0 else 0,
+                split_method="time_based",  # Time-based splits have overlap, need stitching
             )
             chunks.append(chunk)
             chunk_id += 1
@@ -765,6 +782,36 @@ class VADASRProcessor:
             return ' '.join(seg.text for seg in result)
         
         return str(result)
+    
+    def _concatenate_chunk_transcripts(
+        self,
+        chunk_results: List[Dict[str, Any]],
+        block: Optional[VADBlock] = None
+    ) -> str:
+        """
+        Concatenate non-overlapping chunk transcripts directly.
+        
+        Used when chunks were split at VAD boundaries (natural pauses) where
+        there is no overlapping audio. In this case, the transcripts can be
+        simply joined without any overlap resolution logic.
+        
+        Args:
+            chunk_results: List of chunk results with 'text' key
+            block: The source VAD block (for debug context)
+            
+        Returns:
+            Concatenated transcript text
+        """
+        # Simply join the text from each chunk with a space
+        texts = [chunk.get("text", "") for chunk in chunk_results]
+        result = " ".join(t.strip() for t in texts if t.strip())
+        
+        log_debug(
+            f"Concatenated {len(chunk_results)} VAD-split chunks "
+            f"(no overlap resolution needed): {len(result.split())} words total"
+        )
+        
+        return result
     
     def get_chunk_audit_data(self) -> List[Dict[str, Any]]:
         """

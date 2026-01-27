@@ -344,7 +344,7 @@ class TranscriptCleanupStage(PipelineStage):
         log_progress("Checking LLM server availability...")
         
         if hasattr(context.transcript_cleanup_provider, 'health_check'):
-            server_info = context.transcript_cleanup_provider.health_check(timeout=10.0)
+            server_info = context.transcript_cleanup_provider.health_check(timeout=15.0)
             
             if not server_info.available:
                 error_msg = server_info.error or "Server not responding"

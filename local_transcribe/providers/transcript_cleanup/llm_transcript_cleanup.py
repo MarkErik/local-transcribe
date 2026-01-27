@@ -41,7 +41,7 @@ class LlmTranscriptCleanupProvider(TranscriptCleanupProvider):
     def description(self) -> str:
         return "Remote LLM server for transcript cleanup"
 
-    def health_check(self, timeout: float = 5.0) -> ServerInfo:
+    def health_check(self, timeout: float = 15.0) -> ServerInfo:
         """
         Check if the LLM server is available and detect its format.
         

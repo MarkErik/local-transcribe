@@ -29,7 +29,7 @@ class DeIdentificationConfig:
     llm_timeout: int = 300             # Seconds
     temperature: float = 1.0           # Temperature for LLM
     max_retries: int = 3               # Number of retries on validation failure
-    temperature_decay: float = 0.05    # Reduce temperature on each retry
+    temperature_decay: float = 0.15    # Reduce temperature on each retry
     
     # Response parsing (auto-detected if None)
     parse_harmony: Optional[bool] = None  # None = auto-detect

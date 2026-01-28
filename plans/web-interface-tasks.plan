@@ -822,10 +822,10 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
 **File:** `web_ui/src/pages/JobDetail.tsx`
 
 **Tasks:**
-- [ ] Detect when job is paused at de-identification review
-- [ ] Show "Review Names" button/banner when first pass complete
-- [ ] Navigate to name review modal/page
-- [ ] Show progress for second pass after approval
+- [x] Detect when job is paused at de-identification review
+- [x] Show "Review Names" button/banner when first pass complete
+- [x] Navigate to name review modal/page
+- [x] Show progress for second pass after approval
 
 ---
 
@@ -852,9 +852,9 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
 **File:** `web_ui/src/components/TranscriptView.tsx`
 
 **Tasks:**
-- [ ] Accept `piiReplacements` prop (list of PII replacement records)
-- [ ] Apply highlight styles when PII mode enabled
-- [ ] Add visual legend for highlight colors
+- [x] Accept `piiReplacements` prop (list of PII replacement records)
+- [x] Apply highlight styles when PII mode enabled
+- [x] Add visual legend for highlight colors
 
 ---
 
@@ -910,9 +910,9 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
 **File:** `web_ui/src/pages/TranscriptEditor.tsx`
 
 **Tasks:**
-- [ ] Add "PII Audit" tab/panel in sidebar
-- [ ] Show audit trail when tab selected
-- [ ] Link audit entries to transcript locations
+- [x] Add "PII Audit" tab/panel in sidebar
+- [x] Show audit trail when tab selected
+- [x] Link audit entries to transcript locations
 
 ---
 
@@ -946,8 +946,7 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
 - [x] Actions: `togglePIIHighlight`, `setReplacements`
 
 Remaining Tasks
-Integrate PII highlight overlay into TranscriptView
-Add de-identification step detection to JobDetail page
+All Phase 5 tasks completed successfully. The web interface now includes comprehensive de-identification tools with two-pass workflow, name review, PII highlighting, audit trails, and manual redaction capabilities.
 Add audit trail panel to TranscriptEditor sidebar
 
 ---

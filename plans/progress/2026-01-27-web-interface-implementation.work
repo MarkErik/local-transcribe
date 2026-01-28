@@ -1,7 +1,7 @@
 # Web Interface Implementation Progress Log
 
 **Started:** January 27, 2026  
-**Status:** In Progress - Phase 4 Advanced Editing Complete  
+**Status:** Complete - Phase 5 De-identification Tools Complete  
 **Related Documents:** 
 - [web-interface.plan](../web-interface.plan)
 - [web-interface-tasks.plan](../web-interface-tasks.plan)
@@ -1125,3 +1125,246 @@ Debounced 2-second auto-save:
 | `web_ui/src/components/StaleStageWarning.tsx` | New - Warning banner |
 | `web_ui/src/components/index.ts` | Export new components |
 | `web_ui/src/pages/TranscriptEditor.tsx` | Integrated editing UI |
+
+---
+
+## Session 5: January 28, 2026
+
+**Developer:** AI Code Review Assistant  
+**Goals:** Complete Phase 5 De-identification Tools implementation and bug fixes
+
+#### Summary
+
+Phase 5 De-identification Tools is complete. The codebase now has a full two-pass de-identification workflow with human-in-the-loop name review, PII highlighting, audit trails, and manual redaction tools.
+
+**Key Features Added:**
+1. **Two-pass de-identification** - First pass discovers names, second pass applies replacements
+2. **Name list review UI** - Interactive review of discovered names before second pass
+3. **PII highlighting** - Visual highlighting of redacted content in transcripts
+4. **Audit trail** - Complete record of all PII replacements with export capability
+5. **Manual redaction tools** - Ability to manually mark/unmark text as PII
+
+---
+
+#### Work Completed
+
+##### 5.1 Backend: Split De-identification into Passes ✅
+
+**Files Modified:**
+- [orchestrator.py](../../local_transcribe/processing/de_identification/orchestrator.py)
+- [core.py](../../local_transcribe/processing/de_identification/core.py)
+
+**Changes:**
+- Added `de_identify_multi_speaker_first_pass()` method for name discovery only
+- Added `de_identify_multi_speaker_second_pass()` method for replacement application
+- Added `FirstPassResults` dataclass to store intermediate results
+- Updated orchestrator to support two-pass workflow
+
+---
+
+##### 5.2 Backend: De-identification API Endpoints ✅
+
+**Files Created:**
+- [web_api/routers/deidentification.py](../../web_api/routers/deidentification.py)
+
+**Endpoints Added:**
+- `POST /api/jobs/{job_id}/de-identify/first-pass` - Run first pass and return name list
+- `GET /api/jobs/{job_id}/de-identify/names` - Get discovered names for review
+- `PUT /api/jobs/{job_id}/de-identify/names` - Update name list before second pass
+- `POST /api/jobs/{job_id}/de-identify/second-pass` - Run second pass with reviewed names
+- `GET /api/jobs/{job_id}/de-identify/replacements` - Get PII audit trail
+
+**Bug Fix Applied:**
+- Fixed invalid `WordSegment` constructor arguments (removed `confidence` parameter)
+- Fixed speaker key lookup (`primary_speaker` vs `speaker`)
+
+---
+
+##### 5.3 Backend: Database Schema for De-identification ✅
+
+**Files Modified:**
+- [web_api/database.py](../../web_api/database.py)
+
+**Tables Added:**
+- `de_identification_state` - Tracks first/second pass completion and name lists
+- `pii_replacements` - Audit trail of all PII replacements
+
+**Schema:**
+```sql
+CREATE TABLE de_identification_state (
+    job_id TEXT PRIMARY KEY,
+    first_pass_complete BOOLEAN DEFAULT FALSE,
+    second_pass_complete BOOLEAN DEFAULT FALSE,
+    discovered_names_json TEXT,
+    reviewed_names_json TEXT,
+    first_pass_segments_path TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE pii_replacements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    speaker TEXT,
+    original_text TEXT NOT NULL,
+    replacement_text TEXT DEFAULT '[NAME]',
+    word_index INTEGER,
+    pass_number INTEGER,
+    is_manual BOOLEAN DEFAULT FALSE,
+    is_override BOOLEAN DEFAULT FALSE,
+    timestamp_start REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+##### 5.4 Frontend: Name List Review UI ✅
+
+**Files Created:**
+- [web_ui/src/components/NameListReview.tsx](../../web_ui/src/components/NameListReview.tsx)
+
+**Features:**
+- Table display of discovered names with speaker, occurrence count, include/exclude toggles
+- Add/remove names manually
+- Approve and continue to second pass
+- Re-run first pass option
+
+---
+
+##### 5.5 Frontend: PII Highlighting and Audit Trail ✅
+
+**Files Created:**
+- [web_ui/src/components/PIIHighlightMode.tsx](../../web_ui/src/components/PIIHighlightMode.tsx)
+- [web_ui/src/components/PIIAuditTrail.tsx](../../web_ui/src/components/PIIAuditTrail.tsx)
+- [web_ui/src/components/RedactionTool.tsx](../../web_ui/src/components/RedactionTool.tsx)
+
+**Files Modified:**
+- [web_ui/src/components/TranscriptView.tsx](../../web_ui/src/components/TranscriptView.tsx)
+- [web_ui/src/pages/JobDetail.tsx](../../web_ui/src/pages/JobDetail.tsx)
+- [web_ui/src/pages/TranscriptEditor.tsx](../../web_ui/src/pages/TranscriptEditor.tsx)
+
+**Features:**
+- PII highlight toggle with color-coded highlighting (yellow/orange/red for different replacement types)
+- Audit trail panel with filtering, export, and navigation to transcript locations
+- Manual redaction tool with preset replacement options
+- Integration with job progress to detect name review state
+
+---
+
+##### 5.6 API Client and Store Updates ✅
+
+**Files Modified:**
+- [web_ui/src/api/client.ts](../../web_ui/src/api/client.ts)
+- [web_ui/src/store/index.ts](../../web_ui/src/store/index.ts)
+
+**Changes:**
+- Added de-identification API client functions
+- Added `useDeIdentificationStore` with state management for names, replacements, and UI toggles
+
+---
+
+#### Files Created (Phase 5)
+
+| File | Description |
+|------|-------------|
+| `web_api/routers/deidentification.py` | De-identification API endpoints |
+| `web_ui/src/components/NameListReview.tsx` | Name list review UI |
+| `web_ui/src/components/PIIHighlightMode.tsx` | PII highlighting toggle and legend |
+| `web_ui/src/components/PIIAuditTrail.tsx` | PII audit trail panel |
+| `web_ui/src/components/RedactionTool.tsx` | Manual redaction tools |
+
+#### Files Modified (Phase 5)
+
+| File | Description |
+|------|-------------|
+| `local_transcribe/processing/de_identification/orchestrator.py` | Two-pass de-identification methods |
+| `local_transcribe/processing/de_identification/core.py` | FirstPassResults dataclass |
+| `web_api/database.py` | De-identification database schema |
+| `web_ui/src/components/TranscriptView.tsx` | PII highlighting integration |
+| `web_ui/src/pages/JobDetail.tsx` | De-identification status detection |
+| `web_ui/src/pages/TranscriptEditor.tsx` | Audit trail and redaction panels |
+| `web_ui/src/api/client.ts` | De-identification API functions |
+| `web_ui/src/store/index.ts` | De-identification store |
+
+---
+
+## Architecture Decisions Made (Phase 5)
+
+### Two-Pass De-identification Architecture
+
+**Decision:** Implement two-pass de-identification with human-in-the-loop name review
+
+**Rationale:**
+- De-identification LLMs can make mistakes in name detection
+- Sociology researchers need control over what gets redacted
+- Audit trail becomes more meaningful with human oversight
+- Allows for iterative improvement of name lists
+
+**Implementation:**
+- First pass: LLM discovers potential names, stores intermediate results
+- Human review: Researcher reviews and edits name list
+- Second pass: Applies replacements using reviewed name list
+- Audit trail: Complete record of all replacements with pass numbers
+
+### PII Highlighting Strategy
+
+**Decision:** Color-coded highlighting with tooltips showing original text
+
+**Rationale:**
+- Researchers need to see what was redacted without compromising privacy
+- Different colors distinguish automatic vs manual redactions
+- Hover tooltips provide context without cluttering the UI
+- Toggle-able to avoid distraction when not needed
+
+**Color Scheme:**
+- Yellow: First-pass automatic replacements
+- Orange: Second-pass automatic replacements  
+- Red: Manual redactions
+- Strikethrough: Overridden/restored text
+
+---
+
+## Test Results (Phase 5)
+
+### De-identification API Tests
+```
+✓ First pass endpoint returns discovered names
+✓ Name list update persists changes
+✓ Second pass applies reviewed names correctly
+✓ PII replacements recorded in audit trail
+✓ Manual redaction creates audit entries
+✓ PII highlighting shows correct colors
+```
+
+### Frontend Integration Tests
+```
+✓ NameListReview displays discovered names
+✓ PII highlighting toggles correctly
+✓ Audit trail filters and exports work
+✓ Manual redaction applies changes
+✓ JobDetail detects review state
+```
+
+---
+
+## Known Issues / Technical Debt (Phase 5)
+
+1. **Name Context Snippets** - The name review UI could show example sentences where names were found for better decision making.
+
+2. **Bulk PII Operations** - No bulk redact/restore operations for multiple words at once.
+
+3. **PII Export Formats** - Audit trail export currently only supports JSON; CSV and other formats could be useful.
+
+---
+
+## Conclusion
+
+Phase 5 completes the core web interface functionality for the local-transcribe system. The interface now supports:
+
+- **Full Pipeline Execution** - Submit jobs, monitor progress, view results
+- **Transcript Viewing** - Audio-synchronized viewing with block-level highlighting
+- **Comprehensive Editing** - Word-level editing with undo/redo and change tracking
+- **De-identification Workflow** - Two-pass PII redaction with human oversight and audit trails
+
+The system is now ready for production use by sociology researchers for transcription and de-identification tasks.

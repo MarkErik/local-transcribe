@@ -23,22 +23,12 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 
 ---
 
-## Target User Profile
-
-**Primary User:** Sociology researcher conducting qualitative interviews
-
-**Typical Workflow:**
-1. Records interview via Zoom with separate audio tracks per speaker
-2. Has two audio files: interviewer (MA-*) and participant (P*)
-3. Wants accurate, de-identified transcripts for research analysis
-4. Needs to review and correct automated transcription errors
-5. Must ensure de-identification is complete before sharing/publishing
 
 **Technical Assumptions:**
 - Desktop/laptop user (no mobile support required)
 - Minimum screen resolution: 1280 × 800
 - Modern browser (Chrome, Firefox, Safari, Edge)
-- May run web interface on laptop while pipeline executes on remote server
+- Most likely scenario is to run web interface on laptop, where the user will have their audio files, while pipeline executes on remote server
 
 ---
 
@@ -48,7 +38,7 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| **Job Configuration** | Upload audio files, select pipeline mode (VAD-split-audio), configure options | High |
+| **Job Configuration** | Upload audio files, select pipeline mode (most likely  to be  VAD-split-audio), configure options | High |
 | **Pipeline Monitoring** | Real-time progress of each pipeline stage | High |
 | **Job Queue Management** | View pending/running/completed jobs | Medium |
 | **Configuration Presets** | Save and reuse common configurations | Low |
@@ -60,10 +50,11 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 |---------|-------------|----------|
 | **Stage-by-Stage View** | View output from each pipeline stage independently | High |
 | **Audio Playback** | Play audio with standard controls (play/pause/seek/speed) | High |
-| **Word-Level Highlighting** | Highlight current word as audio plays | High |
-| **Speaker Color Coding** | Visual distinction between speakers | High |
+| **Block-Level Highlighting if in VAD-split-audio mode** | Highlight current block as audio plays based on block starting timestamp | High |
+| **Word-Level Highlighting if not in VAD-split-audio mode** | Highlight current word as audio plays if words have timestamps | High |
+| **Speaker/Block Color Coding** | Visual distinction between speakers | High |
 | **Timestamp Display** | Show timestamps for each turn/segment | High |
-| **Jump to Position** | Click any word to jump audio to that position | High |
+| **Jump to Position** | Click any word/block to jump audio to that position | High |
 | **Dual Audio Sync** | Option to play both speaker tracks in sync | Medium |
 | **Waveform Visualization** | Visual audio waveform for navigation | Medium |
 
@@ -90,27 +81,17 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 | **PII Highlight Mode** | Toggle to highlight all detected PII | High |
 | **Manual Redaction** | Select text to mark as PII for redaction | High |
 | **Redaction Override** | Unmark incorrectly flagged PII | High |
-| **Redaction Category** | Specify type (name, location, date, etc.) | Medium |
-| **Placeholder Editing** | Edit the replacement text (e.g., "[NAME1]" → "[PARTICIPANT]") | Medium |
-| **PII Audit Trail** | View what was redacted and why | Medium |
+| **PII Audit Trail** | View what was redacted and why | High |
 | **Second-Pass Review** | Dedicated review mode for de-identification QA | High |
 
 ### 5. Export & Output Features
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| **Export Formats** | Download as TXT, DOCX, JSON, SRT | High |
-| **Export Stages** | Export from any pipeline stage | Medium |
-| **Comparison View** | Side-by-side before/after de-identification | Medium |
-| **Print-Friendly View** | Formatted view for printing | Low |
-
-### 6. Collaboration Features (Future)
-
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| **Review Status** | Mark sections as reviewed/approved | Medium |
-| **Comments** | Add comments on specific sections | Low |
-| **Multiple Reviewers** | Support for team review workflows | Low |
+| **Export Formats** | Download as TXT, JSON, Video | High |
+| **Export Stages** | Export from any pipeline stage | High |
+| **Comparison View** | Side-by-side before/after, raw transcript, de-identification, and after LLM cleanup | High |
+| **Print-Friendly View** | Formatted view for printing | High |
 
 ---
 

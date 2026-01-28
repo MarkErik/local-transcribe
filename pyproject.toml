@@ -45,6 +45,7 @@ dependencies = [
 dev = [
     "pyright>=1.1.407",
     "pytest>=9.0.1",
+    "httpx>=0.27.0",
 ]
 
 [tool.uv]

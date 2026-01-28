@@ -59,3 +59,5 @@ export { ComparisonView } from './ComparisonView';
 export { VirtualizedTranscriptView } from './VirtualizedTranscriptView';
 export type { VirtualizedTranscriptViewProps } from './VirtualizedTranscriptView';
 export type { PIIAuditTrailProps } from './PIIAuditTrail';
+
+export { ErrorBoundary, withErrorBoundary } from './ErrorBoundary';

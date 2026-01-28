@@ -34,6 +34,7 @@ import {
   PrintView,
   ComparisonView,
   VirtualizedTranscriptView,
+  ErrorBoundary,
 } from '../components';
 import { useEditStore, useDeIdentificationStore } from '../store';
 
@@ -381,18 +382,26 @@ export function TranscriptEditor() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left panel: Audio player */}
         <div className="w-1/3 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-y-auto p-4">
-          {audioUrls?.interviewer && audioUrls?.participant ? (
-            <DualTrackPlayer
-              interviewerUrl={audioUrls.interviewer}
-              participantUrl={audioUrls.participant}
-              onTimeUpdate={handleTimeUpdate}
-              onSeek={handleSeek}
-            />
-          ) : (
-            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-              Audio files not available
-            </div>
-          )}
+          <ErrorBoundary
+            fallback={
+              <div className="text-center py-12 text-red-500">
+                Audio player failed to load. Please refresh.
+              </div>
+            }
+          >
+            {audioUrls?.interviewer && audioUrls?.participant ? (
+              <DualTrackPlayer
+                interviewerUrl={audioUrls.interviewer}
+                participantUrl={audioUrls.participant}
+                onTimeUpdate={handleTimeUpdate}
+                onSeek={handleSeek}
+              />
+            ) : (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                Audio files not available
+              </div>
+            )}
+          </ErrorBoundary>
           
           {/* Selected turn info */}
           {selectedTurnId !== null && transcript?.turns && (
@@ -438,52 +447,60 @@ export function TranscriptEditor() {
 
         {/* Right panel: Transcript view */}
         <div className="flex-1 overflow-hidden">
-          {isLoadingTranscript ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto" />
-                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                  Loading transcript...
+          <ErrorBoundary
+            fallback={
+              <div className="flex items-center justify-center h-full text-red-500">
+                Transcript view failed to load. Please refresh.
+              </div>
+            }
+          >
+            {isLoadingTranscript ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto" />
+                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    Loading transcript...
+                  </p>
+                </div>
+              </div>
+            ) : transcriptError ? (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-red-600 dark:text-red-400">
+                  Failed to load transcript: {transcriptError instanceof Error ? transcriptError.message : 'Unknown error'}
                 </p>
               </div>
-            </div>
-          ) : transcriptError ? (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-red-600 dark:text-red-400">
-                Failed to load transcript: {transcriptError instanceof Error ? transcriptError.message : 'Unknown error'}
-              </p>
-            </div>
-          ) : transcript?.turns ? (
-            // Use virtualized view for large transcripts
-            transcript.turns.length > VIRTUALIZATION_THRESHOLD ? (
-              <VirtualizedTranscriptView
-                turns={transcript.turns}
-                currentTime={currentTime}
-                onSeek={handleSeek}
-                autoScroll={autoScroll}
-                selectedTurnId={selectedTurnId}
-                onTurnSelect={handleTurnSelect}
-                onWordSelect={handleWordSelect}
-              />
+            ) : transcript?.turns ? (
+              // Use virtualized view for large transcripts
+              transcript.turns.length > VIRTUALIZATION_THRESHOLD ? (
+                <VirtualizedTranscriptView
+                  turns={transcript.turns}
+                  currentTime={currentTime}
+                  onSeek={handleSeek}
+                  autoScroll={autoScroll}
+                  selectedTurnId={selectedTurnId}
+                  onTurnSelect={handleTurnSelect}
+                  onWordSelect={handleWordSelect}
+                />
+              ) : (
+                <TranscriptView
+                  turns={transcript.turns}
+                  currentTime={currentTime}
+                  onSeek={handleSeek}
+                  autoScroll={autoScroll}
+                  selectedTurnId={selectedTurnId}
+                  onTurnSelect={handleTurnSelect}
+                  onWordSelect={handleWordSelect}
+                  piiReplacements={piiData?.replacements}
+                />
+              )
             ) : (
-              <TranscriptView
-                turns={transcript.turns}
-                currentTime={currentTime}
-                onSeek={handleSeek}
-                autoScroll={autoScroll}
-                selectedTurnId={selectedTurnId}
-                onTurnSelect={handleTurnSelect}
-                onWordSelect={handleWordSelect}
-                piiReplacements={piiData?.replacements}
-              />
-            )
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-gray-500 dark:text-gray-400">
-                No transcript available
-              </p>
-            </div>
-          )}
+              <div className="flex items-center justify-center h-full">
+                <p className="text-gray-500 dark:text-gray-400">
+                  No transcript available
+                </p>
+              </div>
+            )}
+          </ErrorBoundary>
         </div>
       </div>
 

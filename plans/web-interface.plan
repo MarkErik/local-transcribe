@@ -1,9 +1,9 @@
 # Web Interface Plan for Local Transcribe
 
-**Document Version:** 2.1  
+**Document Version:** 2.2  
 **Created:** January 27, 2026  
 **Last Updated:** January 27, 2026  
-**Status:** Planning Phase
+**Status:** Planning Phase - Decisions Finalized
 
 ---
 
@@ -44,11 +44,15 @@ The web server will run on the same machine as the pipeline.
 
 ---
 
+**Deployment Scope:**
+- **Single User:** This system is designed for a single user (the developer) running their own laptop and their own server. Multi-user authentication, logins, and passwords are out of scope for the initial implementation and can be added as a future enhancement if needed.
+
 **Technical Assumptions:**
 - Desktop/laptop user (no mobile support required)
 - Minimum screen resolution: 1280 × 800
 - Modern browser (Chrome, Firefox, Safari, Edge)
-- Most likely scenario is to run web interface on laptop, where the user will have their audio files, while pipeline executes on remote server
+- **Primary Deployment:** Web UI runs on local laptop, pipeline executes on remote server
+- User manually configures remote server URL (no service discovery)
 
 ---
 
@@ -179,53 +183,195 @@ duration_per_word = block.duration_s / len(words) if words else 0
 
 ### Decision 1: Frontend Framework
 
-#### React with TypeScript
+**Decision: React with TypeScript**
+
+**Rationale:**
+- React is the most widely adopted frontend framework with excellent tooling
+- TypeScript provides type safety essential for complex data structures (TranscriptFlow, HierarchicalTurn)
+- Rich ecosystem of audio/waveform libraries compatible with React
+- Component-based architecture suits the modular UI requirements (audio player, transcript view, edit panel)
+- Strong community support and documentation
+
+**Implementation:**
+- Vite for build tooling (fast development, efficient production builds)
+- shadcn/ui for accessible, customizable UI components
+- Zustand for state management (simpler than Redux, sufficient for single-user app)
+- TanStack Query for server state management and caching
 
 ---
 
 ### Decision 2: Backend API Architecture
 
-#### Separate FastAPI Service
+**Decision: FastAPI (Python)**
+
+**Rationale:**
+- Native Python integration with existing pipeline code (no subprocess overhead, direct imports)
+- Async support for handling file uploads and SSE streams efficiently
+- Automatic OpenAPI documentation for API exploration
+- Pydantic integration for request/response validation
+- Python ecosystem allows reusing existing data structures directly
+
+**Implementation:**
+- Single FastAPI application serving both API and static frontend files
+- Background task execution for pipeline jobs (using FastAPI BackgroundTasks or asyncio)
+- SQLite database access via SQLAlchemy or raw sqlite3
+- Pydantic models mirroring existing dataclasses where beneficial
 
 ---
 
 ### Decision 3: Client-Server Communication for Pipeline Execution
 
-#### Option A: WebSocket for Real-Time Updates
-**Description:** Persistent WebSocket connection for live updates
+**Decision: SSE for Pipeline Progress + REST for All Other Operations**
 
-#### Option B: Server-Sent Events (SSE)
-**Description:** One-way server-to-client event stream
+**Rationale:**
+- Pipeline execution is a one-way data flow: server → client (progress updates, stage completions, errors)
+- SSE (Server-Sent Events) is the simplest, most reliable solution for this pattern
+- No bidirectional communication is needed during pipeline execution
+- REST endpoints handle job submission, transcript retrieval, edit saving, etc.
+- WebSocket complexity is unnecessary for this use case and adds implementation burden
 
-**Recommendation:** **Option B (SSE)** for pipeline progress (one-way updates), with **Option A (WebSocket)** reserved for the interactive editor.
+**Implementation:**
+- `POST /api/jobs` - Submit new job (returns job_id immediately)
+- `GET /api/jobs/{job_id}/progress` - SSE endpoint for real-time progress events
+- All other operations use standard REST endpoints
+
+**Event Types:**
+```
+event: stage_start
+data: {"stage": "vad_transcription", "message": "Starting VAD transcription..."}
+
+event: block_progress
+data: {"stage": "vad_transcription", "current": 15, "total": 42, "speaker": "Interviewer"}
+
+event: stage_complete
+data: {"stage": "vad_transcription", "duration_s": 120.5, "summary": {...}}
+
+event: job_complete
+data: {"job_id": "abc123", "status": "completed", "output_path": "/output/..."}
+
+event: job_error
+data: {"job_id": "abc123", "error": "Transcription failed", "stage": "vad_transcription"}
+```
 
 ---
 
 ### Decision 4: Local vs Remote Execution Architecture
 
-#### Split Architecture (UI Local, Pipeline Remote)
-**Description:** Web UI runs locally, connects to remote pipeline server via API
+**Decision: Split Architecture (UI Local, Pipeline Remote)**
+
+The web UI runs on the user's laptop while the pipeline executes on a remote server. This is the primary deployment model.
+
+#### Network Architecture Details
+
+**Server Configuration:**
+- User configures remote server URL via environment variable or config file
+- `TRANSCRIBE_SERVER_URL=http://100.84.208.72:8099` (example)
+- Server URL can also be set in a `.env` file or `~/.local-transcribe/config.json`
+- UI prompts for server URL on first launch if not configured
+
+**Audio File Upload (Laptop → Server):**
+- **Protocol:** HTTP multipart upload with chunked transfer
+- **Chunk size:** 5MB chunks for reliable upload over variable networks
+- **Resume capability:** Each chunk is acknowledged; upload can resume from last successful chunk
+- **Client-side validation:** Before upload, verify file is valid audio (check magic bytes, reasonable size)
+- **Upload endpoint:** `POST /api/files/upload` with `X-Upload-Id` header for resume tracking
+- **Progress reporting:** Server responds with bytes received; client shows upload progress bar
+- **Maximum file size:** 500MB per file (configurable on server)
+- **Concurrent uploads:** Support uploading both speaker files simultaneously
+
+**Upload Flow:**
+```
+1. Client: POST /api/files/upload/init
+   Body: {filename: "interviewer.m4a", size_bytes: 150000000, content_type: "audio/m4a"}
+   Response: {upload_id: "abc123", chunk_size: 5242880}
+
+2. Client: POST /api/files/upload/abc123/chunk/0
+   Body: [5MB binary data]
+   Response: {bytes_received: 5242880, next_chunk: 1}
+
+3. ... repeat for each chunk ...
+
+4. Client: POST /api/files/upload/abc123/complete
+   Response: {file_id: "file_xyz", path: "/uploads/abc123/interviewer.m4a"}
+```
+
+**Audio Serving for Playback (Server → Laptop):**
+- **Protocol:** HTTP with Range requests (RFC 7233) for seeking support
+- **Endpoint:** `GET /api/files/{file_id}/audio`
+- **Caching:** Browser caches audio locally; server sends `Cache-Control: max-age=86400`
+- **Partial content:** Server MUST support HTTP 206 Partial Content for audio seeking
+- **On-demand loading:** Audio is fetched when user opens transcript for editing, not immediately after job completion
+- **Bandwidth optimization:** For very large files (>200MB), consider server-side transcoding to lower-bitrate version for web playback (future enhancement)
+
+**Playback Flow:**
+```
+1. User opens transcript for editing
+2. Client checks local cache for audio files
+3. If not cached: GET /api/files/{file_id}/audio (with Accept-Ranges support)
+4. wavesurfer.js loads audio, making range requests as needed for seeking
+5. Audio cached in browser storage for subsequent sessions
+```
+
+**Network Error Handling:**
+- **Upload interruption:** Resume from last successful chunk (tracked by upload_id)
+- **Connection drop during pipeline:** Pipeline continues on server; client reconnects to SSE endpoint with `Last-Event-Id` header to resume progress stream
+- **Offline detection:** Client monitors connection; shows "Reconnecting..." banner with retry countdown
+- **Timeout configuration:** Configurable request timeouts (default: 30s for API calls, no timeout for uploads/streams)
+- **Retry logic:** Exponential backoff for failed requests (1s, 2s, 4s, 8s, max 30s)
+
+**Firewall/VPN Considerations:**
+- Server must be accessible from client network (user responsibility)
+- All communication over HTTP/HTTPS (standard ports, firewall-friendly)
+- No UDP, no WebRTC, no peer-to-peer (simplifies network requirements)
+- If using Tailscale/VPN, server URL can be Tailscale IP (e.g., `http://100.84.208.72:8099`)
+
+**Bandwidth Estimates:**
+| Operation | Typical Size | Time @ 10 Mbps | Time @ 100 Mbps |
+|-----------|--------------|----------------|-----------------|
+| Upload 2 × 100MB audio files | 200MB | ~3 minutes | ~20 seconds |
+| Download transcript JSON | 500KB | <1 second | <1 second |
+| Stream audio for playback | 100MB | Progressive (seeks supported) | Progressive |
 
 ---
 
 ### Decision 5: Data Persistence & Edit Storage
 
-#### Option A: File-Based Storage (JSON/SQLite)
-**Description:** Store edits in JSON files or local SQLite database
+**Decision: Hybrid (Files + SQLite)**
 
-#### Option B: PostgreSQL Database
-**Description:** Full relational database for all data
+**Rationale:**
+- Transcripts are naturally file-based (JSON output from pipeline) - keep them as files
+- SQLite provides reliable metadata storage with ACID guarantees, no server process required
+- Edits stored as structured records in SQLite, applied to transcript files on demand
+- Simple deployment: single SQLite file, no database server to manage
+- PostgreSQL is overkill for single-user scenario
 
-#### Option C: Hybrid (Files + Lightweight DB)
-**Description:** Keep transcripts as JSON files, use SQLite for metadata/edits
+**Implementation:**
+- **SQLite database:** `~/.local-transcribe/transcribe.db` (or `./data/transcribe.db` on server)
+- **Transcript files:** Remain in output directories as JSON files
+- **Edit records:** Stored in SQLite `edits` table, linked to job_id and stage
+- **Job metadata:** Stored in SQLite `jobs` table
 
 
 ---
 
 ### Decision 6: Audio Playback & Synchronization
 
-#### Web Audio API and Library
-**Description:** Use Web Audio API with wavesurfer.js or similar
+**Decision: wavesurfer.js with Web Audio API**
+
+**Rationale:**
+- wavesurfer.js is the de facto standard for web audio visualization and playback
+- Built on Web Audio API for precise timing control
+- Supports waveform visualization (important for identifying speech patterns)
+- Handles large audio files efficiently via streaming/chunking
+- Well-documented, actively maintained, MIT licensed
+- Supports custom plugins for dual-track synchronization
+
+**Implementation for Dual-Track VAD Mode:**
+- Two wavesurfer.js instances (one per speaker track)
+- Custom synchronization layer to keep both tracks aligned
+- Seek operations update both tracks simultaneously
+- Individual mute/solo controls per track
+- Shared playhead position and transport controls
 
 ---
 
@@ -619,8 +765,162 @@ class TranscriptFlow:
 | `framework/pipeline_reentry.py` | Low-Med | Extract reusable functions, return JSON errors |
 | `processing/de_identification/orchestrator.py` | Medium | Split multi-speaker into first/second pass methods |
 | `framework/checkpoint_loader.py` | Low | Return JSON-friendly errors |
+| `processing/turn_building/turn_building_data_structures.py` | Medium | Add `from_dict()` methods for deserialization |
 | Output writers | None | Use as-is |
 | Turn building | None | Use as-is |
+
+---
+
+### Critical: TranscriptFlow Deserialization (Required for Edit → Re-run Workflow)
+
+**Problem Statement:**
+
+The core web interface workflow is: **Edit transcript → Save as checkpoint → Re-run pipeline from checkpoint**
+
+This workflow is currently **blocked** because:
+1. `TranscriptFlow` has `to_dict()` for serialization but NO `from_dict()` for deserialization
+2. `HierarchicalTurn` has `to_dict()` but NO `from_dict()`
+3. `InterjectionSegment` has `to_dict()` but NO `from_dict()`
+4. The existing `load_diarized_checkpoint()` in `checkpoint_loader.py` returns `List[WordSegment]`, NOT `TranscriptFlow`
+5. The checkpoint format documented is designed for word-segment lists, not hierarchical turn structures
+
+**Impact:** Without this, edited transcripts cannot be saved and re-run through the pipeline. The entire edit workflow is non-functional.
+
+**Required Changes:**
+
+1. **Add `from_dict()` class methods** to `turn_building_data_structures.py`:
+
+```python
+# In InterjectionSegment
+@classmethod
+def from_dict(cls, data: Dict[str, Any]) -> "InterjectionSegment":
+    """Create InterjectionSegment from dictionary (JSON deserialization)."""
+    words = [WordSegment(
+        text=w["text"],
+        start=w["start"],
+        end=w["end"],
+        speaker=w.get("speaker")
+    ) for w in data.get("words", [])]
+    
+    return cls(
+        speaker=data["speaker"],
+        start=data["start"],
+        end=data["end"],
+        text=data["text"],
+        words=words,
+        likely_diarization_error=data.get("likely_diarization_error", False)
+    )
+
+# In HierarchicalTurn
+@classmethod
+def from_dict(cls, data: Dict[str, Any]) -> "HierarchicalTurn":
+    """Create HierarchicalTurn from dictionary (JSON deserialization)."""
+    words = [WordSegment(
+        text=w["text"],
+        start=w["start"],
+        end=w["end"],
+        speaker=w.get("speaker")
+    ) for w in data.get("words", [])]
+    
+    interjections = [
+        InterjectionSegment.from_dict(ij) 
+        for ij in data.get("interjections", [])
+    ]
+    
+    turn = cls(
+        turn_id=data["turn_id"],
+        primary_speaker=data["primary_speaker"],
+        start=data["start"],
+        end=data["end"],
+        text=data["text"],
+        words=words,
+        interjections=interjections
+    )
+    # Metrics are recalculated in __post_init__
+    return turn
+
+# In TranscriptFlow
+@classmethod
+def from_dict(cls, data: Dict[str, Any]) -> "TranscriptFlow":
+    """Create TranscriptFlow from dictionary (JSON deserialization)."""
+    turns = [HierarchicalTurn.from_dict(t) for t in data.get("turns", [])]
+    
+    return cls(
+        turns=turns,
+        metadata=data.get("metadata", {}),
+        conversation_metrics=data.get("conversation_metrics", {}),
+        speaker_statistics=data.get("speaker_statistics", {})
+    )
+```
+
+2. **Add new checkpoint loader function** to `checkpoint_loader.py`:
+
+```python
+def load_transcript_flow_checkpoint(json_path: Path) -> TranscriptFlow:
+    """
+    Load a TranscriptFlow checkpoint (output from VAD pipeline or edited transcript).
+    
+    Args:
+        json_path: Path to the JSON file containing TranscriptFlow data
+        
+    Returns:
+        TranscriptFlow object
+        
+    Raises:
+        CheckpointValidationError: If the file cannot be loaded or is invalid
+    """
+    path = Path(json_path)
+    
+    if not path.exists():
+        raise CheckpointValidationError(f"Checkpoint file not found: {path}")
+    
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    # Validate it has the expected structure
+    if "turns" not in data:
+        raise CheckpointValidationError("Missing 'turns' array - not a TranscriptFlow checkpoint")
+    
+    return TranscriptFlow.from_dict(data)
+```
+
+3. **Update `run_pipeline_from_checkpoint()`** in `pipeline_reentry.py`:
+   - Accept `TranscriptFlow` checkpoint type (not just word segments)
+   - When starting from `TranscriptFlow`, begin at `de_identification` stage (or `speaker_naming` if de-ID is disabled)
+   - Pass the loaded `TranscriptFlow` into `PipelineContext.transcript`
+
+4. **Define checkpoint stage mapping**:
+   - `TranscriptFlow` checkpoint → Resume from `DeIdentificationStage`
+   - User can optionally skip to later stages (speaker_naming, output_generation)
+
+**Checkpoint JSON Format for TranscriptFlow:**
+
+The `turns-json` output format IS the TranscriptFlow checkpoint format. No new format needed - just add deserialization support.
+
+```json
+{
+  "metadata": {...},
+  "conversation_metrics": {...},
+  "speaker_statistics": {...},
+  "turns": [
+    {
+      "turn_id": 1,
+      "primary_speaker": "Interviewer",
+      "start": 0.0,
+      "end": 5.2,
+      "text": "Hello, how are you today?",
+      "words": [...],
+      "interjections": [...]
+    },
+    ...
+  ]
+}
+```
+
+- Add `from_dict()` methods
+- Add `load_transcript_flow_checkpoint()`
+- Update `run_pipeline_from_checkpoint()`
+- Testing
 
 ---
 
@@ -1157,7 +1457,7 @@ Synchronizing two audio tracks is non-trivial:
 1. **Session Management:**
    - How long do jobs persist?
    - When are audio files and outputs cleaned up?
-   - **Suggestion:** 7-day retention with user-initiated cleanup option
+   - **Decision:** 7-day retention with user-initiated cleanup option
 
 ### UX Questions
 
@@ -1171,16 +1471,16 @@ Synchronizing two audio tracks is non-trivial:
    - What happens if connection is lost mid-pipeline? The task should continue on the server, and when the user reconnects, the status should update.
 
 4. **Batch vs Interactive:**
-   - Is this primarily for interactive single-job use or batch processing? single-job use.
+   - Is this primarily for interactive single-job use or batch processing? Single-job use.
 
 ### Technical Questions
 
 5. **Audio File Size Limits:**
-   - Maximum file size to accept? 100MB
+   - Maximum file size to accept? 500MB per file
    - Maximum duration to process? No max
 
 6. **Real-time vs Polling:**
-   - SSE for real-time updates is preferred, but fallback to polling? SSE
+   - SSE for real-time updates is preferred, but fallback to polling? SSE only (no fallback needed for single-user)
 
 7. **Error Recovery:**
    - If pipeline fails mid-stage, how to recover? Alert the user, then manual restart
@@ -1189,13 +1489,15 @@ Synchronizing two audio tracks is non-trivial:
 
 ## Next Steps
 
-1. [ ] Create detailed API specification document (FastAPI endpoints)
-2. [ ] Design database schema for jobs and edits (SQLite)
-3. [ ] Set up development environment (FastAPI + React + TypeScript)
-4. [ ] Add progress callback infrastructure to VADASRProcessor
-5. [ ] Begin Phase 1 implementation (VAD mode only)
+**See [web-interface-tasks.md](web-interface-tasks.md) for detailed implementation tasks.**
+
+Summary of immediate priorities:
+
+1. **BLOCKER:** Add `from_dict()` deserialization methods to `TranscriptFlow`, `HierarchicalTurn`, `InterjectionSegment`
+2. **BLOCKER:** Add `load_transcript_flow_checkpoint()` function to checkpoint_loader.py
+3. **BLOCKER:** Update `run_pipeline_from_checkpoint()` to accept TranscriptFlow checkpoints
+4. Begin Phase 1: Backend foundation (FastAPI setup, database schema, file upload)
 
 ---
 
-*Document maintained by: [Team]*  
-*Last updated: January 27, 2026*
+*Document maintained by: Developer*  

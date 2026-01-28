@@ -1,0 +1,600 @@
+# Web Interface Implementation Tasks
+
+**Document Version:** 1.0  
+**Created:** January 27, 2026  
+**Related Document:** [web-interface.plan](web-interface.plan)
+
+---
+
+## Overview
+
+This document contains the detailed implementation tasks for the local-transcribe web interface. Tasks are organized by phase and include effort estimates, dependencies, and acceptance criteria.
+
+**Deployment Scope:** Single user (developer) with personal laptop and server. No multi-user authentication required.
+
+---
+
+## Pre-Implementation Tasks (Blockers)
+
+These tasks MUST be completed before web interface development can begin.
+
+### P0-1: Add TranscriptFlow Deserialization Methods
+**Priority:** BLOCKER  
+**File:** `local_transcribe/processing/turn_building/turn_building_data_structures.py`
+
+**Description:**  
+Add `from_dict()` class methods to enable loading edited transcripts from JSON checkpoints.
+
+**Tasks:**
+- [ ] Add `InterjectionSegment.from_dict(data: Dict) -> InterjectionSegment`
+- [ ] Add `HierarchicalTurn.from_dict(data: Dict) -> HierarchicalTurn`
+- [ ] Add `TranscriptFlow.from_dict(data: Dict) -> TranscriptFlow`
+- [ ] Write unit tests for round-trip serialization (to_dict → from_dict)
+- [ ] Test with real pipeline output JSON files
+
+**Acceptance Criteria:**
+```python
+# This must work:
+original = TranscriptFlow(...)
+json_data = original.to_dict()
+restored = TranscriptFlow.from_dict(json_data)
+assert restored.turns == original.turns
+```
+
+---
+
+### P0-2: Add TranscriptFlow Checkpoint Loader
+**Priority:** BLOCKER   
+**File:** `local_transcribe/framework/checkpoint_loader.py`
+
+**Description:**  
+Create a new function to load TranscriptFlow checkpoints (distinct from the existing word-segment loader).
+
+**Tasks:**
+- [ ] Add `load_transcript_flow_checkpoint(json_path: Path) -> TranscriptFlow`
+- [ ] Add validation for TranscriptFlow structure (must have "turns" array)
+- [ ] Return meaningful error messages on validation failure
+- [ ] Write unit tests
+
+**Acceptance Criteria:**
+- Can load a `turns-json` output file and get a valid TranscriptFlow object
+- Graceful error handling for malformed JSON
+
+---
+
+### P0-3: Update Pipeline Re-entry for TranscriptFlow
+**Priority:** BLOCKER  
+**File:** `local_transcribe/framework/pipeline_reentry.py`
+
+**Description:**  
+Extend `run_pipeline_from_checkpoint()` to accept TranscriptFlow checkpoints.
+
+**Tasks:**
+- [ ] Add detection for TranscriptFlow vs WordSegment checkpoint format
+- [ ] When TranscriptFlow detected, set `context.transcript` directly
+- [ ] Start from `de_identification` stage (or `speaker_naming` if de-ID disabled)
+- [ ] Update `get_stages_for_reentry()` to support TranscriptFlow entry points
+- [ ] Write integration test: load TranscriptFlow checkpoint → run de-ID → verify output
+
+**Acceptance Criteria:**
+```bash
+# This workflow must work:
+uv run python -m local_transcribe.main --checkpoint output/job123/turns.json --start-stage de_identification
+```
+
+---
+
+## Phase 1: Foundation (VAD Mode Focus)
+
+**Goal:** Basic web server with job submission and monitoring for VAD-split-audio mode
+
+### 1.1 Backend Setup
+
+#### 1.1.1: Create FastAPI Project Structure
+
+**Tasks:**
+- [ ] Create `web_api/` directory structure:
+  ```
+  web_api/
+  ├── __init__.py
+  ├── main.py           # FastAPI app entry point
+  ├── config.py         # Configuration (env vars, settings)
+  ├── database.py       # SQLite connection and models
+  ├── routers/
+  │   ├── __init__.py
+  │   ├── jobs.py       # Job submission and status
+  │   ├── files.py      # File upload/download
+  │   └── transcripts.py # Transcript retrieval
+  ├── services/
+  │   ├── __init__.py
+  │   ├── job_service.py
+  │   └── pipeline_service.py
+  └── models/
+      ├── __init__.py
+      └── schemas.py    # Pydantic models
+  ```
+- [ ] Set up FastAPI app with CORS middleware
+- [ ] Add basic health check endpoint: `GET /api/health`
+- [ ] Add configuration for server URL, upload directory, output directory
+
+---
+
+#### 1.1.2: Create SQLite Database Schema
+
+**Tasks:**
+- [ ] Create `jobs` table:
+  ```sql
+  CREATE TABLE jobs (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,  -- pending, running, completed, failed
+      mode TEXT NOT NULL DEFAULT 'vad_split_audio',
+      config_json TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      started_at TIMESTAMP,
+      completed_at TIMESTAMP,
+      error_message TEXT,
+      output_dir TEXT,
+      interviewer_file_id TEXT,
+      participant_file_id TEXT
+  );
+  ```
+- [ ] Create `uploaded_files` table:
+  ```sql
+  CREATE TABLE uploaded_files (
+      id TEXT PRIMARY KEY,
+      original_filename TEXT NOT NULL,
+      stored_path TEXT NOT NULL,
+      size_bytes INTEGER,
+      content_type TEXT,
+      upload_status TEXT,  -- pending, uploading, complete, failed
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+  ```
+- [ ] Create `edits` table:
+  ```sql
+  CREATE TABLE edits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id TEXT NOT NULL,
+      stage_name TEXT NOT NULL,
+      edit_type TEXT NOT NULL,
+      turn_id INTEGER,
+      target_index INTEGER,
+      original_value TEXT,
+      new_value TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (job_id) REFERENCES jobs(id)
+  );
+  ```
+- [ ] Add database initialization on startup
+- [ ] Write migration script for schema changes
+
+---
+
+#### 1.1.3: Implement Chunked File Upload
+
+**Tasks:**
+- [ ] `POST /api/files/upload/init` - Initialize upload, return upload_id and chunk_size
+- [ ] `POST /api/files/upload/{upload_id}/chunk/{chunk_num}` - Upload a chunk
+- [ ] `POST /api/files/upload/{upload_id}/complete` - Finalize upload, verify integrity
+- [ ] `GET /api/files/upload/{upload_id}/status` - Check upload progress
+- [ ] Store chunks in temp directory, assemble on complete
+- [ ] Validate audio file format after assembly (check magic bytes)
+- [ ] Clean up incomplete uploads after 24 hours (background task)
+
+**Acceptance Criteria:**
+- Can upload 200MB file in 5MB chunks
+- Upload resumes correctly if interrupted
+- Invalid audio files rejected with clear error
+
+---
+
+#### 1.1.4: Implement Job Submission Endpoint
+
+**Tasks:**
+- [ ] `POST /api/jobs` - Create new job
+  ```json
+  Request:
+  {
+    "interviewer_file_id": "file_abc",
+    "participant_file_id": "file_xyz",
+    "mode": "vad_split_audio",
+    "options": {
+      "enable_de_identification": true,
+      "enable_cleanup": false,
+      "output_formats": ["turns-json", "timestamped-txt"]
+    }
+  }
+  Response:
+  {
+    "job_id": "job_123",
+    "status": "pending"
+  }
+  ```
+- [ ] Validate file_ids exist and are complete uploads
+- [ ] Create job record in database
+- [ ] Queue job for execution (initially: immediate execution in background)
+
+---
+
+#### 1.1.5: Add Progress Callbacks to VADASRProcessor
+**File:** `local_transcribe/processing/vad/vad_asr_processor.py`
+
+**Tasks:**
+- [ ] Add `progress_callback: Optional[Callable[[int, int, str], None]]` parameter to `process_blocks()`
+- [ ] Call `progress_callback(current_block, total_blocks, speaker_id)` after each block
+- [ ] Ensure callback is optional (default None) for backward compatibility
+- [ ] Update `VADTranscriptionStage` to pass callback through
+- [ ] Test with a simple callback that prints progress
+
+---
+
+#### 1.1.6: Implement SSE Progress Endpoint
+
+**Tasks:**
+- [ ] `GET /api/jobs/{job_id}/progress` - SSE endpoint
+- [ ] Create `PipelineProgressEmitter` class that:
+  - Wraps `PipelineExecutor`
+  - Captures progress callbacks
+  - Converts to SSE events
+- [ ] Emit events: `stage_start`, `block_progress`, `stage_complete`, `job_complete`, `job_error`
+- [ ] Support `Last-Event-Id` header for reconnection
+- [ ] Store events in memory for replay on reconnect (last 100 events per job)
+
+---
+
+#### 1.1.7: Implement Pipeline Execution Service
+
+**Tasks:**
+- [ ] Create `PipelineService` class that:
+  - Loads files from upload directory
+  - Creates `PipelineContext` with correct configuration
+  - Calls `PipelineExecutor.execute()` with progress callbacks
+  - Updates job status in database
+  - Stores output path in database
+- [ ] Run pipeline in background task (asyncio or thread pool)
+- [ ] Handle pipeline errors gracefully (update job status, store error message)
+- [ ] Log all pipeline output for debugging
+
+---
+
+### 1.2 Frontend Setup
+
+#### 1.2.1: Create React Project
+
+**Tasks:**
+- [ ] Initialize Vite + React + TypeScript project in `web_ui/` directory
+- [ ] Install dependencies:
+  - `@tanstack/react-query` (server state)
+  - `zustand` (client state)
+  - `tailwindcss` (styling)
+  - shadcn/ui components
+- [ ] Set up proxy to backend API (development)
+- [ ] Configure build output to be served by FastAPI (production)
+
+---
+
+#### 1.2.2: Build Job Configuration Form
+
+**Tasks:**
+- [ ] Create `JobConfigForm` component
+- [ ] Two file upload inputs (Interviewer audio, Participant audio)
+- [ ] Chunked upload with progress bars
+- [ ] Mode selector (default: VAD Split Audio, others disabled for now)
+- [ ] Options toggles:
+  - Enable de-identification (checkbox)
+  - Enable cleanup (checkbox)
+  - Output formats (multi-select)
+- [ ] Submit button with validation
+- [ ] Error display for upload/submission failures
+
+---
+
+#### 1.2.3: Build Job Monitoring View
+
+**Tasks:**
+- [ ] Create `JobProgress` component
+- [ ] Connect to SSE endpoint on mount
+- [ ] Display:
+  - Overall job status (pending/running/completed/failed)
+  - Current stage name and status
+  - Per-block progress bar (for VAD transcription)
+  - Stage completion checkmarks
+  - Error messages if failed
+- [ ] Handle SSE reconnection on disconnect
+- [ ] Show "Reconnecting..." indicator during reconnect
+
+---
+
+#### 1.2.4: Build Job List View
+
+**Tasks:**
+- [ ] Create `JobList` component
+- [ ] `GET /api/jobs` endpoint to list all jobs
+- [ ] Display job cards with:
+  - Job ID
+  - Status badge
+  - Creation time
+  - Duration (if completed)
+  - Link to view transcript (if completed)
+- [ ] Pagination or infinite scroll for many jobs
+
+---
+
+## Phase 2: Transcript Viewing
+
+**Goal:** View and navigate VAD transcripts with audio sync
+
+### 2.1 Backend
+
+#### 2.1.1: Transcript Retrieval Endpoint
+
+**Tasks:**
+- [ ] `GET /api/jobs/{job_id}/transcript` - Return TranscriptFlow JSON
+- [ ] `GET /api/jobs/{job_id}/transcript/stage/{stage_name}` - Return stage-specific output
+- [ ] Support for multiple output stages (raw, de-identified, cleaned)
+- [ ] Return 404 if job not complete or stage not available
+
+---
+
+#### 2.1.2: Audio Serving with Range Requests
+
+**Tasks:**
+- [ ] `GET /api/files/{file_id}/audio` - Serve audio file
+- [ ] Implement HTTP Range request support (RFC 7233)
+- [ ] Set appropriate headers:
+  - `Accept-Ranges: bytes`
+  - `Content-Range` for partial requests
+  - `Cache-Control: max-age=86400`
+- [ ] Return 206 Partial Content for range requests
+- [ ] Support HEAD requests for file size
+
+---
+
+### 2.2 Frontend
+
+#### 2.2.1: Integrate wavesurfer.js
+
+**Tasks:**
+- [ ] Install `wavesurfer.js`
+- [ ] Create `AudioPlayer` component
+- [ ] Basic controls: play/pause, seek, speed adjustment
+- [ ] Waveform visualization
+- [ ] Time display (current / total)
+- [ ] Loop selection for difficult sections
+
+---
+
+#### 2.2.2: Build Dual-Track Audio Player
+
+**Tasks:**
+- [ ] Create two wavesurfer instances (interviewer, participant)
+- [ ] Synchronize playback position between tracks
+- [ ] Shared transport controls
+- [ ] Individual mute/solo per track
+- [ ] Stacked waveform display (interviewer above, participant below)
+- [ ] Unified seek bar
+
+---
+
+#### 2.2.3: Build Transcript Display Component
+
+**Tasks:**
+- [ ] Create `TranscriptView` component
+- [ ] Render `HierarchicalTurn` list with:
+  - Speaker labels (color-coded)
+  - Turn text
+  - Timestamp at turn start
+  - Interjections visually embedded
+- [ ] Auto-scroll to follow playback
+- [ ] Click turn to seek audio to that position
+
+---
+
+#### 2.2.4: Implement Block-Level Highlighting
+
+**Tasks:**
+- [ ] Track current playback time
+- [ ] Highlight the current VAD block based on time
+- [ ] Smooth highlighting transitions
+- [ ] Handle interjection highlighting during primary turn
+
+---
+
+#### 2.2.5: Build Stage Selector
+
+**Tasks:**
+- [ ] Dropdown to switch between available stages
+- [ ] Show which stages are complete (checkmark)
+- [ ] Show which stages have edits (indicator)
+- [ ] Fetch and display selected stage output
+- [ ] Grey out incomplete stages
+
+---
+
+## Phase 3: Basic Editing
+
+**Goal:** Core transcript editing functionality
+
+### 3.1 Backend
+
+#### 3.1.1: Edit Save Endpoint
+
+**Tasks:**
+- [ ] `POST /api/jobs/{job_id}/edits` - Save an edit
+  ```json
+  {
+    "stage_name": "vad_transcription",
+    "edit_type": "word_change",
+    "turn_id": 5,
+    "target_index": 12,
+    "original_value": "teh",
+    "new_value": "the"
+  }
+  ```
+- [ ] Store edit in SQLite
+- [ ] Mark downstream stages as stale
+- [ ] Return updated transcript with edits applied
+
+---
+
+#### 3.1.2: Apply Edits to TranscriptFlow
+
+**Tasks:**
+- [ ] Create `EditApplicator` class
+- [ ] Load edits from database for a job/stage
+- [ ] Apply edits to TranscriptFlow in order
+- [ ] Support edit types:
+  - `word_change` - Change word text
+  - `word_insert` - Insert word at index
+  - `word_delete` - Remove word at index
+  - `speaker_change` - Change turn speaker
+- [ ] Return modified TranscriptFlow (original unchanged)
+
+---
+
+#### 3.1.3: Pipeline Re-run Endpoint
+
+**Tasks:**
+- [ ] `POST /api/jobs/{job_id}/rerun` - Re-run from checkpoint
+  ```json
+  {
+    "start_stage": "de_identification"
+  }
+  ```
+- [ ] Apply edits to create checkpoint TranscriptFlow
+- [ ] Call `run_pipeline_from_checkpoint()` with checkpoint
+- [ ] Return new job_id for re-run
+- [ ] Link re-run job to original job in database
+
+---
+
+### 3.2 Frontend
+
+#### 3.2.1: Block Selection UI
+
+**Tasks:**
+- [ ] Click on turn to select it
+- [ ] Visual selection indicator (border, background)
+- [ ] Keyboard navigation between turns (arrow keys)
+- [ ] Selection state in Zustand store
+
+---
+
+#### 3.2.2: Word-Level Editing
+
+**Tasks:**
+- [ ] Click word to select it
+- [ ] Double-click to edit inline
+- [ ] Edit modal with audio loop for selected region
+- [ ] Save edit on blur or Enter
+- [ ] Cancel edit on Escape
+- [ ] Visual indicator for edited words
+
+---
+
+#### 3.2.3: Insert/Delete Words
+
+**Tasks:**
+- [ ] Click between words shows insert point
+- [ ] Insert word modal with text input
+- [ ] Delete word button (or Delete key)
+- [ ] Confirmation for delete
+
+---
+
+#### 3.2.4: Undo/Redo System
+
+**Tasks:**
+- [ ] Edit history stack in Zustand
+- [ ] Undo last edit (Ctrl+Z)
+- [ ] Redo undone edit (Ctrl+Shift+Z)
+- [ ] Sync undo/redo with server (delete edit records)
+- [ ] Show undo available indicator
+
+---
+
+#### 3.2.5: Auto-Save Implementation
+
+**Tasks:**
+- [ ] Debounced save (2 second delay after edit)
+- [ ] Save indicator ("Saving...", "Saved", "Unsaved changes")
+- [ ] Queue edits during save, batch save on completion
+- [ ] Handle save failure gracefully
+
+---
+
+#### 3.2.6: Stale Stage Warning UI
+
+**Tasks:**
+- [ ] Visual indicator on stages that are stale
+- [ ] Warning banner: "Edits made - downstream stages need re-run"
+- [ ] "Re-run Pipeline" button
+- [ ] Confirmation dialog showing affected stages
+- [ ] Disable export from stale stages
+
+---
+
+## Phase 4: Advanced Editing (Deferred)
+
+Tasks for Phase 4 will be detailed after Phase 3 is complete. High-level items:
+
+- [ ] Speaker reassignment
+- [ ] Turn boundary adjustment
+- [ ] Interjection toggle
+- [ ] Annotation insertion
+- [ ] Merge/split words
+- [ ] Bulk find & replace
+- [ ] Edit history viewer
+- [ ] Keyboard shortcut system
+
+---
+
+## Phase 5: De-identification Tools (Deferred)
+
+Tasks for Phase 5 will be detailed after Phase 4 is complete. High-level items:
+
+- [ ] Split de_identify_multi_speaker() into first/second pass
+- [ ] Name list review UI between passes
+- [ ] PII highlight overlay mode
+- [ ] Manual redaction tool
+- [ ] Redaction override
+- [ ] De-identification audit trail view
+
+---
+
+## Phase 6: Polish & Export (Deferred)
+
+Tasks for Phase 6 will be detailed after Phase 5 is complete. High-level items:
+
+- [ ] Export format selector
+- [ ] Version comparison view
+- [ ] Print-friendly view
+- [ ] Performance optimization
+- [ ] Error handling improvements
+- [ ] Documentation
+
+---
+
+## Testing Requirements
+
+### Unit Tests
+- [ ] TranscriptFlow serialization round-trip
+- [ ] Checkpoint loading (word-segment and TranscriptFlow)
+- [ ] Edit application logic
+- [ ] Database CRUD operations
+
+### Integration Tests
+- [ ] Full job submission → pipeline execution → transcript retrieval
+- [ ] Edit → save → re-run → verify changes persisted
+- [ ] Chunked file upload
+- [ ] SSE connection and reconnection
+
+### E2E Tests
+- [ ] Complete workflow: upload → transcribe → edit → export
+- [ ] Browser compatibility (Chrome, Firefox, Safari)
+
+---
+
+
+*Document maintained by: [Developer]*  
+*Last updated: January 27, 2026*

@@ -1,0 +1,256 @@
+# Web Interface Code Review Log
+
+**Document Created:** January 28, 2026  
+**Reviewer:** AI Code Review Assistant  
+**Scope:** Phase 1-4 Web Interface Implementation
+
+---
+
+## Review Summary
+
+| Category | Status |
+|----------|--------|
+| Backend API Structure | ✅ Solid |
+| Database Schema | ✅ Well-designed |
+| File Upload Implementation | ✅ Robust |
+| Job/Pipeline Services | ✅ Functional (1 fix applied) |
+| Transcript/Edit Endpoints | ⚠️ Bug Fixed |
+| Frontend Components | ✅ Well-structured (1 fix applied) |
+| Edit Applicator Logic | ✅ Comprehensive tests pass |
+
+---
+
+## Bugs Found and Fixed
+
+### Bug #1: Missing `target_turn_id` and `annotation_type` in Edit Endpoint
+
+**Location:** [web_api/routers/transcripts.py](../../web_api/routers/transcripts.py#L262-L293)
+
+**Severity:** Medium
+
+**Description:**  
+The `create_edit` endpoint was not saving the `target_turn_id` and `annotation_type` fields from the request to the database. These fields are required for advanced edit types like `turn_merge`, `turn_split`, `toggle_interjection`, and `insert_annotation`.
+
+**Impact:**  
+- `insert_annotation` edits would fail silently (no annotation type saved)
+- `turn_merge` and `toggle_interjection` edits would not have proper target references
+- Edits would appear to work but produce incorrect results on re-application
+
+**Fix Applied:**
+```python
+# Before:
+edit = Edit(
+    id=None,
+    job_id=job_id,
+    stage_name=request.stage_name,
+    edit_type=request.edit_type,
+    turn_id=request.turn_id,
+    start_index=request.start_index,
+    end_index=request.end_index,
+    original_value=request.original_value,
+    new_value=request.new_value,
+    # MISSING: target_turn_id, annotation_type
+)
+
+# After:
+edit = Edit(
+    id=None,
+    job_id=job_id,
+    stage_name=request.stage_name,
+    edit_type=request.edit_type,
+    turn_id=request.turn_id,
+    start_index=request.start_index,
+    end_index=request.end_index,
+    original_value=request.original_value,
+    new_value=request.new_value,
+    target_turn_id=request.target_turn_id,
+    annotation_type=request.annotation_type,
+)
+```
+
+Same fix applied to:
+- `list_edits` response (was not returning these fields)
+
+---
+
+### Bug #2: Undo/Redo Not Preserving Advanced Edit Fields
+
+**Location:** [web_ui/src/store/index.ts](../../web_ui/src/store/index.ts#L193-L213)
+
+**Severity:** Medium
+
+**Description:**  
+When an edit was undone and placed on the redo stack, the `target_turn_id` and `annotation_type` fields were not being preserved. This meant that redoing an annotation or turn merge/split would lose the necessary context.
+
+**Impact:**  
+- Redo of `insert_annotation` edits would fail (annotation type lost)
+- Redo of `turn_merge` and `toggle_interjection` would fail (target turn lost)
+- Users would lose edit history integrity for advanced operations
+
+**Fix Applied:**
+```typescript
+// Before:
+redoStack: [...state.redoStack, {
+  id: `redo-${lastEdit.id}`,
+  edit_type: lastEdit.edit_type,
+  turn_id: lastEdit.turn_id || 0,
+  start_index: lastEdit.start_index,
+  end_index: lastEdit.end_index,
+  original_value: lastEdit.original_value,
+  new_value: lastEdit.new_value,
+  // MISSING: target_turn_id, annotation_type
+}],
+
+// After:
+redoStack: [...state.redoStack, {
+  id: `redo-${lastEdit.id}`,
+  edit_type: lastEdit.edit_type,
+  turn_id: lastEdit.turn_id || 0,
+  start_index: lastEdit.start_index,
+  end_index: lastEdit.end_index,
+  original_value: lastEdit.original_value,
+  new_value: lastEdit.new_value,
+  target_turn_id: lastEdit.target_turn_id,
+  annotation_type: lastEdit.annotation_type,
+}],
+```
+
+---
+
+### Bug #3: Deprecated `asyncio.get_event_loop()` Usage
+
+**Location:** [web_api/services/pipeline_service.py](../../web_api/services/pipeline_service.py#L175)
+
+**Severity:** Low (deprecation warning)
+
+**Description:**  
+The code was using `asyncio.get_event_loop()` which is deprecated in Python 3.10+ and can cause issues in certain contexts. The correct method is `asyncio.get_running_loop()` when called from within an async function.
+
+**Impact:**  
+- Deprecation warnings in Python 3.10+
+- Potential issues in environments where the event loop isn't set by default
+
+**Fix Applied:**
+```python
+# Before:
+loop = asyncio.get_event_loop()
+
+# After:
+loop = asyncio.get_running_loop()
+```
+
+---
+
+## Code Quality Observations
+
+### Strengths
+
+1. **Well-structured API design**
+   - RESTful endpoints with clear naming
+   - Consistent response schemas using Pydantic
+   - Proper error handling with HTTP status codes
+
+2. **Robust file upload implementation**
+   - Chunked uploads with resume capability
+   - Audio format validation via magic bytes
+   - Automatic cleanup of stale uploads
+
+3. **Comprehensive edit applicator**
+   - Handles all required edit types
+   - Graceful handling of invalid edits
+   - Deep copy to prevent mutation of original data
+
+4. **Good SSE implementation**
+   - Event ID tracking for reconnection
+   - Memory-efficient event retention (last 1000 events)
+   - Proper keepalive handling
+
+5. **Clean frontend architecture**
+   - Proper separation of concerns
+   - Zustand stores for state management
+   - TypeScript types matching backend schemas
+
+### Areas for Future Improvement
+
+1. **Error handling in frontend**
+   - Consider adding global error boundary
+   - Add toast notifications for async operation failures
+
+2. **Database migrations**
+   - Current schema uses `IF NOT EXISTS` but no version tracking
+   - Consider adding a migrations table for schema versioning
+
+3. **Job cancellation**
+   - The cancel endpoint updates status but doesn't actually stop the running pipeline
+   - Would need to add cooperative cancellation to pipeline runner
+
+4. **Test coverage**
+   - Add integration tests for API endpoints
+   - Add E2E tests for frontend flows
+
+---
+
+## Test Results
+
+### Pre-Implementation Tests
+```
+Web Interface Pre-Implementation Tests
+============================================================
+✓ InterjectionSegment round-trip passed
+✓ HierarchicalTurn round-trip passed
+✓ TranscriptFlow round-trip passed
+✓ Detected transcript_flow format
+✓ Detected word_segments format
+✓ Loaded checkpoint with 1 turns
+✓ Source block IDs preserved: [1, 2]
+============================================================
+All tests passed! ✓
+```
+
+### Edit Applicator Tests
+```
+Edit Applicator Tests
+============================================================
+✓ word_change passed
+✓ word_insert passed
+✓ word_delete passed
+✓ speaker_change passed
+✓ merge_words passed
+✓ split_word passed
+✓ turn_merge passed
+✓ turn_split passed
+✓ insert_annotation passed
+✓ multiple edits passed
+✓ convenience function passed
+✓ nonexistent turn handled gracefully
+✓ unknown edit type handled gracefully
+============================================================
+All edit applicator tests passed! ✓
+```
+
+### TypeScript Check
+- No TypeScript errors in frontend code
+
+---
+
+## Files Modified During Review
+
+1. [web_api/routers/transcripts.py](../../web_api/routers/transcripts.py) - Added missing fields
+2. [web_ui/src/store/index.ts](../../web_ui/src/store/index.ts) - Fixed undo/redo
+3. [web_api/services/pipeline_service.py](../../web_api/services/pipeline_service.py) - Fixed async deprecation
+
+## Files Created During Review
+
+1. [tests/test_edit_applicator.py](../../tests/test_edit_applicator.py) - Comprehensive edit applicator tests
+
+---
+
+## Conclusion
+
+The Phase 1-4 implementation is well-designed and functional. Three bugs were found and fixed:
+1. Missing fields in edit save/list endpoints (Medium severity)
+2. Missing fields in undo/redo store (Medium severity)  
+3. Deprecated asyncio usage (Low severity)
+
+All tests pass after fixes. The implementation is ready for use.
+

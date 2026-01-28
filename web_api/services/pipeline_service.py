@@ -167,13 +167,13 @@ class PipelineService:
         """
         Run the pipeline (wrapper for async execution).
         
-        The actual pipeline is synchronous, so we run it directly.
-        In the future, this could use asyncio.to_thread for true async.
+        The actual pipeline is synchronous, so we run it in a thread pool
+        to avoid blocking the event loop.
         """
         import asyncio
         
         # Run synchronous pipeline in thread pool
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None,
             lambda: runner.run(context),

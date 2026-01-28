@@ -269,6 +269,8 @@ async def create_edit(job_id: str, request: EditCreateRequest):
         end_index=request.end_index,
         original_value=request.original_value,
         new_value=request.new_value,
+        target_turn_id=request.target_turn_id,
+        annotation_type=request.annotation_type,
     )
     
     saved_edit = db.create_edit(edit)
@@ -283,6 +285,8 @@ async def create_edit(job_id: str, request: EditCreateRequest):
         end_index=saved_edit.end_index,
         original_value=saved_edit.original_value,
         new_value=saved_edit.new_value,
+        target_turn_id=saved_edit.target_turn_id,
+        annotation_type=saved_edit.annotation_type,
         created_at=saved_edit.created_at or "",
     )
 
@@ -313,6 +317,8 @@ async def list_edits(
                 end_index=edit.end_index,
                 original_value=edit.original_value,
                 new_value=edit.new_value,
+                target_turn_id=edit.target_turn_id,
+                annotation_type=edit.annotation_type,
                 created_at=edit.created_at or "",
             )
             for edit in edits

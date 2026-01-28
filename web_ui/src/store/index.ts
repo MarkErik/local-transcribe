@@ -206,6 +206,8 @@ export const useEditStore = create<EditState>((set, get) => ({
             end_index: lastEdit.end_index,
             original_value: lastEdit.original_value,
             new_value: lastEdit.new_value,
+            target_turn_id: lastEdit.target_turn_id,
+            annotation_type: lastEdit.annotation_type,
           }],
         });
         return lastEdit;

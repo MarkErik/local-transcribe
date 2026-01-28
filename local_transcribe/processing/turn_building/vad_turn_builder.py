@@ -113,7 +113,7 @@ def _merge_consecutive_same_speaker_blocks(
     primary_blocks: List[VADBlock],
     interjection_blocks: List[VADBlock],
     max_gap_s: float = 2.0,
-) -> List[VADBlock]:
+) -> List[tuple[VADBlock, List[int]]]:
     """
     Merge consecutive primary blocks from the same speaker when gap is small.
     
@@ -127,7 +127,7 @@ def _merge_consecutive_same_speaker_blocks(
         max_gap_s: Maximum gap between blocks to allow merging (seconds)
         
     Returns:
-        List of merged VADBlock objects
+        List of tuples: (merged VADBlock, list of source block IDs)
     """
     if not primary_blocks:
         return []
@@ -135,8 +135,9 @@ def _merge_consecutive_same_speaker_blocks(
     # Sort by start time to ensure correct order
     sorted_blocks = sorted(primary_blocks, key=lambda b: b.start_s)
     
-    merged: List[VADBlock] = []
+    merged: List[tuple[VADBlock, List[int]]] = []
     current = sorted_blocks[0]
+    current_source_ids = [current.block_id]
     
     for i in range(1, len(sorted_blocks)):
         next_block = sorted_blocks[i]
@@ -147,7 +148,7 @@ def _merge_consecutive_same_speaker_blocks(
             # Check if only interjections fill the gap (not primary speech from other speaker)
             # Look for any primary blocks from OTHER speakers in the gap
             gap_has_other_primary = False
-            for b in sorted_blocks[merged.__len__():i]:
+            for b in sorted_blocks[len(merged):i]:
                 if (b.speaker_id != current.speaker_id and 
                     b.start_s >= current.end_s and 
                     b.end_s <= next_block.start_s):
@@ -166,14 +167,17 @@ def _merge_consecutive_same_speaker_blocks(
                     overlap_with=_merge_overlap_lists(current.overlap_with, next_block.overlap_with),
                     text=_merge_text(current.text, next_block.text),
                 )
+                # Track all source block IDs
+                current_source_ids.append(next_block.block_id)
                 continue
         
         # Can't merge - save current and start new
-        merged.append(current)
+        merged.append((current, current_source_ids))
         current = next_block
+        current_source_ids = [current.block_id]
     
     # Don't forget the last block
-    merged.append(current)
+    merged.append((current, current_source_ids))
     
     return merged
 
@@ -212,6 +216,10 @@ def _convert_blocks_to_transcript_flow(
     Consecutive same-speaker primary blocks with small gaps are merged
     to avoid fragmenting continuous thoughts.
     
+    The source_block_ids field on each HierarchicalTurn tracks which VAD
+    blocks contributed to that turn, enabling UI highlighting and edit
+    resolution back to the original blocks.
+    
     Args:
         blocks: List of VADBlock with text populated
         run_id: Unique run identifier
@@ -228,6 +236,7 @@ def _convert_blocks_to_transcript_flow(
     interjection_blocks = [b for b in blocks if b.is_interjection]
     
     # Merge consecutive same-speaker primary blocks
+    # Returns list of (merged_block, source_block_ids) tuples
     merged_primary_blocks = _merge_consecutive_same_speaker_blocks(
         primary_blocks, 
         interjection_blocks,
@@ -235,7 +244,7 @@ def _convert_blocks_to_transcript_flow(
     )
     
     # Convert merged primary blocks to turns
-    for block in merged_primary_blocks:
+    for block, source_block_ids in merged_primary_blocks:
         words = _create_word_segments_from_block(block)
         
         turn = HierarchicalTurn(
@@ -246,6 +255,7 @@ def _convert_blocks_to_transcript_flow(
             text=block.text,
             words=words,
             interjections=[],
+            source_block_ids=source_block_ids,  # Capture which VAD blocks contributed
         )
         turns.append(turn)
         turn_id += 1

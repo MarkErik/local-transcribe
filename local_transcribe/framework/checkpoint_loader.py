@@ -302,3 +302,205 @@ def get_mode_from_checkpoint(result: CheckpointLoadResult) -> Optional[str]:
         return "split_audio"
     
     return None
+
+
+# ============================================================================
+# TranscriptFlow Checkpoint Loading (for VAD mode / edited transcripts)
+# ============================================================================
+
+@dataclass
+class TranscriptFlowLoadResult:
+    """Result of loading a TranscriptFlow checkpoint file."""
+    transcript: "TranscriptFlow"  # Forward reference, imported at runtime
+    metadata: Dict[str, Any]
+    warnings: List[CheckpointWarning]
+    speakers_found: List[str]
+    total_turns: int
+    total_interjections: int
+    duration_seconds: float
+
+
+def detect_checkpoint_type(json_path: Path) -> str:
+    """
+    Detect the type of checkpoint file based on its JSON structure.
+    
+    Args:
+        json_path: Path to the JSON checkpoint file
+        
+    Returns:
+        "transcript_flow" if JSON has 'turns' key (TranscriptFlow format)
+        "word_segments" if JSON has 'words' key (diarized word segments format)
+        "unknown" if format cannot be determined
+        
+    Raises:
+        CheckpointValidationError: If the file cannot be read or parsed
+    """
+    path = Path(json_path)
+    
+    if not path.exists():
+        raise CheckpointValidationError(f"Checkpoint file not found: {path}")
+    
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        raise CheckpointValidationError(f"Invalid JSON format: {e}")
+    except Exception as e:
+        raise CheckpointValidationError(f"Failed to read file: {e}")
+    
+    # Check for TranscriptFlow format (has 'turns' array)
+    if isinstance(data, dict) and "turns" in data:
+        return "transcript_flow"
+    
+    # Check for word segments format (has 'words' array)
+    if isinstance(data, dict) and "words" in data:
+        return "word_segments"
+    
+    # Legacy format: array of segments at root
+    if isinstance(data, list):
+        return "word_segments"
+    
+    return "unknown"
+
+
+def load_transcript_flow_checkpoint(json_path: Path) -> TranscriptFlowLoadResult:
+    """
+    Load and validate a TranscriptFlow JSON checkpoint file.
+    
+    This is used to load edited transcripts for pipeline re-entry.
+    The input format is the same as the 'turns-json' output format.
+    
+    Args:
+        json_path: Path to the JSON checkpoint file (turns-json format)
+        
+    Returns:
+        TranscriptFlowLoadResult with the loaded TranscriptFlow and metadata
+        
+    Raises:
+        CheckpointValidationError: If the file cannot be loaded or has fatal issues
+    """
+    # Import here to avoid circular dependency
+    from local_transcribe.processing.turn_building.turn_building_data_structures import (
+        TranscriptFlow
+    )
+    
+    path = Path(json_path)
+    
+    if not path.exists():
+        raise CheckpointValidationError(f"Checkpoint file not found: {path}")
+    
+    if not path.suffix.lower() == '.json':
+        raise CheckpointValidationError(f"Expected JSON file, got: {path.suffix}")
+    
+    # Load JSON
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        raise CheckpointValidationError(f"Invalid JSON format: {e}")
+    except Exception as e:
+        raise CheckpointValidationError(f"Failed to read file: {e}")
+    
+    warnings = []
+    
+    # Validate structure
+    if not isinstance(data, dict):
+        raise CheckpointValidationError(
+            "TranscriptFlow checkpoint must be a JSON object, not an array"
+        )
+    
+    if "turns" not in data:
+        raise CheckpointValidationError(
+            "TranscriptFlow checkpoint must contain 'turns' array"
+        )
+    
+    turns_data = data["turns"]
+    if not isinstance(turns_data, list):
+        raise CheckpointValidationError("'turns' must be an array")
+    
+    if len(turns_data) == 0:
+        warnings.append(CheckpointWarning("'turns' array is empty", "warning"))
+    
+    # Deserialize to TranscriptFlow
+    try:
+        transcript = TranscriptFlow.from_dict(data)
+    except KeyError as e:
+        raise CheckpointValidationError(f"Missing required field in checkpoint: {e}")
+    except (ValueError, TypeError) as e:
+        raise CheckpointValidationError(f"Invalid data format in checkpoint: {e}")
+    
+    # Gather metadata
+    metadata = data.get("metadata", {})
+    metadata['loaded_at'] = datetime.now().isoformat()
+    metadata['source_file'] = str(path.absolute())
+    
+    # Collect speaker information
+    speakers_found = transcript.speakers
+    
+    # Calculate duration
+    duration = transcript.duration
+    
+    # Add informational warnings
+    if len(speakers_found) == 0:
+        warnings.append(CheckpointWarning("No speakers found in transcript", "warning"))
+    
+    if len(speakers_found) == 1:
+        warnings.append(CheckpointWarning(
+            f"Only one speaker found: {speakers_found[0]}", 
+            "info"
+        ))
+    
+    return TranscriptFlowLoadResult(
+        transcript=transcript,
+        metadata=metadata,
+        warnings=warnings,
+        speakers_found=speakers_found,
+        total_turns=transcript.total_turns,
+        total_interjections=transcript.total_interjections,
+        duration_seconds=duration
+    )
+
+
+def print_transcript_flow_summary(result: TranscriptFlowLoadResult) -> None:
+    """Print a human-readable summary of the loaded TranscriptFlow checkpoint."""
+    print("\n" + "=" * 60)
+    print("TRANSCRIPT FLOW CHECKPOINT SUMMARY")
+    print("=" * 60)
+    
+    print(f"\n📁 Source: {result.metadata.get('source_file', 'Unknown')}")
+    print(f"🔄 Total turns: {result.total_turns}")
+    print(f"💬 Total interjections: {result.total_interjections}")
+    print(f"⏱️  Duration: {result.duration_seconds:.1f} seconds ({result.duration_seconds/60:.1f} minutes)")
+    print(f"🎤 Speakers: {', '.join(result.speakers_found) if result.speakers_found else 'None'}")
+    
+    # Show metadata if available
+    if result.metadata.get('mode'):
+        print(f"🔧 Mode: {result.metadata['mode']}")
+    
+    # Show sample turns
+    print("\n" + "-" * 40)
+    print("SAMPLE TURNS")
+    print("-" * 40)
+    
+    transcript = result.transcript
+    for turn in transcript.turns[:3]:  # First 3 turns
+        text_preview = turn.text[:80] + "..." if len(turn.text) > 80 else turn.text
+        print(f"\n  Turn {turn.turn_id} ({turn.primary_speaker}):")
+        print(f"    \"{text_preview}\"")
+        if turn.interjections:
+            for ij in turn.interjections[:2]:  # First 2 interjections
+                ij_preview = ij.text[:40] + "..." if len(ij.text) > 40 else ij.text
+                print(f"      [Interjection by {ij.speaker}: \"{ij_preview}\"]")
+    
+    if len(transcript.turns) > 3:
+        print(f"\n  ... and {len(transcript.turns) - 3} more turns")
+    
+    # Show warnings
+    if result.warnings:
+        print("\n" + "-" * 40)
+        print("WARNINGS")
+        print("-" * 40)
+        for warning in result.warnings:
+            print(f"  {warning}")
+    
+    print("\n" + "=" * 60)

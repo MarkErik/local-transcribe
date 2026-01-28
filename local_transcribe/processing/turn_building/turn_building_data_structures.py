@@ -132,6 +132,41 @@ class InterjectionSegment:
             "likely_diarization_error": self.likely_diarization_error
         }
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "InterjectionSegment":
+        """
+        Create InterjectionSegment from dictionary (JSON deserialization).
+        
+        Args:
+            data: Dictionary representation of an InterjectionSegment
+            
+        Returns:
+            InterjectionSegment instance
+        """
+        # Reconstruct WordSegment list from serialized words if present
+        # Note: InterjectionSegment.to_dict() doesn't serialize words array,
+        # so we create empty list or reconstruct from text if needed
+        words = []
+        if "words" in data:
+            words = [
+                WordSegment(
+                    text=w["text"],
+                    start=float(w["start"]),
+                    end=float(w["end"]),
+                    speaker=w.get("speaker")
+                )
+                for w in data["words"]
+            ]
+        
+        return cls(
+            speaker=data["speaker"],
+            start=float(data["start"]),
+            end=float(data["end"]),
+            text=data["text"],
+            words=words,
+            likely_diarization_error=data.get("likely_diarization_error", False)
+        )
+
 
 @dataclass
 class HierarchicalTurn:
@@ -151,6 +186,9 @@ class HierarchicalTurn:
     
     # Hierarchical elements
     interjections: List[InterjectionSegment] = field(default_factory=list)
+    
+    # Source tracking for VAD mode (block IDs that contributed to this turn)
+    source_block_ids: List[int] = field(default_factory=list)
     
     # Metrics (calculated after construction)
     word_count: int = 0
@@ -178,7 +216,7 @@ class HierarchicalTurn:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result = {
             "turn_id": self.turn_id,
             "primary_speaker": self.primary_speaker,
             "start": round(self.start, 3),
@@ -189,6 +227,52 @@ class HierarchicalTurn:
             "speaking_rate": self.speaking_rate,
             "interjections": [ij.to_dict() for ij in self.interjections]
         }
+        # Only include source_block_ids if present (VAD mode)
+        if self.source_block_ids:
+            result["source_block_ids"] = self.source_block_ids
+        return result
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "HierarchicalTurn":
+        """
+        Create HierarchicalTurn from dictionary (JSON deserialization).
+        
+        Args:
+            data: Dictionary representation of a HierarchicalTurn
+            
+        Returns:
+            HierarchicalTurn instance
+        """
+        # Reconstruct WordSegment list
+        words = [
+            WordSegment(
+                text=w["text"],
+                start=float(w["start"]),
+                end=float(w["end"]),
+                speaker=w.get("speaker")
+            )
+            for w in data.get("words", [])
+        ]
+        
+        # Reconstruct InterjectionSegment list
+        interjections = [
+            InterjectionSegment.from_dict(ij)
+            for ij in data.get("interjections", [])
+        ]
+        
+        # Create the turn (metrics will be calculated in __post_init__)
+        turn = cls(
+            turn_id=int(data["turn_id"]),
+            primary_speaker=data["primary_speaker"],
+            start=float(data["start"]),
+            end=float(data["end"]),
+            text=data["text"],
+            words=words,
+            interjections=interjections,
+            source_block_ids=data.get("source_block_ids", [])
+        )
+        
+        return turn
 
 
 @dataclass
@@ -253,6 +337,39 @@ class TranscriptFlow:
             "speaker_statistics": self.speaker_statistics,
             "turns": [turn.to_dict() for turn in self.turns]
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TranscriptFlow":
+        """
+        Create TranscriptFlow from dictionary (JSON deserialization).
+        
+        This is the inverse of to_dict() and enables loading edited
+        transcripts from JSON checkpoint files for pipeline re-entry.
+        
+        Args:
+            data: Dictionary representation of a TranscriptFlow
+            
+        Returns:
+            TranscriptFlow instance
+            
+        Raises:
+            KeyError: If required fields are missing
+            ValueError: If data format is invalid
+        """
+        if "turns" not in data:
+            raise KeyError("TranscriptFlow JSON must contain 'turns' array")
+        
+        turns = [
+            HierarchicalTurn.from_dict(turn_data)
+            for turn_data in data["turns"]
+        ]
+        
+        return cls(
+            turns=turns,
+            metadata=data.get("metadata", {}),
+            conversation_metrics=data.get("conversation_metrics", {}),
+            speaker_statistics=data.get("speaker_statistics", {})
+        )
     
     def __repr__(self) -> str:
         return (

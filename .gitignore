@@ -32,6 +32,9 @@ uploads/
 *.vtt
 *.m4a
 *.json
+!web_ui/package.json
+!web_ui/tsconfig.json
+!pyproject.toml
 *.mp4
 *.pdf
 *.TextGrid

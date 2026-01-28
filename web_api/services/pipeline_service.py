@@ -234,7 +234,7 @@ class PipelineService:
         
         # Provider settings
         args.transcriber_provider = options.get("transcriber_provider", "granite")
-        args.transcriber_model = options.get("transcriber_model", "granite-speech-8b")
+        args.transcriber_model = options.get("transcriber_model", "granite-8b")
         args.aligner_provider = options.get("aligner_provider")
         args.diarization_provider = options.get("diarization_provider")
         args.transcript_cleanup_provider = options.get("transcript_cleanup_provider")

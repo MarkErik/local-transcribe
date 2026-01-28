@@ -1,7 +1,8 @@
 # Web Interface Plan for Local Transcribe
 
-**Document Version:** 2.0  
+**Document Version:** 2.1  
 **Created:** January 27, 2026  
+**Last Updated:** January 27, 2026  
 **Status:** Planning Phase
 
 ---
@@ -10,25 +11,38 @@
 
 This document outlines a comprehensive plan to add a web-based interface to the local-transcribe system. The interface will allow sociology researchers to execute the transcription pipeline, view results at each stage, and manually correct transcription and de-identification errors using an interactive audio-synchronized editor.
 
-The most important pipeline process is the VAD-split-audio pipeline.
+### Primary Target: VAD-Split-Audio Pipeline
 
-This is what we should design and support initially.
+**The VAD-split-audio pipeline (`vad_split_audio` mode) is the PRIMARY and INITIAL target for this web interface.** All design decisions, UI patterns, and implementation priorities must be optimized for this mode first.
 
-The web server will run on same machine as pipeline.
+Key characteristics of VAD-split-audio that drive UI design:
+- **Two separate audio files** (one per speaker: Interviewer + Participant)
+- **Block-level timing only** - words do NOT have individual timestamps
+- **VAD-detected speech blocks** form the basic editing unit
+- **No diarization stage** - speakers are already known from separate files
+- **Integrated transcription stage** - `VADTranscriptionStage` handles VAD → ASR → turn building as one unit
 
-### Critical Review Summary (v2.0)
+The web server will run on the same machine as the pipeline.
+
+### Critical Review Summary (v2.1)
 
 **Key Finding:** The existing codebase is well-architected and should be leveraged extensively. The web interface should wrap existing components, not replace them.
 
 **Existing Pipeline Re-entry:** The current `run_pipeline_from_checkpoint()` system is **sufficient** for web-based re-runs after edits. No new re-entry system is needed.
 
+**VAD Pipeline Specifics (from codebase review):**
+- The `VADTranscriptionStage` is a combined stage that runs VAD, ASR, and turn building as an integrated unit
+- Produces `TranscriptFlow` directly, not individual `WordSegment` lists
+- Block timing is approximate - words within blocks have estimated timestamps based on word count, NOT actual alignment
+- The `VADBlock` data structure is the fundamental unit, containing text, speaker, timing, and interjection flags
+
 **Refactoring Required:**
-- Low: Add progress callbacks to stage execution
+- Low: Add progress callbacks to stage execution (specifically `VADTranscriptionStage.execute()`)
 - Low: Extract CLI-bound functions into reusable modules  
 - Medium: Add hook between de-identification passes for name review
+- Low: Expose `VADASRProcessor` progress (per-block transcription progress)
 
 ---
-
 
 **Technical Assumptions:**
 - Desktop/laptop user (no mobile support required)
@@ -38,46 +52,107 @@ The web server will run on same machine as pipeline.
 
 ---
 
+## VAD-Split-Audio Pipeline Overview
+
+Understanding the VAD pipeline architecture is essential for correct web interface design.
+
+### Pipeline Stages for `vad_split_audio` Mode
+
+From [`executor.py`](local_transcribe/framework/stages/executor.py#L220-L241):
+
+```
+1. VADTranscriptionStage (combined stage)
+   ├── Silero VAD on each speaker's audio
+   ├── Build VADBlocks from segments
+   ├── ASR transcription per block (with chunking if >30s)
+   └── Convert blocks to TranscriptFlow (HierarchicalTurns)
+2. DeIdentificationStage (optional)
+3. SpeakerNamingStage
+4. OutputGenerationStage
+5. TranscriptCleanupStage (optional, requires --enable-cleanup)
+6. CleanedOutputGenerationStage (if cleanup ran)
+7. CleanupStage
+```
+
+### Key Data Structures for VAD Pipeline
+
+1. **`VADBlock`** ([`vad/types.py`](local_transcribe/processing/vad/types.py)):
+   - `block_id`: Unique identifier
+   - `speaker_id`: "Interviewer" or "Participant"
+   - `start_s`, `end_s`: Block timing in seconds
+   - `text`: Transcribed text for entire block
+   - `is_interjection`: Whether this is a brief utterance during another's turn
+   - `source_segments`: Original VAD segments that formed this block
+
+2. **`HierarchicalTurn`** ([`turn_building_data_structures.py`](local_transcribe/processing/turn_building/turn_building_data_structures.py)):
+   - `turn_id`: Sequential turn number
+   - `primary_speaker`: Who holds the conversational floor
+   - `text`: Full text of the turn
+   - `words`: List of `WordSegment` - **NOTE: timing is APPROXIMATED, not aligned**
+   - `interjections`: List of `InterjectionSegment` embedded in this turn
+
+3. **`TranscriptFlow`** (same file):
+   - `turns`: List of `HierarchicalTurn`
+   - `metadata`: Pipeline run info
+   - `conversation_metrics`: Statistics
+   - `speaker_statistics`: Per-speaker stats
+
+### Critical Insight: Word Timing in VAD Mode
+
+In VAD mode, word-level timing is **approximated** by dividing block duration by word count. From [`vad_turn_builder.py`](local_transcribe/processing/turn_building/vad_turn_builder.py#L80-L110):
+
+```python
+# Words get estimated timestamps, NOT actual alignment
+duration_per_word = block.duration_s / len(words) if words else 0
+```
+
+**UI Implication:** The web interface should highlight/navigate at **block level**, not word level, for VAD transcripts. Word-level highlighting would be misleading since timestamps are not accurate.
+
+---
+
 ## Feature Requirements
 
 ### 1. Pipeline Execution Features
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| **Job Configuration** | Upload audio files, select pipeline mode (most likely  to be  VAD-split-audio), configure options | High |
+| **Job Configuration** | Upload audio files, select pipeline mode (default: VAD-split-audio), configure options | High |
 | **Pipeline Monitoring** | Real-time progress of each pipeline stage | High |
 | **Job Queue Management** | View pending/running/completed jobs | Medium |
 | **Configuration Presets** | Save and reuse common configurations | Low |
 | **Serve Web Interface on Custom Port** | User should be able to specify port that server will start at | High |
 
-### 2. Transcript Viewing Features
+### 2. Transcript Viewing Features (VAD Mode Primary)
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
 | **Stage-by-Stage View** | View output from each pipeline stage independently | High |
 | **Audio Playback** | Play audio with standard controls (play/pause/seek/speed) | High |
-| **Block-Level Highlighting if in VAD-split-audio mode** | Highlight current block as audio plays based on block starting timestamp | High |
-| **Word-Level Highlighting if not in VAD-split-audio mode** | Highlight current word as audio plays if words have timestamps | High |
+| **Block-Level Highlighting** | Highlight current VAD block as audio plays (PRIMARY for vad_split_audio) | High |
+| **Word-Level Highlighting** | Highlight current word for aligned transcripts (other modes only) | Medium |
 | **Speaker/Block Color Coding** | Visual distinction between speakers | High |
-| **Timestamp Display** | Show timestamps for each turn/segment | High |
-| **Jump to Position** | Click any word/block to jump audio to that position | High |
-| **Dual Audio Sync** | Because dealing with 2 audio files need to play both speaker tracks in sync | High |
+| **Timestamp Display** | Show timestamps for each turn/block | High |
+| **Jump to Position** | Click any block to jump audio to that position | High |
+| **Dual Audio Sync** | Play both speaker tracks in sync for split audio modes | High |
+| **Interjection Display** | Show interjections embedded within primary turns | High |
 
-### 3. Transcript Editing Features
+### 3. Transcript Editing Features (VAD Block-Focused)
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| **Click-to-Edit Word** | Click any word to correct it | High |
+| **Click-to-Edit Block** | Click any VAD block to edit its text | High |
+| **Click-to-Edit Word** | Click any word within a block to correct it | High |
 | **Insert Word** | Click between words to insert new word(s) | High |
 | **Delete Word** | Remove incorrect words | High |
 | **Merge Words** | Combine split words (e.g., "to" "gether" → "together") | High |
 | **Split Words** | Separate joined words | Medium |
-| **Change Speaker** | Reassign a turn to different speaker | High |
+| **Change Speaker** | Reassign a turn/block to different speaker | High |
 | **Adjust Turn Boundaries** | Move where one speaker's turn ends and another begins | Medium |
 | **Add/Edit Annotations** | Add notes like [laughter], [pause], [inaudible] | High |
 | **Bulk Find & Replace** | Replace all instances of a word/phrase | Medium |
 | **Undo/Redo** | Full edit history with unlimited undo | High |
 | **Auto-Save** | Automatic saving of edits with versioning | High |
+| **Toggle Interjection** | Convert block to/from interjection status | Medium |
 
 ### 4. De-identification Editing Features
 
@@ -306,42 +381,43 @@ For multi-speaker transcripts, first pass runs for all speakers, names are colle
 
 ### Critical Review: What the Plan Must Account For
 
-The current plan's "Appendix A: Existing Code to Leverage" is **insufficiently detailed**. Here is a comprehensive analysis:
+The web interface must integrate tightly with the existing codebase. Here is a comprehensive analysis based on actual code review:
 
 ### 1. Pipeline Stage System (Must Integrate, Not Replace)
 
-**Existing Components:**
+**Existing Components ([`framework/stages/`](local_transcribe/framework/stages/)):**
 - `PipelineStage` abstract base class with `execute()`, `can_execute()`, `is_optional`
-- `PipelineExecutor` with `execute()` and `execute_dry_run()`
-- `PipelineContext` dataclass carrying state between stages
+- `PipelineExecutor` with `execute()` and `execute_dry_run()` ([`executor.py`](local_transcribe/framework/stages/executor.py))
+- `PipelineContext` dataclass carrying state between stages ([`pipeline_context.py`](local_transcribe/framework/pipeline_context.py))
 - `StageResult` with status tracking (COMPLETED, SKIPPED, FAILED)
 - Stage registry in `STAGE_REGISTRY` dict
+
+**VAD-Specific Stage:**
+The `VADTranscriptionStage` ([`executor.py#L243-L316`](local_transcribe/framework/stages/executor.py#L243)) is a combined stage that:
+- Takes `speaker_files` and `transcriber_provider` as inputs
+- Produces `transcript` (TranscriptFlow) and `standardized_speaker_files` as outputs
+- Calls `build_turns_vad_split_audio()` which handles the entire VAD→ASR→turns pipeline
+- Only applies to `vad_split_audio` mode
 
 **Integration Approach:**
 - Web API wraps `PipelineExecutor`, does NOT replace it
 - Extend `StageResult` to include SSE event emission
 - Add `progress_callback` parameter to stages for real-time updates
-- Example:
-  ```python
-  # Existing
-  result = executor.execute(context)
-  
-  # Web-enhanced
-  result = executor.execute(context, progress_callback=sse_emitter.send)
-  ```
+- For VAD mode, add progress hooks in `VADASRProcessor` for per-block updates
 
 **Refactoring Required:**
 - Add optional `progress_callback: Callable` to `PipelineStage.execute()`
-- Emit events at: stage start, progress updates, stage complete
+- Add `on_block_complete` callback to `VADASRProcessor.process_blocks()`
+- Emit events at: stage start, block progress (VAD mode), stage complete
 - Estimate: Low effort, backward-compatible
 
 ---
 
 ### 2. Pipeline Re-entry System (Can Reuse Directly)
 
-**Existing Components:**
+**Existing Components ([`pipeline_reentry.py`](local_transcribe/framework/pipeline_reentry.py)):**
 - `run_pipeline_from_checkpoint()` - resumes from JSON checkpoint
-- `CheckpointLoadResult` with validation and warnings
+- `CheckpointLoadResult` with validation and warnings ([`checkpoint_loader.py`](local_transcribe/framework/checkpoint_loader.py))
 - `validate_checkpoint_for_reentry()` ensures data integrity
 - `get_stages_for_reentry()` returns stages from a given start point
 
@@ -359,7 +435,7 @@ The current plan's "Appendix A: Existing Code to Leverage" is **insufficiently d
 
 ### 3. Data Structures (Must Use Existing Formats)
 
-**Word-Level Data:**
+**Word-Level Data ([`plugin_interfaces.py`](local_transcribe/framework/plugin_interfaces.py)):**
 ```python
 @dataclass
 class WordSegment:
@@ -371,7 +447,23 @@ class WordSegment:
 - Already has JSON serialization
 - Already has validation in checkpoint loader
 
-**Turn-Level Data:**
+**VAD-Specific Data ([`vad/types.py`](local_transcribe/processing/vad/types.py)):**
+```python
+@dataclass
+class VADBlock:
+    block_id: int
+    speaker_id: str
+    start_s: float
+    end_s: float
+    source_segments: List[VADSegment]  # Original VAD segments
+    is_interjection: bool = False
+    overlap_with: Optional[List[int]] = None  # IDs of overlapping blocks
+    text: str = ""  # Populated after ASR
+```
+- Core editing unit for VAD mode
+- Contains `source_segment_ids` for audit trail
+
+**Turn-Level Data ([`turn_building_data_structures.py`](local_transcribe/processing/turn_building/turn_building_data_structures.py)):**
 ```python
 @dataclass
 class HierarchicalTurn:
@@ -380,8 +472,11 @@ class HierarchicalTurn:
     start: float
     end: float
     text: str
-    words: List[WordSegment]
+    words: List[WordSegment]  # NOTE: Approximated timing in VAD mode
     interjections: List[InterjectionSegment]
+    word_count: int
+    duration: float
+    speaking_rate: float
 ```
 - Already has `to_dict()` for JSON output
 - Includes interjections (brief responses during another's turn)
@@ -396,7 +491,7 @@ class TranscriptFlow:
     speaker_statistics: Dict[str, Dict[str, Any]]
 ```
 - Complete conversation structure
-- Already has all needed methods
+- Already has `to_dict()` method
 
 **Web API Response Format:**
 - Use `TranscriptFlow.to_dict()` directly as JSON response
@@ -406,37 +501,47 @@ class TranscriptFlow:
 
 ### 4. De-identification System (Complex, Needs Careful Integration)
 
-**Existing Components:**
-- `DeIdentificationOrchestrator` - handles two-pass flow
+**Existing Components ([`processing/de_identification/`](local_transcribe/processing/de_identification/)):**
+- `DeIdentificationOrchestrator` ([`orchestrator.py`](local_transcribe/processing/de_identification/orchestrator.py)) - handles two-pass flow
 - `DeIdentificationResult` with first/second pass tracking
-- `AuditLogger` - detailed replacement audit trail
-- `DebugFileWriter` - debug output for troubleshooting
+- `AuditLogger` ([`audit.py`](local_transcribe/processing/de_identification/audit.py)) - detailed replacement audit trail
+- `DebugFileWriter` ([`debug.py`](local_transcribe/processing/de_identification/debug.py)) - debug output for troubleshooting
 
-**Key Insight:** The orchestrator already handles:
-- Single speaker de-identification
-- Multi-speaker with cross-speaker name sharing
-- Two-pass processing automatically
+**Key Methods:**
+- `de_identify()` - single speaker, runs both passes automatically
+- `de_identify_multi_speaker()` - multiple speakers with cross-speaker name sharing
+- `de_identify_text()` - plain text (for transcript cleanup)
+
+**The Two-Pass Flow (from actual code):**
+1. First pass: `de_identify_first_pass()` discovers names
+2. Global name list built: `build_global_name_list(all_replacements)`
+3. Second pass: `de_identify_second_pass()` uses global names across all speakers
 
 **Web Integration Points:**
 1. Call `orchestrator.de_identify_multi_speaker()` for multi-speaker
 2. Access `result.first_pass_replacements` and `result.second_pass_replacements`
 3. Use `AuditLogger` output for review UI
-4. For name list review: intercept between `de_identify_first_pass()` and `de_identify_second_pass()`
+4. For name list review: need to intercept between first and second pass
 
 **Refactoring Required:**
-- Add hook for name list review between passes
-- Expose progress callback for chunk processing
+- Split `de_identify_multi_speaker()` into:
+  - `de_identify_multi_speaker_first_pass()` - returns first pass results + name list
+  - `de_identify_multi_speaker_second_pass()` - accepts name list, runs second pass
+- Add callback hooks for LLM chunk processing progress
 - Estimate: Medium effort
 
 ---
 
 ### 5. Output Writers (Reuse Completely)
 
-**Existing Writers:**
-- `timestamped-txt`, `plain-txt`, `markdown`, `dialogue-script`
-- `html-timeline`, `turns-json`
-- `video`, `vad-video` (MP4 rendering)
-- `srt` (subtitles)
+**Existing Writers ([`providers/file_writers/`](local_transcribe/providers/file_writers/)):**
+- `timestamped-txt`, `plain-txt`, `markdown` (txt_writer.py)
+- `dialogue-script` (dialogue_script_writer.py)
+- `html-timeline` (html_timeline_writer.py)
+- `turns-json` (json_writer.py)
+- `video` (video_renderer.py)
+- `vad-video` (vad_video_renderer.py) - VAD-specific MP4 rendering
+- `srt` (srt_writer.py)
 
 **Web Integration:**
 - Call existing writers via `OutputManager.write_selected_outputs()`
@@ -447,20 +552,45 @@ class TranscriptFlow:
 
 ---
 
-### 6. Transcript Compare Tool (Leverage for Diff View)
+### 6. VAD-Specific Processing (Critical for Primary Mode)
 
-**Existing in `web_tools/transcript_compare/`:**
-- `diff_engine.py` - word-level diff computation
-- `generate_aligned_html()` - visual diff rendering
-- Flask app with audio sync (pattern to follow)
+**VAD Block Building ([`vad/vad_block_builder.py`](local_transcribe/processing/vad/vad_block_builder.py)):**
+- `VADBlockBuilder.build_blocks()` - creates blocks from VAD segments
+- Handles interjection detection based on duration/word count thresholds
+- Annotates overlapping speech
+
+**VAD ASR Processing ([`vad/vad_asr_processor.py`](local_transcribe/processing/vad/vad_asr_processor.py)):**
+- `VADASRProcessor.process_blocks()` - transcribes all blocks
+- Handles long blocks (>30s) by splitting at natural pause points
+- Uses `ChunkStitcher` for reassembling chunked transcriptions
+- Saves per-block debug output when DEBUG enabled
+
+**Turn Building ([`turn_building/vad_turn_builder.py`](local_transcribe/processing/turn_building/vad_turn_builder.py)):**
+- `build_turns_vad_split_audio()` - main entry point
+- `_convert_blocks_to_transcript_flow()` - converts VADBlocks to HierarchicalTurns
+- `_merge_consecutive_same_speaker_blocks()` - reduces fragmentation
+- `_create_word_segments_from_block()` - creates APPROXIMATED word timing
+
+**Web Integration Points:**
+- Add progress callbacks to `VADASRProcessor.process_blocks()` for per-block updates
+- Expose VAD audit data (`write_vad_audit()`) for debugging UI
+- Consider exposing block-level ASR debug files for review
+
+---
+
+### 7. Transcript Compare Tool (Leverage for Diff View)
+
+**Existing in [`web_tools/transcript_compare/`](web_tools/transcript_compare/):**
+- `diff_engine.py` - word-level diff computation, `generate_aligned_html()`
+- `extractor.py` - extract text from various file formats
+- `web_app.py` - Flask app with audio sync patterns (reference implementation)
 
 **Reuse for:**
 - Version comparison (edited vs original)
 - Before/after de-identification view
 - Raw vs cleaned transcript comparison
 
-**IMPORTANT**
-- Don't re-use exactly as-is, must be adapted and integrated into this project correctly.
+**IMPORTANT:** Don't re-use exactly as-is. The Flask patterns should be adapted to FastAPI, and the diff engine should be integrated into the main web interface.
 
 ---
 
@@ -468,12 +598,14 @@ class TranscriptFlow:
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| FastAPI web server | New | Replace Flask pattern from transcript_compare |
+| FastAPI web server | New | Separate from Flask transcript_compare tool |
 | Job queue system | New | Track pipeline jobs, store state |
 | SSE event emitter | New | Wrap existing stage execution |
-| Edit overlay system | New | Track user edits as patches |
+| Edit overlay system | New | Track user edits as patches on TranscriptFlow |
 | Session/job persistence | New | SQLite for job metadata |
 | React frontend | New | Entirely new development |
+| Block-level audio sync | New | Specific to VAD mode, block-based highlighting |
+| Dual audio player | New | Synchronized playback of 2 audio files |
 
 ---
 
@@ -481,11 +613,12 @@ class TranscriptFlow:
 
 | Module | Effort | Changes |
 |--------|--------|---------|
-| `pipeline_runner.py` | Low | Add progress callback support |
-| `pipeline_stages.py` | Low | Emit events during execution |
-| `pipeline_reentry.py` | Low-Med | Extract reusable functions |
-| `de_identification/orchestrator.py` | Medium | Add inter-pass hook |
-| `checkpoint_loader.py` | Low | Return JSON-friendly errors |
+| `framework/stages/executor.py` | Low | Add progress callback support to `PipelineExecutor` |
+| `framework/stages/base.py` | Low | Add optional `progress_callback` to `PipelineStage.execute()` |
+| `processing/vad/vad_asr_processor.py` | Low | Add per-block progress callback to `process_blocks()` |
+| `framework/pipeline_reentry.py` | Low-Med | Extract reusable functions, return JSON errors |
+| `processing/de_identification/orchestrator.py` | Medium | Split multi-speaker into first/second pass methods |
+| `framework/checkpoint_loader.py` | Low | Return JSON-friendly errors |
 | Output writers | None | Use as-is |
 | Turn building | None | Use as-is |
 
@@ -561,83 +694,89 @@ class TranscriptFlow:
 
 ## Implementation Phases
 
-### Phase 1: Foundation
-**Goal:** Basic web server with job submission and monitoring
+### Phase 1: Foundation (VAD Mode Focus)
+**Goal:** Basic web server with job submission and monitoring for VAD-split-audio mode
 
 **Backend Tasks:**
 - [ ] Set up FastAPI backend with project structure (`web_api/` directory)
 - [ ] Create job model (SQLite: job_id, status, mode, created_at, config_json)
-- [ ] Create job submission endpoint (file upload, configuration)
+- [ ] Create job submission endpoint (file upload for 2 audio files, configuration)
+- [ ] Default mode selection to `vad_split_audio`
 - [ ] Integrate with existing `PipelineExecutor` (import, not subprocess)
-- [ ] Add progress callback to `PipelineStage.execute()` method (refactor)
+- [ ] Add progress callback to `VADTranscriptionStage.execute()` method
+- [ ] Add per-block callback to `VADASRProcessor.process_blocks()` for granular progress
 - [ ] Implement SSE endpoint for job progress events
 - [ ] Create checkpoint retrieval endpoint (uses existing `CheckpointLoadResult`)
 
 **Frontend Tasks:**
 - [ ] Create React + TypeScript project scaffold
-- [ ] Build job configuration form (mode selection, file upload)
+- [ ] Build job configuration form (default to VAD mode, 2-file upload)
 - [ ] Build job monitoring view with progress indicators
+- [ ] Show per-block transcription progress (VAD specific)
 - [ ] Implement SSE client for real-time updates
 
 **Integration Points:**
-- Reuse: `PipelineContext`, `PipelineExecutor`, `STAGE_REGISTRY`
+- Reuse: `PipelineContext`, `PipelineExecutor`, `create_pipeline_for_mode("vad_split_audio")`
 - Extend: Add `progress_callback` parameter to stage execution
 
-### Phase 2: Transcript Viewing
-**Goal:** View and navigate transcripts with audio sync
+### Phase 2: Transcript Viewing (Block-Level for VAD)
+**Goal:** View and navigate VAD transcripts with audio sync
 
 **Backend Tasks:**
 - [ ] Create transcript retrieval endpoint (returns `TranscriptFlow.to_dict()`)
-- [ ] Create word-segments endpoint (returns checkpoint JSON format)
+- [ ] Create turns endpoint (returns `HierarchicalTurn` list with interjections)
 - [ ] Implement stage-specific output endpoints
-- [ ] Add audio file serving endpoint (or direct file access if local)
+- [ ] Add dual audio file serving endpoints (interviewer + participant tracks)
+- [ ] Return VAD block info (start_s, end_s, speaker_id, is_interjection)
 
 **Frontend Tasks:**
 - [ ] Integrate wavesurfer.js for audio playback
+- [ ] Build **dual audio player** - sync two tracks (interviewer + participant)
 - [ ] Build transcript display using `HierarchicalTurn` structure
+- [ ] Implement **block-level highlighting** (not word-level for VAD mode)
 - [ ] Implement speaker color coding
-- [ ] Implement word-level click to seek (for aligned transcripts)
-- [ ] Implement block-level click for VAD mode
-- [ ] Implement playback-follows-transcript highlighting
-- [ ] Add timestamp display and navigation
+- [ ] Implement block-level click to seek
+- [ ] Display interjections visually embedded in primary turns
+- [ ] Add timestamp display at turn boundaries
 - [ ] Build stage selector dropdown (shows completed stages only)
-- [ ] Handle dual audio track synchronization (split_audio modes)
 
 **Integration Points:**
-- Reuse: `TranscriptFlow`, `HierarchicalTurn`, `WordSegment` data structures
+- Reuse: `TranscriptFlow`, `HierarchicalTurn`, `InterjectionSegment` data structures
 - Reuse: `turns-json` writer output format
-- Reference: `web_tools/transcript_compare/` for audio sync patterns
+- Reference: `web_tools/transcript_compare/` for audio sync patterns (adapt, don't copy)
 
-### Phase 3: Basic Editing
-**Goal:** Core transcript editing functionality
+### Phase 3: Basic Editing (Block and Word Level)
+**Goal:** Core transcript editing functionality for VAD transcripts
 
 **Backend Tasks:**
-- [ ] Design edit storage schema (edits as patches, not in-place)
+- [ ] Design edit storage schema (edits as patches on TranscriptFlow)
   ```sql
   CREATE TABLE edits (
       id INTEGER PRIMARY KEY,
       job_id TEXT NOT NULL,
       stage_name TEXT NOT NULL,
-      edit_type TEXT NOT NULL,  -- word_change, word_insert, word_delete
-      target_index INTEGER,
+      edit_type TEXT NOT NULL,  -- block_text_change, word_insert, word_delete, speaker_change
+      turn_id INTEGER,          -- Which HierarchicalTurn
+      target_index INTEGER,     -- Word index within turn (if applicable)
       original_value TEXT,
       new_value TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
   ```
 - [ ] Implement edit save endpoint
-- [ ] Implement "apply edits to checkpoint" logic
+- [ ] Implement "apply edits to TranscriptFlow" logic
 - [ ] Add "edited" flag to downstream stages (stale detection)
 - [ ] Create endpoint to trigger re-run from checkpoint (uses existing `run_pipeline_from_checkpoint`)
 
 **Frontend Tasks:**
-- [ ] Build word selection UI
-- [ ] Implement click-to-edit word modal
+- [ ] Build block selection UI (click to select entire block)
+- [ ] Implement click-to-edit block text modal
+- [ ] Implement word selection within block
 - [ ] Implement insert word (before/after)
 - [ ] Implement delete word
 - [ ] Build undo/redo system (local state + server sync)
 - [ ] Implement auto-save with debounce (2 second delay)
-- [ ] Add visual indicators for edited words (highlight color)
+- [ ] Add visual indicators for edited blocks/words
 - [ ] Build stale-stage warning UI
 - [ ] Build "Re-run Pipeline" confirmation dialog
 
@@ -650,6 +789,7 @@ class TranscriptFlow:
 
 - [ ] Implement speaker reassignment (change `primary_speaker` on turn)
 - [ ] Implement turn boundary adjustment (merge/split turns)
+- [ ] Implement interjection toggle (convert block to/from interjection)
 - [ ] Add annotation insertion ([laughter], [pause], [inaudible])
 - [ ] Build merge/split word tools
 - [ ] Implement bulk find & replace
@@ -661,7 +801,8 @@ class TranscriptFlow:
 **Goal:** Specialized tools for PII review and correction
 
 **Backend Tasks:**
-- [ ] Create endpoint to retrieve de-identification audit log
+- [ ] Create endpoint to retrieve de-identification audit log (`AuditLogger` output)
+- [ ] Refactor `de_identify_multi_speaker()` into separate first/second pass methods
 - [ ] Add optional pause point between de-ID passes (config flag)
 - [ ] Create endpoint to modify name list between passes
 - [ ] Implement manual redaction endpoint (adds to second-pass list)
@@ -677,9 +818,9 @@ class TranscriptFlow:
 - [ ] Create de-identification report export
 
 **Integration Points:**
-- Reuse: `DeIdentificationOrchestrator` (wrap, don't replace)
+- Reuse: `DeIdentificationOrchestrator` (wrap, extend with pause capability)
 - Reuse: `AuditLogger` output for review UI
-- Extend: Add hook between `de_identify_first_pass` and `de_identify_second_pass`
+- Extend: Split `de_identify_multi_speaker()` for inter-pass intervention
 
 ### Phase 6: Polish & Export
 **Goal:** Production-ready with export capabilities
@@ -687,6 +828,7 @@ class TranscriptFlow:
 **Backend Tasks:**
 - [ ] Create export endpoint that calls existing output writers
 - [ ] Add export options (include timestamps, speaker labels, etc.)
+- [ ] Expose all existing writers: `timestamped-txt`, `plain-txt`, `markdown`, `dialogue-script`, `html-timeline`, `turns-json`, `video`, `vad-video`, `srt`
 
 **Frontend Tasks:**
 - [ ] Build export format selector (leverages existing writers)
@@ -698,7 +840,7 @@ class TranscriptFlow:
 - [ ] Documentation and help system
 
 **Integration Points:**
-- Reuse: All existing `OutputWriter` implementations
+- Reuse: All existing `OutputWriter` implementations in `providers/file_writers/`
 - Reuse: `OutputManager.write_selected_outputs()`
 - Reuse: `diff_engine.py` for comparison views
 
@@ -786,6 +928,7 @@ User Request (Web)
          ▼
 ┌──────────────────────────────────────────┐
 │          PipelineExecutor.execute()      │  ← Existing
+│   (with progress_callback parameter)     │
 └────────┬─────────────────────────────────┘
          │
          ▼
@@ -801,35 +944,211 @@ User Request (Web)
 
 | File | Purpose | Web Relevance |
 |------|---------|---------------|
-| `framework/pipeline_context.py` | State container | Understand what data flows through |
-| `framework/stages/executor.py` | Stage orchestration | Where to add progress hooks |
-| `framework/checkpoint_loader.py` | Checkpoint format | API response format |
-| `processing/de_identification/orchestrator.py` | Two-pass flow | De-ID UI integration |
-| `processing/turn_building/turn_building_data_structures.py` | Data models | Frontend data contracts |
-| `providers/file_writers/json_writer.py` | JSON output | API response format |
-| `web_tools/transcript_compare/web_app.py` | Flask patterns | Audio sync implementation |
+| [`framework/pipeline_context.py`](local_transcribe/framework/pipeline_context.py) | State container | Understand what data flows through |
+| [`framework/stages/executor.py`](local_transcribe/framework/stages/executor.py) | Stage orchestration, `VADTranscriptionStage` | Where to add progress hooks |
+| [`framework/checkpoint_loader.py`](local_transcribe/framework/checkpoint_loader.py) | Checkpoint format | API response format |
+| [`framework/pipeline_reentry.py`](local_transcribe/framework/pipeline_reentry.py) | Re-entry logic | How to resume after edits |
+| [`processing/vad/vad_asr_processor.py`](local_transcribe/processing/vad/vad_asr_processor.py) | VAD transcription | Per-block progress hooks |
+| [`processing/vad/types.py`](local_transcribe/processing/vad/types.py) | `VADBlock`, `VADSegment` | Core VAD data structures |
+| [`processing/vad/vad_block_builder.py`](local_transcribe/processing/vad/vad_block_builder.py) | Block building logic | Understanding block creation |
+| [`processing/turn_building/vad_turn_builder.py`](local_transcribe/processing/turn_building/vad_turn_builder.py) | `build_turns_vad_split_audio()` | Main VAD entry point |
+| [`processing/turn_building/turn_building_data_structures.py`](local_transcribe/processing/turn_building/turn_building_data_structures.py) | `TranscriptFlow`, `HierarchicalTurn` | Frontend data contracts |
+| [`processing/de_identification/orchestrator.py`](local_transcribe/processing/de_identification/orchestrator.py) | Two-pass flow | De-ID UI integration |
+| [`providers/file_writers/json_writer.py`](local_transcribe/providers/file_writers/json_writer.py) | JSON output | API response format |
+| [`web_tools/transcript_compare/web_app.py`](web_tools/transcript_compare/web_app.py) | Flask patterns | Audio sync implementation reference |
+| [`framework/pipeline_runner.py`](local_transcribe/framework/pipeline_runner.py) | Pipeline entry point | How modes are determined |
 
 
 ---
 
 ## Appendix C: Mode-Specific Considerations
 
-The pipeline supports multiple modes. The web interface must handle all of them.
+The pipeline supports multiple modes. **The web interface should initially ONLY support `vad_split_audio` mode.** Other modes can be added later.
 
-VAD_split_audio is the one to implement support for first, thus design decisions should be based on how to best support this mode.
+### VAD-Split-Audio Mode (PRIMARY - Implement First)
 
+| Aspect | Details |
+|--------|---------|
+| **Audio Input** | Separate files per speaker (typically 2: Interviewer + Participant) |
+| **Pipeline Stages** | VADTranscription → DeIdentification → SpeakerNaming → OutputGeneration → [Cleanup] |
+| **Timing Precision** | Block-level only (word timing is approximated) |
+| **Turn Structure** | `HierarchicalTurn` with embedded `InterjectionSegment` |
+| **Key Data** | `VADBlock`, `TranscriptFlow` |
+| **Editing Unit** | VAD blocks (not individual words for navigation) |
+| **Audio Sync** | Dual-track synchronized playback required |
 
-| Mode | Audio Input | Key Differences |
-|------|-------------|-----------------|
-| `combined_audio` | Single file, both speakers | Requires diarization stage |
-| `split_audio` | Separate files per speaker | No diarization, speakers known |
-| `vad_split_audio` | Separate files per speaker | VAD-first pipeline, different turn structure |
-| `single_speaker_audio` | Single speaker file | No diarization, simplified output |
+### Other Modes (Future Implementation)
 
-**UI Implications:**
-- Mode selection affects which stages are shown
-- `vad_split_audio` has block-level (not word-level) timing
-- Audio player must handle dual-track sync for split modes
+| Mode | Audio Input | Key Differences | Priority |
+|------|-------------|-----------------|----------|
+| `combined_audio` | Single file, both speakers | Requires diarization stage, word-level alignment available | Low |
+| `split_audio` | Separate files per speaker | Non-VAD pipeline, word-level alignment available | Low |
+| `single_speaker_audio` | Single speaker file | No diarization, simplified output, no turn building | Low |
+
+**UI Implications for VAD Mode:**
+- Audio player must handle dual-track sync (two waveforms, synchronized playback)
+- Highlighting is at **block level**, not word level
+- Clicking a word should highlight/navigate to the containing block
+- Interjections should be visually distinct but embedded in primary speaker's turn display
+- Block boundaries are the natural editing unit
+
+---
+
+## Appendix D: VAD Pipeline Data Flow
+
+Understanding the VAD data flow is critical for correct web interface implementation.
+
+```
+Input: 2 audio files (Interviewer.m4a, Participant.m4a)
+                    │
+                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│               VADTranscriptionStage                          │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ 1. Silero VAD on each audio file                     │    │
+│  │    Output: Dict[speaker_id, List[VADSegment]]        │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                         │                                    │
+│                         ▼                                    │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ 2. VADBlockBuilder.build_blocks()                    │    │
+│  │    - Merge nearby segments                           │    │
+│  │    - Detect interjections                            │    │
+│  │    - Annotate overlaps                               │    │
+│  │    Output: List[VADBlock]                            │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                         │                                    │
+│                         ▼                                    │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ 3. VADASRProcessor.process_blocks()                  │    │
+│  │    - Transcribe each block via ASR                   │    │
+│  │    - Split long blocks (>30s) at pause points        │    │
+│  │    - Stitch chunked transcriptions                   │    │
+│  │    Output: List[VADBlock] with text populated        │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                         │                                    │
+│                         ▼                                    │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ 4. _convert_blocks_to_transcript_flow()              │    │
+│  │    - Merge consecutive same-speaker blocks           │    │
+│  │    - Create HierarchicalTurns                        │    │
+│  │    - Embed InterjectionSegments                      │    │
+│  │    - Create APPROXIMATED word timing                 │    │
+│  │    Output: TranscriptFlow                            │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+        context.transcript = TranscriptFlow
+                    │
+                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│            DeIdentificationStage (optional)                  │
+│  - Processes context.transcript                              │
+│  - Two-pass LLM-based name detection/redaction               │
+│  - Updates word text with [REDACTED] placeholders            │
+└─────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 SpeakerNamingStage                           │
+│  - Maps speaker_ids to human names                           │
+│  - e.g., "Interviewer" → "Dr. Smith"                         │
+└─────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│              OutputGenerationStage                           │
+│  - Calls registered OutputWriters                            │
+│  - Produces: txt, json, markdown, html, srt, video           │
+│  - Output to: Transcript_Raw/ directory                      │
+└─────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│          TranscriptCleanupStage (optional)                   │
+│  - LLM-based cleanup of transcript text                      │
+│  - Fixes grammar, removes filler words                       │
+│  - Creates context.cleaned_transcript                        │
+└─────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│         CleanedOutputGenerationStage (if cleanup ran)        │
+│  - Produces cleaned outputs to: Transcript_Processed/        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Insight for Web Interface:**
+- The editing happens on `TranscriptFlow` (after VADTranscriptionStage)
+- De-identification edits happen at the word level within `HierarchicalTurn.words`
+- Re-running from edited checkpoint should start from `de_identification` stage (or later)
+
+---
+
+## Critical Review and Critique (v2.1)
+
+This section documents the critical review performed on the original plan (v2.0) and the corrections made.
+
+### Issues Identified and Corrected
+
+#### 1. Insufficiently Emphasized VAD-First Priority
+**Issue:** The original plan mentioned VAD as "most important" but didn't structure the entire document around it.
+**Correction:** Added explicit "Primary Target" section, restructured all phases to be VAD-first, added VAD Pipeline Overview and Data Flow appendices.
+
+#### 2. Missing VAD-Specific Data Structures
+**Issue:** The plan didn't document `VADBlock`, `VADSegment`, or the VAD-specific processing flow.
+**Correction:** Added detailed documentation of VAD data structures and their relationships to `TranscriptFlow`.
+
+#### 3. Incorrect Word-Level Timing Assumption
+**Issue:** The plan implied word-level highlighting would work for all modes.
+**Correction:** Clarified that VAD mode has **approximated** word timing (block duration / word count), making word-level highlighting misleading. Changed to block-level highlighting as primary for VAD mode.
+
+#### 4. Missing `VADTranscriptionStage` Understanding
+**Issue:** The plan referenced generic `PipelineStage` but didn't account for the combined VAD stage.
+**Correction:** Documented that `VADTranscriptionStage` is an integrated unit that handles VAD → ASR → turn building in one stage. Progress callbacks need to be at the `VADASRProcessor` level for per-block updates.
+
+#### 5. Stage Registry Inaccuracy
+**Issue:** The plan referenced `STAGE_REGISTRY` but didn't note that VAD mode uses `create_pipeline_for_mode()` which returns a different stage list.
+**Correction:** Updated to reference `create_pipeline_for_mode("vad_split_audio")` specifically.
+
+#### 6. Missing Interjection Handling
+**Issue:** The plan mentioned interjections but didn't specify how they should be displayed or edited.
+**Correction:** Added interjection display to viewing features, interjection toggle to editing features.
+
+#### 7. De-identification Refactoring Understated
+**Issue:** The plan said "add hook" but the actual code shows `de_identify_multi_speaker()` is a monolithic function.
+**Correction:** Specified that the function needs to be split into `de_identify_multi_speaker_first_pass()` and `de_identify_multi_speaker_second_pass()`.
+
+#### 8. File Writer List Incomplete
+**Issue:** The plan listed some writers but missed `vad-video` (VAD-specific video renderer).
+**Correction:** Added complete list including `vad-video` and other writers from `providers/file_writers/`.
+
+### Remaining Considerations
+
+#### Edit Storage Design
+The edit storage schema needs further refinement for VAD mode:
+- Should edits reference `turn_id` + `word_index` or `block_id`?
+- How to handle edits that span merged blocks?
+- How to persist interjection toggling?
+
+**Recommendation:** Store edits at the `turn_id` level with word indices, since that's the `TranscriptFlow` structure. Block-level information is lost after `_convert_blocks_to_transcript_flow()`.
+
+#### Checkpoint Format for VAD
+The current checkpoint format is designed for word-level `WordSegment` lists. For VAD mode editing:
+- Need to ensure `TranscriptFlow.to_dict()` output can be used as a checkpoint
+- Or define a new checkpoint format for post-turn-building state
+
+**Recommendation:** Use `turns-json` output as the checkpoint format for VAD mode editing.
+
+#### Dual Audio Synchronization Complexity
+Synchronizing two audio tracks is non-trivial:
+- Tracks must start at the same absolute time
+- Muting/soloing individual tracks needed
+- Seek operations must update both tracks
+- Waveform display for both tracks
+
+**Recommendation:** Use wavesurfer.js with two separate instances, synchronized via custom JavaScript.
 
 ---
 
@@ -838,12 +1157,14 @@ VAD_split_audio is the one to implement support for first, thus design decisions
 1. **Session Management:**
    - How long do jobs persist?
    - When are audio files and outputs cleaned up?
+   - **Suggestion:** 7-day retention with user-initiated cleanup option
 
 ### UX Questions
 
 2. **Edit Granularity:**
    - Allow edits at word level, turn level, or both? Word level.
    - What about editing interjections separately from main turns? Handled by word-level edits.
+   - **For VAD mode:** Block is the navigation unit, word is the editing unit
 
 3. **Offline Capability:**
    - Should the UI work offline after initial load? No.
@@ -868,10 +1189,11 @@ VAD_split_audio is the one to implement support for first, thus design decisions
 
 ## Next Steps
 
-1. [ ] Create detailed API specification document
-2. [ ] Design database schema for jobs and edits
-3. [ ] Set up development environment (FastAPI + React)
-4. [ ] Begin Phase 1 implementation
+1. [ ] Create detailed API specification document (FastAPI endpoints)
+2. [ ] Design database schema for jobs and edits (SQLite)
+3. [ ] Set up development environment (FastAPI + React + TypeScript)
+4. [ ] Add progress callback infrastructure to VADASRProcessor
+5. [ ] Begin Phase 1 implementation (VAD mode only)
 
 ---
 

@@ -11,7 +11,7 @@ This module implements the VAD-first approach for split audio transcription:
 6. Return TranscriptFlow with conversation turns
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 from pathlib import Path
 from datetime import datetime
 
@@ -334,6 +334,7 @@ def build_turns_vad_split_audio(
     models_dir: Optional[Path] = None,
     vad_threshold: float = 0.5,
     validate_durations: bool = True,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
     **kwargs
 ) -> TranscriptFlow:
     """
@@ -354,6 +355,9 @@ def build_turns_vad_split_audio(
         intermediate_dir: Path for intermediate/debug files
         models_dir: Path to model cache directory
         validate_durations: Whether to validate audio file durations match
+        progress_callback: Optional callback for progress updates.
+                          Called as: progress_callback(current_block, total_blocks, speaker_id)
+                          This enables web UI to show per-block transcription progress.
         **kwargs: Additional arguments passed to transcriber
         
     Returns:
@@ -433,6 +437,7 @@ def build_turns_vad_split_audio(
     blocks = asr_processor.process_blocks(
         blocks,
         speaker_audio_files,
+        progress_callback=progress_callback,
         **kwargs
     )
     

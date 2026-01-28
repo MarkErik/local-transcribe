@@ -7,6 +7,7 @@
  * - Stage selector for viewing different pipeline outputs
  * - Word-level editing with undo/redo
  * - Auto-save functionality
+ * - PII highlighting and audit trail
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -18,6 +19,7 @@ import {
   getAvailableStages, 
   getAudioUrl,
   listEdits,
+  getPIIReplacements,
 } from '../api';
 import { 
   DualTrackPlayer, 
@@ -25,8 +27,11 @@ import {
   StageBadges,
   EditToolbar,
   StaleStageWarning,
+  PIIHighlightMode,
+  PIIAuditTrail,
+  RedactionTool,
 } from '../components';
-import { useEditStore } from '../store';
+import { useEditStore, useDeIdentificationStore } from '../store';
 
 export function TranscriptEditor() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -42,12 +47,22 @@ export function TranscriptEditor() {
   // Selected turn for editing
   const [selectedTurnId, setSelectedTurnId] = useState<number | null>(null);
   
+  // Selected word for PII redaction
+  const [selectedWordIndex, setSelectedWordIndex] = useState<number | null>(null);
+  const [selectedWordText, setSelectedWordText] = useState<string | null>(null);
+  
   // Auto-scroll toggle
   const [autoScroll, setAutoScroll] = useState(true);
   
   // Dismiss stale warning
   const [staleWarningDismissed, setStaleWarningDismissed] = useState(false);
   
+  // Panel visibility
+  const [showAuditTrail, setShowAuditTrail] = useState(false);
+  const [showRedactionTool, setShowRedactionTool] = useState(false);
+  
+  // De-identification store
+  const { setPIIReplacements, piiHighlightEnabled } = useDeIdentificationStore();
   // Edit store
   const { 
     savedEdits, 
@@ -70,6 +85,20 @@ export function TranscriptEditor() {
     queryFn: () => getAvailableStages(jobId!),
     enabled: !!jobId && job?.status === 'completed',
   });
+  
+  // Fetch PII replacements for the job
+  const { data: piiData } = useQuery({
+    queryKey: ['piiReplacements', jobId],
+    queryFn: () => getPIIReplacements(jobId!),
+    enabled: !!jobId && job?.status === 'completed',
+  });
+  
+  // Update store when PII data changes
+  useEffect(() => {
+    if (piiData) {
+      setPIIReplacements(piiData.replacements);
+    }
+  }, [piiData, setPIIReplacements]);
 
   // Set initial stage when stages are loaded
   useMemo(() => {
@@ -160,6 +189,14 @@ export function TranscriptEditor() {
     setSelectedTurnId(turnId === selectedTurnId ? null : turnId);
   }, [selectedTurnId]);
 
+  // Handle word selection for PII redaction
+  const handleWordSelect = useCallback((turnId: number, wordIndex: number, word: string) => {
+    setSelectedTurnId(turnId);
+    setSelectedWordIndex(wordIndex);
+    setSelectedWordText(word);
+    setShowRedactionTool(true);
+  }, []);
+
   // Loading state
   if (isLoadingJob) {
     return (
@@ -244,6 +281,24 @@ export function TranscriptEditor() {
               />
               <span className="text-gray-600 dark:text-gray-400">Auto-scroll</span>
             </label>
+            
+            {/* PII highlight mode toggle */}
+            <PIIHighlightMode />
+            
+            {/* Audit trail toggle */}
+            <button
+              onClick={() => setShowAuditTrail(!showAuditTrail)}
+              className={`flex items-center space-x-1 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                showAuditTrail 
+                  ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300' 
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Audit Trail</span>
+            </button>
           </div>
         </div>
       </header>
@@ -302,6 +357,29 @@ export function TranscriptEditor() {
               </button>
             </div>
           )}
+          
+          {/* PII Audit Trail Panel */}
+          {showAuditTrail && piiHighlightEnabled && jobId && (
+            <div className="mt-4">
+              <PIIAuditTrail jobId={jobId} />
+            </div>
+          )}
+          
+          {/* Redaction Tool Panel */}
+          {showRedactionTool && jobId && (
+            <div className="mt-4">
+              <RedactionTool 
+                jobId={jobId}
+                selectedTurnId={selectedTurnId ?? undefined}
+                selectedWordIndex={selectedWordIndex ?? undefined}
+                selectedWordText={selectedWordText ?? undefined}
+                onRedactionComplete={() => {
+                  setSelectedWordIndex(null);
+                  setSelectedWordText(null);
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right panel: Transcript view */}
@@ -329,6 +407,8 @@ export function TranscriptEditor() {
               autoScroll={autoScroll}
               selectedTurnId={selectedTurnId}
               onTurnSelect={handleTurnSelect}
+              onWordSelect={handleWordSelect}
+              piiReplacements={piiData?.replacements}
             />
           ) : (
             <div className="flex items-center justify-center h-full">

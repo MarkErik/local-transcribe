@@ -254,3 +254,144 @@ The Phase 1-4 implementation is well-designed and functional. Three bugs were fo
 
 All tests pass after fixes. The implementation is ready for use.
 
+---
+
+## Phase 5 Review: January 28, 2026
+
+**Reviewer:** AI Code Review Assistant  
+**Scope:** Phase 5 De-identification Tools Implementation
+
+### Phase 5 Review Summary
+
+| Category | Status |
+|----------|--------|
+| Backend De-identification Router | ✅ Bug Fixed |
+| Database Schema (de_identification_state, pii_replacements) | ✅ Well-designed |
+| Orchestrator Integration | ✅ Solid |
+| Frontend Components | ✅ Well-structured |
+| Store Integration | ✅ Complete |
+| UI Integrations | ✅ Completed |
+
+---
+
+### Bug #4: Invalid WordSegment Constructor Arguments
+
+**Location:** [web_api/routers/deidentification.py](../../web_api/routers/deidentification.py#L728-L748)
+
+**Severity:** High (Runtime Error)
+
+**Description:**  
+The `_extract_speaker_segments_from_transcript` helper function was constructing `WordSegment` objects with a `confidence` parameter that doesn't exist in the `WordSegment` dataclass. The `WordSegment` class only has `text`, `start`, `end`, and optional `speaker` fields.
+
+Additionally, the function was looking for `speaker` key in turns but the actual JSON uses `primary_speaker`.
+
+**Impact:**
+- The first pass de-identification would fail with a TypeError when processing transcripts
+- Any job attempting to run de-identification would crash
+
+**Fix Applied:**
+```python
+# Before:
+speaker = turn.get("speaker", "Unknown")
+...
+segment = WordSegment(
+    text=w.get("word", w.get("text", "")),
+    start=w.get("start_time", w.get("start", 0.0)),
+    end=w.get("end_time", w.get("end", 0.0)),
+    confidence=w.get("confidence", 1.0),  # INVALID - no such field
+    speaker=speaker,
+)
+
+# After:
+speaker = turn.get("primary_speaker", turn.get("speaker", "Unknown"))
+...
+segment = WordSegment(
+    text=w.get("word", w.get("text", "")),
+    start=w.get("start_time", w.get("start", 0.0)),
+    end=w.get("end_time", w.get("end", 0.0)),
+    speaker=speaker,  # confidence field removed
+)
+```
+
+---
+
+### Missing Integrations Identified and Completed
+
+The following Phase 5 tasks were completed during this review:
+
+1. **PII Highlight Integration into TranscriptView** (Task 5.3.2) ✅ COMPLETED
+   - Added `getPIIHighlightClass()` function to determine highlight colors
+   - TranscriptView now accepts `piiReplacements` prop
+   - Words are rendered with PII highlights when enabled via store
+   - Word-level click handlers added via `onWordSelect` prop
+   - Files modified: [web_ui/src/components/TranscriptView.tsx](../../web_ui/src/components/TranscriptView.tsx)
+
+2. **De-identification Step Detection in JobDetail** (Task 5.2.2) ✅ COMPLETED
+   - Added query to check de-identification status
+   - Detects when job is awaiting name review (`needs_name_review` flag)
+   - Shows "Review Names" banner when review needed
+   - Integrates NameListReview modal with proper callbacks
+   - Files modified: [web_ui/src/pages/JobDetail.tsx](../../web_ui/src/pages/JobDetail.tsx)
+
+3. **Audit Trail Panel in TranscriptEditor** (Task 5.3.x) ✅ COMPLETED
+   - Added PIIHighlightMode toggle button in header
+   - Added Audit Trail toggle button in header
+   - Integrated PIIAuditTrail panel in left sidebar
+   - Integrated RedactionTool panel for manual word redaction
+   - Added word selection handler (`handleWordSelect`) for redaction workflow
+   - PII replacements fetched and passed to TranscriptView
+   - Files modified: [web_ui/src/pages/TranscriptEditor.tsx](../../web_ui/src/pages/TranscriptEditor.tsx)
+
+---
+
+### Phase 5 Code Quality Observations
+
+#### Strengths
+
+1. **Well-designed de-identification API**
+   - Two-pass architecture properly exposed via REST endpoints
+   - Clean separation of first pass (name discovery) and second pass (application)
+   - Audit trail via pii_replacements table
+
+2. **Complete Store Implementation**
+   - `useDeIdentificationStore` handles all necessary state
+   - Proper actions for updating names, replacements, and UI state
+
+3. **Good Component Design**
+   - `NameListReview` - comprehensive name editing UI
+   - `PIIHighlightMode` - toggle and legend UI
+   - `PIIAuditTrail` - filtering, export, and navigation
+   - `RedactionTool` - manual redaction with presets
+
+4. **API Client Coverage**
+   - All de-identification endpoints have client functions
+   - Proper TypeScript types matching backend schemas
+
+#### Fixes Applied
+
+| File | Description |
+|------|-------------|
+| [web_api/routers/deidentification.py](../../web_api/routers/deidentification.py) | Removed invalid `confidence` param from WordSegment, fixed speaker key lookup |
+| [web_ui/src/components/TranscriptView.tsx](../../web_ui/src/components/TranscriptView.tsx) | Added PII highlighting with word-level rendering |
+| [web_ui/src/pages/JobDetail.tsx](../../web_ui/src/pages/JobDetail.tsx) | Added de-identification status detection and review banner |
+| [web_ui/src/pages/TranscriptEditor.tsx](../../web_ui/src/pages/TranscriptEditor.tsx) | Added audit trail and redaction tool panels |
+
+---
+
+### Phase 5 Conclusion
+
+The Phase 5 de-identification implementation is now complete and functional:
+
+1. **One critical bug fixed** - WordSegment constructor was using invalid parameters
+2. **Three UI integrations completed** - TranscriptView highlighting, JobDetail review detection, TranscriptEditor panels
+3. **All TypeScript checks pass** - No compilation errors
+
+The de-identification workflow is now fully integrated into the web interface, with:
+- First pass name discovery via LLM
+- Human-in-the-loop name review
+- Second pass application with pseudonym generation
+- Visual PII highlighting in transcript view
+- Complete audit trail with export capability
+- Manual redaction tool for additional PII
+
+---

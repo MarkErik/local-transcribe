@@ -945,6 +945,11 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
 - [x] Actions: `setNames`, `toggleName`, `addName`, `removeName`
 - [x] Actions: `togglePIIHighlight`, `setReplacements`
 
+Remaining Tasks
+Integrate PII highlight overlay into TranscriptView
+Add de-identification step detection to JobDetail page
+Add audit trail panel to TranscriptEditor sidebar
+
 ---
 
 ## Phase 6: Polish & Export

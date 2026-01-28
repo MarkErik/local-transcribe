@@ -719,17 +719,18 @@ def _extract_speaker_segments_from_transcript(transcript_data: dict) -> dict:
     turns = transcript_data.get("turns", [])
     
     for turn in turns:
-        speaker = turn.get("speaker", "Unknown")
+        # Handle both "speaker" and "primary_speaker" keys
+        speaker = turn.get("primary_speaker", turn.get("speaker", "Unknown"))
         if speaker not in speaker_segments:
             speaker_segments[speaker] = []
         
         words = turn.get("words", [])
         for w in words:
+            # WordSegment only has text, start, end, speaker fields (no confidence)
             segment = WordSegment(
                 text=w.get("word", w.get("text", "")),
                 start=w.get("start_time", w.get("start", 0.0)),
                 end=w.get("end_time", w.get("end", 0.0)),
-                confidence=w.get("confidence", 1.0),
                 speaker=speaker,
             )
             speaker_segments[speaker].append(segment)
@@ -745,7 +746,6 @@ def _extract_speaker_segments_from_transcript(transcript_data: dict) -> dict:
                     text=w.get("word", w.get("text", "")),
                     start=w.get("start_time", w.get("start", 0.0)),
                     end=w.get("end_time", w.get("end", 0.0)),
-                    confidence=w.get("confidence", 1.0),
                     speaker=int_speaker,
                 )
                 speaker_segments[int_speaker].append(segment)

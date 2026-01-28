@@ -2,10 +2,12 @@
  * Transcript view component that displays HierarchicalTurns with speaker colors.
  * 
  * Supports block-level highlighting synchronized with audio playback.
+ * Supports PII highlighting when piiHighlightEnabled is true.
  */
 
 import { useRef, useEffect, useMemo, useCallback } from 'react';
-import type { TranscriptTurn } from '../api';
+import type { TranscriptTurn, PIIReplacement } from '../api';
+import { useDeIdentificationStore } from '../store';
 
 export interface TranscriptViewProps {
   /** Array of transcript turns */
@@ -20,6 +22,10 @@ export interface TranscriptViewProps {
   selectedTurnId?: number | null;
   /** Called when a turn is selected */
   onTurnSelect?: (turnId: number) => void;
+  /** Called when a word is selected for editing */
+  onWordSelect?: (turnId: number, wordIndex: number, wordText: string) => void;
+  /** PII replacements for highlighting (optional, can also use store) */
+  piiReplacements?: PIIReplacement[];
 }
 
 // Speaker colors
@@ -65,15 +71,66 @@ function formatTimestamp(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Get the PII highlight class for a word based on its redaction status.
+ */
+function getPIIHighlightClass(
+  wordIndex: number,
+  turnId: number,
+  piiReplacements: PIIReplacement[],
+  piiHighlightEnabled: boolean
+): string {
+  if (!piiHighlightEnabled || !piiReplacements.length) return '';
+  
+  // Find matching replacement (not overridden)
+  const replacement = piiReplacements.find(
+    r => r.turn_id === turnId && r.word_index === wordIndex && !r.is_override
+  );
+  
+  if (!replacement) {
+    // Check if there's an override (restored)
+    const override = piiReplacements.find(
+      r => r.turn_id === turnId && r.word_index === wordIndex && r.is_override
+    );
+    if (override) {
+      return 'bg-gray-100 line-through text-gray-500';
+    }
+    return '';
+  }
+  
+  if (replacement.is_manual) {
+    return 'bg-red-100 border-b-2 border-red-400';
+  }
+  
+  if (replacement.pass_number === 2) {
+    return 'bg-orange-100 border-b-2 border-orange-400';
+  }
+  
+  // Default: first pass
+  return 'bg-yellow-100 border-b-2 border-yellow-400';
+}
+
 interface TurnItemProps {
   turn: TranscriptTurn;
   isActive: boolean;
   isSelected: boolean;
   onSeek: (time: number) => void;
   onSelect: (turnId: number) => void;
+  onWordSelect?: (turnId: number, wordIndex: number, wordText: string) => void;
+  piiReplacements: PIIReplacement[];
+  piiHighlightEnabled: boolean;
 }
 
-function TurnItem({ turn, isActive, isSelected, onSeek, onSelect }: TurnItemProps) {
+function TurnItem({ 
+  turn, 
+  isActive, 
+  isSelected, 
+  onSeek, 
+  onSelect,
+  onWordSelect,
+  piiReplacements,
+  piiHighlightEnabled,
+}: TurnItemProps) {
   const colors = getSpeakerColors(turn.primary_speaker);
   
   const handleClick = useCallback(() => {
@@ -113,10 +170,48 @@ function TurnItem({ turn, isActive, isSelected, onSeek, onSelect }: TurnItemProp
         </button>
       </div>
       
-      {/* Turn text */}
-      <p className="text-gray-800 dark:text-gray-200 text-sm leading-relaxed">
-        {turn.text}
-      </p>
+      {/* Turn text - with optional word-level PII highlighting */}
+      <div className="text-gray-800 dark:text-gray-200 text-sm leading-relaxed">
+        {turn.words && turn.words.length > 0 && (piiHighlightEnabled || onWordSelect) ? (
+          // Render word-by-word for PII highlighting or word selection
+          turn.words.map((word, idx) => {
+            const highlightClass = getPIIHighlightClass(
+              idx,
+              turn.turn_id,
+              piiReplacements,
+              piiHighlightEnabled
+            );
+            
+            // Find if this word was redacted to show tooltip
+            const replacement = piiReplacements.find(
+              r => r.turn_id === turn.turn_id && r.word_index === idx && !r.is_override
+            );
+            
+            const handleWordClick = onWordSelect ? (e: React.MouseEvent) => {
+              e.stopPropagation();
+              onWordSelect(turn.turn_id, idx, word.word);
+            } : undefined;
+            
+            return (
+              <span
+                key={idx}
+                onClick={handleWordClick}
+                className={`
+                  ${highlightClass}
+                  ${onWordSelect ? 'cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/30' : ''}
+                  px-0.5 rounded
+                `}
+                title={replacement ? `Original: ${replacement.original_text}` : undefined}
+              >
+                {word.word}{idx < turn.words!.length - 1 ? ' ' : ''}
+              </span>
+            );
+          })
+        ) : (
+          // Render plain text when no PII highlighting needed
+          turn.text
+        )}
+      </div>
       
       {/* Interjections */}
       {turn.interjections && turn.interjections.length > 0 && (
@@ -154,9 +249,15 @@ export function TranscriptView({
   autoScroll = true,
   selectedTurnId,
   onTurnSelect,
+  onWordSelect,
+  piiReplacements: propPiiReplacements,
 }: TranscriptViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeTurnRef = useRef<HTMLDivElement | null>(null);
+  
+  // Get PII state from store (can be overridden by props)
+  const { piiReplacements: storePiiReplacements, piiHighlightEnabled } = useDeIdentificationStore();
+  const piiReplacements = propPiiReplacements ?? storePiiReplacements;
   
   // Find the currently active turn based on playback time
   const activeTurnId = useMemo(() => {
@@ -224,6 +325,9 @@ export function TranscriptView({
               isSelected={isSelected}
               onSeek={handleSeek}
               onSelect={handleSelect}
+              onWordSelect={onWordSelect}
+              piiReplacements={piiReplacements}
+              piiHighlightEnabled={piiHighlightEnabled}
             />
           </div>
         );

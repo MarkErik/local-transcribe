@@ -139,8 +139,8 @@ function TurnItem({
   
   const handleTimestampClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    onSeek(turn.start_time);
-  }, [turn.start_time, onSeek]);
+    onSeek(turn.start);
+  }, [turn.start, onSeek]);
 
   return (
     <div
@@ -153,8 +153,8 @@ function TurnItem({
       `}
       onClick={handleClick}
       data-turn-id={turn.turn_id}
-      data-start-time={turn.start_time}
-      data-end-time={turn.end_time}
+      data-start-time={turn.start}
+      data-end-time={turn.end}
     >
       {/* Header row */}
       <div className="flex items-center justify-between mb-1">
@@ -166,7 +166,7 @@ function TurnItem({
           className="text-xs text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-mono"
           title="Click to seek"
         >
-          {formatTimestamp(turn.start_time)}
+          {formatTimestamp(turn.start)}
         </button>
       </div>
       
@@ -262,7 +262,7 @@ export function TranscriptView({
   // Find the currently active turn based on playback time
   const activeTurnId = useMemo(() => {
     for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].start_time <= currentTime) {
+      if (turns[i].start <= currentTime) {
         return turns[i].turn_id;
       }
     }

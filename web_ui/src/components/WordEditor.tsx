@@ -8,8 +8,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 interface Word {
   word: string;
-  start_time: number;
-  end_time: number;
+  start: number;
+  end: number;
   confidence?: number;
 }
 
@@ -154,7 +154,7 @@ export function WordEditor({
         className={`${baseClasses} ${stateClasses} ${confidenceClasses}`}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
-        title={`${word.start_time.toFixed(2)}s - ${word.end_time.toFixed(2)}s${
+        title={`${word.start.toFixed(2)}s - ${word.end.toFixed(2)}s${
           word.confidence ? ` (${(word.confidence * 100).toFixed(0)}% confidence)` : ''
         }`}
       >

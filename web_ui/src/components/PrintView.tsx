@@ -63,7 +63,7 @@ export function PrintView({ transcript, jobId, stage, title, onClose }: PrintVie
       return acc + (turn.interjections?.length || 0);
     }, 0),
     duration: transcript.turns.length > 0
-      ? Math.max(...transcript.turns.map(t => t.end_time || 0))
+      ? Math.max(...transcript.turns.map(t => t.end || 0))
       : 0,
     speakers: [...new Set(transcript.turns.map(t => t.primary_speaker))],
   };
@@ -228,7 +228,7 @@ function PrintTurn({ turn, formatTimestamp }: PrintTurnProps) {
           {turn.primary_speaker}
         </span>
         <span className="text-xs text-gray-400">
-          [{formatTimestamp(turn.start_time)} - {formatTimestamp(turn.end_time)}]
+          [{formatTimestamp(turn.start)} - {formatTimestamp(turn.end)}]
         </span>
       </div>
       

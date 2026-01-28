@@ -66,18 +66,18 @@ export interface TranscriptTurn {
   turn_id: number;
   primary_speaker: string;
   text: string;
-  start_time: number;
-  end_time: number;
+  start: number;
+  end: number;
   words?: Array<{
     word: string;
-    start_time: number;
-    end_time: number;
+    start: number;
+    end: number;
   }>;
   interjections?: Array<{
     speaker: string;
     text: string;
-    start_time: number;
-    end_time: number;
+    start: number;
+    end: number;
   }>;
   source_block_ids?: number[];
 }

@@ -132,8 +132,8 @@ function WindowedTurnItem({
   
   const handleTimestampClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    onSeek(turn.start_time);
-  }, [turn.start_time, onSeek]);
+    onSeek(turn.start);
+  }, [turn.start, onSeek]);
 
   return (
     <div className="px-4 py-1">
@@ -158,7 +158,7 @@ function WindowedTurnItem({
             className="text-xs text-gray-500 hover:text-indigo-600 font-mono"
             title="Click to seek"
           >
-            {formatTimestamp(turn.start_time)}
+            {formatTimestamp(turn.start)}
           </button>
         </div>
         
@@ -248,7 +248,7 @@ export function VirtualizedTranscriptView({
   // Find active turn
   const activeTurnIndex = useMemo(() => {
     for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].start_time <= currentTime) {
+      if (turns[i].start <= currentTime) {
         return i;
       }
     }

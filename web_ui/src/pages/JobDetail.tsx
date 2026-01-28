@@ -160,7 +160,7 @@ function TranscriptView({ transcript }: { transcript: Transcript }) {
                 {turn.primary_speaker}
               </span>
               <span className="text-xs text-gray-500 dark:text-gray-400">
-                {turn.start_time.toFixed(1)}s - {turn.end_time.toFixed(1)}s
+                {turn.start.toFixed(1)}s - {turn.end.toFixed(1)}s
               </span>
             </div>
             <p className="text-gray-800 dark:text-gray-200">

@@ -7,6 +7,7 @@ for the web interface.
 
 import json
 import traceback
+import argparse
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
 from datetime import datetime
@@ -66,90 +67,125 @@ class PipelineService:
             })
         
         output_dir = self.config.output_dir / job_id
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         try:
-            # Import pipeline components
+            # Import pipeline components - use the actual module structure
             from local_transcribe.framework.pipeline_context import PipelineContext
-            from local_transcribe.framework.pipeline_runner import PipelineRunner
-            from local_transcribe.framework.plugin_manager import PluginManager
-            from local_transcribe.lib.program_logger import setup_output_context
+            from local_transcribe.framework.stages import PipelineExecutor, create_pipeline_for_mode
+            from local_transcribe.framework.plugin_manager import import_pipeline_modules
+            from local_transcribe.lib.program_logger import configure_global_logging
+            from local_transcribe.lib.create_directories import ensure_session_dirs
+            from local_transcribe.lib.environment import repo_root_from_here
+            from local_transcribe.lib.system_capability_utils import set_system_capability
+            from local_transcribe.framework.provider_setup import ProviderSetup
             
-            # Setup logging context
-            setup_output_context(
-                output_dir=output_dir,
-                log_level="INFO",
-                console_output=False,  # Don't spam console in web mode
-            )
+            # Get the repo root and set up the environment
+            root = repo_root_from_here()
             
-            # Create pipeline context
-            context = PipelineContext(
+            # Set system capability (default to CPU for web server)
+            set_system_capability(options.get("system", "cpu"))
+            
+            # Import pipeline modules to get API and registry
+            api = import_pipeline_modules(root)
+            
+            # Configure logging
+            configure_global_logging(log_level="INFO")
+            
+            # Build args namespace for the pipeline
+            args = self._build_args_for_pipeline(
                 mode=mode,
-                interviewer_audio=Path(interviewer_file) if interviewer_file else None,
-                participant_audio=Path(participant_file) if participant_file else None,
+                options=options,
+                interviewer_file=interviewer_file,
+                participant_file=participant_file,
                 output_dir=output_dir,
-                enable_de_identification=options.get("enable_de_identification", True),
-                enable_cleanup=options.get("enable_cleanup", False),
-                output_formats=options.get("output_formats", ["turns-json", "timestamped-txt"]),
             )
             
-            # Create progress wrapper for VADASRProcessor
-            def block_progress_wrapper(current: int, total: int, speaker: str):
-                if progress_callback:
-                    progress_callback("block_progress", {
-                        "job_id": job_id,
-                        "stage": "vad_transcription",
-                        "current": current,
-                        "total": total,
-                        "speaker": speaker,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    })
+            # Determine speaker_files mapping based on mode
+            speaker_files = {}
+            if mode in ("vad_split_audio", "split_audio"):
+                if interviewer_file:
+                    speaker_files["Interviewer"] = interviewer_file
+                if participant_file:
+                    speaker_files["Participant"] = participant_file
+            elif mode == "combined_audio":
+                # Combined audio uses a single file
+                speaker_files["combined_audio"] = interviewer_file or participant_file
             
-            # Create stage progress callback
-            def stage_callback(stage_name: str, event: str, data: Dict[str, Any]):
-                if progress_callback:
-                    if event == "start":
-                        progress_callback("stage_start", {
-                            "job_id": job_id,
-                            "stage": stage_name,
-                            "message": data.get("message", f"Starting {stage_name}..."),
-                            "timestamp": datetime.utcnow().isoformat(),
-                        })
-                    elif event == "complete":
-                        progress_callback("stage_complete", {
-                            "job_id": job_id,
-                            "stage": stage_name,
-                            "duration_s": data.get("duration_s", 0),
-                            "summary": data.get("summary"),
-                            "timestamp": datetime.utcnow().isoformat(),
-                        })
+            # Setup providers using the registry
+            registry = api.get("registry")
+            if registry is None:
+                raise ValueError("Registry not found in api")
             
-            # Store callbacks on context for stages to use
-            context.progress_callbacks = {
-                "block_progress": block_progress_wrapper,
-                "stage": stage_callback,
+            provider_setup = ProviderSetup(registry, args)
+            # For vad_split_audio, use split_audio provider setup
+            provider_mode = "split_audio" if mode == "vad_split_audio" else mode
+            providers = provider_setup.setup_providers(provider_mode)
+            
+            # Setup output directories
+            capabilities = {
+                "mode": mode,
+                "has_builtin_alignment": providers.get('transcriber', {}).has_builtin_alignment if providers.get('transcriber') else False,
+                "aligner": providers.get('aligner') is not None,
+                "diarization": providers.get('diarization') is not None,
             }
             
-            # Initialize plugin manager and run pipeline
-            plugin_manager = PluginManager()
-            runner = PipelineRunner(plugin_manager)
+            ensure_session_dirs_func = api.get("ensure_session_dirs")
+            if ensure_session_dirs_func is None:
+                raise ValueError("ensure_session_dirs not found in api")
             
-            # Execute pipeline
-            await self._run_pipeline_async(runner, context, stage_callback)
+            paths = ensure_session_dirs_func(output_dir, mode, speaker_files, capabilities)
             
-            # Mark complete
-            self.db.update_job_status(
-                job_id, 
-                JobStatus.COMPLETED,
-                output_dir=str(output_dir),
+            # Create pipeline context with all required fields
+            context = PipelineContext(
+                args=args,
+                api=api,
+                root=root,
+                paths=paths,
+                mode=mode,
+                speaker_files=speaker_files,
+                transcriber_provider=providers.get('transcriber'),
+                aligner_provider=providers.get('aligner'),
+                diarization_provider=providers.get('diarization'),
+                transcript_cleanup_provider=providers.get('transcript_cleanup'),
+                models_dir=root / ".models",
+                dry_run=False,
             )
             
-            if progress_callback:
-                progress_callback("job_complete", {
-                    "job_id": job_id,
-                    "status": "completed",
-                    "output_path": str(output_dir),
-                    "timestamp": datetime.utcnow().isoformat(),
-                })
+            # Create and execute pipeline
+            stages = create_pipeline_for_mode(mode)
+            executor = PipelineExecutor(stages)
+            
+            # Execute pipeline in thread pool
+            result = await self._run_pipeline_async(executor, context)
+            
+            if result.success:
+                # Mark complete
+                self.db.update_job_status(
+                    job_id, 
+                    JobStatus.COMPLETED,
+                    output_dir=str(output_dir),
+                )
+                
+                if progress_callback:
+                    progress_callback("job_complete", {
+                        "job_id": job_id,
+                        "status": "completed",
+                        "output_path": str(output_dir),
+                        "timestamp": datetime.utcnow().isoformat(),
+                    })
+            else:
+                error_msg = f"Pipeline failed at stage: {result.failed_stage}"
+                if result.error:
+                    error_msg += f" - {result.error}"
+                self.db.update_job_status(job_id, JobStatus.FAILED, error_message=error_msg)
+                
+                if progress_callback:
+                    progress_callback("job_error", {
+                        "job_id": job_id,
+                        "error": error_msg,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    })
                 
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"
@@ -163,7 +199,69 @@ class PipelineService:
                     "timestamp": datetime.utcnow().isoformat(),
                 })
     
-    async def _run_pipeline_async(self, runner, context, stage_callback):
+    def _build_args_for_pipeline(
+        self,
+        mode: str,
+        options: Dict[str, Any],
+        interviewer_file: Optional[str],
+        participant_file: Optional[str],
+        output_dir: Path,
+    ) -> argparse.Namespace:
+        """
+        Build an argparse.Namespace object for the pipeline.
+        
+        This creates the args object expected by the pipeline with all
+        necessary configuration options.
+        """
+        args = argparse.Namespace()
+        
+        # Core settings
+        args.outdir = str(output_dir)
+        args.log_level = options.get("log_level", "INFO")
+        args.system = options.get("system", "cpu")
+        
+        # Audio files based on mode
+        audio_files = []
+        if interviewer_file:
+            audio_files.append(interviewer_file)
+        if participant_file:
+            audio_files.append(participant_file)
+        args.audio_files = audio_files
+        
+        # Mode settings
+        args.single_speaker_audio = mode == "single_speaker_audio"
+        args.vad_pipeline = mode == "vad_split_audio"
+        
+        # Provider settings
+        args.transcriber_provider = options.get("transcriber_provider", "remote")
+        args.transcriber_model = options.get("transcriber_model")
+        args.aligner_provider = options.get("aligner_provider")
+        args.diarization_provider = options.get("diarization_provider")
+        args.transcript_cleanup_provider = options.get("transcript_cleanup_provider")
+        
+        # Remote URLs
+        args.remote_transcriber_url = options.get("remote_transcriber_url", "http://100.84.208.72:7070")
+        args.llm_de_identifier_url = options.get("llm_de_identifier_url", "http://100.84.208.72:8080")
+        args.llm_transcript_cleanup_url = options.get("llm_transcript_cleanup_url", "http://100.84.208.72:8080")
+        
+        # Processing options
+        args.de_identify = options.get("enable_de_identification", True)
+        args.enable_cleanup = options.get("enable_cleanup", False)
+        args.num_speakers = options.get("num_speakers", 2)
+        
+        # Output settings
+        args.selected_outputs = options.get("output_formats", ["turns-json", "timestamped-txt"])
+        args.only_final_transcript = False
+        
+        # Set this to avoid interactive prompts
+        args.interactive = False
+        
+        # Dry run flag
+        args.dry_run = False
+        
+        return args
+    
+    async def _run_pipeline_async(self, executor, context):
         """
         Run the pipeline (wrapper for async execution).
         
@@ -174,10 +272,11 @@ class PipelineService:
         
         # Run synchronous pipeline in thread pool
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
+        result = await loop.run_in_executor(
             None,
-            lambda: runner.run(context),
+            lambda: executor.execute(context),
         )
+        return result
     
     async def execute_job_from_checkpoint(
         self,
@@ -209,30 +308,34 @@ class PipelineService:
             })
         
         output_dir = self.config.output_dir / job_id
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         try:
             from local_transcribe.framework.pipeline_reentry import run_pipeline_from_checkpoint
-            from local_transcribe.lib.program_logger import setup_output_context
+            from local_transcribe.framework.plugin_manager import import_pipeline_modules
+            from local_transcribe.lib.program_logger import configure_global_logging
+            from local_transcribe.lib.environment import repo_root_from_here
+            from local_transcribe.lib.system_capability_utils import set_system_capability
             
             # Find checkpoint file from original job
             original_output = Path(original_job.output_dir) if original_job.output_dir else self.config.output_dir / original_job_id
             
             # Look for turns.json or similar checkpoint file
-            checkpoint_path = None
+            checkpoint_file = None
             for pattern in ["*turns.json", "*turns-de-identified.json", "*turns-named.json"]:
                 matches = list(original_output.glob(pattern))
                 if matches:
-                    checkpoint_path = matches[0]
+                    checkpoint_file = matches[0]
                     break
             
-            if not checkpoint_path:
+            if not checkpoint_file:
                 raise FileNotFoundError(f"No checkpoint file found in {original_output}")
             
             # Load checkpoint and apply edits
             import json as json_module
             from web_api.services.edit_applicator import apply_edits_to_transcript
             
-            with open(checkpoint_path, 'r') as f:
+            with open(checkpoint_file, 'r') as f:
                 transcript_data = json_module.load(f)
             
             # Get edits for the original job and apply them
@@ -245,40 +348,73 @@ class PipelineService:
             with open(edited_checkpoint_path, 'w') as f:
                 json_module.dump(transcript_data, f, indent=2)
             
-            # Setup logging
-            setup_output_context(
-                output_dir=output_dir,
-                log_level="INFO",
-                console_output=False,
-            )
+            # Get the repo root and set up the environment
+            root = repo_root_from_here()
             
             # Parse original config for options
             original_config = json.loads(original_job.config_json) if original_job.config_json else {}
             options = original_config.get("options", {})
             
-            # Run from checkpoint (using edited checkpoint)
-            run_pipeline_from_checkpoint(
-                checkpoint_path=edited_checkpoint_path,
-                output_dir=output_dir,
-                start_stage=start_stage,
-                enable_de_identification=options.get("enable_de_identification", True),
-                enable_cleanup=options.get("enable_cleanup", False),
+            # Set system capability
+            set_system_capability(options.get("system", "cpu"))
+            
+            # Import pipeline modules to get API and registry
+            api = import_pipeline_modules(root)
+            
+            # Configure logging
+            configure_global_logging(log_level="INFO")
+            
+            # Build args for the checkpoint reentry
+            args = argparse.Namespace()
+            args.from_diarized_json = str(edited_checkpoint_path)
+            args.outdir = str(output_dir)
+            args.log_level = "INFO"
+            args.system = options.get("system", "cpu")
+            args.de_identify = options.get("enable_de_identification", True)
+            args.enable_cleanup = options.get("enable_cleanup", False)
+            args.selected_outputs = options.get("output_formats", ["turns-json", "timestamped-txt"])
+            args.interactive = False
+            args.dry_run = False
+            args.mode = original_config.get("mode")
+            args.speaker_map = None
+            args.audio_for_video = None
+            args.transcript_cleanup_provider = options.get("transcript_cleanup_provider")
+            args.llm_de_identifier_url = options.get("llm_de_identifier_url", "http://100.84.208.72:8080")
+            args.llm_transcript_cleanup_url = options.get("llm_transcript_cleanup_url", "http://100.84.208.72:8080")
+            
+            # Run from checkpoint
+            import asyncio
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: run_pipeline_from_checkpoint(args, api, root),
             )
             
-            # Mark complete
-            self.db.update_job_status(
-                job_id,
-                JobStatus.COMPLETED,
-                output_dir=str(output_dir),
-            )
-            
-            if progress_callback:
-                progress_callback("job_complete", {
-                    "job_id": job_id,
-                    "status": "completed",
-                    "output_path": str(output_dir),
-                    "timestamp": datetime.utcnow().isoformat(),
-                })
+            if result == 0:
+                # Mark complete
+                self.db.update_job_status(
+                    job_id,
+                    JobStatus.COMPLETED,
+                    output_dir=str(output_dir),
+                )
+                
+                if progress_callback:
+                    progress_callback("job_complete", {
+                        "job_id": job_id,
+                        "status": "completed",
+                        "output_path": str(output_dir),
+                        "timestamp": datetime.utcnow().isoformat(),
+                    })
+            else:
+                error_msg = f"Pipeline failed with exit code: {result}"
+                self.db.update_job_status(job_id, JobStatus.FAILED, error_message=error_msg)
+                
+                if progress_callback:
+                    progress_callback("job_error", {
+                        "job_id": job_id,
+                        "error": error_msg,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    })
                 
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"

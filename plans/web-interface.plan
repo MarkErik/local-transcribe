@@ -144,7 +144,7 @@ duration_per_word = block.duration_s / len(words) if words else 0
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| **Click-to-Edit Block** | Click any VAD block to edit its text | High |
+| **Click-to-Edit Block** | Click any VAD block to edit its text (resolved to turn + span via block mapping) | High |
 | **Click-to-Edit Word** | Click any word within a block to correct it | High |
 | **Insert Word** | Click between words to insert new word(s) | High |
 | **Delete Word** | Remove incorrect words | High |
@@ -156,7 +156,7 @@ duration_per_word = block.duration_s / len(words) if words else 0
 | **Bulk Find & Replace** | Replace all instances of a word/phrase | Medium |
 | **Undo/Redo** | Full edit history with unlimited undo | High |
 | **Auto-Save** | Automatic saving of edits with versioning | High |
-| **Toggle Interjection** | Convert block to/from interjection status | Medium |
+| **Toggle Interjection** | Convert block to/from interjection status (via block mapping) | Medium |
 
 ### 4. De-identification Editing Features
 
@@ -176,6 +176,24 @@ duration_per_word = block.duration_s / len(words) if words else 0
 | **Export Stages** | Export from any pipeline stage | High |
 | **Comparison View** | Side-by-side before/after, raw transcript, de-identification, and after LLM cleanup | High |
 | **Print-Friendly View** | Formatted view for printing | High |
+
+---
+
+## Checkpoint Formats
+
+The plan uses two distinct checkpoint types and selects based on mode or JSON keys.
+
+1. **WordSegment checkpoint (aligned modes)**
+   - JSON array of word segments (used by combined/diarized or aligned pipelines).
+   - Detect by JSON root being a list of objects with word segment fields.
+
+2. **TranscriptFlow checkpoint (VAD mode)**
+   - JSON object with a top-level `turns` array (the turns-json output).
+   - Detect by JSON root being an object containing `turns`.
+
+**Re-entry selection rule:**
+- If JSON has `turns`, treat as TranscriptFlow checkpoint (VAD mode).
+- Else if JSON is a list of segments, treat as WordSegment checkpoint.
 
 ---
 
@@ -253,6 +271,10 @@ event: job_error
 data: {"job_id": "abc123", "error": "Transcription failed", "stage": "vad_transcription"}
 ```
 
+**SSE Event Retention Strategy:**
+- Retain events for a time window (e.g., last 10 minutes) per job in memory.
+- On reconnect with `Last-Event-Id`, replay events within retention; if missing, the client re-fetches job status via REST and continues from current state.
+
 ---
 
 ### Decision 4: Local vs Remote Execution Architecture
@@ -310,6 +332,11 @@ The web UI runs on the user's laptop while the pipeline executes on a remote ser
 3. If not cached: GET /api/files/{file_id}/audio (with Accept-Ranges support)
 4. wavesurfer.js loads audio, making range requests as needed for seeking
 5. Audio cached in browser storage for subsequent sessions
+
+**Output Serving (Server → Laptop):**
+- Job outputs remain on the server in the job’s output directory.
+- API maps job output paths to file downloads: `GET /api/jobs/{job_id}/outputs/{filename}`.
+- The UI never reads server paths directly; it only uses API endpoints.
 ```
 
 **Network Error Handling:**
@@ -351,6 +378,10 @@ The web UI runs on the user's laptop while the pipeline executes on a remote ser
 - **Edit records:** Stored in SQLite `edits` table, linked to job_id and stage
 - **Job metadata:** Stored in SQLite `jobs` table
 
+**Edit Granularity Clarification:**
+- The editing API operates on `turn_id` + word span (`start_index`, `end_index`).
+- Block-level editing resolves to the affected turn span using block-to-turn mapping captured during VAD conversion.
+
 
 ---
 
@@ -368,8 +399,9 @@ The web UI runs on the user's laptop while the pipeline executes on a remote ser
 
 **Implementation for Dual-Track VAD Mode:**
 - Two wavesurfer.js instances (one per speaker track)
-- Custom synchronization layer to keep both tracks aligned
-- Seek operations update both tracks simultaneously
+- One instance is the master clock; the other is slave.
+- Master emits `audioprocess` events; slave seeks to master time with throttling (e.g., 250ms) to prevent drift.
+- Disable independent seeking on the slave; all seeks are applied to master and mirrored.
 - Individual mute/solo controls per track
 - Shared playhead position and transport controls
 
@@ -399,8 +431,7 @@ This section addresses workflow and state management questions that are critical
 
 4. **Pipeline Continuation:**
    - Pipeline continues to next stage automatically unless paused
-   - User can configure "pause after stage X" for review workflows
-   - If paused, pipeline waits for explicit "Continue" action
+   - Optional: support "pause after stage X" via a pipeline hook (if implemented). Otherwise, stages run continuously.
 
 **Implementation Note:** Leverage existing `StageResult` dataclass and `PipelineExecutor.execute()` which already tracks `completed_stages` and returns `stage_results`.
 
@@ -552,8 +583,8 @@ The `VADTranscriptionStage` ([`executor.py#L243-L316`](local_transcribe/framewor
 - For VAD mode, add progress hooks in `VADASRProcessor` for per-block updates
 
 **Refactoring Required:**
-- Add optional `progress_callback: Callable` to `PipelineStage.execute()`
-- Add `on_block_complete` callback to `VADASRProcessor.process_blocks()`
+- Add optional stage-level callbacks in `PipelineExecutor` (stage start/finish)
+- Add `on_block_complete` callback to `VADASRProcessor.process_blocks()` (block-level)
 - Emit events at: stage start, block progress (VAD mode), stage complete
 - Estimate: Low effort, backward-compatible
 
@@ -575,6 +606,7 @@ The `VADTranscriptionStage` ([`executor.py#L243-L316`](local_transcribe/framewor
 **Refactoring Required:**
 - Extract checkpoint validation into reusable function (not CLI-bound)
 - Add web-specific error responses (JSON, not print statements)
+- Choose checkpoint type based on JSON keys (see Checkpoint Formats)
 - Estimate: Low-medium effort
 
 ---
@@ -638,6 +670,10 @@ class TranscriptFlow:
 ```
 - Complete conversation structure
 - Already has `to_dict()` method
+
+**VAD Block Mapping (Required for Editing/UI):**
+- Persist `source_block_ids` on `HierarchicalTurn` (or store a sidecar mapping in `TranscriptFlow.metadata`).
+- Capture block→turn mapping during `_convert_blocks_to_transcript_flow()` so UI can highlight true blocks and edits can resolve block selections to turn spans.
 
 **Web API Response Format:**
 - Use `TranscriptFlow.to_dict()` directly as JSON response
@@ -718,7 +754,7 @@ class TranscriptFlow:
 - `_create_word_segments_from_block()` - creates APPROXIMATED word timing
 
 **Web Integration Points:**
-- Add progress callbacks to `VADASRProcessor.process_blocks()` for per-block updates
+- Add progress callbacks to `VADASRProcessor.process_blocks()` for per-block updates (block-level)
 - Expose VAD audit data (`write_vad_audit()`) for debugging UI
 - Consider exposing block-level ASR debug files for review
 
@@ -759,13 +795,14 @@ class TranscriptFlow:
 
 | Module | Effort | Changes |
 |--------|--------|---------|
-| `framework/stages/executor.py` | Low | Add progress callback support to `PipelineExecutor` |
+| `framework/stages/executor.py` | Low | Add stage-level progress callbacks to `PipelineExecutor` |
 | `framework/stages/base.py` | Low | Add optional `progress_callback` to `PipelineStage.execute()` |
 | `processing/vad/vad_asr_processor.py` | Low | Add per-block progress callback to `process_blocks()` |
 | `framework/pipeline_reentry.py` | Low-Med | Extract reusable functions, return JSON errors |
 | `processing/de_identification/orchestrator.py` | Medium | Split multi-speaker into first/second pass methods |
 | `framework/checkpoint_loader.py` | Low | Return JSON-friendly errors |
 | `processing/turn_building/turn_building_data_structures.py` | Medium | Add `from_dict()` methods for deserialization |
+| `processing/turn_building/vad_turn_builder.py` | Low | Capture block→turn mapping for VAD block identity |
 | Output writers | None | Use as-is |
 | Turn building | None | Use as-is |
 
@@ -890,7 +927,7 @@ def load_transcript_flow_checkpoint(json_path: Path) -> TranscriptFlow:
    - Pass the loaded `TranscriptFlow` into `PipelineContext.transcript`
 
 4. **Define checkpoint stage mapping**:
-   - `TranscriptFlow` checkpoint → Resume from `DeIdentificationStage`
+   - `TranscriptFlow` checkpoint → Resume from `DeIdentificationStage` if de-ID enabled, else `SpeakerNamingStage`
    - User can optionally skip to later stages (speaker_naming, output_generation)
 
 **Checkpoint JSON Format for TranscriptFlow:**
@@ -1007,6 +1044,7 @@ The `turns-json` output format IS the TranscriptFlow checkpoint format. No new f
 - [ ] Add per-block callback to `VADASRProcessor.process_blocks()` for granular progress
 - [ ] Implement SSE endpoint for job progress events
 - [ ] Create checkpoint retrieval endpoint (uses existing `CheckpointLoadResult`)
+- [ ] Add optional pause-after-stage hook in `PipelineExecutor` (or explicitly defer pause to a later phase)
 
 **Frontend Tasks:**
 - [ ] Create React + TypeScript project scaffold
@@ -1023,11 +1061,11 @@ The `turns-json` output format IS the TranscriptFlow checkpoint format. No new f
 **Goal:** View and navigate VAD transcripts with audio sync
 
 **Backend Tasks:**
-- [ ] Create transcript retrieval endpoint (returns `TranscriptFlow.to_dict()`)
-- [ ] Create turns endpoint (returns `HierarchicalTurn` list with interjections)
+- [ ] Create transcript retrieval endpoint (returns turns-json / `TranscriptFlow.to_dict()` by default)
 - [ ] Implement stage-specific output endpoints
 - [ ] Add dual audio file serving endpoints (interviewer + participant tracks)
 - [ ] Return VAD block info (start_s, end_s, speaker_id, is_interjection)
+- [ ] Add output file serving endpoint: `GET /api/jobs/{job_id}/outputs/{filename}`
 
 **Frontend Tasks:**
 - [ ] Integrate wavesurfer.js for audio playback
@@ -1055,15 +1093,16 @@ The `turns-json` output format IS the TranscriptFlow checkpoint format. No new f
       id INTEGER PRIMARY KEY,
       job_id TEXT NOT NULL,
       stage_name TEXT NOT NULL,
-      edit_type TEXT NOT NULL,  -- block_text_change, word_insert, word_delete, speaker_change
-      turn_id INTEGER,          -- Which HierarchicalTurn
-      target_index INTEGER,     -- Word index within turn (if applicable)
+         edit_type TEXT NOT NULL,  -- word_change, word_insert, word_delete, speaker_change
+         turn_id INTEGER,          -- Which HierarchicalTurn
+         start_index INTEGER,      -- Word span start (inclusive)
+         end_index INTEGER,        -- Word span end (inclusive)
       original_value TEXT,
       new_value TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
   ```
-- [ ] Implement edit save endpoint
+- [ ] Implement edit save endpoint (accepts turn_id + word span)
 - [ ] Implement "apply edits to TranscriptFlow" logic
 - [ ] Add "edited" flag to downstream stages (stale detection)
 - [ ] Create endpoint to trigger re-run from checkpoint (uses existing `run_pipeline_from_checkpoint`)
@@ -1170,9 +1209,9 @@ When UI runs locally but pipeline runs remotely:
 ### Security Considerations
 
 1. **Data Protection:**
-   - HTTPS required for remote connections
-   - Audio files contain sensitive interview data
-   - Consider at-rest encryption for server storage
+   - Single-user deployments may run without authentication (insecure by design for local-only use).
+   - If the server is remote or accessible over a network, HTTPS is strongly recommended.
+   - Audio files contain sensitive interview data; consider at-rest encryption for server storage.
 
 2. **Input Validation:**
    - Sanitize all user inputs

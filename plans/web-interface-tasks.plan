@@ -70,7 +70,7 @@ Create a new function to load TranscriptFlow checkpoints (distinct from the exis
 Extend `run_pipeline_from_checkpoint()` to accept TranscriptFlow checkpoints.
 
 **Tasks:**
-- [ ] Add detection for TranscriptFlow vs WordSegment checkpoint format
+- [ ] Add detection for TranscriptFlow vs WordSegment checkpoint format (JSON has `turns` vs list of segments)
 - [ ] When TranscriptFlow detected, set `context.transcript` directly
 - [ ] Start from `de_identification` stage (or `speaker_naming` if de-ID disabled)
 - [ ] Update `get_stages_for_reentry()` to support TranscriptFlow entry points
@@ -81,6 +81,23 @@ Extend `run_pipeline_from_checkpoint()` to accept TranscriptFlow checkpoints.
 # This workflow must work:
 uv run python -m local_transcribe.main --checkpoint output/job123/turns.json --start-stage de_identification
 ```
+
+---
+
+### P0-4: Capture VAD Block → Turn Mapping
+**Priority:** BLOCKER  
+**File:** `local_transcribe/processing/turn_building/vad_turn_builder.py`
+
+**Description:**  
+Persist block identity through turn building so UI can highlight true blocks and edits can resolve block selections to turn spans.
+
+**Tasks:**
+- [ ] Capture block IDs during `_convert_blocks_to_transcript_flow()`
+- [ ] Persist mapping on `HierarchicalTurn` (e.g., `source_block_ids`) or store sidecar mapping in `TranscriptFlow.metadata`
+- [ ] Add unit test for block→turn mapping correctness
+
+**Acceptance Criteria:**
+- Given a list of VAD blocks, the resulting TranscriptFlow retains a traceable mapping from each block to its containing turn span.
 
 ---
 
@@ -158,7 +175,8 @@ uv run python -m local_transcribe.main --checkpoint output/job123/turns.json --s
       stage_name TEXT NOT NULL,
       edit_type TEXT NOT NULL,
       turn_id INTEGER,
-      target_index INTEGER,
+      start_index INTEGER,
+      end_index INTEGER,
       original_value TEXT,
       new_value TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -236,9 +254,10 @@ uv run python -m local_transcribe.main --checkpoint output/job123/turns.json --s
   - Wraps `PipelineExecutor`
   - Captures progress callbacks
   - Converts to SSE events
+- [ ] Add stage-level start/finish callbacks in `PipelineExecutor`
 - [ ] Emit events: `stage_start`, `block_progress`, `stage_complete`, `job_complete`, `job_error`
 - [ ] Support `Last-Event-Id` header for reconnection
-- [ ] Store events in memory for replay on reconnect (last 100 events per job)
+- [ ] Store events in memory for replay on reconnect (time-window retention, e.g., last 10 minutes)
 
 ---
 
@@ -254,6 +273,7 @@ uv run python -m local_transcribe.main --checkpoint output/job123/turns.json --s
 - [ ] Run pipeline in background task (asyncio or thread pool)
 - [ ] Handle pipeline errors gracefully (update job status, store error message)
 - [ ] Log all pipeline output for debugging
+- [ ] If pause-after-stage is enabled, pause via executor hook and resume on explicit action
 
 ---
 
@@ -329,10 +349,11 @@ uv run python -m local_transcribe.main --checkpoint output/job123/turns.json --s
 #### 2.1.1: Transcript Retrieval Endpoint
 
 **Tasks:**
-- [ ] `GET /api/jobs/{job_id}/transcript` - Return TranscriptFlow JSON
+- [ ] `GET /api/jobs/{job_id}/transcript` - Return TranscriptFlow JSON (turns-json by default)
 - [ ] `GET /api/jobs/{job_id}/transcript/stage/{stage_name}` - Return stage-specific output
 - [ ] Support for multiple output stages (raw, de-identified, cleaned)
 - [ ] Return 404 if job not complete or stage not available
+- [ ] `GET /api/jobs/{job_id}/outputs/{filename}` - Serve job output files
 
 ---
 
@@ -368,7 +389,8 @@ uv run python -m local_transcribe.main --checkpoint output/job123/turns.json --s
 
 **Tasks:**
 - [ ] Create two wavesurfer instances (interviewer, participant)
-- [ ] Synchronize playback position between tracks
+- [ ] Synchronize playback position between tracks (master/slave with throttled seeks)
+- [ ] Disable independent seeking on the slave; mirror master seek
 - [ ] Shared transport controls
 - [ ] Individual mute/solo per track
 - [ ] Stacked waveform display (interviewer above, participant below)
@@ -426,7 +448,8 @@ uv run python -m local_transcribe.main --checkpoint output/job123/turns.json --s
     "stage_name": "vad_transcription",
     "edit_type": "word_change",
     "turn_id": 5,
-    "target_index": 12,
+    "start_index": 12,
+    "end_index": 12,
     "original_value": "teh",
     "new_value": "the"
   }
@@ -581,6 +604,7 @@ Tasks for Phase 6 will be detailed after Phase 5 is complete. High-level items:
 - [ ] TranscriptFlow serialization round-trip
 - [ ] Checkpoint loading (word-segment and TranscriptFlow)
 - [ ] Edit application logic
+- [ ] VAD block highlight mapping (block→turn span selection and timing edge cases)
 - [ ] Database CRUD operations
 
 ### Integration Tests

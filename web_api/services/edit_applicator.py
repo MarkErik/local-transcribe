@@ -58,6 +58,10 @@ class EditApplicator:
             "speaker_change": self._apply_speaker_change,
             "merge_words": self._apply_merge_words,
             "split_word": self._apply_split_word,
+            "toggle_interjection": self._apply_toggle_interjection,
+            "insert_annotation": self._apply_insert_annotation,
+            "turn_merge": self._apply_turn_merge,
+            "turn_split": self._apply_turn_split,
         }.get(edit.edit_type)
         
         if handler:
@@ -226,6 +230,207 @@ class EditApplicator:
         
         # Replace original word with split words
         words[edit.start_index:edit.start_index + 1] = split_words
+    
+    def _apply_toggle_interjection(self, edit: Edit) -> None:
+        """
+        Toggle a turn between primary turn and interjection status.
+        
+        Uses: turn_id (turn to convert), target_turn_id (parent turn if converting to interjection)
+        
+        When converting TO interjection:
+        - Remove turn from turns list
+        - Add as interjection to target_turn_id
+        
+        When converting FROM interjection:
+        - Remove interjection from parent turn
+        - Create new turn in turns list
+        """
+        turn = self._find_turn(edit.turn_id)
+        
+        if turn:
+            # Converting primary turn to interjection
+            if edit.target_turn_id is not None:
+                target_turn = self._find_turn(edit.target_turn_id)
+                if target_turn:
+                    # Create interjection from turn
+                    interjection = {
+                        "speaker": turn.get("primary_speaker", turn.get("speaker", "Unknown")),
+                        "text": turn.get("text", ""),
+                        "start_time": turn.get("start_time", 0.0),
+                        "end_time": turn.get("end_time", 0.0),
+                        "words": turn.get("words", []),
+                    }
+                    
+                    # Add to target turn's interjections
+                    if "interjections" not in target_turn:
+                        target_turn["interjections"] = []
+                    target_turn["interjections"].append(interjection)
+                    
+                    # Remove from turns list
+                    self.turns = [t for t in self.turns if t.get("turn_id") != edit.turn_id]
+                    self.transcript["turns"] = self.turns
+        else:
+            # Converting interjection back to primary turn
+            # Find the interjection in all turns
+            for t in self.turns:
+                interjections = t.get("interjections", [])
+                for i, interj in enumerate(interjections):
+                    # Match by start_time since interjections don't have turn_id
+                    if abs(interj.get("start_time", 0) - (edit.start_index or 0)) < 0.01:
+                        # Create new turn from interjection
+                        new_turn_id = max(t.get("turn_id", 0) for t in self.turns) + 1
+                        new_turn = {
+                            "turn_id": new_turn_id,
+                            "primary_speaker": interj.get("speaker", "Unknown"),
+                            "speaker": interj.get("speaker", "Unknown"),
+                            "text": interj.get("text", ""),
+                            "start_time": interj.get("start_time", 0.0),
+                            "end_time": interj.get("end_time", 0.0),
+                            "words": interj.get("words", []),
+                            "interjections": [],
+                        }
+                        
+                        # Remove interjection
+                        del interjections[i]
+                        
+                        # Insert turn in correct position by start_time
+                        insert_idx = 0
+                        for idx, existing in enumerate(self.turns):
+                            if existing.get("start_time", 0) > new_turn["start_time"]:
+                                insert_idx = idx
+                                break
+                            insert_idx = idx + 1
+                        
+                        self.turns.insert(insert_idx, new_turn)
+                        self.transcript["turns"] = self.turns
+                        return
+    
+    def _apply_insert_annotation(self, edit: Edit) -> None:
+        """
+        Insert an annotation marker at a specific word position.
+        
+        Uses: turn_id, start_index, annotation_type
+        
+        Annotations are stored as special word segments with type marker.
+        Common types: [laughter], [pause], [inaudible], [crosstalk]
+        """
+        turn = self._find_turn(edit.turn_id)
+        if not turn:
+            return
+        
+        words = turn.get("words", [])
+        insert_idx = edit.start_index if edit.start_index is not None else len(words)
+        insert_idx = max(0, min(insert_idx, len(words)))
+        
+        # Create annotation word segment
+        annotation_type = getattr(edit, 'annotation_type', None) or edit.new_value or "pause"
+        annotation = {
+            "word": f"[{annotation_type}]",
+            "start_time": 0.0,
+            "end_time": 0.0,
+            "confidence": 1.0,
+            "is_annotation": True,
+            "annotation_type": annotation_type,
+        }
+        
+        words.insert(insert_idx, annotation)
+        self._recalculate_word_timing(turn)
+        
+        # Rebuild turn text
+        turn["text"] = " ".join(w["word"] for w in words)
+    
+    def _apply_turn_merge(self, edit: Edit) -> None:
+        """
+        Merge two consecutive turns into one.
+        
+        Uses: turn_id (first turn), target_turn_id (second turn to merge into first)
+        
+        The second turn's content is appended to the first turn.
+        """
+        first_turn = self._find_turn(edit.turn_id)
+        target_turn_id = getattr(edit, 'target_turn_id', None)
+        if target_turn_id is None:
+            return
+        second_turn = self._find_turn(target_turn_id)
+        
+        if not first_turn or not second_turn:
+            return
+        
+        # Merge words
+        first_words = first_turn.get("words", [])
+        second_words = second_turn.get("words", [])
+        first_turn["words"] = first_words + second_words
+        
+        # Update timing
+        first_turn["end_time"] = second_turn.get("end_time", first_turn.get("end_time", 0.0))
+        
+        # Rebuild text
+        first_turn["text"] = " ".join(w["word"] for w in first_turn["words"])
+        
+        # Merge interjections
+        first_interj = first_turn.get("interjections", [])
+        second_interj = second_turn.get("interjections", [])
+        first_turn["interjections"] = first_interj + second_interj
+        
+        # Merge source block IDs if present
+        first_blocks = first_turn.get("source_block_ids", [])
+        second_blocks = second_turn.get("source_block_ids", [])
+        if first_blocks or second_blocks:
+            first_turn["source_block_ids"] = first_blocks + second_blocks
+        
+        # Remove second turn
+        self.turns = [t for t in self.turns if t.get("turn_id") != target_turn_id]
+        self.transcript["turns"] = self.turns
+    
+    def _apply_turn_split(self, edit: Edit) -> None:
+        """
+        Split a turn at a specific word index.
+        
+        Uses: turn_id, start_index (word index where split occurs)
+        
+        Creates two turns: words [0:start_index) and [start_index:]
+        """
+        turn = self._find_turn(edit.turn_id)
+        if not turn:
+            return
+        
+        words = turn.get("words", [])
+        split_idx = edit.start_index if edit.start_index is not None else len(words) // 2
+        
+        if split_idx <= 0 or split_idx >= len(words):
+            return  # Can't split at edges
+        
+        # Words for each part
+        first_words = words[:split_idx]
+        second_words = words[split_idx:]
+        
+        if not first_words or not second_words:
+            return
+        
+        # Create new turn ID
+        new_turn_id = max(t.get("turn_id", 0) for t in self.turns) + 1
+        
+        # Update first turn
+        turn["words"] = first_words
+        turn["text"] = " ".join(w["word"] for w in first_words)
+        turn["end_time"] = first_words[-1].get("end_time", turn.get("end_time", 0.0))
+        
+        # Create second turn
+        second_turn = {
+            "turn_id": new_turn_id,
+            "primary_speaker": turn.get("primary_speaker", turn.get("speaker", "Unknown")),
+            "speaker": turn.get("speaker", turn.get("primary_speaker", "Unknown")),
+            "text": " ".join(w["word"] for w in second_words),
+            "start_time": second_words[0].get("start_time", turn.get("end_time", 0.0)),
+            "end_time": words[-1].get("end_time", turn.get("end_time", 0.0)),
+            "words": second_words,
+            "interjections": [],  # Interjections stay with first turn
+        }
+        
+        # Insert after original turn
+        turn_idx = self.turns.index(turn)
+        self.turns.insert(turn_idx + 1, second_turn)
+        self.transcript["turns"] = self.turns
     
     def _recalculate_word_timing(self, turn: Dict[str, Any]) -> None:
         """

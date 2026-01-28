@@ -1,7 +1,7 @@
 # Web Interface Implementation Progress Log
 
 **Started:** January 27, 2026  
-**Status:** In Progress - Phase 3 Basic Editing Complete  
+**Status:** In Progress - Phase 4 Advanced Editing Complete  
 **Related Documents:** 
 - [web-interface.plan](../web-interface.plan)
 - [web-interface-tasks.plan](../web-interface-tasks.plan)
@@ -835,6 +835,254 @@ Before proceeding to Phase 4, manual testing should verify:
 2. Undo/redo works correctly
 3. Re-run creates new job with edits applied
 4. StaleStageWarning shows after edits
+
+---
+
+## Session 5: January 28, 2026
+
+**Developer:** AI Assistant  
+**Goals:** Complete Phase 4 - Advanced Editing tasks
+
+#### Summary
+
+Phase 4 Advanced Editing is complete. The codebase now has:
+
+1. **Backend support for new edit types** - toggle_interjection, insert_annotation, turn_merge, turn_split
+2. **AnnotationMenu component** - Insert common annotations like [laughter], [pause], [inaudible]
+3. **TurnActions component** - Speaker change, turn merge/split, interjection toggle
+4. **FindReplace component** - Bulk find & replace across transcript
+5. **EditHistory component** - View and revert edit history
+6. **KeyboardShortcuts component** - Comprehensive keyboard shortcut system
+
+---
+
+#### Work Completed
+
+##### 4.1.1: Backend Support for New Edit Types ✅
+
+**Files Modified:**
+- [web_api/models/schemas.py](../../web_api/models/schemas.py)
+- [web_api/database.py](../../web_api/database.py)
+- [web_api/services/edit_applicator.py](../../web_api/services/edit_applicator.py)
+
+**New Edit Types Added:**
+- `toggle_interjection` - Convert between primary turn and interjection
+- `insert_annotation` - Insert [laughter], [pause], etc.
+- `turn_merge` - Merge two consecutive turns
+- `turn_split` - Split turn at word index
+
+**Database Schema Updates:**
+- Added `target_turn_id` column for turn operations
+- Added `annotation_type` column for annotation edits
+
+---
+
+##### 4.1.2: AnnotationMenu Component ✅
+
+**Files Created:**
+- [web_ui/src/components/AnnotationMenu.tsx](../../web_ui/src/components/AnnotationMenu.tsx)
+
+**Features:**
+- Predefined annotations: [laughter], [pause], [long pause], [inaudible], [crosstalk], etc.
+- Custom annotation input
+- Keyboard accessible (Escape to close)
+- Click-outside to dismiss
+- Position via absolute coordinates
+
+---
+
+##### 4.1.3: TurnActions Component ✅
+
+**Files Created:**
+- [web_ui/src/components/TurnActions.tsx](../../web_ui/src/components/TurnActions.tsx)
+
+**Features:**
+- Speaker change dropdown (Interviewer/Participant)
+- Merge with previous turn button
+- Merge with next turn button
+- Split turn at selected word button
+- Toggle interjection status button
+- Disabled states when operations not applicable
+
+---
+
+##### 4.1.4: FindReplace Component ✅
+
+**Files Created:**
+- [web_ui/src/components/FindReplace.tsx](../../web_ui/src/components/FindReplace.tsx)
+
+**Features:**
+- Find text with match highlighting
+- Case-sensitive search option
+- Whole word matching option
+- Navigate between matches (F3, Shift+F3)
+- Replace single match
+- Replace all matches with confirmation
+- Match preview with context
+- Match count display
+
+---
+
+##### 4.1.5: EditHistory Component ✅
+
+**Files Created:**
+- [web_ui/src/components/EditHistory.tsx](../../web_ui/src/components/EditHistory.tsx)
+
+**Features:**
+- Chronological list of all edits
+- Edit type icons and labels
+- Date grouping with separators
+- Filter by edit type
+- Jump to edit location in transcript
+- Revert to specific point in history
+- Scrollable with sticky date headers
+
+---
+
+##### 4.1.6: KeyboardShortcuts Component ✅
+
+**Files Created:**
+- [web_ui/src/components/KeyboardShortcuts.tsx](../../web_ui/src/components/KeyboardShortcuts.tsx)
+
+**Features:**
+- `useKeyboardShortcuts` hook for registering shortcuts
+- Help modal showing all shortcuts (press `?`)
+- Shortcuts grouped by category:
+  - **Playback:** Space, arrows, brackets for speed
+  - **Editing:** Ctrl+Z/Y, Ctrl+F, Ctrl+S, Delete
+  - **Navigation:** Arrow keys, Home/End
+  - **General:** ?, Escape, Ctrl+H
+- Platform-aware key display (⌘ vs Ctrl)
+- Ignores shortcuts when typing in inputs
+
+---
+
+##### 4.1.7: UI State Store ✅
+
+**Files Modified:**
+- [web_ui/src/store/index.ts](../../web_ui/src/store/index.ts)
+
+**Added useUIStore:**
+- `showFindReplace` - Find/Replace panel visibility
+- `showEditHistory` - Edit History panel visibility
+- `showKeyboardHelp` - Keyboard shortcuts modal
+- `annotationMenuPosition` - Annotation menu state
+- `autoScroll` - Auto-scroll toggle
+- Toggle functions for all panels
+
+---
+
+##### 4.1.8: API Client Updates ✅
+
+**Files Modified:**
+- [web_ui/src/api/client.ts](../../web_ui/src/api/client.ts)
+
+**Added:**
+- New edit types to `EditType` union
+- `target_turn_id` and `annotation_type` fields to interfaces
+
+---
+
+#### Files Created (Phase 4)
+
+| File | Description |
+|------|-------------|
+| `web_ui/src/components/AnnotationMenu.tsx` | Annotation insertion menu |
+| `web_ui/src/components/TurnActions.tsx` | Turn-level action toolbar |
+| `web_ui/src/components/FindReplace.tsx` | Find and replace panel |
+| `web_ui/src/components/EditHistory.tsx` | Edit history viewer |
+| `web_ui/src/components/KeyboardShortcuts.tsx` | Keyboard shortcuts system |
+
+#### Files Modified (Phase 4)
+
+| File | Changes |
+|------|---------|
+| `web_api/models/schemas.py` | Added new edit fields |
+| `web_api/database.py` | Schema + CRUD for new fields |
+| `web_api/services/edit_applicator.py` | New edit type handlers |
+| `web_ui/src/api/client.ts` | New edit types |
+| `web_ui/src/store/index.ts` | Added useUIStore |
+| `web_ui/src/components/index.ts` | Export new components |
+
+---
+
+## Architecture Decisions Made (Phase 4)
+
+### Annotation Storage
+
+Annotations are stored as special word segments with metadata:
+```json
+{
+  "word": "[laughter]",
+  "is_annotation": true,
+  "annotation_type": "laughter",
+  "start_time": 0.0,
+  "end_time": 0.0,
+  "confidence": 1.0
+}
+```
+
+This allows annotations to be inline with regular words while being identifiable.
+
+### Turn Merge/Split Strategy
+
+**Merge:** Content from second turn appended to first, second turn removed
+- Words concatenated
+- End time updated
+- Interjections merged
+- Source block IDs merged
+
+**Split:** Turn divided at word index, new turn created
+- New turn gets unique ID
+- Timing recalculated from word positions
+- Interjections stay with first turn
+
+### Keyboard Shortcut Architecture
+
+Shortcuts use a declarative configuration:
+```typescript
+interface ShortcutConfig {
+  key: string;           // Unique identifier
+  keys: string[];        // Key codes
+  ctrl?: boolean;        // Requires Ctrl/Cmd
+  shift?: boolean;       // Requires Shift
+  alt?: boolean;         // Requires Alt
+  handler: () => void;   // Action to perform
+}
+```
+
+The `useKeyboardShortcuts` hook registers all shortcuts and handles modifier keys properly.
+
+---
+
+## Next Steps
+
+### Ready for Phase 5: De-identification Tools
+
+With Phase 4 complete, the next phase focuses on de-identification editing:
+
+1. **PII Highlight Mode** - Toggle to highlight all detected PII
+2. **Manual Redaction Tool** - Select text to mark as PII
+3. **Redaction Override** - Unmark incorrectly flagged PII
+4. **De-identification Audit Trail** - View what was redacted and why
+5. **Second-Pass Review** - Review mode for de-identification QA
+
+---
+
+## Integration Testing Checklist (Phase 4)
+
+Before proceeding to Phase 5, verify:
+
+1. [ ] Find & Replace finds matches across all turns
+2. [ ] Replace single match updates transcript
+3. [ ] Replace All updates all matches
+4. [ ] Edit History shows all edit types
+5. [ ] Revert to point undoes edits correctly
+6. [ ] Keyboard shortcuts work in editor view
+7. [ ] Annotation menu inserts at correct position
+8. [ ] Turn merge combines turns correctly
+9. [ ] Turn split creates new turn with correct content
+10. [ ] Interjection toggle converts turns properly
 
 ---
 

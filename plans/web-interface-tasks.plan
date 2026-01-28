@@ -563,18 +563,116 @@ Persist block identity through turn building so UI can highlight true blocks and
 
 ---
 
-## Phase 4: Advanced Editing (Deferred)
+## Phase 4: Advanced Editing ✅ COMPLETED
 
-Tasks for Phase 4 will be detailed after Phase 3 is complete. High-level items:
+Tasks for Phase 4 have been implemented.
 
-- [ ] Speaker reassignment
-- [ ] Turn boundary adjustment
-- [ ] Interjection toggle
-- [ ] Annotation insertion
-- [ ] Merge/split words
-- [ ] Bulk find & replace
-- [ ] Edit history viewer
-- [ ] Keyboard shortcut system
+### 4.1 Backend
+
+#### 4.1.1: Add New Edit Type Support ✅ COMPLETED
+
+**Tasks:**
+- [x] Add `toggle_interjection` edit type handler
+- [x] Add `insert_annotation` edit type handler  
+- [x] Add `turn_merge` edit type handler
+- [x] Add `turn_split` edit type handler
+- [x] Update database schema with `target_turn_id`, `annotation_type` columns
+- [x] Update EditCreateRequest and EditResponse schemas
+
+---
+
+### 4.2 Frontend
+
+#### 4.2.1: Speaker Reassignment ✅ COMPLETED
+
+**Tasks:**
+- [x] TurnActions component with speaker dropdown
+- [x] Support for Interviewer/Participant selection
+- [x] Integrate with edit store and API
+
+---
+
+#### 4.2.2: Turn Boundary Adjustment ✅ COMPLETED
+
+**Tasks:**
+- [x] Turn merge (combine consecutive turns) via TurnActions
+- [x] Turn split at word index via TurnActions
+- [x] Edit applicator handles turn_merge and turn_split
+
+---
+
+#### 4.2.3: Interjection Toggle ✅ COMPLETED
+
+**Tasks:**
+- [x] Toggle button in TurnActions
+- [x] Convert primary turn to interjection (with parent selection)
+- [x] Convert interjection back to primary turn
+- [x] Edit applicator handles toggle_interjection
+
+---
+
+#### 4.2.4: Annotation Insertion ✅ COMPLETED
+
+**Tasks:**
+- [x] AnnotationMenu component with common annotations
+- [x] Predefined: [laughter], [pause], [inaudible], [crosstalk], etc.
+- [x] Custom annotation input
+- [x] Edit applicator inserts annotation word segments
+
+---
+
+#### 4.2.5: Merge/Split Words ✅ COMPLETED
+
+**Tasks:**
+- [x] Already implemented in Phase 3 EditApplicator
+- [x] merge_words and split_word handlers complete
+
+---
+
+#### 4.2.6: Bulk Find & Replace ✅ COMPLETED
+
+**Tasks:**
+- [x] FindReplace component
+- [x] Search with case-sensitive and whole-word options
+- [x] Navigate between matches (F3, Shift+F3)
+- [x] Replace single match
+- [x] Replace all with confirmation
+- [x] Match preview with context
+
+---
+
+#### 4.2.7: Edit History Viewer ✅ COMPLETED
+
+**Tasks:**
+- [x] EditHistory component
+- [x] Chronological list with edit type icons
+- [x] Date grouping
+- [x] Filter by edit type
+- [x] Jump to edit location
+- [x] Revert to specific point
+
+---
+
+#### 4.2.8: Keyboard Shortcut System ✅ COMPLETED
+
+**Tasks:**
+- [x] KeyboardShortcuts component with useKeyboardShortcuts hook
+- [x] Help modal (press ? to show)
+- [x] Playback shortcuts (Space, arrows, brackets)
+- [x] Editing shortcuts (Ctrl+Z/Y, Ctrl+F, Delete)
+- [x] Navigation shortcuts (arrow keys, Home/End)
+- [x] Platform-aware display (⌘ vs Ctrl)
+- [x] Ignores shortcuts when typing in inputs
+
+---
+
+#### 4.2.9: UI State Store ✅ COMPLETED
+
+**Tasks:**
+- [x] useUIStore for panel visibility
+- [x] Toggle functions for Find/Replace, Edit History, Keyboard Help
+- [x] Annotation menu state management
+- [x] Auto-scroll toggle
 
 ---
 

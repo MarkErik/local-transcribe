@@ -20,3 +20,19 @@ export type { WordEditorProps } from './WordEditor';
 export { EditToolbar } from './EditToolbar';
 
 export { StaleStageWarning } from './StaleStageWarning';
+
+// Phase 4 components
+export { AnnotationMenu } from './AnnotationMenu';
+export type { AnnotationMenuProps } from './AnnotationMenu';
+
+export { TurnActions } from './TurnActions';
+export type { TurnActionsProps } from './TurnActions';
+
+export { FindReplace } from './FindReplace';
+export type { FindReplaceProps, FindReplaceMatch } from './FindReplace';
+
+export { EditHistory } from './EditHistory';
+export type { EditHistoryProps } from './EditHistory';
+
+export { KeyboardShortcuts, useKeyboardShortcuts, ShortcutsHelpModal, DEFAULT_SHORTCUTS } from './KeyboardShortcuts';
+export type { KeyboardShortcutsProps, ShortcutConfig } from './KeyboardShortcuts';

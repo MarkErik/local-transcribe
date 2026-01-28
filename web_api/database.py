@@ -105,6 +105,8 @@ class Edit:
     end_index: Optional[int] = None
     original_value: Optional[str] = None
     new_value: Optional[str] = None
+    target_turn_id: Optional[int] = None
+    annotation_type: Optional[str] = None
     created_at: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
@@ -119,6 +121,8 @@ class Edit:
             "end_index": self.end_index,
             "original_value": self.original_value,
             "new_value": self.new_value,
+            "target_turn_id": self.target_turn_id,
+            "annotation_type": self.annotation_type,
             "created_at": self.created_at,
         }
 
@@ -164,6 +168,8 @@ CREATE TABLE IF NOT EXISTS edits (
     end_index INTEGER,
     original_value TEXT,
     new_value TEXT,
+    target_turn_id INTEGER,
+    annotation_type TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
@@ -417,8 +423,8 @@ class Database:
                 """
                 INSERT INTO edits 
                 (job_id, stage_name, edit_type, turn_id, start_index, end_index,
-                 original_value, new_value, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 original_value, new_value, target_turn_id, annotation_type, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     edit.job_id,
@@ -429,6 +435,8 @@ class Database:
                     edit.end_index,
                     edit.original_value,
                     edit.new_value,
+                    edit.target_turn_id,
+                    edit.annotation_type,
                     edit.created_at or datetime.utcnow().isoformat(),
                 )
             )
@@ -471,6 +479,8 @@ class Database:
                     end_index=row["end_index"],
                     original_value=row["original_value"],
                     new_value=row["new_value"],
+                    target_turn_id=row["target_turn_id"] if "target_turn_id" in row.keys() else None,
+                    annotation_type=row["annotation_type"] if "annotation_type" in row.keys() else None,
                     created_at=row["created_at"],
                 )
                 for row in rows

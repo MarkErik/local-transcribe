@@ -86,6 +86,8 @@ interface PendingEdit {
   end_index?: number;
   original_value?: string;
   new_value?: string;
+  target_turn_id?: number;
+  annotation_type?: string;
 }
 
 interface EditState {
@@ -253,4 +255,70 @@ export const useEditStore = create<EditState>((set, get) => ({
     isSaving: false,
     lastSaveError: null,
   }),
+}));
+
+// ==============================================================================
+// UI State Store - manages panel visibility and UI state
+// ==============================================================================
+
+interface UIState {
+  // Panel visibility
+  showFindReplace: boolean;
+  showEditHistory: boolean;
+  showKeyboardHelp: boolean;
+  
+  // Find/Replace state
+  findText: string;
+  replaceText: string;
+  
+  // Annotation menu state
+  annotationMenuPosition: { x: number; y: number } | null;
+  annotationMenuTurnId: number | null;
+  annotationMenuWordIndex: number | null;
+  
+  // Auto-scroll
+  autoScroll: boolean;
+  
+  // Actions
+  toggleFindReplace: () => void;
+  toggleEditHistory: () => void;
+  toggleKeyboardHelp: () => void;
+  setFindText: (text: string) => void;
+  setReplaceText: (text: string) => void;
+  openAnnotationMenu: (position: { x: number; y: number }, turnId: number, wordIndex: number) => void;
+  closeAnnotationMenu: () => void;
+  toggleAutoScroll: () => void;
+}
+
+export const useUIStore = create<UIState>((set) => ({
+  showFindReplace: false,
+  showEditHistory: false,
+  showKeyboardHelp: false,
+  findText: '',
+  replaceText: '',
+  annotationMenuPosition: null,
+  annotationMenuTurnId: null,
+  annotationMenuWordIndex: null,
+  autoScroll: true,
+  
+  toggleFindReplace: () => set((state) => ({ showFindReplace: !state.showFindReplace })),
+  toggleEditHistory: () => set((state) => ({ showEditHistory: !state.showEditHistory })),
+  toggleKeyboardHelp: () => set((state) => ({ showKeyboardHelp: !state.showKeyboardHelp })),
+  
+  setFindText: (text) => set({ findText: text }),
+  setReplaceText: (text) => set({ replaceText: text }),
+  
+  openAnnotationMenu: (position, turnId, wordIndex) => set({
+    annotationMenuPosition: position,
+    annotationMenuTurnId: turnId,
+    annotationMenuWordIndex: wordIndex,
+  }),
+  
+  closeAnnotationMenu: () => set({
+    annotationMenuPosition: null,
+    annotationMenuTurnId: null,
+    annotationMenuWordIndex: null,
+  }),
+  
+  toggleAutoScroll: () => set((state) => ({ autoScroll: !state.autoScroll })),
 }));

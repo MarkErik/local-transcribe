@@ -115,13 +115,16 @@ class EditCreateRequest(BaseModel):
     stage_name: str = Field(..., description="Stage the edit applies to")
     edit_type: str = Field(
         ..., 
-        description="Type of edit: word_change, word_insert, word_delete, speaker_change"
+        description="Type of edit: word_change, word_insert, word_delete, speaker_change, merge_words, split_word, toggle_interjection, insert_annotation, turn_merge, turn_split"
     )
     turn_id: int = Field(..., description="Turn ID being edited")
     start_index: Optional[int] = Field(None, description="Start word index (inclusive)")
     end_index: Optional[int] = Field(None, description="End word index (inclusive)")
     original_value: Optional[str] = Field(None, description="Original text/value")
     new_value: Optional[str] = Field(None, description="New text/value")
+    # Additional fields for advanced edits
+    target_turn_id: Optional[int] = Field(None, description="Target turn ID for turn operations")
+    annotation_type: Optional[str] = Field(None, description="Type of annotation (e.g., laughter, pause, inaudible)")
 
 
 class EditResponse(BaseModel):
@@ -135,6 +138,8 @@ class EditResponse(BaseModel):
     end_index: Optional[int] = None
     original_value: Optional[str] = None
     new_value: Optional[str] = None
+    target_turn_id: Optional[int] = None
+    annotation_type: Optional[str] = None
     created_at: str
 
 

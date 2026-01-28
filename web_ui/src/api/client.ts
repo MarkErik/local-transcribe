@@ -382,7 +382,11 @@ export type EditType =
   | 'word_delete'
   | 'speaker_change'
   | 'merge_words'
-  | 'split_word';
+  | 'split_word'
+  | 'toggle_interjection'
+  | 'insert_annotation'
+  | 'turn_merge'
+  | 'turn_split';
 
 export interface EditCreateRequest {
   stage_name: string;
@@ -392,6 +396,8 @@ export interface EditCreateRequest {
   end_index?: number;
   original_value?: string;
   new_value?: string;
+  target_turn_id?: number;
+  annotation_type?: string;
 }
 
 export interface Edit {
@@ -404,6 +410,8 @@ export interface Edit {
   end_index?: number;
   original_value?: string;
   new_value?: string;
+  target_turn_id?: number;
+  annotation_type?: string;
   created_at: string;
 }
 

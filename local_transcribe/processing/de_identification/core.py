@@ -166,6 +166,100 @@ class DeIdentificationResult:
         return [r.to_dict() for r in self.all_replacements]
 
 
+@dataclass
+class FirstPassResults:
+    """
+    Results from running only the first pass of de-identification.
+    
+    Used for interactive review where the user can review/edit the discovered
+    name list before running the second pass.
+    """
+    # Per-speaker results after first pass
+    speaker_segments: Dict[str, List[Any]] = field(default_factory=dict)  # speaker -> WordSegment list
+    speaker_replacements: Dict[str, List[WordReplacement]] = field(default_factory=dict)  # speaker -> replacements
+    
+    # Global discovered names (aggregated from all speakers)
+    discovered_names: List[DiscoveredName] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "speaker_segments": {
+                speaker: [seg.to_dict() if hasattr(seg, 'to_dict') else vars(seg) for seg in segs]
+                for speaker, segs in self.speaker_segments.items()
+            },
+            "speaker_replacements": {
+                speaker: [r.to_dict() for r in repls]
+                for speaker, repls in self.speaker_replacements.items()
+            },
+            "discovered_names": [
+                {"name": n.name, "source_speaker": n.source_speaker, "occurrences": n.occurrences}
+                for n in self.discovered_names
+            ],
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FirstPassResults":
+        """Create from dictionary (e.g., loaded from JSON)."""
+        from local_transcribe.framework.plugin_interfaces import WordSegment
+        
+        speaker_segments = {}
+        for speaker, segs in data.get("speaker_segments", {}).items():
+            speaker_segments[speaker] = [
+                WordSegment(
+                    text=s.get("text", s.get("word", "")),
+                    start=s.get("start", s.get("start_time", 0.0)),
+                    end=s.get("end", s.get("end_time", 0.0)),
+                    confidence=s.get("confidence", 1.0),
+                    speaker=s.get("speaker")
+                )
+                for s in segs
+            ]
+        
+        speaker_replacements = {}
+        for speaker, repls in data.get("speaker_replacements", {}).items():
+            speaker_replacements[speaker] = [
+                WordReplacement(
+                    word_index=r["word_index"],
+                    original=r["original"],
+                    timestamp=r.get("timestamp"),
+                    speaker=r.get("speaker"),
+                    matched_from_list=r.get("matched_from_list"),
+                    pass_number=r.get("pass", 1)
+                )
+                for r in repls
+            ]
+        
+        discovered_names = [
+            DiscoveredName(
+                name=n["name"],
+                source_speaker=n.get("source_speaker"),
+                occurrences=n.get("occurrences", 1)
+            )
+            for n in data.get("discovered_names", [])
+        ]
+        
+        return cls(
+            speaker_segments=speaker_segments,
+            speaker_replacements=speaker_replacements,
+            discovered_names=discovered_names
+        )
+    
+    def get_total_names(self) -> int:
+        """Get total number of unique discovered names."""
+        return len(self.discovered_names)
+    
+    def get_names_by_speaker(self) -> Dict[str, List[str]]:
+        """Get names grouped by source speaker."""
+        by_speaker: Dict[str, List[str]] = {}
+        for name in self.discovered_names:
+            speaker = name.source_speaker or "Unknown"
+            if speaker not in by_speaker:
+                by_speaker[speaker] = []
+            by_speaker[speaker].append(name.name)
+        return by_speaker
+
+
 # ============================================================================
 # Text Normalization Utilities
 # ============================================================================

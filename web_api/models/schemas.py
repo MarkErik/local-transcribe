@@ -115,7 +115,7 @@ class EditCreateRequest(BaseModel):
     stage_name: str = Field(..., description="Stage the edit applies to")
     edit_type: str = Field(
         ..., 
-        description="Type of edit: word_change, word_insert, word_delete, speaker_change, merge_words, split_word, toggle_interjection, insert_annotation, turn_merge, turn_split"
+        description="Type of edit: word_change, word_insert, word_delete, speaker_change, merge_words, split_word, toggle_interjection, insert_annotation, turn_merge, turn_split, pii_redact, pii_unredact"
     )
     turn_id: int = Field(..., description="Turn ID being edited")
     start_index: Optional[int] = Field(None, description="Start word index (inclusive)")

@@ -324,3 +324,98 @@ export const useUIStore = create<UIState>((set) => ({
   
   toggleAutoScroll: () => set((state) => ({ autoScroll: !state.autoScroll })),
 }));
+
+// ==============================================================================
+// De-identification Store - manages PII review and highlight state
+// ==============================================================================
+
+import { DiscoveredName, PIIReplacement } from '../api/client';
+
+interface DeIdentificationState {
+  // Current job
+  currentJobId: string | null;
+  
+  // First/second pass status
+  firstPassComplete: boolean;
+  secondPassComplete: boolean;
+  
+  // Discovered names from first pass
+  discoveredNames: DiscoveredName[];
+  
+  // PII replacements (audit trail)
+  piiReplacements: PIIReplacement[];
+  
+  // UI state
+  piiHighlightEnabled: boolean;
+  isLoading: boolean;
+  
+  // Actions
+  setCurrentJobId: (jobId: string | null) => void;
+  setFirstPassComplete: (complete: boolean) => void;
+  setSecondPassComplete: (complete: boolean) => void;
+  setDiscoveredNames: (names: DiscoveredName[]) => void;
+  updateNameInclusion: (name: string, include: boolean) => void;
+  addDiscoveredName: (name: DiscoveredName) => void;
+  removeDiscoveredName: (name: string) => void;
+  setPIIReplacements: (replacements: PIIReplacement[]) => void;
+  addPIIReplacement: (replacement: PIIReplacement) => void;
+  togglePIIHighlight: () => void;
+  setLoading: (loading: boolean) => void;
+  reset: () => void;
+}
+
+export const useDeIdentificationStore = create<DeIdentificationState>((set) => ({
+  currentJobId: null,
+  firstPassComplete: false,
+  secondPassComplete: false,
+  discoveredNames: [],
+  piiReplacements: [],
+  piiHighlightEnabled: false,
+  isLoading: false,
+  
+  setCurrentJobId: (jobId) => set({ currentJobId: jobId }),
+  
+  setFirstPassComplete: (complete) => set({ firstPassComplete: complete }),
+  
+  setSecondPassComplete: (complete) => set({ secondPassComplete: complete }),
+  
+  setDiscoveredNames: (names) => set({ discoveredNames: names }),
+  
+  updateNameInclusion: (name, include) =>
+    set((state) => ({
+      discoveredNames: state.discoveredNames.map((n) =>
+        n.name === name ? { ...n, include } : n
+      ),
+    })),
+  
+  addDiscoveredName: (name) =>
+    set((state) => ({
+      discoveredNames: [...state.discoveredNames, name],
+    })),
+  
+  removeDiscoveredName: (name) =>
+    set((state) => ({
+      discoveredNames: state.discoveredNames.filter((n) => n.name !== name),
+    })),
+  
+  setPIIReplacements: (replacements) => set({ piiReplacements: replacements }),
+  
+  addPIIReplacement: (replacement) =>
+    set((state) => ({
+      piiReplacements: [...state.piiReplacements, replacement],
+    })),
+  
+  togglePIIHighlight: () => set((state) => ({ piiHighlightEnabled: !state.piiHighlightEnabled })),
+  
+  setLoading: (loading) => set({ isLoading: loading }),
+  
+  reset: () => set({
+    currentJobId: null,
+    firstPassComplete: false,
+    secondPassComplete: false,
+    discoveredNames: [],
+    piiReplacements: [],
+    piiHighlightEnabled: false,
+    isLoading: false,
+  }),
+}));

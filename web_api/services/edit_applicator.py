@@ -62,6 +62,8 @@ class EditApplicator:
             "insert_annotation": self._apply_insert_annotation,
             "turn_merge": self._apply_turn_merge,
             "turn_split": self._apply_turn_split,
+            "pii_redact": self._apply_pii_redact,
+            "pii_unredact": self._apply_pii_unredact,
         }.get(edit.edit_type)
         
         if handler:
@@ -431,6 +433,63 @@ class EditApplicator:
         turn_idx = self.turns.index(turn)
         self.turns.insert(turn_idx + 1, second_turn)
         self.transcript["turns"] = self.turns
+    
+    def _apply_pii_redact(self, edit: Edit) -> None:
+        """
+        Redact word(s) as PII, replacing with [NAME] or custom placeholder.
+        
+        Uses: turn_id, start_index, end_index, new_value (replacement text)
+        """
+        turn = self._find_turn(edit.turn_id)
+        if not turn:
+            return
+        
+        words = turn.get("words", [])
+        start = edit.start_index if edit.start_index is not None else 0
+        end = edit.end_index if edit.end_index is not None else start
+        
+        replacement_text = edit.new_value or "[NAME]"
+        
+        # Replace each word in range with the redaction placeholder
+        for i in range(start, min(end + 1, len(words))):
+            # Store original for audit trail (in a metadata field if needed)
+            original_text = words[i].get("word", "")
+            words[i]["word"] = replacement_text
+            # Mark as redacted
+            words[i]["is_redacted"] = True
+            words[i]["original_text"] = original_text
+        
+        # Update turn text
+        turn["text"] = " ".join(w["word"] for w in words)
+    
+    def _apply_pii_unredact(self, edit: Edit) -> None:
+        """
+        Restore original text that was incorrectly marked as PII.
+        
+        Uses: turn_id, start_index, end_index, original_value (original text to restore)
+        """
+        turn = self._find_turn(edit.turn_id)
+        if not turn:
+            return
+        
+        words = turn.get("words", [])
+        start = edit.start_index if edit.start_index is not None else 0
+        end = edit.end_index if edit.end_index is not None else start
+        
+        # Restore original text from edit or from stored metadata
+        for i in range(start, min(end + 1, len(words))):
+            # Try to get original from edit, or from word metadata
+            original = edit.original_value
+            if not original and words[i].get("original_text"):
+                original = words[i]["original_text"]
+            
+            if original:
+                words[i]["word"] = original
+                words[i]["is_redacted"] = False
+                # Keep original_text for audit trail
+        
+        # Update turn text
+        turn["text"] = " ".join(w["word"] for w in words)
     
     def _recalculate_word_timing(self, turn: Dict[str, Any]) -> None:
         """

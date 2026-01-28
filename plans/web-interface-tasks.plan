@@ -676,20 +676,278 @@ Tasks for Phase 4 have been implemented.
 
 ---
 
-## Phase 5: De-identification Tools (Deferred)
+## Phase 5: De-identification Tools
 
-Tasks for Phase 5 will be detailed after Phase 4 is complete. High-level items:
+**Goal:** Enable interactive review and editing of de-identification results, with ability to pause between passes for name list review.
 
-- [ ] Split de_identify_multi_speaker() into first/second pass
-- [ ] Name list review UI between passes
-- [ ] PII highlight overlay mode
-- [ ] Manual redaction tool
-- [ ] Redaction override
-- [ ] De-identification audit trail view
+### 5.1 Backend: Split De-identification into Passes
+
+#### 5.1.1: Add First-Pass-Only Method to Orchestrator
+
+**File:** `local_transcribe/processing/de_identification/orchestrator.py`
+
+**Tasks:**
+- [ ] Add `de_identify_multi_speaker_first_pass()` method that:
+  - Runs first pass for all speakers
+  - Returns `FirstPassResults` with segments, replacements, and discovered names
+  - Does NOT run second pass
+- [ ] Add `de_identify_multi_speaker_second_pass()` method that:
+  - Accepts `FirstPassResults` + optional edited name list
+  - Runs second pass using the provided name list
+  - Returns final `DeIdentificationResult` per speaker
+- [ ] Add `FirstPassResults` dataclass to core.py
+
+**Acceptance Criteria:**
+```python
+# First pass only
+first_results = orchestrator.de_identify_multi_speaker_first_pass(speaker_segments)
+# Review/edit name list
+edited_names = user_reviews_names(first_results.discovered_names)
+# Second pass with edited list
+final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results, edited_names)
+```
 
 ---
 
-## Phase 6: Polish & Export (Deferred)
+#### 5.1.2: Add Name List Review API Endpoints
+
+**File:** `web_api/routers/deidentification.py` (new file)
+
+**Tasks:**
+- [ ] `POST /api/jobs/{job_id}/de-identify/first-pass` - Run first pass only, return name list
+  ```json
+  Response:
+  {
+    "job_id": "job_123",
+    "discovered_names": [
+      {"name": "John", "source_speaker": "Interviewer", "occurrences": 3},
+      {"name": "Sarah", "source_speaker": "Participant", "occurrences": 5}
+    ],
+    "first_pass_complete": true
+  }
+  ```
+- [ ] `GET /api/jobs/{job_id}/de-identify/names` - Get current discovered names
+- [ ] `PUT /api/jobs/{job_id}/de-identify/names` - Update name list before second pass
+  ```json
+  Request:
+  {
+    "names": [
+      {"name": "John", "include": true},
+      {"name": "Sarah", "include": true},
+      {"name": "Dr. Smith", "include": false}  // User decided not PII
+    ]
+  }
+  ```
+- [ ] `POST /api/jobs/{job_id}/de-identify/second-pass` - Run second pass with current name list
+
+---
+
+#### 5.1.3: Store De-identification State in Database
+
+**File:** `web_api/database.py`
+
+**Tasks:**
+- [ ] Add `de_identification_state` table:
+  ```sql
+  CREATE TABLE de_identification_state (
+      job_id TEXT PRIMARY KEY,
+      first_pass_complete BOOLEAN DEFAULT FALSE,
+      second_pass_complete BOOLEAN DEFAULT FALSE,
+      discovered_names_json TEXT,
+      reviewed_names_json TEXT,
+      first_pass_segments_path TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP,
+      FOREIGN KEY (job_id) REFERENCES jobs(id)
+  );
+  ```
+- [ ] Add `pii_replacements` table for audit trail:
+  ```sql
+  CREATE TABLE pii_replacements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id TEXT NOT NULL,
+      speaker TEXT,
+      original_text TEXT NOT NULL,
+      replacement_text TEXT DEFAULT '[NAME]',
+      word_index INTEGER,
+      pass_number INTEGER,  -- 1 or 2
+      is_manual BOOLEAN DEFAULT FALSE,
+      is_override BOOLEAN DEFAULT FALSE,  -- User marked as NOT PII
+      timestamp_start REAL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (job_id) REFERENCES jobs(id)
+  );
+  ```
+- [ ] Add database methods for CRUD operations
+
+---
+
+#### 5.1.4: Add PII Edit Types to Edit System
+
+**File:** `web_api/services/edit_applicator.py`
+
+**Tasks:**
+- [ ] Add `pii_redact` edit type handler:
+  - Marks word(s) as PII, replaces with `[NAME]` or custom placeholder
+  - Records in `pii_replacements` table with `is_manual=True`
+- [ ] Add `pii_unredact` edit type handler:
+  - Restores original text that was incorrectly marked as PII
+  - Records in `pii_replacements` table with `is_override=True`
+- [ ] Update `EditCreateRequest` schema with PII-specific fields
+
+---
+
+### 5.2 Frontend: Name List Review UI
+
+#### 5.2.1: Create NameListReview Component
+
+**File:** `web_ui/src/components/NameListReview.tsx`
+
+**Tasks:**
+- [ ] Display discovered names in a table:
+  - Name text
+  - Source speaker
+  - Occurrence count
+  - Include/exclude checkbox
+- [ ] "Add name" input for manually adding names to the list
+- [ ] "Remove" button for each name
+- [ ] "Approve and Continue" button to proceed to second pass
+- [ ] "Re-run First Pass" button if user wants to restart
+- [ ] Show context snippets where names were found
+
+---
+
+#### 5.2.2: Add De-identification Step to Job Progress
+
+**File:** `web_ui/src/pages/JobDetail.tsx`
+
+**Tasks:**
+- [ ] Detect when job is paused at de-identification review
+- [ ] Show "Review Names" button/banner when first pass complete
+- [ ] Navigate to name review modal/page
+- [ ] Show progress for second pass after approval
+
+---
+
+### 5.3 Frontend: PII Highlight Overlay
+
+#### 5.3.1: Create PIIHighlightMode Component
+
+**File:** `web_ui/src/components/PIIHighlightMode.tsx`
+
+**Tasks:**
+- [ ] Toggle button to enable/disable PII highlight mode
+- [ ] When enabled, highlight all words that were replaced:
+  - Yellow background for first-pass replacements
+  - Orange background for second-pass replacements
+  - Red background for manual redactions
+  - Strikethrough for overridden (restored) words
+- [ ] Tooltip showing original text on hover
+- [ ] Click to select word for editing
+
+---
+
+#### 5.3.2: Integrate with TranscriptView
+
+**File:** `web_ui/src/components/TranscriptView.tsx`
+
+**Tasks:**
+- [ ] Accept `piiReplacements` prop (list of PII replacement records)
+- [ ] Apply highlight styles when PII mode enabled
+- [ ] Add visual legend for highlight colors
+
+---
+
+### 5.4 Frontend: Manual Redaction Tool
+
+#### 5.4.1: Create RedactionTool Component
+
+**File:** `web_ui/src/components/RedactionTool.tsx`
+
+**Tasks:**
+- [ ] Text selection handler (select one or more words)
+- [ ] "Redact as PII" button in selection context menu
+- [ ] Replacement text input (default: `[NAME]`, options: `[LOCATION]`, `[ORGANIZATION]`, custom)
+- [ ] Apply redaction via edit API
+- [ ] Visual feedback for newly redacted text
+
+---
+
+#### 5.4.2: Create RedactionOverride Component
+
+**File:** `web_ui/src/components/RedactionOverride.tsx`
+
+**Tasks:**
+- [ ] Click on redacted word to see original
+- [ ] "Restore Original" button to undo redaction
+- [ ] Confirmation dialog with warning about re-exposing PII
+- [ ] Apply override via edit API
+
+---
+
+### 5.5 Frontend: De-identification Audit Trail
+
+#### 5.5.1: Create PIIAuditTrail Component
+
+**File:** `web_ui/src/components/PIIAuditTrail.tsx`
+
+**Tasks:**
+- [ ] Fetch PII replacements from API
+- [ ] Display in chronological table:
+  - Original text
+  - Replacement text
+  - Speaker
+  - Pass number (1, 2, or "Manual")
+  - Timestamp in transcript
+  - Action buttons (jump to location, restore)
+- [ ] Filter by speaker, pass number, manual vs automatic
+- [ ] Export audit trail as CSV/JSON
+
+---
+
+#### 5.5.2: Add Audit Trail Panel to TranscriptEditor
+
+**File:** `web_ui/src/pages/TranscriptEditor.tsx`
+
+**Tasks:**
+- [ ] Add "PII Audit" tab/panel in sidebar
+- [ ] Show audit trail when tab selected
+- [ ] Link audit entries to transcript locations
+
+---
+
+### 5.6 API Client Updates
+
+**File:** `web_ui/src/api/client.ts`
+
+**Tasks:**
+- [ ] `runFirstPass(jobId)` - Trigger first pass de-identification
+- [ ] `getDiscoveredNames(jobId)` - Fetch name list
+- [ ] `updateNameList(jobId, names)` - Update names before second pass
+- [ ] `runSecondPass(jobId)` - Trigger second pass
+- [ ] `getPIIReplacements(jobId)` - Fetch all PII replacements
+- [ ] `createPIIRedaction(jobId, edit)` - Manual redaction
+- [ ] `restorePII(jobId, replacementId)` - Override/restore
+
+---
+
+### 5.7 Store Updates
+
+**File:** `web_ui/src/store/index.ts`
+
+**Tasks:**
+- [ ] Add `useDeIdentificationStore` with:
+  - `discoveredNames: DiscoveredName[]`
+  - `piiReplacements: PIIReplacement[]`
+  - `piiHighlightEnabled: boolean`
+  - `firstPassComplete: boolean`
+  - `secondPassComplete: boolean`
+- [ ] Actions: `setNames`, `toggleName`, `addName`, `removeName`
+- [ ] Actions: `togglePIIHighlight`, `setReplacements`
+
+---
+
+## Phase 6: Polish & Export
 
 Tasks for Phase 6 will be detailed after Phase 5 is complete. High-level items:
 

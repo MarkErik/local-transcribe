@@ -16,6 +16,7 @@ from local_transcribe.lib.program_logger import log_progress, log_status, log_de
 from .core import (
     DeIdentificationConfig,
     DeIdentificationResult,
+    FirstPassResults,
     WordReplacement,
     DiscoveredName,
     DEFAULT_CONFIG,
@@ -270,6 +271,159 @@ class DeIdentificationOrchestrator:
             )
         
         log_status("Multi-speaker de-identification complete")
+        
+        return final_results
+    
+    def de_identify_multi_speaker_first_pass(
+        self,
+        speaker_segments: Dict[str, List[WordSegment]],
+    ) -> FirstPassResults:
+        """
+        Run only the first pass of multi-speaker de-identification.
+        
+        This method allows for interactive review of discovered names before
+        running the second pass. Use `de_identify_multi_speaker_second_pass()`
+        to complete the process after review.
+        
+        Args:
+            speaker_segments: Dict mapping speaker_name -> list of segments
+            
+        Returns:
+            FirstPassResults with segments after first pass and discovered names
+        """
+        if not speaker_segments:
+            return FirstPassResults()
+        
+        log_status(f"Starting first-pass de-identification for {len(speaker_segments)} speakers")
+        
+        # Run first pass for all speakers
+        speaker_first_segments: Dict[str, List[WordSegment]] = {}
+        speaker_replacements: Dict[str, List[WordReplacement]] = {}
+        
+        for speaker_name, segments in speaker_segments.items():
+            log_progress(f"First pass for {speaker_name}")
+            
+            result = de_identify_first_pass(
+                segments,
+                self.llm_client,
+                self.config,
+                self.intermediate_dir,
+                speaker_name,
+                self.debug_writer
+            )
+            
+            speaker_first_segments[speaker_name] = result.segments
+            speaker_replacements[speaker_name] = result.replacements
+            
+            log_progress(
+                f"First pass for {speaker_name}: "
+                f"{len(result.discovered_names)} unique names found"
+            )
+        
+        # Build global name list from all speakers
+        global_names = build_global_name_list(speaker_replacements)
+        
+        if global_names:
+            log_progress(f"Global name list: {', '.join(n.name for n in global_names)}")
+        else:
+            log_progress("No names discovered across all speakers")
+        
+        log_status("First-pass de-identification complete - awaiting review")
+        
+        return FirstPassResults(
+            speaker_segments=speaker_first_segments,
+            speaker_replacements=speaker_replacements,
+            discovered_names=global_names
+        )
+    
+    def de_identify_multi_speaker_second_pass(
+        self,
+        first_pass_results: FirstPassResults,
+        name_list: Optional[List[DiscoveredName]] = None,
+        original_segments: Optional[Dict[str, List[WordSegment]]] = None,
+    ) -> Dict[str, DeIdentificationResult]:
+        """
+        Run the second pass of multi-speaker de-identification.
+        
+        Uses the provided name list (or the discovered names from first pass)
+        to find additional occurrences of names that may have been missed.
+        
+        Args:
+            first_pass_results: Results from de_identify_multi_speaker_first_pass()
+            name_list: Optional edited name list. If None, uses discovered names from first pass.
+            original_segments: Optional original segments (for audit logging)
+            
+        Returns:
+            Dict mapping speaker_name -> DeIdentificationResult
+        """
+        # Use provided name list or fall back to discovered names
+        names_to_use = name_list if name_list is not None else first_pass_results.discovered_names
+        
+        if not names_to_use:
+            log_progress("No names in list, skipping second pass")
+            # Return results with just first pass data
+            final_results: Dict[str, DeIdentificationResult] = {}
+            for speaker_name, segments in first_pass_results.speaker_segments.items():
+                final_results[speaker_name] = DeIdentificationResult(
+                    segments=segments,
+                    first_pass_replacements=first_pass_results.speaker_replacements.get(speaker_name, []),
+                    second_pass_replacements=[],
+                    discovered_names=set(n.name for n in first_pass_results.discovered_names)
+                )
+            return final_results
+        
+        log_status(f"Starting second-pass de-identification with {len(names_to_use)} names")
+        
+        final_results: Dict[str, DeIdentificationResult] = {}
+        
+        for speaker_name, segments in first_pass_results.speaker_segments.items():
+            log_progress(f"Second pass for {speaker_name}")
+            
+            first_replacements = first_pass_results.speaker_replacements.get(speaker_name, [])
+            
+            second_result = de_identify_second_pass(
+                segments,
+                names_to_use,
+                self.llm_client,
+                self.config,
+                self.intermediate_dir,
+                speaker_name,
+                first_replacements,
+                self.debug_writer
+            )
+            
+            second_replacements = second_result.additional_replacements
+            
+            if second_replacements:
+                log_progress(
+                    f"Second pass for {speaker_name}: "
+                    f"{len(second_replacements)} additional names found"
+                )
+            
+            # Create audit log for this speaker
+            if self.audit_logger and original_segments:
+                orig_segs = original_segments.get(speaker_name, [])
+                all_words = [seg.text for seg in orig_segs]
+                self.audit_logger.create_combined_audit_log(
+                    first_pass_replacements=first_replacements,
+                    second_pass_replacements=second_replacements,
+                    speaker_name=speaker_name,
+                    total_words=len(orig_segs),
+                    global_names=names_to_use,
+                    all_words=all_words
+                )
+            
+            # Collect discovered names as a set of strings
+            discovered_names_set = set(n.name for n in first_pass_results.discovered_names)
+            
+            final_results[speaker_name] = DeIdentificationResult(
+                segments=second_result.segments,
+                first_pass_replacements=first_replacements,
+                second_pass_replacements=second_replacements,
+                discovered_names=discovered_names_set
+            )
+        
+        log_status("Second-pass de-identification complete")
         
         return final_results
     

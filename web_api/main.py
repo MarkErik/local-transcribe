@@ -14,6 +14,7 @@ from web_api import __version__
 from web_api.config import get_config
 from web_api.database import init_database
 from web_api.routers import files_router, jobs_router, transcripts_router
+from web_api.routers.deidentification import router as deidentification_router
 from web_api.models.schemas import HealthResponse
 
 
@@ -63,6 +64,7 @@ app.add_middleware(
 app.include_router(files_router)
 app.include_router(jobs_router)
 app.include_router(transcripts_router)
+app.include_router(deidentification_router)
 
 
 # Health check endpoint

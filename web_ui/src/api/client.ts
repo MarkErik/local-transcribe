@@ -491,3 +491,229 @@ export async function rerunJob(
   
   return response.json();
 }
+
+// ==============================================================================
+// De-identification API
+// ==============================================================================
+
+export interface DiscoveredName {
+  name: string;
+  source_speaker?: string;
+  occurrences: number;
+  include: boolean;
+}
+
+export interface DeIdentificationStatus {
+  job_id: string;
+  first_pass_complete: boolean;
+  second_pass_complete: boolean;
+  discovered_names_count: number;
+  reviewed_names_count?: number;
+  total_pii_replacements: number;
+  manual_redactions: number;
+  overrides: number;
+}
+
+export interface FirstPassResponse {
+  job_id: string;
+  discovered_names: DiscoveredName[];
+  first_pass_complete: boolean;
+  total_names: number;
+  message: string;
+}
+
+export interface NameListResponse {
+  job_id: string;
+  discovered_names: DiscoveredName[];
+  reviewed_names?: DiscoveredName[];
+  first_pass_complete: boolean;
+  second_pass_complete: boolean;
+}
+
+export interface SecondPassResponse {
+  job_id: string;
+  second_pass_complete: boolean;
+  total_replacements: number;
+  message: string;
+}
+
+export interface PIIReplacement {
+  id: number;
+  job_id: string;
+  speaker?: string;
+  original_text: string;
+  replacement_text: string;
+  word_index?: number;
+  turn_id?: number;
+  pass_number?: number;
+  is_manual: boolean;
+  is_override: boolean;
+  timestamp_start?: number;
+  created_at: string;
+}
+
+export interface PIIReplacementsListResponse {
+  job_id: string;
+  replacements: PIIReplacement[];
+  total: number;
+}
+
+/**
+ * Get de-identification status for a job.
+ */
+export async function getDeIdentificationStatus(jobId: string): Promise<DeIdentificationStatus> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/de-identify/status`);
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get de-identification status');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Run first pass of de-identification.
+ */
+export async function runFirstPass(jobId: string): Promise<FirstPassResponse> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/de-identify/first-pass`, {
+    method: 'POST',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to run first pass');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Get discovered names for a job.
+ */
+export async function getDiscoveredNames(jobId: string): Promise<NameListResponse> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/de-identify/names`);
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get discovered names');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Update name list before second pass.
+ */
+export async function updateNameList(
+  jobId: string,
+  names: DiscoveredName[]
+): Promise<NameListResponse> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/de-identify/names`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ names }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to update name list');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Run second pass of de-identification.
+ */
+export async function runSecondPass(jobId: string): Promise<SecondPassResponse> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/de-identify/second-pass`, {
+    method: 'POST',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to run second pass');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Get PII replacements (audit trail) for a job.
+ */
+export async function getPIIReplacements(
+  jobId: string,
+  speaker?: string,
+  passNumber?: number
+): Promise<PIIReplacementsListResponse> {
+  const params = new URLSearchParams();
+  if (speaker) params.append('speaker', speaker);
+  if (passNumber !== undefined) params.append('pass_number', passNumber.toString());
+  
+  const queryString = params.toString();
+  const url = `${API_BASE}/jobs/${jobId}/de-identify/replacements${queryString ? '?' + queryString : ''}`;
+  
+  const response = await fetch(url);
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get PII replacements');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Manually redact text as PII.
+ */
+export async function createPIIRedaction(
+  jobId: string,
+  turnId: number,
+  startIndex: number,
+  originalText: string,
+  replacementText: string = '[NAME]',
+  endIndex?: number,
+  speaker?: string
+): Promise<PIIReplacement> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/de-identify/redact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      turn_id: turnId,
+      start_index: startIndex,
+      end_index: endIndex ?? startIndex,
+      original_text: originalText,
+      replacement_text: replacementText,
+      speaker,
+    }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to create redaction');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Restore (un-redact) previously redacted PII.
+ */
+export async function restorePII(
+  jobId: string,
+  replacementId: number
+): Promise<PIIReplacement> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/de-identify/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ replacement_id: replacementId }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to restore PII');
+  }
+  
+  return response.json();
+}

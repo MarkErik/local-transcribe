@@ -127,6 +127,66 @@ class Edit:
         }
 
 
+@dataclass
+class DeIdentificationState:
+    """Represents the de-identification state for a job (two-pass progress)."""
+    job_id: str
+    first_pass_complete: bool = False
+    second_pass_complete: bool = False
+    discovered_names_json: Optional[str] = None
+    reviewed_names_json: Optional[str] = None
+    first_pass_segments_path: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "job_id": self.job_id,
+            "first_pass_complete": self.first_pass_complete,
+            "second_pass_complete": self.second_pass_complete,
+            "discovered_names": json.loads(self.discovered_names_json) if self.discovered_names_json else [],
+            "reviewed_names": json.loads(self.reviewed_names_json) if self.reviewed_names_json else None,
+            "first_pass_segments_path": self.first_pass_segments_path,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass
+class PIIReplacement:
+    """Represents a PII replacement (audit trail entry)."""
+    id: Optional[int]
+    job_id: str
+    speaker: Optional[str]
+    original_text: str
+    replacement_text: str = "[NAME]"
+    word_index: Optional[int] = None
+    turn_id: Optional[int] = None
+    pass_number: Optional[int] = None  # 1, 2, or None for manual
+    is_manual: bool = False
+    is_override: bool = False
+    timestamp_start: Optional[float] = None
+    created_at: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "job_id": self.job_id,
+            "speaker": self.speaker,
+            "original_text": self.original_text,
+            "replacement_text": self.replacement_text,
+            "word_index": self.word_index,
+            "turn_id": self.turn_id,
+            "pass_number": self.pass_number,
+            "is_manual": self.is_manual,
+            "is_override": self.is_override,
+            "timestamp_start": self.timestamp_start,
+            "created_at": self.created_at,
+        }
+
+
 # SQL Schema definitions
 SCHEMA_SQL = """
 -- Jobs table
@@ -174,10 +234,41 @@ CREATE TABLE IF NOT EXISTS edits (
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
 
+-- De-identification state table (tracks two-pass progress)
+CREATE TABLE IF NOT EXISTS de_identification_state (
+    job_id TEXT PRIMARY KEY,
+    first_pass_complete BOOLEAN DEFAULT FALSE,
+    second_pass_complete BOOLEAN DEFAULT FALSE,
+    discovered_names_json TEXT,
+    reviewed_names_json TEXT,
+    first_pass_segments_path TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP,
+    FOREIGN KEY (job_id) REFERENCES jobs(id)
+);
+
+-- PII replacements table (audit trail for all redactions)
+CREATE TABLE IF NOT EXISTS pii_replacements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    speaker TEXT,
+    original_text TEXT NOT NULL,
+    replacement_text TEXT DEFAULT '[NAME]',
+    word_index INTEGER,
+    turn_id INTEGER,
+    pass_number INTEGER,
+    is_manual BOOLEAN DEFAULT FALSE,
+    is_override BOOLEAN DEFAULT FALSE,
+    timestamp_start REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (job_id) REFERENCES jobs(id)
+);
+
 -- Index for faster job lookups
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_edits_job_id ON edits(job_id);
 CREATE INDEX IF NOT EXISTS idx_uploaded_files_status ON uploaded_files(upload_status);
+CREATE INDEX IF NOT EXISTS idx_pii_replacements_job_id ON pii_replacements(job_id);
 """
 
 
@@ -517,6 +608,224 @@ class Database:
             )
             conn.commit()
             return cursor.rowcount
+    
+    # De-identification state operations
+    
+    def get_de_identification_state(self, job_id: str) -> Optional[DeIdentificationState]:
+        """Get de-identification state for a job."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM de_identification_state WHERE job_id = ?",
+                (job_id,)
+            ).fetchone()
+            
+            if row is None:
+                return None
+            
+            return DeIdentificationState(
+                job_id=row["job_id"],
+                first_pass_complete=bool(row["first_pass_complete"]),
+                second_pass_complete=bool(row["second_pass_complete"]),
+                discovered_names_json=row["discovered_names_json"],
+                reviewed_names_json=row["reviewed_names_json"],
+                first_pass_segments_path=row["first_pass_segments_path"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+    
+    def create_de_identification_state(self, state: DeIdentificationState) -> DeIdentificationState:
+        """Create de-identification state record."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO de_identification_state 
+                (job_id, first_pass_complete, second_pass_complete, discovered_names_json,
+                 reviewed_names_json, first_pass_segments_path, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    state.job_id,
+                    state.first_pass_complete,
+                    state.second_pass_complete,
+                    state.discovered_names_json,
+                    state.reviewed_names_json,
+                    state.first_pass_segments_path,
+                    state.created_at or datetime.utcnow().isoformat(),
+                )
+            )
+            conn.commit()
+        return state
+    
+    def update_de_identification_state(
+        self,
+        job_id: str,
+        first_pass_complete: Optional[bool] = None,
+        second_pass_complete: Optional[bool] = None,
+        discovered_names_json: Optional[str] = None,
+        reviewed_names_json: Optional[str] = None,
+        first_pass_segments_path: Optional[str] = None,
+    ) -> Optional[DeIdentificationState]:
+        """Update de-identification state fields."""
+        updates = []
+        params = []
+        
+        if first_pass_complete is not None:
+            updates.append("first_pass_complete = ?")
+            params.append(first_pass_complete)
+        if second_pass_complete is not None:
+            updates.append("second_pass_complete = ?")
+            params.append(second_pass_complete)
+        if discovered_names_json is not None:
+            updates.append("discovered_names_json = ?")
+            params.append(discovered_names_json)
+        if reviewed_names_json is not None:
+            updates.append("reviewed_names_json = ?")
+            params.append(reviewed_names_json)
+        if first_pass_segments_path is not None:
+            updates.append("first_pass_segments_path = ?")
+            params.append(first_pass_segments_path)
+        
+        if not updates:
+            return self.get_de_identification_state(job_id)
+        
+        updates.append("updated_at = ?")
+        params.append(datetime.utcnow().isoformat())
+        params.append(job_id)
+        
+        with self._get_connection() as conn:
+            conn.execute(
+                f"UPDATE de_identification_state SET {', '.join(updates)} WHERE job_id = ?",
+                params
+            )
+            conn.commit()
+        
+        return self.get_de_identification_state(job_id)
+    
+    def upsert_de_identification_state(self, state: DeIdentificationState) -> DeIdentificationState:
+        """Create or update de-identification state."""
+        existing = self.get_de_identification_state(state.job_id)
+        if existing:
+            return self.update_de_identification_state(
+                job_id=state.job_id,
+                first_pass_complete=state.first_pass_complete,
+                second_pass_complete=state.second_pass_complete,
+                discovered_names_json=state.discovered_names_json,
+                reviewed_names_json=state.reviewed_names_json,
+                first_pass_segments_path=state.first_pass_segments_path,
+            )
+        return self.create_de_identification_state(state)
+    
+    # PII replacement operations
+    
+    def create_pii_replacement(self, replacement: PIIReplacement) -> PIIReplacement:
+        """Create a new PII replacement record."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO pii_replacements 
+                (job_id, speaker, original_text, replacement_text, word_index, turn_id,
+                 pass_number, is_manual, is_override, timestamp_start, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    replacement.job_id,
+                    replacement.speaker,
+                    replacement.original_text,
+                    replacement.replacement_text,
+                    replacement.word_index,
+                    replacement.turn_id,
+                    replacement.pass_number,
+                    replacement.is_manual,
+                    replacement.is_override,
+                    replacement.timestamp_start,
+                    replacement.created_at or datetime.utcnow().isoformat(),
+                )
+            )
+            replacement.id = cursor.lastrowid
+            conn.commit()
+        return replacement
+    
+    def get_pii_replacements_for_job(
+        self,
+        job_id: str,
+        speaker: Optional[str] = None,
+        pass_number: Optional[int] = None,
+        include_overrides: bool = True,
+    ) -> List[PIIReplacement]:
+        """Get PII replacements for a job with optional filters."""
+        query = "SELECT * FROM pii_replacements WHERE job_id = ?"
+        params = [job_id]
+        
+        if speaker:
+            query += " AND speaker = ?"
+            params.append(speaker)
+        if pass_number is not None:
+            query += " AND pass_number = ?"
+            params.append(pass_number)
+        if not include_overrides:
+            query += " AND is_override = FALSE"
+        
+        query += " ORDER BY created_at ASC"
+        
+        with self._get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+            
+            return [
+                PIIReplacement(
+                    id=row["id"],
+                    job_id=row["job_id"],
+                    speaker=row["speaker"],
+                    original_text=row["original_text"],
+                    replacement_text=row["replacement_text"],
+                    word_index=row["word_index"],
+                    turn_id=row["turn_id"],
+                    pass_number=row["pass_number"],
+                    is_manual=bool(row["is_manual"]),
+                    is_override=bool(row["is_override"]),
+                    timestamp_start=row["timestamp_start"],
+                    created_at=row["created_at"],
+                )
+                for row in rows
+            ]
+    
+    def delete_pii_replacement(self, replacement_id: int) -> bool:
+        """Delete a PII replacement by ID. Returns True if deleted."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("DELETE FROM pii_replacements WHERE id = ?", (replacement_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def bulk_create_pii_replacements(self, replacements: List[PIIReplacement]) -> List[PIIReplacement]:
+        """Bulk insert PII replacements for efficiency."""
+        if not replacements:
+            return []
+        
+        with self._get_connection() as conn:
+            for replacement in replacements:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO pii_replacements 
+                    (job_id, speaker, original_text, replacement_text, word_index, turn_id,
+                     pass_number, is_manual, is_override, timestamp_start, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        replacement.job_id,
+                        replacement.speaker,
+                        replacement.original_text,
+                        replacement.replacement_text,
+                        replacement.word_index,
+                        replacement.turn_id,
+                        replacement.pass_number,
+                        replacement.is_manual,
+                        replacement.is_override,
+                        replacement.timestamp_start,
+                        replacement.created_at or datetime.utcnow().isoformat(),
+                    )
+                )
+                replacement.id = cursor.lastrowid
+            conn.commit()
+        return replacements
 
 
 # Global database instance

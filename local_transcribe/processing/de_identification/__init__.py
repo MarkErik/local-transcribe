@@ -33,6 +33,7 @@ Usage:
 from .core import (
     DeIdentificationConfig,
     DeIdentificationResult,
+    FirstPassResults,
     WordReplacement,
     DiscoveredName,
     ValidationResult,

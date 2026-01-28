@@ -371,3 +371,115 @@ export async function checkHealth(): Promise<{
   
   return response.json();
 }
+
+// ==============================================================================
+// Edit Types and Functions
+// ==============================================================================
+
+export type EditType = 
+  | 'word_change'
+  | 'word_insert'
+  | 'word_delete'
+  | 'speaker_change'
+  | 'merge_words'
+  | 'split_word';
+
+export interface EditCreateRequest {
+  stage_name: string;
+  edit_type: EditType;
+  turn_id: number;
+  start_index?: number;
+  end_index?: number;
+  original_value?: string;
+  new_value?: string;
+}
+
+export interface Edit {
+  id: number;
+  job_id: string;
+  stage_name: string;
+  edit_type: EditType;
+  turn_id?: number;
+  start_index?: number;
+  end_index?: number;
+  original_value?: string;
+  new_value?: string;
+  created_at: string;
+}
+
+/**
+ * Create an edit for a transcript.
+ */
+export async function createEdit(
+  jobId: string,
+  edit: EditCreateRequest
+): Promise<Edit> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/edits`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to create edit');
+  }
+  
+  return response.json();
+}
+
+/**
+ * List all edits for a job.
+ */
+export async function listEdits(
+  jobId: string,
+  stage?: string
+): Promise<Edit[]> {
+  const params = stage ? `?stage=${stage}` : '';
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/edits${params}`);
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to list edits');
+  }
+  
+  const data = await response.json();
+  return data.edits;
+}
+
+/**
+ * Delete an edit (for undo).
+ */
+export async function deleteEdit(
+  jobId: string,
+  editId: number
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/edits/${editId}`, {
+    method: 'DELETE',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete edit');
+  }
+}
+
+/**
+ * Re-run a job from checkpoint with edits applied.
+ */
+export async function rerunJob(
+  jobId: string,
+  startStage?: string
+): Promise<JobCreateResponse> {
+  const params = startStage ? `?start_stage=${startStage}` : '';
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/rerun${params}`, {
+    method: 'POST',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to rerun job');
+  }
+  
+  return response.json();
+}

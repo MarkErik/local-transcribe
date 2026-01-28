@@ -228,6 +228,23 @@ class PipelineService:
             if not checkpoint_path:
                 raise FileNotFoundError(f"No checkpoint file found in {original_output}")
             
+            # Load checkpoint and apply edits
+            import json as json_module
+            from web_api.services.edit_applicator import apply_edits_to_transcript
+            
+            with open(checkpoint_path, 'r') as f:
+                transcript_data = json_module.load(f)
+            
+            # Get edits for the original job and apply them
+            edits = self.db.get_edits_for_job(original_job_id)
+            if edits:
+                transcript_data = apply_edits_to_transcript(transcript_data, edits)
+            
+            # Write edited checkpoint to new job's output dir
+            edited_checkpoint_path = output_dir / "checkpoint-edited.json"
+            with open(edited_checkpoint_path, 'w') as f:
+                json_module.dump(transcript_data, f, indent=2)
+            
             # Setup logging
             setup_output_context(
                 output_dir=output_dir,
@@ -239,9 +256,9 @@ class PipelineService:
             original_config = json.loads(original_job.config_json) if original_job.config_json else {}
             options = original_config.get("options", {})
             
-            # Run from checkpoint
+            # Run from checkpoint (using edited checkpoint)
             run_pipeline_from_checkpoint(
-                checkpoint_path=checkpoint_path,
+                checkpoint_path=edited_checkpoint_path,
                 output_dir=output_dir,
                 start_stage=start_stage,
                 enable_de_identification=options.get("enable_de_identification", True),

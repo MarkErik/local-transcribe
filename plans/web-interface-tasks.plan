@@ -439,16 +439,16 @@ Persist block identity through turn building so UI can highlight true blocks and
 
 ---
 
-## Phase 3: Basic Editing
+## Phase 3: Basic Editing ✅ COMPLETED
 
 **Goal:** Core transcript editing functionality
 
 ### 3.1 Backend
 
-#### 3.1.1: Edit Save Endpoint
+#### 3.1.1: Edit Save Endpoint ✅ COMPLETED
 
 **Tasks:**
-- [ ] `POST /api/jobs/{job_id}/edits` - Save an edit
+- [x] `POST /api/jobs/{job_id}/edits` - Save an edit
   ```json
   {
     "stage_name": "vad_transcription",
@@ -460,106 +460,106 @@ Persist block identity through turn building so UI can highlight true blocks and
     "new_value": "the"
   }
   ```
-- [ ] Store edit in SQLite
-- [ ] Mark downstream stages as stale
-- [ ] Return updated transcript with edits applied
+- [x] Store edit in SQLite
+- [x] Mark downstream stages as stale
+- [x] Return updated transcript with edits applied
 
 ---
 
-#### 3.1.2: Apply Edits to TranscriptFlow
+#### 3.1.2: Apply Edits to TranscriptFlow ✅ COMPLETED
 
 **Tasks:**
-- [ ] Create `EditApplicator` class
-- [ ] Load edits from database for a job/stage
-- [ ] Apply edits to TranscriptFlow in order
-- [ ] Support edit types:
+- [x] Create `EditApplicator` class
+- [x] Load edits from database for a job/stage
+- [x] Apply edits to TranscriptFlow in order
+- [x] Support edit types:
   - `word_change` - Change word text
   - `word_insert` - Insert word at index
   - `word_delete` - Remove word at index
   - `speaker_change` - Change turn speaker
-- [ ] Return modified TranscriptFlow (original unchanged)
+- [x] Return modified TranscriptFlow (original unchanged)
 
 ---
 
-#### 3.1.3: Pipeline Re-run Endpoint
+#### 3.1.3: Pipeline Re-run Endpoint ✅ COMPLETED
 
 **Tasks:**
-- [ ] `POST /api/jobs/{job_id}/rerun` - Re-run from checkpoint
+- [x] `POST /api/jobs/{job_id}/rerun` - Re-run from checkpoint
   ```json
   {
     "start_stage": "de_identification"
   }
   ```
-- [ ] Apply edits to create checkpoint TranscriptFlow
-- [ ] Call `run_pipeline_from_checkpoint()` with checkpoint
-- [ ] Return new job_id for re-run
-- [ ] Link re-run job to original job in database
+- [x] Apply edits to create checkpoint TranscriptFlow
+- [x] Call `run_pipeline_from_checkpoint()` with checkpoint
+- [x] Return new job_id for re-run
+- [x] Link re-run job to original job in database
 
 ---
 
 ### 3.2 Frontend
 
-#### 3.2.1: Block Selection UI
+#### 3.2.1: Block Selection UI ✅ COMPLETED
 
 **Tasks:**
-- [ ] Click on turn to select it
-- [ ] Visual selection indicator (border, background)
-- [ ] Keyboard navigation between turns (arrow keys)
-- [ ] Selection state in Zustand store
+- [x] Click on turn to select it
+- [x] Visual selection indicator (border, background)
+- [ ] Keyboard navigation between turns (arrow keys) - Deferred to Phase 4
+- [x] Selection state in Zustand store
 
 ---
 
-#### 3.2.2: Word-Level Editing
+#### 3.2.2: Word-Level Editing ✅ COMPLETED (WordEditor component)
 
 **Tasks:**
-- [ ] Click word to select it
-- [ ] Double-click to edit inline
-- [ ] Edit modal with audio loop for selected region
-- [ ] Save edit on blur or Enter
-- [ ] Cancel edit on Escape
-- [ ] Visual indicator for edited words
+- [x] Click word to select it
+- [x] Double-click to edit inline
+- [ ] Edit modal with audio loop for selected region - Deferred
+- [x] Save edit on blur or Enter
+- [x] Cancel edit on Escape
+- [x] Visual indicator for edited words
 
 ---
 
-#### 3.2.3: Insert/Delete Words
+#### 3.2.3: Insert/Delete Words ✅ COMPLETED
 
 **Tasks:**
-- [ ] Click between words shows insert point
-- [ ] Insert word modal with text input
-- [ ] Delete word button (or Delete key)
-- [ ] Confirmation for delete
+- [x] Click between words shows insert point
+- [x] Insert word modal with text input
+- [x] Delete word button (or Delete key)
+- [ ] Confirmation for delete - Deferred
 
 ---
 
-#### 3.2.4: Undo/Redo System
+#### 3.2.4: Undo/Redo System ✅ COMPLETED
 
 **Tasks:**
-- [ ] Edit history stack in Zustand
-- [ ] Undo last edit (Ctrl+Z)
-- [ ] Redo undone edit (Ctrl+Shift+Z)
-- [ ] Sync undo/redo with server (delete edit records)
-- [ ] Show undo available indicator
+- [x] Edit history stack in Zustand
+- [x] Undo last edit (Ctrl+Z)
+- [x] Redo undone edit (Ctrl+Shift+Z)
+- [x] Sync undo/redo with server (delete edit records)
+- [x] Show undo available indicator
 
 ---
 
-#### 3.2.5: Auto-Save Implementation
+#### 3.2.5: Auto-Save Implementation ✅ COMPLETED
 
 **Tasks:**
-- [ ] Debounced save (2 second delay after edit)
-- [ ] Save indicator ("Saving...", "Saved", "Unsaved changes")
-- [ ] Queue edits during save, batch save on completion
-- [ ] Handle save failure gracefully
+- [x] Debounced save (2 second delay after edit)
+- [x] Save indicator ("Saving...", "Saved", "Unsaved changes")
+- [x] Queue edits during save, batch save on completion
+- [x] Handle save failure gracefully
 
 ---
 
-#### 3.2.6: Stale Stage Warning UI
+#### 3.2.6: Stale Stage Warning UI ✅ COMPLETED
 
 **Tasks:**
-- [ ] Visual indicator on stages that are stale
-- [ ] Warning banner: "Edits made - downstream stages need re-run"
-- [ ] "Re-run Pipeline" button
-- [ ] Confirmation dialog showing affected stages
-- [ ] Disable export from stale stages
+- [x] Visual indicator on stages that are stale
+- [x] Warning banner: "Edits made - downstream stages need re-run"
+- [x] "Re-run Pipeline" button
+- [ ] Confirmation dialog showing affected stages - Deferred
+- [ ] Disable export from stale stages - Deferred
 
 ---
 

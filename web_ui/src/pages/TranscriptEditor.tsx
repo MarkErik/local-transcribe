@@ -5,21 +5,33 @@
  * - Dual-track audio player (interviewer + participant)
  * - Transcript view with block-level highlighting
  * - Stage selector for viewing different pipeline outputs
+ * - Word-level editing with undo/redo
+ * - Auto-save functionality
  */
 
-import { useState, useCallback, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   getJob, 
   getTranscript, 
   getAvailableStages, 
   getAudioUrl,
+  listEdits,
 } from '../api';
-import { DualTrackPlayer, TranscriptView, StageBadges } from '../components';
+import { 
+  DualTrackPlayer, 
+  TranscriptView, 
+  StageBadges,
+  EditToolbar,
+  StaleStageWarning,
+} from '../components';
+import { useEditStore } from '../store';
 
 export function TranscriptEditor() {
   const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   
   // Current playback time for synchronization
   const [currentTime, setCurrentTime] = useState(0);
@@ -32,6 +44,18 @@ export function TranscriptEditor() {
   
   // Auto-scroll toggle
   const [autoScroll, setAutoScroll] = useState(true);
+  
+  // Dismiss stale warning
+  const [staleWarningDismissed, setStaleWarningDismissed] = useState(false);
+  
+  // Edit store
+  const { 
+    savedEdits, 
+    pendingEdits, 
+    setCurrentJob,
+    setSavedEdits,
+    reset: resetEditStore,
+  } = useEditStore();
 
   // Fetch job details
   const { data: job, isLoading: isLoadingJob, error: jobError } = useQuery({
@@ -61,6 +85,22 @@ export function TranscriptEditor() {
       }
     }
   }, [stages, selectedStage]);
+  
+  // Initialize edit store when job/stage changes
+  useEffect(() => {
+    if (jobId && selectedStage) {
+      setCurrentJob(jobId, selectedStage);
+      // Load existing edits
+      listEdits(jobId, selectedStage)
+        .then(edits => setSavedEdits(edits))
+        .catch(err => console.error('Failed to load edits:', err));
+    }
+    
+    return () => {
+      // Clean up on unmount
+      resetEditStore();
+    };
+  }, [jobId, selectedStage, setCurrentJob, setSavedEdits, resetEditStore]);
 
   // Fetch transcript for selected stage
   const { 
@@ -97,7 +137,23 @@ export function TranscriptEditor() {
   // Handle stage change
   const handleStageChange = useCallback((stage: string) => {
     setSelectedStage(stage);
+    setStaleWarningDismissed(false);
   }, []);
+  
+  // Note: Word-level editing handlers will be added when TranscriptView is enhanced
+  // to support inline editing. For now, the edit store and backend are ready.
+  // Use: const { addPendingEdit } = useEditStore();
+  // Then: addPendingEdit({ edit_type, turn_id, ... })
+  
+  // Handle rerun request
+  const handleRerunRequested = useCallback((newJobId: string) => {
+    // Invalidate caches and navigate to the new job
+    queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    navigate(`/jobs/${newJobId}`);
+  }, [queryClient, navigate]);
+  
+  // Check if there are edits for stale warning
+  const hasEdits = savedEdits.length > 0 || pendingEdits.length > 0;
 
   // Handle turn selection
   const handleTurnSelect = useCallback((turnId: number) => {
@@ -191,6 +247,26 @@ export function TranscriptEditor() {
           </div>
         </div>
       </header>
+
+      {/* Edit toolbar */}
+      {jobId && selectedStage && (
+        <EditToolbar 
+          jobId={jobId} 
+          stageName={selectedStage}
+          onRerunRequested={handleRerunRequested}
+        />
+      )}
+      
+      {/* Stale stage warning */}
+      {!staleWarningDismissed && jobId && selectedStage && (
+        <StaleStageWarning
+          jobId={jobId}
+          currentStage={selectedStage}
+          hasEdits={hasEdits}
+          onRerunRequested={handleRerunRequested}
+          onDismiss={() => setStaleWarningDismissed(true)}
+        />
+      )}
 
       {/* Main content area */}
       <div className="flex-1 flex overflow-hidden">

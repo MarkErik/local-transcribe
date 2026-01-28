@@ -13,3 +13,10 @@ export type { TranscriptViewProps } from './TranscriptView';
 
 export { StageSelector, StageBadges } from './StageSelector';
 export type { Stage, StageSelectorProps } from './StageSelector';
+
+export { WordEditor, EditableTurn } from './WordEditor';
+export type { WordEditorProps } from './WordEditor';
+
+export { EditToolbar } from './EditToolbar';
+
+export { StaleStageWarning } from './StaleStageWarning';

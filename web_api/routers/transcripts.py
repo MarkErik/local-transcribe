@@ -18,6 +18,7 @@ from web_api.models.schemas import (
     EditCreateRequest,
     EditResponse,
 )
+from web_api.services.edit_applicator import apply_edits_to_transcript
 
 
 router = APIRouter(prefix="/api/jobs", tags=["transcripts"])
@@ -108,8 +109,7 @@ async def get_transcript(
         # Apply any edits for this job/stage
         edits = db.get_edits_for_job(job_id, stage)
         if edits:
-            # TODO: Apply edits to transcript_data
-            pass
+            transcript_data = apply_edits_to_transcript(transcript_data, edits)
         
         return JSONResponse(content=transcript_data)
         

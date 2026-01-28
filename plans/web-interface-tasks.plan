@@ -951,13 +951,152 @@ Add audit trail panel to TranscriptEditor sidebar
 
 ---
 
-## Phase 6: Polish & Export
+## Phase 6: Polish & Export ✅ COMPLETED
 
-Tasks for Phase 6 will be detailed after Phase 5 is complete. High-level items:
+**Goal:** Final polish, export functionality, comparison views, and performance optimization.
 
-- [ ] Export format selector
-- [ ] Version comparison view
-- [ ] Print-friendly view
+### 6.1 Export Format Selector ✅ COMPLETED
+
+#### 6.1.1: Backend Export Router ✅ COMPLETED
+**File:** `web_api/routers/exports.py`
+
+**Tasks:**
+- [x] `GET /api/jobs/{job_id}/export/formats` - Get available export formats
+- [x] `POST /api/jobs/{job_id}/export` - Export with options
+- [x] `GET /api/jobs/{job_id}/export/{format}` - Direct download URL
+- [x] Support formats: timestamped-txt, plain-txt, turns-json, dialogue-script, markdown, srt
+- [x] Apply edits before export
+- [x] Format-specific options (timestamps, speaker labels, interjections, metadata)
+
+#### 6.1.2: ExportDialog Component ✅ COMPLETED
+**File:** `web_ui/src/components/ExportDialog.tsx`
+
+**Tasks:**
+- [x] Stage selector dropdown
+- [x] Format selector with grouped categories (Text, Structured, Media)
+- [x] Format descriptions and file extensions
+- [x] Advanced options (include timestamps, speaker labels, etc.)
+- [x] Download button with loading state
+- [x] Error display for failed exports
+
+---
+
+### 6.2 Version Comparison View ✅ COMPLETED
+
+#### 6.2.1: Backend Comparison Endpoint ✅ COMPLETED
+**File:** `web_api/routers/exports.py`
+
+**Tasks:**
+- [x] `GET /api/jobs/{job_id}/compare` - Compare two stages
+- [x] Return both transcripts and diff data
+- [x] Compute diff using diff_engine (matching, inserted, deleted words)
+- [x] Return similarity ratio and word error rate
+
+#### 6.2.2: ComparisonView Component ✅ COMPLETED
+**File:** `web_ui/src/components/ComparisonView.tsx`
+
+**Tasks:**
+- [x] Full-screen comparison modal
+- [x] Stage selectors for A and B
+- [x] Side-by-side view with turn display
+- [x] Unified view with inline diff highlighting
+- [x] Statistics bar (matching, deleted, inserted words, similarity)
+- [x] Loading and error states
+
+---
+
+### 6.3 Print-Friendly View ✅ COMPLETED
+
+#### 6.3.1: PrintView Component ✅ COMPLETED
+**File:** `web_ui/src/components/PrintView.tsx`
+
+**Tasks:**
+- [x] Print-optimized layout and styling
+- [x] Header with job info, stage, export date
+- [x] Summary section with statistics (duration, turns, words, speakers)
+- [x] Transcript with speaker colors and timestamps
+- [x] Interjection display
+- [x] Print button and close button (hidden when printing)
+- [x] CSS for @media print with proper page breaks
+
+---
+
+### 6.4 Performance Optimization ✅ COMPLETED
+
+#### 6.4.1: VirtualizedTranscriptView Component ✅ COMPLETED
+**File:** `web_ui/src/components/VirtualizedTranscriptView.tsx`
+
+**Tasks:**
+- [x] Windowed rendering (only visible turns + overscan)
+- [x] Efficient scroll handling with position tracking
+- [x] Container resize observer
+- [x] Auto-scroll to active turn during playback
+- [x] Same features as TranscriptView (PII highlighting, word selection, etc.)
+- [x] Automatic switch at 200+ turns threshold
+
+---
+
+### 6.5 Error Handling Improvements ✅ COMPLETED
+
+#### 6.5.1: ErrorBoundary Component ✅ COMPLETED
+**File:** `web_ui/src/components/ErrorBoundary.tsx`
+
+**Tasks:**
+- [x] React error boundary class component
+- [x] Fallback UI with error details
+- [x] Retry/reset button
+- [x] Optional error callback for logging
+- [x] Higher-order component variant (`withErrorBoundary`)
+
+#### 6.5.2: Integration ✅ COMPLETED
+**File:** `web_ui/src/main.tsx`, `web_ui/src/pages/TranscriptEditor.tsx`
+
+**Tasks:**
+- [x] Wrap root app with ErrorBoundary
+- [x] Wrap audio player with ErrorBoundary
+- [x] Wrap transcript view with ErrorBoundary
+- [x] Custom fallback messages for each section
+
+---
+
+### 6.6 API Client Updates ✅ COMPLETED
+
+**File:** `web_ui/src/api/client.ts`
+
+**Tasks:**
+- [x] `getExportFormats(jobId)` - Fetch available formats
+- [x] `exportTranscript(jobId, request)` - Export with options
+- [x] `getExportUrl(jobId, format, stage)` - Direct download URL
+- [x] `getComparisonData(jobId, stageA, stageB)` - Fetch comparison
+- [x] TypeScript interfaces for all export/comparison types
+
+---
+
+### 6.7 TranscriptEditor Integration ✅ COMPLETED
+
+**File:** `web_ui/src/pages/TranscriptEditor.tsx`
+
+**Tasks:**
+- [x] Export button in header toolbar
+- [x] Print button in header toolbar
+- [x] Compare button in header toolbar
+- [x] Dialog states for each modal
+- [x] Automatic virtualized view for large transcripts
+- [x] Footer showing virtualization status
+
+---
+
+## Phase 6 Summary
+
+Phase 6 adds the finishing touches to make the web interface production-ready:
+
+1. **Export System**: Users can export transcripts in 6 formats with customizable options
+2. **Comparison View**: Side-by-side and unified diff views to compare pipeline stages
+3. **Print Support**: Print-friendly view with proper styling for physical output
+4. **Performance**: Virtualized rendering for transcripts with 200+ turns
+5. **Error Handling**: Error boundaries prevent crashes and show recovery options
+
+All Phase 6 tasks completed successfully. The web interface is now feature-complete.
 - [ ] Performance optimization
 - [ ] Error handling improvements
 - [ ] Documentation

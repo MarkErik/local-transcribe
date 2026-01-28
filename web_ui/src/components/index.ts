@@ -36,3 +36,16 @@ export type { EditHistoryProps } from './EditHistory';
 
 export { KeyboardShortcuts, useKeyboardShortcuts, ShortcutsHelpModal, DEFAULT_SHORTCUTS } from './KeyboardShortcuts';
 export type { KeyboardShortcutsProps, ShortcutConfig } from './KeyboardShortcuts';
+
+// Phase 5 components - De-identification
+export { NameListReview } from './NameListReview';
+export type { NameListReviewProps } from './NameListReview';
+
+export { PIIHighlightMode } from './PIIHighlightMode';
+export type { PIIHighlightModeProps } from './PIIHighlightMode';
+
+export { RedactionTool, RestorePIIButton, REDACTION_OPTIONS } from './RedactionTool';
+export type { RedactionToolProps } from './RedactionTool';
+
+export { PIIAuditTrail } from './PIIAuditTrail';
+export type { PIIAuditTrailProps } from './PIIAuditTrail';

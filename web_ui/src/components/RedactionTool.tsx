@@ -5,12 +5,12 @@
  * incorrectly redacted text.
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createPIIRedaction, restorePII, PIIReplacement } from '../api/client';
 import { useDeIdentificationStore } from '../store';
 
-interface RedactionToolProps {
+export interface RedactionToolProps {
   jobId: string;
   selectedTurnId?: number;
   selectedWordIndex?: number;
@@ -20,7 +20,7 @@ interface RedactionToolProps {
   className?: string;
 }
 
-const REDACTION_OPTIONS = [
+export const REDACTION_OPTIONS = [
   { value: '[NAME]', label: 'Name' },
   { value: '[LOCATION]', label: 'Location' },
   { value: '[ORGANIZATION]', label: 'Organization' },

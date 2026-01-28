@@ -7,18 +7,17 @@
  * - Remove incorrectly identified names
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getDiscoveredNames,
   updateNameList,
   runSecondPass,
   DiscoveredName,
-  NameListResponse,
 } from '../api/client';
 import { useDeIdentificationStore } from '../store';
 
-interface NameListReviewProps {
+export interface NameListReviewProps {
   jobId: string;
   onComplete?: () => void;
   onCancel?: () => void;
@@ -66,7 +65,7 @@ export function NameListReview({ jobId, onComplete, onCancel }: NameListReviewPr
   // Run second pass mutation
   const secondPassMutation = useMutation({
     mutationFn: () => runSecondPass(jobId),
-    onSuccess: (data) => {
+    onSuccess: () => {
       setSecondPassComplete(true);
       queryClient.invalidateQueries({ queryKey: ['job', jobId] });
       onComplete?.();

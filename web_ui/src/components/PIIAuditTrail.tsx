@@ -5,13 +5,13 @@
  * with filtering, navigation, and export capabilities.
  */
 
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getPIIReplacements, PIIReplacement } from '../api/client';
 import { useDeIdentificationStore } from '../store';
 import { RestorePIIButton } from './RedactionTool';
 
-interface PIIAuditTrailProps {
+export interface PIIAuditTrailProps {
   jobId: string;
   onJumpToLocation?: (turnId: number, wordIndex: number) => void;
   className?: string;
@@ -32,7 +32,7 @@ export function PIIAuditTrail({ jobId, onJumpToLocation, className = '' }: PIIAu
   });
   
   // Update store when data changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (data) {
       setPIIReplacements(data.replacements);
     }

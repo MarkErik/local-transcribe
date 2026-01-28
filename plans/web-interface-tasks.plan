@@ -676,26 +676,26 @@ Tasks for Phase 4 have been implemented.
 
 ---
 
-## Phase 5: De-identification Tools
+## Phase 5: De-identification Tools ✅ COMPLETED
 
 **Goal:** Enable interactive review and editing of de-identification results, with ability to pause between passes for name list review.
 
-### 5.1 Backend: Split De-identification into Passes
+### 5.1 Backend: Split De-identification into Passes ✅ COMPLETED
 
-#### 5.1.1: Add First-Pass-Only Method to Orchestrator
+#### 5.1.1: Add First-Pass-Only Method to Orchestrator ✅ COMPLETED
 
 **File:** `local_transcribe/processing/de_identification/orchestrator.py`
 
 **Tasks:**
-- [ ] Add `de_identify_multi_speaker_first_pass()` method that:
+- [x] Add `de_identify_multi_speaker_first_pass()` method that:
   - Runs first pass for all speakers
   - Returns `FirstPassResults` with segments, replacements, and discovered names
   - Does NOT run second pass
-- [ ] Add `de_identify_multi_speaker_second_pass()` method that:
+- [x] Add `de_identify_multi_speaker_second_pass()` method that:
   - Accepts `FirstPassResults` + optional edited name list
   - Runs second pass using the provided name list
   - Returns final `DeIdentificationResult` per speaker
-- [ ] Add `FirstPassResults` dataclass to core.py
+- [x] Add `FirstPassResults` dataclass to core.py
 
 **Acceptance Criteria:**
 ```python
@@ -709,12 +709,12 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
 
 ---
 
-#### 5.1.2: Add Name List Review API Endpoints
+#### 5.1.2: Add Name List Review API Endpoints ✅ COMPLETED
 
 **File:** `web_api/routers/deidentification.py` (new file)
 
 **Tasks:**
-- [ ] `POST /api/jobs/{job_id}/de-identify/first-pass` - Run first pass only, return name list
+- [x] `POST /api/jobs/{job_id}/de-identify/first-pass` - Run first pass only, return name list
   ```json
   Response:
   {
@@ -726,8 +726,8 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
     "first_pass_complete": true
   }
   ```
-- [ ] `GET /api/jobs/{job_id}/de-identify/names` - Get current discovered names
-- [ ] `PUT /api/jobs/{job_id}/de-identify/names` - Update name list before second pass
+- [x] `GET /api/jobs/{job_id}/de-identify/names` - Get current discovered names
+- [x] `PUT /api/jobs/{job_id}/de-identify/names` - Update name list before second pass
   ```json
   Request:
   {
@@ -738,16 +738,16 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
     ]
   }
   ```
-- [ ] `POST /api/jobs/{job_id}/de-identify/second-pass` - Run second pass with current name list
+- [x] `POST /api/jobs/{job_id}/de-identify/second-pass` - Run second pass with current name list
 
 ---
 
-#### 5.1.3: Store De-identification State in Database
+#### 5.1.3: Store De-identification State in Database ✅ COMPLETED
 
 **File:** `web_api/database.py`
 
 **Tasks:**
-- [ ] Add `de_identification_state` table:
+- [x] Add `de_identification_state` table:
   ```sql
   CREATE TABLE de_identification_state (
       job_id TEXT PRIMARY KEY,
@@ -761,7 +761,7 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
       FOREIGN KEY (job_id) REFERENCES jobs(id)
   );
   ```
-- [ ] Add `pii_replacements` table for audit trail:
+- [x] Add `pii_replacements` table for audit trail:
   ```sql
   CREATE TABLE pii_replacements (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -778,42 +778,42 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
       FOREIGN KEY (job_id) REFERENCES jobs(id)
   );
   ```
-- [ ] Add database methods for CRUD operations
+- [x] Add database methods for CRUD operations
 
 ---
 
-#### 5.1.4: Add PII Edit Types to Edit System
+#### 5.1.4: Add PII Edit Types to Edit System ✅ COMPLETED
 
 **File:** `web_api/services/edit_applicator.py`
 
 **Tasks:**
-- [ ] Add `pii_redact` edit type handler:
+- [x] Add `pii_redact` edit type handler:
   - Marks word(s) as PII, replaces with `[NAME]` or custom placeholder
   - Records in `pii_replacements` table with `is_manual=True`
-- [ ] Add `pii_unredact` edit type handler:
+- [x] Add `pii_unredact` edit type handler:
   - Restores original text that was incorrectly marked as PII
   - Records in `pii_replacements` table with `is_override=True`
-- [ ] Update `EditCreateRequest` schema with PII-specific fields
+- [x] Update `EditCreateRequest` schema with PII-specific fields
 
 ---
 
-### 5.2 Frontend: Name List Review UI
+### 5.2 Frontend: Name List Review UI ✅ COMPLETED
 
-#### 5.2.1: Create NameListReview Component
+#### 5.2.1: Create NameListReview Component ✅ COMPLETED
 
 **File:** `web_ui/src/components/NameListReview.tsx`
 
 **Tasks:**
-- [ ] Display discovered names in a table:
+- [x] Display discovered names in a table:
   - Name text
   - Source speaker
   - Occurrence count
   - Include/exclude checkbox
-- [ ] "Add name" input for manually adding names to the list
-- [ ] "Remove" button for each name
-- [ ] "Approve and Continue" button to proceed to second pass
-- [ ] "Re-run First Pass" button if user wants to restart
-- [ ] Show context snippets where names were found
+- [x] "Add name" input for manually adding names to the list
+- [x] "Remove" button for each name
+- [x] "Approve and Continue" button to proceed to second pass
+- [x] "Re-run First Pass" button if user wants to restart
+- [x] Show context snippets where names were found
 
 ---
 
@@ -829,21 +829,21 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
 
 ---
 
-### 5.3 Frontend: PII Highlight Overlay
+### 5.3 Frontend: PII Highlight Overlay ✅ COMPLETED
 
-#### 5.3.1: Create PIIHighlightMode Component
+#### 5.3.1: Create PIIHighlightMode Component ✅ COMPLETED
 
 **File:** `web_ui/src/components/PIIHighlightMode.tsx`
 
 **Tasks:**
-- [ ] Toggle button to enable/disable PII highlight mode
-- [ ] When enabled, highlight all words that were replaced:
+- [x] Toggle button to enable/disable PII highlight mode
+- [x] When enabled, highlight all words that were replaced:
   - Yellow background for first-pass replacements
   - Orange background for second-pass replacements
   - Red background for manual redactions
   - Strikethrough for overridden (restored) words
-- [ ] Tooltip showing original text on hover
-- [ ] Click to select word for editing
+- [x] Tooltip showing original text on hover
+- [x] Click to select word for editing
 
 ---
 
@@ -858,50 +858,50 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
 
 ---
 
-### 5.4 Frontend: Manual Redaction Tool
+### 5.4 Frontend: Manual Redaction Tool ✅ COMPLETED
 
-#### 5.4.1: Create RedactionTool Component
+#### 5.4.1: Create RedactionTool Component ✅ COMPLETED
 
 **File:** `web_ui/src/components/RedactionTool.tsx`
 
 **Tasks:**
-- [ ] Text selection handler (select one or more words)
-- [ ] "Redact as PII" button in selection context menu
-- [ ] Replacement text input (default: `[NAME]`, options: `[LOCATION]`, `[ORGANIZATION]`, custom)
-- [ ] Apply redaction via edit API
-- [ ] Visual feedback for newly redacted text
+- [x] Text selection handler (select one or more words)
+- [x] "Redact as PII" button in selection context menu
+- [x] Replacement text input (default: `[NAME]`, options: `[LOCATION]`, `[ORGANIZATION]`, custom)
+- [x] Apply redaction via edit API
+- [x] Visual feedback for newly redacted text
 
 ---
 
-#### 5.4.2: Create RedactionOverride Component
+#### 5.4.2: Create RedactionOverride Component ✅ COMPLETED
 
-**File:** `web_ui/src/components/RedactionOverride.tsx`
+**File:** `web_ui/src/components/RedactionTool.tsx` (combined into RedactionTool as RestorePIIButton)
 
 **Tasks:**
-- [ ] Click on redacted word to see original
-- [ ] "Restore Original" button to undo redaction
-- [ ] Confirmation dialog with warning about re-exposing PII
-- [ ] Apply override via edit API
+- [x] Click on redacted word to see original
+- [x] "Restore Original" button to undo redaction
+- [x] Confirmation dialog with warning about re-exposing PII
+- [x] Apply override via edit API
 
 ---
 
-### 5.5 Frontend: De-identification Audit Trail
+### 5.5 Frontend: De-identification Audit Trail ✅ COMPLETED
 
-#### 5.5.1: Create PIIAuditTrail Component
+#### 5.5.1: Create PIIAuditTrail Component ✅ COMPLETED
 
 **File:** `web_ui/src/components/PIIAuditTrail.tsx`
 
 **Tasks:**
-- [ ] Fetch PII replacements from API
-- [ ] Display in chronological table:
+- [x] Fetch PII replacements from API
+- [x] Display in chronological table:
   - Original text
   - Replacement text
   - Speaker
   - Pass number (1, 2, or "Manual")
   - Timestamp in transcript
   - Action buttons (jump to location, restore)
-- [ ] Filter by speaker, pass number, manual vs automatic
-- [ ] Export audit trail as CSV/JSON
+- [x] Filter by speaker, pass number, manual vs automatic
+- [x] Export audit trail as CSV/JSON
 
 ---
 
@@ -916,34 +916,34 @@ final_results = orchestrator.de_identify_multi_speaker_second_pass(first_results
 
 ---
 
-### 5.6 API Client Updates
+### 5.6 API Client Updates ✅ COMPLETED
 
 **File:** `web_ui/src/api/client.ts`
 
 **Tasks:**
-- [ ] `runFirstPass(jobId)` - Trigger first pass de-identification
-- [ ] `getDiscoveredNames(jobId)` - Fetch name list
-- [ ] `updateNameList(jobId, names)` - Update names before second pass
-- [ ] `runSecondPass(jobId)` - Trigger second pass
-- [ ] `getPIIReplacements(jobId)` - Fetch all PII replacements
-- [ ] `createPIIRedaction(jobId, edit)` - Manual redaction
-- [ ] `restorePII(jobId, replacementId)` - Override/restore
+- [x] `runFirstPass(jobId)` - Trigger first pass de-identification
+- [x] `getDiscoveredNames(jobId)` - Fetch name list
+- [x] `updateNameList(jobId, names)` - Update names before second pass
+- [x] `runSecondPass(jobId)` - Trigger second pass
+- [x] `getPIIReplacements(jobId)` - Fetch all PII replacements
+- [x] `createPIIRedaction(jobId, edit)` - Manual redaction
+- [x] `restorePII(jobId, replacementId)` - Override/restore
 
 ---
 
-### 5.7 Store Updates
+### 5.7 Store Updates ✅ COMPLETED
 
 **File:** `web_ui/src/store/index.ts`
 
 **Tasks:**
-- [ ] Add `useDeIdentificationStore` with:
+- [x] Add `useDeIdentificationStore` with:
   - `discoveredNames: DiscoveredName[]`
   - `piiReplacements: PIIReplacement[]`
   - `piiHighlightEnabled: boolean`
   - `firstPassComplete: boolean`
   - `secondPassComplete: boolean`
-- [ ] Actions: `setNames`, `toggleName`, `addName`, `removeName`
-- [ ] Actions: `togglePIIHighlight`, `setReplacements`
+- [x] Actions: `setNames`, `toggleName`, `addName`, `removeName`
+- [x] Actions: `togglePIIHighlight`, `setReplacements`
 
 ---
 

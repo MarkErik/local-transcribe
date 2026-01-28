@@ -5,10 +5,9 @@
  * and renders a legend showing the meaning of different highlight colors.
  */
 
-import React from 'react';
 import { useDeIdentificationStore } from '../store';
 
-interface PIIHighlightModeProps {
+export interface PIIHighlightModeProps {
   className?: string;
 }
 
@@ -92,7 +91,7 @@ export function PIIHighlightMode({ className = '' }: PIIHighlightModeProps) {
  * Helper function to get the highlight class for a word based on PII status.
  */
 export function getPIIHighlightClass(
-  word: string,
+  _word: string,
   wordIndex: number,
   turnId: number,
   piiReplacements: Array<{

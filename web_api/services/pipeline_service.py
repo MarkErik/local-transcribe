@@ -76,12 +76,17 @@ class PipelineService:
             from local_transcribe.framework.plugin_manager import import_pipeline_modules
             from local_transcribe.lib.program_logger import configure_global_logging
             from local_transcribe.lib.create_directories import ensure_session_dirs
-            from local_transcribe.lib.environment import repo_root_from_here
+            from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist
             from local_transcribe.lib.system_capability_utils import set_system_capability
             from local_transcribe.framework.provider_setup import ProviderSetup
             
             # Get the repo root and set up the environment
             root = repo_root_from_here()
+            
+            # Set up offline environment for model loading (sets XDG_CACHE_HOME for HuggingFace)
+            models_dir = root / ".models"
+            set_offline_env(models_dir)
+            ensure_models_exist(models_dir)
             
             # Set system capability (default to CPU for web server)
             set_system_capability(options.get("system", "cpu"))
@@ -314,7 +319,7 @@ class PipelineService:
             from local_transcribe.framework.pipeline_reentry import run_pipeline_from_checkpoint
             from local_transcribe.framework.plugin_manager import import_pipeline_modules
             from local_transcribe.lib.program_logger import configure_global_logging
-            from local_transcribe.lib.environment import repo_root_from_here
+            from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist
             from local_transcribe.lib.system_capability_utils import set_system_capability
             
             # Find checkpoint file from original job
@@ -350,6 +355,11 @@ class PipelineService:
             
             # Get the repo root and set up the environment
             root = repo_root_from_here()
+            
+            # Set up offline environment for model loading (sets XDG_CACHE_HOME for HuggingFace)
+            models_dir = root / ".models"
+            set_offline_env(models_dir)
+            ensure_models_exist(models_dir)
             
             # Parse original config for options
             original_config = json.loads(original_job.config_json) if original_job.config_json else {}

@@ -7,7 +7,7 @@ Handles job submission, status checking, and SSE progress streaming.
 import json
 import uuid
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, AsyncGenerator
 from pathlib import Path
 
@@ -307,7 +307,7 @@ async def cancel_job(job_id: str):
     _store_event(job_id, "job_error", {
         "job_id": job_id,
         "error": "Job cancelled by user",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     
     return {"status": "cancelled"}

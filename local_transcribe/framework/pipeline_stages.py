@@ -117,7 +117,6 @@ __all__ = [
     'TurnBuildingStage',
     'SpeakerNamingStage',
     'OutputGenerationStage',
-    'TranscriptPreparationStage',
     'TranscriptCleanupStage',
     'AudioStandardizationStage',
     'TranscriptionAlignmentStage',

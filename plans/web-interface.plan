@@ -287,7 +287,7 @@ The web UI runs on the user's laptop while the pipeline executes on a remote ser
 
 **Server Configuration:**
 - User configures remote server URL via environment variable or config file
-- `TRANSCRIBE_SERVER_URL=http://100.84.208.72:8299` (example)
+- `TRANSCRIBE_SERVER_URL=http://0.0.0.0:8299` (example)
 - Server URL can also be set in a `.env` file or `~/.local-transcribe/config.json`
 - UI prompts for server URL on first launch if not configured
 

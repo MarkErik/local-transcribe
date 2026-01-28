@@ -4,7 +4,7 @@ Pydantic models for API request/response schemas.
 These models define the contract between the frontend and backend API.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Union, Literal
 from pydantic import BaseModel, Field
 
@@ -151,7 +151,7 @@ class ProgressEvent(BaseModel):
     """Base class for progress events."""
     event_type: str
     job_id: str
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class StageStartEvent(ProgressEvent):

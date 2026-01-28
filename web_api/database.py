@@ -6,7 +6,7 @@ Provides async-compatible database operations for jobs, files, and edits.
 
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
@@ -313,7 +313,7 @@ class Database:
                     job.status.value if isinstance(job.status, JobStatus) else job.status,
                     job.mode,
                     job.config_json,
-                    job.created_at or datetime.utcnow().isoformat(),
+                    job.created_at or datetime.now(timezone.utc).isoformat(),
                     job.interviewer_file_id,
                     job.participant_file_id,
                 )
@@ -352,7 +352,7 @@ class Database:
     ) -> None:
         """Update job status and related fields."""
         with self._get_connection() as conn:
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             
             if status == JobStatus.RUNNING:
                 conn.execute(
@@ -435,7 +435,7 @@ class Database:
                     file.size_bytes,
                     file.content_type,
                     file.upload_status.value if isinstance(file.upload_status, UploadStatus) else file.upload_status,
-                    file.created_at or datetime.utcnow().isoformat(),
+                    file.created_at or datetime.now(timezone.utc).isoformat(),
                     file.chunks_received,
                     file.total_chunks,
                 )
@@ -528,7 +528,7 @@ class Database:
                     edit.new_value,
                     edit.target_turn_id,
                     edit.annotation_type,
-                    edit.created_at or datetime.utcnow().isoformat(),
+                    edit.created_at or datetime.now(timezone.utc).isoformat(),
                 )
             )
             edit.id = cursor.lastrowid
@@ -650,7 +650,7 @@ class Database:
                     state.discovered_names_json,
                     state.reviewed_names_json,
                     state.first_pass_segments_path,
-                    state.created_at or datetime.utcnow().isoformat(),
+                    state.created_at or datetime.now(timezone.utc).isoformat(),
                 )
             )
             conn.commit()
@@ -689,7 +689,7 @@ class Database:
             return self.get_de_identification_state(job_id)
         
         updates.append("updated_at = ?")
-        params.append(datetime.utcnow().isoformat())
+        params.append(datetime.now(timezone.utc).isoformat())
         params.append(job_id)
         
         with self._get_connection() as conn:
@@ -738,7 +738,7 @@ class Database:
                     replacement.is_manual,
                     replacement.is_override,
                     replacement.timestamp_start,
-                    replacement.created_at or datetime.utcnow().isoformat(),
+                    replacement.created_at or datetime.now(timezone.utc).isoformat(),
                 )
             )
             replacement.id = cursor.lastrowid
@@ -820,7 +820,7 @@ class Database:
                         replacement.is_manual,
                         replacement.is_override,
                         replacement.timestamp_start,
-                        replacement.created_at or datetime.utcnow().isoformat(),
+                        replacement.created_at or datetime.now(timezone.utc).isoformat(),
                     )
                 )
                 replacement.id = cursor.lastrowid

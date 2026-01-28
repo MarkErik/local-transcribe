@@ -249,7 +249,7 @@ async def run_first_pass(job_id: str, background_tasks: BackgroundTasks):
         
         # Get LLM URL from job config or default
         job_config = json.loads(job.config_json) if job.config_json else {}
-        llm_url = job_config.get("llm_de_identifier_url", "http://100.84.208.72:8080")
+        llm_url = job_config.get("llm_de_identifier_url", "http://0.0.0.0:8080")
         
         # Run first pass
         orchestrator = DeIdentificationOrchestrator(
@@ -504,7 +504,7 @@ async def run_second_pass(job_id: str):
         
         # Get LLM URL from job config
         job_config = json.loads(job.config_json) if job.config_json else {}
-        llm_url = job_config.get("llm_de_identifier_url", "http://100.84.208.72:8080")
+        llm_url = job_config.get("llm_de_identifier_url", "http://0.0.0.0:8080")
         
         # Run second pass
         orchestrator = DeIdentificationOrchestrator(

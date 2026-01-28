@@ -10,7 +10,7 @@ import traceback
 import argparse
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from web_api.config import get_config
 from web_api.database import get_database, JobStatus
@@ -63,7 +63,7 @@ class PipelineService:
                 "job_id": job_id,
                 "stage": "initialization",
                 "message": "Initializing pipeline...",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
         
         output_dir = self.config.output_dir / job_id
@@ -172,7 +172,7 @@ class PipelineService:
                         "job_id": job_id,
                         "status": "completed",
                         "output_path": str(output_dir),
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
             else:
                 error_msg = f"Pipeline failed at stage: {result.failed_stage}"
@@ -184,7 +184,7 @@ class PipelineService:
                     progress_callback("job_error", {
                         "job_id": job_id,
                         "error": error_msg,
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
                 
         except Exception as e:
@@ -196,7 +196,7 @@ class PipelineService:
                     "job_id": job_id,
                     "error": error_msg,
                     "traceback": traceback.format_exc(),
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
     
     def _build_args_for_pipeline(
@@ -241,8 +241,8 @@ class PipelineService:
         
         # Remote URLs
         args.remote_transcriber_url = options.get("remote_transcriber_url", "http://100.84.208.72:7070")
-        args.llm_de_identifier_url = options.get("llm_de_identifier_url", "http://100.84.208.72:8080")
-        args.llm_transcript_cleanup_url = options.get("llm_transcript_cleanup_url", "http://100.84.208.72:8080")
+        args.llm_de_identifier_url = options.get("llm_de_identifier_url", "http://0.0.0.0:8080")
+        args.llm_transcript_cleanup_url = options.get("llm_transcript_cleanup_url", "http://0.0.0.0:8080")
         
         # Processing options
         args.de_identify = options.get("enable_de_identification", True)
@@ -304,7 +304,7 @@ class PipelineService:
                 "job_id": job_id,
                 "stage": "initialization",
                 "message": f"Re-running from checkpoint (start: {start_stage or 'auto'})...",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
         
         output_dir = self.config.output_dir / job_id
@@ -379,8 +379,8 @@ class PipelineService:
             args.speaker_map = None
             args.audio_for_video = None
             args.transcript_cleanup_provider = options.get("transcript_cleanup_provider")
-            args.llm_de_identifier_url = options.get("llm_de_identifier_url", "http://100.84.208.72:8080")
-            args.llm_transcript_cleanup_url = options.get("llm_transcript_cleanup_url", "http://100.84.208.72:8080")
+            args.llm_de_identifier_url = options.get("llm_de_identifier_url", "http://0.0.0.0:8080")
+            args.llm_transcript_cleanup_url = options.get("llm_transcript_cleanup_url", "http://0.0.0.0:8080")
             
             # Run from checkpoint
             import asyncio
@@ -403,7 +403,7 @@ class PipelineService:
                         "job_id": job_id,
                         "status": "completed",
                         "output_path": str(output_dir),
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
             else:
                 error_msg = f"Pipeline failed with exit code: {result}"
@@ -413,7 +413,7 @@ class PipelineService:
                     progress_callback("job_error", {
                         "job_id": job_id,
                         "error": error_msg,
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
                 
         except Exception as e:
@@ -425,7 +425,7 @@ class PipelineService:
                     "job_id": job_id,
                     "error": error_msg,
                     "traceback": traceback.format_exc(),
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
 
 

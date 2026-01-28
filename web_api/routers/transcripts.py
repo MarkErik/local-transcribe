@@ -38,30 +38,40 @@ def _find_transcript_file(output_dir: Path, stage: Optional[str] = None) -> Opti
     Find the transcript file for a given stage.
     
     If no stage specified, returns the most recent/complete transcript.
+    Searches both in output_dir directly and in Transcript_Raw/ subdirectory.
     """
     if not output_dir.exists():
         return None
     
+    # Directories to search (output_dir and Transcript_Raw subdirectory)
+    search_dirs = [output_dir]
+    transcript_raw_dir = output_dir / "Transcript_Raw"
+    if transcript_raw_dir.exists():
+        search_dirs.append(transcript_raw_dir)
+    
     if stage and stage in STAGE_OUTPUT_FILES:
         pattern = STAGE_OUTPUT_FILES[stage]
-        # Look for files matching the pattern
-        matches = list(output_dir.glob(f"*{pattern}"))
-        if matches:
-            return matches[0]
+        # Look for files matching the pattern in all search directories
+        for search_dir in search_dirs:
+            matches = list(search_dir.glob(f"*{pattern}"))
+            if matches:
+                return matches[0]
     
     # Default: find the best available transcript
     # Priority: cleaned > named > de-identified > raw
     for stage_name in ["transcript_cleanup", "speaker_naming", "de_identification", "vad_transcription"]:
         pattern = STAGE_OUTPUT_FILES.get(stage_name, "")
         if pattern:
-            matches = list(output_dir.glob(f"*{pattern}"))
-            if matches:
-                return matches[0]
+            for search_dir in search_dirs:
+                matches = list(search_dir.glob(f"*{pattern}"))
+                if matches:
+                    return matches[0]
     
     # Fallback: any JSON file with "turns" in the name
-    turns_files = list(output_dir.glob("*turns*.json"))
-    if turns_files:
-        return turns_files[0]
+    for search_dir in search_dirs:
+        turns_files = list(search_dir.glob("*turns*.json"))
+        if turns_files:
+            return turns_files[0]
     
     return None
 
@@ -137,15 +147,23 @@ async def get_available_stages(job_id: str):
     
     output_dir = Path(job.output_dir) if job.output_dir else config.output_dir / job_id
     
+    # Directories to search (output_dir and Transcript_Raw subdirectory)
+    search_dirs = [output_dir]
+    transcript_raw_dir = output_dir / "Transcript_Raw"
+    if transcript_raw_dir.exists():
+        search_dirs.append(transcript_raw_dir)
+    
     available_stages = []
     for stage_name, pattern in STAGE_OUTPUT_FILES.items():
-        matches = list(output_dir.glob(f"*{pattern}"))
-        if matches:
-            available_stages.append({
-                "stage": stage_name,
-                "file": matches[0].name,
-                "has_edits": len(db.get_edits_for_job(job_id, stage_name)) > 0,
-            })
+        for search_dir in search_dirs:
+            matches = list(search_dir.glob(f"*{pattern}"))
+            if matches:
+                available_stages.append({
+                    "stage": stage_name,
+                    "file": matches[0].name,
+                    "has_edits": len(db.get_edits_for_job(job_id, stage_name)) > 0,
+                })
+                break  # Found in this search_dir, no need to check others
     
     return {"stages": available_stages}
 

@@ -78,7 +78,7 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }
           <p className="text-gray-900 dark:text-white">{formatDate(job.created_at)}</p>
         </div>
         <div>
-          <span className="text-gray-500 dark:text-gray-400">Duration:</span>
+          <span className="text-gray-500 dark:text-gray-400">Processing Time:</span>
           <p className="text-gray-900 dark:text-white">{formatDuration(job.duration_seconds)}</p>
         </div>
       </div>

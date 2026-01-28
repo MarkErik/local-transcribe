@@ -57,6 +57,15 @@ export function DualTrackPlayer({
 
   const isReady = interviewerReady && participantReady;
 
+  // Cleanup: pause audio when component unmounts (e.g., navigation)
+  useEffect(() => {
+    return () => {
+      // Pause both tracks on unmount
+      interviewerRef.current?.pause();
+      participantRef.current?.pause();
+    };
+  }, []);
+
   // Notify when both tracks are ready
   useEffect(() => {
     if (isReady && onReady) {
@@ -179,11 +188,11 @@ export function DualTrackPlayer({
 
   return (
     <div className="space-y-4">
-      {/* Unified progress bar */}
+      {/* Unified controls and progress bar */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Combined Audio
+            Playback
           </span>
           <span className="text-sm text-gray-500 dark:text-gray-400 font-mono">
             {formatTime(currentTime)} / {formatTime(duration)}

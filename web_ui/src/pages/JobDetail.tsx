@@ -288,7 +288,7 @@ export function JobDetail() {
           </div>
           {job.duration_seconds && (
             <div>
-              <dt className="text-gray-500 dark:text-gray-400">Duration</dt>
+              <dt className="text-gray-500 dark:text-gray-400">Processing Time</dt>
               <dd className="text-gray-900 dark:text-white">
                 {Math.round(job.duration_seconds)}s
               </dd>

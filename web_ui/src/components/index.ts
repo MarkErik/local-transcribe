@@ -48,4 +48,14 @@ export { RedactionTool, RestorePIIButton, REDACTION_OPTIONS } from './RedactionT
 export type { RedactionToolProps } from './RedactionTool';
 
 export { PIIAuditTrail } from './PIIAuditTrail';
+
+// Phase 6 components - Export & Polish
+export { ExportDialog } from './ExportDialog';
+
+export { PrintView } from './PrintView';
+
+export { ComparisonView } from './ComparisonView';
+
+export { VirtualizedTranscriptView } from './VirtualizedTranscriptView';
+export type { VirtualizedTranscriptViewProps } from './VirtualizedTranscriptView';
 export type { PIIAuditTrailProps } from './PIIAuditTrail';

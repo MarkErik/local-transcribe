@@ -30,8 +30,15 @@ import {
   PIIHighlightMode,
   PIIAuditTrail,
   RedactionTool,
+  ExportDialog,
+  PrintView,
+  ComparisonView,
+  VirtualizedTranscriptView,
 } from '../components';
 import { useEditStore, useDeIdentificationStore } from '../store';
+
+// Threshold for using virtualized list
+const VIRTUALIZATION_THRESHOLD = 200;
 
 export function TranscriptEditor() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -60,6 +67,11 @@ export function TranscriptEditor() {
   // Panel visibility
   const [showAuditTrail, setShowAuditTrail] = useState(false);
   const [showRedactionTool, setShowRedactionTool] = useState(false);
+  
+  // Phase 6: Export, Print, Compare dialogs
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showPrintView, setShowPrintView] = useState(false);
+  const [showComparisonView, setShowComparisonView] = useState(false);
   
   // De-identification store
   const { setPIIReplacements, piiHighlightEnabled } = useDeIdentificationStore();
@@ -299,6 +311,48 @@ export function TranscriptEditor() {
               </svg>
               <span>Audit Trail</span>
             </button>
+            
+            {/* Divider */}
+            <div className="h-6 w-px bg-gray-300 dark:bg-gray-600" />
+            
+            {/* Compare button */}
+            <button
+              onClick={() => setShowComparisonView(true)}
+              disabled={stages.length < 2}
+              className="flex items-center space-x-1 px-3 py-1.5 text-sm rounded-md text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Compare pipeline stages"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              <span>Compare</span>
+            </button>
+            
+            {/* Print button */}
+            <button
+              onClick={() => setShowPrintView(true)}
+              disabled={!transcript}
+              className="flex items-center space-x-1 px-3 py-1.5 text-sm rounded-md text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Print transcript"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              <span>Print</span>
+            </button>
+            
+            {/* Export button */}
+            <button
+              onClick={() => setShowExportDialog(true)}
+              disabled={!transcript}
+              className="flex items-center space-x-1 px-3 py-1.5 text-sm rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Export transcript"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              <span>Export</span>
+            </button>
           </div>
         </div>
       </header>
@@ -400,16 +454,29 @@ export function TranscriptEditor() {
               </p>
             </div>
           ) : transcript?.turns ? (
-            <TranscriptView
-              turns={transcript.turns}
-              currentTime={currentTime}
-              onSeek={handleSeek}
-              autoScroll={autoScroll}
-              selectedTurnId={selectedTurnId}
-              onTurnSelect={handleTurnSelect}
-              onWordSelect={handleWordSelect}
-              piiReplacements={piiData?.replacements}
-            />
+            // Use virtualized view for large transcripts
+            transcript.turns.length > VIRTUALIZATION_THRESHOLD ? (
+              <VirtualizedTranscriptView
+                turns={transcript.turns}
+                currentTime={currentTime}
+                onSeek={handleSeek}
+                autoScroll={autoScroll}
+                selectedTurnId={selectedTurnId}
+                onTurnSelect={handleTurnSelect}
+                onWordSelect={handleWordSelect}
+              />
+            ) : (
+              <TranscriptView
+                turns={transcript.turns}
+                currentTime={currentTime}
+                onSeek={handleSeek}
+                autoScroll={autoScroll}
+                selectedTurnId={selectedTurnId}
+                onTurnSelect={handleTurnSelect}
+                onWordSelect={handleWordSelect}
+                piiReplacements={piiData?.replacements}
+              />
+            )
           ) : (
             <div className="flex items-center justify-center h-full">
               <p className="text-gray-500 dark:text-gray-400">
@@ -425,7 +492,12 @@ export function TranscriptEditor() {
         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
           <div>
             {transcript?.turns && (
-              <span>{transcript.turns.length} turns</span>
+              <span>
+                {transcript.turns.length} turns
+                {transcript.turns.length > VIRTUALIZATION_THRESHOLD && (
+                  <span className="ml-2 text-green-600">(virtualized)</span>
+                )}
+              </span>
             )}
           </div>
           <div className="flex items-center space-x-4">
@@ -434,6 +506,34 @@ export function TranscriptEditor() {
           </div>
         </div>
       </footer>
+      
+      {/* Export Dialog */}
+      {showExportDialog && jobId && (
+        <ExportDialog
+          jobId={jobId}
+          stages={stages}
+          currentStage={selectedStage}
+          onClose={() => setShowExportDialog(false)}
+        />
+      )}
+      
+      {/* Print View */}
+      {showPrintView && transcript && jobId && selectedStage && (
+        <PrintView
+          transcript={transcript}
+          jobId={jobId}
+          stage={selectedStage}
+          onClose={() => setShowPrintView(false)}
+        />
+      )}
+      
+      {/* Comparison View */}
+      {showComparisonView && jobId && (
+        <ComparisonView
+          jobId={jobId}
+          onClose={() => setShowComparisonView(false)}
+        />
+      )}
     </div>
   );
 }

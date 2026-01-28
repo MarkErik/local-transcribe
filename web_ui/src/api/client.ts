@@ -717,3 +717,125 @@ export async function restorePII(
   
   return response.json();
 }
+// ==============================================================================
+// Export API
+// ==============================================================================
+
+export interface ExportFormat {
+  id: string;
+  name: string;
+  description: string;
+  extension: string;
+}
+
+export interface ExportFormatsResponse {
+  formats: ExportFormat[];
+}
+
+export interface ExportOptions {
+  include_timestamps?: boolean;
+  include_speaker_labels?: boolean;
+  include_interjections?: boolean;
+  include_metadata?: boolean;
+}
+
+export interface ExportRequest {
+  format: string;
+  stage?: string;
+  options?: ExportOptions;
+}
+
+/**
+ * Get available export formats for a job.
+ */
+export async function getExportFormats(jobId: string): Promise<ExportFormat[]> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/export/formats`);
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get export formats');
+  }
+  
+  const data: ExportFormatsResponse = await response.json();
+  return data.formats;
+}
+
+/**
+ * Export transcript and trigger download.
+ */
+export async function exportTranscript(
+  jobId: string,
+  request: ExportRequest
+): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to export transcript');
+  }
+  
+  return response.blob();
+}
+
+/**
+ * Get direct download URL for an export format.
+ */
+export function getExportUrl(jobId: string, format: string, stage?: string): string {
+  const params = stage ? `?stage=${stage}` : '';
+  return `${API_BASE}/jobs/${jobId}/export/${format}${params}`;
+}
+
+export interface DiffSegment {
+  type: 'equal' | 'insert' | 'delete' | 'replace';
+  words_a: string[];
+  words_b: string[];
+  position_a: number;
+  position_b: number;
+}
+
+export interface DiffData {
+  total_words_a: number;
+  total_words_b: number;
+  matching_words: number;
+  inserted_words: number;
+  deleted_words: number;
+  similarity_ratio: number;
+  word_error_rate: number;
+  segments: DiffSegment[];
+  error?: string;
+}
+
+export interface ComparisonData {
+  stage_a: string;
+  stage_b: string;
+  transcript_a: Transcript;
+  transcript_b: Transcript;
+  diff: DiffData;
+}
+
+/**
+ * Get comparison data between two pipeline stages.
+ */
+export async function getComparisonData(
+  jobId: string,
+  stageA: string,
+  stageB: string
+): Promise<ComparisonData> {
+  const params = new URLSearchParams({
+    stage_a: stageA,
+    stage_b: stageB,
+  });
+  
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/compare?${params}`);
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get comparison data');
+  }
+  
+  return response.json();
+}

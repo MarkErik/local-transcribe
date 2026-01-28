@@ -18,19 +18,20 @@ This document contains the detailed implementation tasks for the local-transcrib
 
 These tasks MUST be completed before web interface development can begin.
 
-### P0-1: Add TranscriptFlow Deserialization Methods
+### P0-1: Add TranscriptFlow Deserialization Methods ✅ COMPLETED
 **Priority:** BLOCKER  
-**File:** `local_transcribe/processing/turn_building/turn_building_data_structures.py`
+**File:** `local_transcribe/processing/turn_building/turn_building_data_structures.py`  
+**Completed:** January 27, 2026
 
 **Description:**  
 Add `from_dict()` class methods to enable loading edited transcripts from JSON checkpoints.
 
 **Tasks:**
-- [ ] Add `InterjectionSegment.from_dict(data: Dict) -> InterjectionSegment`
-- [ ] Add `HierarchicalTurn.from_dict(data: Dict) -> HierarchicalTurn`
-- [ ] Add `TranscriptFlow.from_dict(data: Dict) -> TranscriptFlow`
-- [ ] Write unit tests for round-trip serialization (to_dict → from_dict)
-- [ ] Test with real pipeline output JSON files
+- [x] Add `InterjectionSegment.from_dict(data: Dict) -> InterjectionSegment`
+- [x] Add `HierarchicalTurn.from_dict(data: Dict) -> HierarchicalTurn`
+- [x] Add `TranscriptFlow.from_dict(data: Dict) -> TranscriptFlow`
+- [x] Write unit tests for round-trip serialization (to_dict → from_dict)
+- [x] Test with real pipeline output JSON files
 
 **Acceptance Criteria:**
 ```python
@@ -43,18 +44,20 @@ assert restored.turns == original.turns
 
 ---
 
-### P0-2: Add TranscriptFlow Checkpoint Loader
+### P0-2: Add TranscriptFlow Checkpoint Loader ✅ COMPLETED
 **Priority:** BLOCKER   
-**File:** `local_transcribe/framework/checkpoint_loader.py`
+**File:** `local_transcribe/framework/checkpoint_loader.py`  
+**Completed:** January 27, 2026
 
 **Description:**  
 Create a new function to load TranscriptFlow checkpoints (distinct from the existing word-segment loader).
 
 **Tasks:**
-- [ ] Add `load_transcript_flow_checkpoint(json_path: Path) -> TranscriptFlow`
-- [ ] Add validation for TranscriptFlow structure (must have "turns" array)
-- [ ] Return meaningful error messages on validation failure
-- [ ] Write unit tests
+- [x] Add `load_transcript_flow_checkpoint(json_path: Path) -> TranscriptFlow`
+- [x] Add `detect_checkpoint_type(json_path: Path) -> str` for auto-detection
+- [x] Add validation for TranscriptFlow structure (must have "turns" array)
+- [x] Return meaningful error messages on validation failure
+- [x] Write unit tests
 
 **Acceptance Criteria:**
 - Can load a `turns-json` output file and get a valid TranscriptFlow object
@@ -62,18 +65,19 @@ Create a new function to load TranscriptFlow checkpoints (distinct from the exis
 
 ---
 
-### P0-3: Update Pipeline Re-entry for TranscriptFlow
+### P0-3: Update Pipeline Re-entry for TranscriptFlow ✅ COMPLETED
 **Priority:** BLOCKER  
-**File:** `local_transcribe/framework/pipeline_reentry.py`
+**File:** `local_transcribe/framework/pipeline_reentry.py`  
+**Completed:** January 27, 2026
 
 **Description:**  
 Extend `run_pipeline_from_checkpoint()` to accept TranscriptFlow checkpoints.
 
 **Tasks:**
-- [ ] Add detection for TranscriptFlow vs WordSegment checkpoint format (JSON has `turns` vs list of segments)
-- [ ] When TranscriptFlow detected, set `context.transcript` directly
-- [ ] Start from `de_identification` stage (or `speaker_naming` if de-ID disabled)
-- [ ] Update `get_stages_for_reentry()` to support TranscriptFlow entry points
+- [x] Add detection for TranscriptFlow vs WordSegment checkpoint format (JSON has `turns` vs list of segments)
+- [x] When TranscriptFlow detected, set `context.transcript` directly
+- [x] Start from `de_identification` stage (or `speaker_naming` if de-ID disabled)
+- [x] Update `get_stages_for_reentry()` to support TranscriptFlow entry points
 - [ ] Write integration test: load TranscriptFlow checkpoint → run de-ID → verify output
 
 **Acceptance Criteria:**
@@ -84,17 +88,19 @@ uv run python -m local_transcribe.main --checkpoint output/job123/turns.json --s
 
 ---
 
-### P0-4: Capture VAD Block → Turn Mapping
+### P0-4: Capture VAD Block → Turn Mapping ✅ COMPLETED
 **Priority:** BLOCKER  
-**File:** `local_transcribe/processing/turn_building/vad_turn_builder.py`
+**File:** `local_transcribe/processing/turn_building/vad_turn_builder.py`  
+**Completed:** January 27, 2026
 
 **Description:**  
 Persist block identity through turn building so UI can highlight true blocks and edits can resolve block selections to turn spans.
 
 **Tasks:**
-- [ ] Capture block IDs during `_convert_blocks_to_transcript_flow()`
-- [ ] Persist mapping on `HierarchicalTurn` (e.g., `source_block_ids`) or store sidecar mapping in `TranscriptFlow.metadata`
-- [ ] Add unit test for block→turn mapping correctness
+- [x] Capture block IDs during `_convert_blocks_to_transcript_flow()`
+- [x] Persist mapping on `HierarchicalTurn` via `source_block_ids: List[int]` field
+- [x] Updated `_merge_consecutive_same_speaker_blocks()` to track block IDs through merges
+- [x] Add unit test for block→turn mapping correctness
 
 **Acceptance Criteria:**
 - Given a list of VAD blocks, the resulting TranscriptFlow retains a traceable mapping from each block to its containing turn span.

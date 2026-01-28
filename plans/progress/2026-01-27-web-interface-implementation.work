@@ -1,0 +1,236 @@
+# Web Interface Implementation Progress Log
+
+**Started:** January 27, 2026  
+**Status:** In Progress - Pre-Implementation Blockers Complete  
+**Related Documents:** 
+- [web-interface.plan](../web-interface.plan)
+- [web-interface-tasks.plan](../web-interface-tasks.plan)
+
+---
+
+## Overview
+
+This document tracks the implementation progress of the local-transcribe web interface. The web interface allows sociology researchers to execute the transcription pipeline, view results, and manually correct transcription and de-identification errors.
+
+**Primary Target:** VAD-split-audio pipeline (`vad_split_audio` mode)
+
+---
+
+## Session Log
+
+### Session 1: January 27, 2026
+
+**Developer:** AI Assistant  
+**Goals:** Complete pre-implementation BLOCKER tasks (P0-1 through P0-4)
+
+#### Summary
+
+All four pre-implementation BLOCKER tasks have been completed successfully. The codebase now supports:
+
+1. **TranscriptFlow deserialization** - Can load edited transcripts from JSON checkpoints
+2. **Checkpoint type detection** - Auto-detects TranscriptFlow vs WordSegment format
+3. **Pipeline re-entry from TranscriptFlow** - Can resume pipeline from edited turns-json files
+4. **VAD block → turn mapping** - UI can highlight true blocks and resolve selections
+
+---
+
+#### Work Completed
+
+##### 1. P0-1: Add TranscriptFlow Deserialization Methods ✅
+
+**Files Modified:**
+- [turn_building_data_structures.py](../../local_transcribe/processing/turn_building/turn_building_data_structures.py)
+
+**Changes:**
+- Added `InterjectionSegment.from_dict(data: Dict) -> InterjectionSegment` class method
+- Added `HierarchicalTurn.from_dict(data: Dict) -> HierarchicalTurn` class method  
+- Added `TranscriptFlow.from_dict(data: Dict) -> TranscriptFlow` class method
+- Added `source_block_ids: List[int]` field to `HierarchicalTurn` for VAD block tracking
+- Updated `HierarchicalTurn.to_dict()` to serialize `source_block_ids` (only when present)
+
+**Implementation Notes:**
+- All `from_dict()` methods mirror the corresponding `to_dict()` methods for round-trip serialization
+- `WordSegment` deserialization is inline (since it's a simple dataclass imported from plugin_interfaces)
+- The methods handle missing optional fields gracefully with sensible defaults
+- `HierarchicalTurn.from_dict()` explicitly calls `_calculate_metrics()` after construction
+
+---
+
+##### 2. P0-2: Add TranscriptFlow Checkpoint Loader ✅
+
+**Files Modified:**
+- [checkpoint_loader.py](../../local_transcribe/framework/checkpoint_loader.py)
+
+**Changes:**
+- Added `TranscriptFlowLoadResult` dataclass for TranscriptFlow checkpoint results
+- Added `detect_checkpoint_type(json_path: Path) -> str` function to auto-detect format
+- Added `load_transcript_flow_checkpoint(json_path: Path) -> TranscriptFlowLoadResult` function
+- Added `print_transcript_flow_summary(result)` for human-readable output
+
+**Detection Logic:**
+- JSON with `turns` key → `"transcript_flow"` (VAD mode / edited transcripts)
+- JSON with `words` key → `"word_segments"` (diarized word segments)
+- Otherwise → `"unknown"`
+
+---
+
+##### 3. P0-3: Update Pipeline Re-entry for TranscriptFlow ✅
+
+**Files Modified:**
+- [pipeline_reentry.py](../../local_transcribe/framework/pipeline_reentry.py)
+
+**Changes:**
+- Updated `run_pipeline_from_checkpoint()` to auto-detect checkpoint type and route accordingly
+- Added `run_pipeline_from_word_segments_checkpoint()` (refactored original logic)
+- Added `run_pipeline_from_transcript_flow_checkpoint()` for TranscriptFlow re-entry
+- Added `run_transcript_flow_dry_run()` for preview mode
+- Updated imports to include new checkpoint loader functions
+
+**Re-entry Stage Selection:**
+- TranscriptFlow + de-identification enabled → start from `de_identification` stage
+- TranscriptFlow + de-identification disabled → start from `speaker_naming` stage
+- Word segments → start from `turn_building` stage (unchanged)
+
+**New CLI Support:**
+- `--start-stage` argument can override the default start stage
+- `--dry-run` works for both checkpoint types
+
+---
+
+##### 4. P0-4: Capture VAD Block → Turn Mapping ✅
+
+**Files Modified:**
+- [turn_building_data_structures.py](../../local_transcribe/processing/turn_building/turn_building_data_structures.py)
+- [vad_turn_builder.py](../../local_transcribe/processing/turn_building/vad_turn_builder.py)
+
+**Changes:**
+- Added `source_block_ids: List[int]` field to `HierarchicalTurn`
+- Updated `_merge_consecutive_same_speaker_blocks()` to return `List[tuple[VADBlock, List[int]]]`
+- Updated `_convert_blocks_to_transcript_flow()` to capture and store block IDs
+
+**Purpose:**
+- Enables the web UI to highlight true VAD blocks during playback
+- Allows edit operations to resolve block selections back to turn spans
+- Preserves block identity through turn merging operations
+
+---
+
+#### Files Created
+
+1. [tests/test_web_interface_prereqs.py](../../tests/test_web_interface_prereqs.py) - Unit tests for new code
+2. [plans/progress/2026-01-27-web-interface-implementation.md](./2026-01-27-web-interface-implementation.md) - This progress log
+
+#### Tests Added and Verified
+
+All tests pass:
+
+```
+============================================================
+Web Interface Pre-Implementation Tests
+============================================================
+
+Testing InterjectionSegment round-trip...
+  ✓ InterjectionSegment round-trip passed
+Testing HierarchicalTurn round-trip...
+  ✓ HierarchicalTurn round-trip passed
+Testing TranscriptFlow round-trip...
+  ✓ TranscriptFlow round-trip passed
+Testing checkpoint type detection...
+  ✓ Detected transcript_flow format
+  ✓ Detected word_segments format
+Testing TranscriptFlow checkpoint loading...
+  ✓ Loaded checkpoint with 1 turns
+  ✓ Source block IDs preserved: [1, 2]
+
+============================================================
+All tests passed! ✓
+============================================================
+```
+
+Run tests with:
+```bash
+uv run python -m tests.test_web_interface_prereqs
+```
+
+---
+
+## Next Steps
+
+### Ready for Phase 1: Foundation
+
+With the BLOCKER tasks complete, Phase 1 (Foundation) can now begin:
+
+1. **Create FastAPI project structure** (`web_api/` directory)
+   - Set up FastAPI app with CORS middleware
+   - Add health check endpoint
+   - Configure server settings
+
+2. **Create SQLite database schema**
+   - `jobs` table for pipeline job tracking
+   - `uploaded_files` table for file management
+   - `edits` table for transcript edits
+
+3. **Implement chunked file upload** endpoints
+   - `POST /api/files/upload/init`
+   - `POST /api/files/upload/{upload_id}/chunk/{chunk_num}`
+   - `POST /api/files/upload/{upload_id}/complete`
+
+4. **Add progress callbacks to VADASRProcessor**
+   - Per-block progress reporting
+   - SSE event emission
+
+5. **Create React frontend scaffold**
+   - Vite + React + TypeScript
+   - TanStack Query, Zustand, Tailwind CSS
+
+---
+
+## Architecture Decisions Made
+
+### Checkpoint Format Detection
+
+The system now auto-detects checkpoint type based on JSON structure:
+- JSON with `turns` key → TranscriptFlow checkpoint (VAD mode)
+- JSON with `words` key → WordSegment checkpoint (aligned modes)
+
+### Re-entry Stage Selection
+
+For TranscriptFlow checkpoints:
+- If de-identification enabled → start from `de_identification` stage
+- If de-identification disabled → start from `speaker_naming` stage
+
+This allows users to edit transcripts and re-run downstream stages.
+
+### VAD Block Tracking
+
+The `source_block_ids` field on `HierarchicalTurn` enables:
+- Accurate block-level highlighting in the UI (not misleading word-level)
+- Edit operations that respect VAD block boundaries
+- Audit trail from turns back to original VAD segments
+
+---
+
+## Known Issues / Technical Debt
+
+1. **InterjectionSegment.to_dict() doesn't serialize words** - The words array is not included in the output, so `from_dict()` creates an empty list unless words are explicitly provided. This is acceptable since the main use case is TranscriptFlow checkpoint loading where words are included.
+
+2. **No integration test with real pipeline output** - The unit tests use synthetic data. Should add tests that load actual pipeline output JSON files.
+
+---
+
+## File Change Summary
+
+| File | Changes |
+|------|---------|
+| `local_transcribe/processing/turn_building/turn_building_data_structures.py` | Added `from_dict()` methods, `source_block_ids` field |
+| `local_transcribe/framework/checkpoint_loader.py` | Added TranscriptFlow loading functions |
+| `local_transcribe/framework/pipeline_reentry.py` | Added TranscriptFlow re-entry support |
+| `local_transcribe/processing/turn_building/vad_turn_builder.py` | Capture block IDs during turn building |
+| `tests/test_web_interface_prereqs.py` | New test file |
+
+---
+
+## References
+
+- [web-interface.plan](../web-interface.plan) - Full architecture and design document
+- [web-interface-tasks.plan](../web-interface-tasks.plan) - Detailed task breakdown

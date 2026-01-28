@@ -5,6 +5,7 @@ import tempfile
 import json
 import os
 import sys
+from pathlib import Path
 
 from local_transcribe.processing.turn_building.turn_building_data_structures import (
     TranscriptFlow, HierarchicalTurn, InterjectionSegment
@@ -146,7 +147,7 @@ def test_detect_checkpoint_type():
     tf_data = {'turns': [], 'metadata': {}}
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         json.dump(tf_data, f)
-        tf_path = f.name
+        tf_path = Path(f.name)
     
     try:
         assert detect_checkpoint_type(tf_path) == 'transcript_flow'
@@ -158,7 +159,7 @@ def test_detect_checkpoint_type():
     ws_data = {'words': [], 'metadata': {}}
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         json.dump(ws_data, f)
-        ws_path = f.name
+        ws_path = Path(f.name)
     
     try:
         assert detect_checkpoint_type(ws_path) == 'word_segments'
@@ -196,7 +197,7 @@ def test_load_transcript_flow_checkpoint():
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         json.dump(test_data, f)
-        temp_path = f.name
+        temp_path = Path(f.name)
     
     try:
         result = load_transcript_flow_checkpoint(temp_path)

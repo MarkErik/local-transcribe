@@ -185,7 +185,7 @@ function TranscriptView({ transcript }: { transcript: Transcript }) {
 export function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>();
   
-  const { data: job, isLoading: jobLoading, refetch: refetchJob } = useQuery({
+  const { data: job, isLoading: jobLoading } = useQuery({
     queryKey: ['job', jobId],
     queryFn: () => getJob(jobId!),
     enabled: !!jobId,
@@ -283,7 +283,22 @@ export function JobDetail() {
         <JobProgress jobId={jobId} />
       )}
       
-      {/* Transcript for completed jobs */}
+      {/* Actions for completed jobs */}
+      {job.status === 'completed' && (
+        <div className="mb-6 flex space-x-4">
+          <Link
+            to={`/jobs/${jobId}/edit`}
+            className="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Edit Transcript
+          </Link>
+        </div>
+      )}
+      
+      {/* Transcript preview for completed jobs */}
       {job.status === 'completed' && transcript && (
         <TranscriptView transcript={transcript} />
       )}

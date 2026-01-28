@@ -1,7 +1,7 @@
 # Web Interface Implementation Progress Log
 
 **Started:** January 27, 2026  
-**Status:** In Progress - Phase 1 Foundation Complete  
+**Status:** In Progress - Phase 2 Transcript Viewing Complete  
 **Related Documents:** 
 - [web-interface.plan](../web-interface.plan)
 - [web-interface-tasks.plan](../web-interface-tasks.plan)
@@ -487,3 +487,180 @@ Chosen over PostgreSQL:
 
 - [web-interface.plan](../web-interface.plan) - Full architecture and design document
 - [web-interface-tasks.plan](../web-interface-tasks.plan) - Detailed task breakdown
+
+---
+
+## Session 3: January 28, 2026
+
+**Developer:** AI Assistant  
+**Goals:** Complete Phase 2 - Transcript Viewing tasks
+
+#### Summary
+
+Phase 2 Transcript Viewing is complete. The codebase now has:
+
+1. **AudioPlayer component** - Single-track player with wavesurfer.js waveform visualization
+2. **DualTrackPlayer component** - Synchronized dual-track playback for interviewer + participant
+3. **TranscriptView component** - Renders HierarchicalTurns with speaker colors and block highlighting
+4. **StageSelector component** - Dropdown/badges for switching between pipeline output stages
+5. **TranscriptEditor page** - Full-screen editing interface with audio sync
+
+---
+
+#### Work Completed
+
+##### 2.2.1: AudioPlayer Component ✅
+
+**Files Created:**
+- [web_ui/src/components/AudioPlayer.tsx](../../web_ui/src/components/AudioPlayer.tsx)
+
+**Features:**
+- wavesurfer.js waveform visualization
+- Play/pause/seek controls
+- Playback speed adjustment (0.5x to 2x)
+- Mute toggle
+- Time display (current / total)
+- Exposes ref API for external control (play, pause, seekTo, getCurrentTime, etc.)
+- Supports master/slave mode for dual-track sync
+
+---
+
+##### 2.2.2: DualTrackPlayer Component ✅
+
+**Files Created:**
+- [web_ui/src/components/DualTrackPlayer.tsx](../../web_ui/src/components/DualTrackPlayer.tsx)
+
+**Features:**
+- Two stacked waveforms (interviewer above, participant below)
+- Unified transport controls (play/pause/seek)
+- Master/slave synchronization with throttled drift correction
+- Per-track mute/solo
+- Shared playback rate
+- Keyboard shortcuts (Space for play/pause, arrows for seeking)
+- Combined progress bar with click-to-seek
+
+---
+
+##### 2.2.3: TranscriptView Component ✅
+
+**Files Created:**
+- [web_ui/src/components/TranscriptView.tsx](../../web_ui/src/components/TranscriptView.tsx)
+
+**Features:**
+- Renders TranscriptTurn list with speaker color coding (blue for interviewer, green for participant)
+- Active turn highlighting based on playback time
+- Click turn to seek audio
+- Click turn to select for editing
+- Interjection display embedded in primary turns
+- Auto-scroll to follow playback (toggleable)
+- Timestamp display on each turn
+
+---
+
+##### 2.2.4: Block-Level Highlighting ✅
+
+**Integrated into TranscriptView component:**
+- Tracks current playback time via props
+- Finds active turn by binary search on start_time
+- Visual ring indicator for active turn
+- Yellow ring indicator for selected turn (editing)
+- Smooth auto-scroll behavior
+
+---
+
+##### 2.2.5: StageSelector Component ✅
+
+**Files Created:**
+- [web_ui/src/components/StageSelector.tsx](../../web_ui/src/components/StageSelector.tsx)
+
+**Features:**
+- Dropdown selector for stages
+- StageBadges variant (pill buttons)
+- Stage display names (e.g., "vad_transcription" → "Raw Transcription")
+- Shows edit indicator (●) for stages with unsaved edits
+- Sorted by pipeline order
+- Loading state support
+
+---
+
+##### 2.2.6: TranscriptEditor Page ✅
+
+**Files Created:**
+- [web_ui/src/pages/TranscriptEditor.tsx](../../web_ui/src/pages/TranscriptEditor.tsx)
+
+**Features:**
+- Full-screen layout (hides main nav)
+- Left panel: Dual-track audio player
+- Right panel: Transcript view with auto-scroll
+- Header: Stage selector badges, auto-scroll toggle
+- Footer: Status bar with turn count and stage info
+- Loads job details, stages, and transcript via TanStack Query
+- Constructs audio URLs from file IDs
+- Selected turn info panel for editing context
+
+---
+
+##### API Client Updates ✅
+
+**Files Modified:**
+- [web_ui/src/api/client.ts](../../web_ui/src/api/client.ts)
+
+**Added:**
+- `getAvailableStages(jobId)` - Fetch available transcript stages
+- `getAudioUrl(fileId)` - Construct audio playback URL
+- `TranscriptStage` interface
+
+---
+
+##### Route and Navigation Updates ✅
+
+**Files Modified:**
+- [web_ui/src/App.tsx](../../web_ui/src/App.tsx)
+- [web_ui/src/pages/index.ts](../../web_ui/src/pages/index.ts)
+- [web_ui/src/pages/JobDetail.tsx](../../web_ui/src/pages/JobDetail.tsx)
+
+**Changes:**
+- Added `/jobs/:jobId/edit` route for TranscriptEditor
+- Full-screen mode for editor (hides nav)
+- "Edit Transcript" button on completed job detail page
+- Exported TranscriptEditor from pages index
+
+---
+
+#### Files Created (Phase 2)
+
+| File | Description |
+|------|-------------|
+| `web_ui/src/components/AudioPlayer.tsx` | Single-track wavesurfer.js player |
+| `web_ui/src/components/DualTrackPlayer.tsx` | Synchronized dual-track player |
+| `web_ui/src/components/TranscriptView.tsx` | Transcript display with highlighting |
+| `web_ui/src/components/StageSelector.tsx` | Stage selector dropdown/badges |
+| `web_ui/src/components/index.ts` | Component exports |
+| `web_ui/src/pages/TranscriptEditor.tsx` | Full transcript editing page |
+
+---
+
+#### Verification
+
+TypeScript compiles without errors:
+```bash
+cd web_ui && npx tsc --noEmit
+# No output = success
+```
+
+---
+
+## Next Steps
+
+### Ready for Phase 3: Basic Editing
+
+With Phase 2 complete, the next phase adds editing capabilities:
+
+1. **Edit save endpoint** - `POST /api/jobs/{job_id}/edits`
+2. **Apply edits to TranscriptFlow** - EditApplicator class
+3. **Pipeline re-run endpoint** - `POST /api/jobs/{job_id}/rerun`
+4. **Word-level editing UI** - Click to edit inline
+5. **Insert/delete words** - Between/on words
+6. **Undo/redo system** - Edit history stack
+7. **Auto-save** - Debounced save with indicator
+8. **Stale stage warning** - Re-run prompt after edits

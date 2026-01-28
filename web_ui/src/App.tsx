@@ -1,9 +1,23 @@
-import { Routes, Route, Link } from 'react-router-dom'
+import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { JobList } from './pages/JobList'
 import { NewJob } from './pages/NewJob'
 import { JobDetail } from './pages/JobDetail'
+import { TranscriptEditor } from './pages/TranscriptEditor'
 
 function App() {
+  const location = useLocation();
+  
+  // Hide nav on transcript editor (full-screen mode)
+  const isEditorPage = location.pathname.includes('/edit');
+  
+  if (isEditorPage) {
+    return (
+      <Routes>
+        <Route path="/jobs/:jobId/edit" element={<TranscriptEditor />} />
+      </Routes>
+    );
+  }
+  
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Navigation */}
@@ -41,6 +55,7 @@ function App() {
           <Route path="/" element={<JobList />} />
           <Route path="/new" element={<NewJob />} />
           <Route path="/jobs/:jobId" element={<JobDetail />} />
+          <Route path="/jobs/:jobId/edit" element={<TranscriptEditor />} />
         </Routes>
       </main>
     </div>

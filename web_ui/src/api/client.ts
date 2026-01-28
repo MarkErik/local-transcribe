@@ -267,6 +267,37 @@ export async function getTranscript(
 }
 
 /**
+ * Stage information
+ */
+export interface TranscriptStage {
+  stage: string;
+  file: string;
+  has_edits: boolean;
+}
+
+/**
+ * Get available transcript stages for a job.
+ */
+export async function getAvailableStages(jobId: string): Promise<TranscriptStage[]> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/transcript/stages`);
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get stages');
+  }
+  
+  const data = await response.json();
+  return data.stages;
+}
+
+/**
+ * Get audio URL for a file ID.
+ */
+export function getAudioUrl(fileId: string): string {
+  return `${API_BASE}/files/${fileId}/audio`;
+}
+
+/**
  * Subscribe to job progress events via SSE.
  */
 export function subscribeToJobProgress(

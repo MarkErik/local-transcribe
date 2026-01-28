@@ -49,5 +49,6 @@ samples/
 issue
 TODO.list
 
-#Ignore temporarily
-tools/
+#Node
+node_modules/
+

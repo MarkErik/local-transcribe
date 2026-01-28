@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { listJobs, Job } from '../api';
+import { listJobs, deleteJob, Job } from '../api';
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -32,7 +32,16 @@ function formatDate(dateStr?: string): string {
   return date.toLocaleString();
 }
 
-function JobCard({ job }: { job: Job }) {
+function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }) {
+  const canDelete = ['completed', 'failed', 'cancelled'].includes(job.status);
+  
+  const handleDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (window.confirm(`Are you sure you want to delete job ${job.id.slice(0, 8)}...? This cannot be undone.`)) {
+      onDelete(job.id);
+    }
+  };
+  
   return (
     <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-4 hover:shadow-md transition-shadow">
       <div className="flex justify-between items-start">
@@ -47,7 +56,20 @@ function JobCard({ job }: { job: Job }) {
             Mode: {job.mode}
           </p>
         </div>
-        <StatusBadge status={job.status} />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={job.status} />
+          {canDelete && (
+            <button
+              onClick={handleDelete}
+              className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+              title="Delete job"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
       
       <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
@@ -82,11 +104,24 @@ function JobCard({ job }: { job: Job }) {
 }
 
 export function JobList() {
+  const queryClient = useQueryClient();
+  
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['jobs'],
     queryFn: () => listJobs(),
     refetchInterval: 5000, // Auto-refresh every 5 seconds
   });
+  
+  const deleteMutation = useMutation({
+    mutationFn: deleteJob,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+  });
+  
+  const handleDelete = (jobId: string) => {
+    deleteMutation.mutate(jobId);
+  };
 
   if (isLoading) {
     return (
@@ -126,6 +161,12 @@ export function JobList() {
           New Job
         </Link>
       </div>
+      
+      {deleteMutation.isError && (
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-300">
+          Failed to delete job: {deleteMutation.error instanceof Error ? deleteMutation.error.message : 'Unknown error'}
+        </div>
+      )}
 
       {jobs.length === 0 ? (
         <div className="text-center py-12">
@@ -140,7 +181,7 @@ export function JobList() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {jobs.map((job) => (
-            <JobCard key={job.id} job={job} />
+            <JobCard key={job.id} job={job} onDelete={handleDelete} />
           ))}
         </div>
       )}

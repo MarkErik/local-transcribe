@@ -313,6 +313,50 @@ async def cancel_job(job_id: str):
     return {"status": "cancelled"}
 
 
+@router.delete("/{job_id}")
+async def delete_job(job_id: str):
+    """
+    Delete a job and all its associated data.
+    
+    Only allows deletion of jobs that are completed, failed, or cancelled.
+    Running or pending jobs must be cancelled first.
+    """
+    db = get_database()
+    
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Only allow deletion of finished jobs
+    if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete job with status: {job.status.value}. Cancel it first."
+        )
+    
+    # Delete the job and associated data from database
+    deleted = db.delete_job(job_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Optionally clean up output directory
+    if job.output_dir:
+        import shutil
+        from pathlib import Path
+        output_path = Path(job.output_dir)
+        if output_path.exists():
+            try:
+                shutil.rmtree(output_path)
+            except Exception:
+                pass  # Ignore cleanup errors
+    
+    # Clean up event storage
+    if job_id in _job_events:
+        del _job_events[job_id]
+    
+    return {"status": "deleted", "job_id": job_id}
+
+
 @router.post("/{job_id}/rerun")
 async def rerun_job(
     job_id: str,

@@ -76,7 +76,7 @@ class PipelineService:
             from local_transcribe.framework.plugin_manager import import_pipeline_modules
             from local_transcribe.lib.program_logger import configure_global_logging
             from local_transcribe.lib.create_directories import ensure_session_dirs
-            from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist
+            from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist, get_available_system_capabilities, validate_system_capability
             from local_transcribe.lib.system_capability_utils import set_system_capability
             from local_transcribe.framework.provider_setup import ProviderSetup
             
@@ -88,8 +88,22 @@ class PipelineService:
             set_offline_env(models_dir)
             ensure_models_exist(models_dir)
             
-            # Set system capability (default to CPU for web server)
-            set_system_capability(options.get("system", "cpu"))
+            # Set system capability with auto-detection (MPS > CUDA > CPU preference)
+            # This matches the main application's behavior
+            requested_system = options.get("system")
+            if requested_system:
+                # User explicitly requested a specific device
+                system_capability = validate_system_capability(requested_system)
+            else:
+                # Auto-detect best available device (preference: MPS > CUDA > CPU)
+                available = get_available_system_capabilities()
+                if "mps" in available:
+                    system_capability = "mps"
+                elif "cuda" in available:
+                    system_capability = "cuda"
+                else:
+                    system_capability = "cpu"
+            set_system_capability(system_capability)
             
             # Import pipeline modules to get API and registry
             api = import_pipeline_modules(root)
@@ -161,8 +175,8 @@ class PipelineService:
             stages = create_pipeline_for_mode(mode)
             executor = PipelineExecutor(stages)
             
-            # Execute pipeline in thread pool
-            result = await self._run_pipeline_async(executor, context)
+            # Execute pipeline in thread pool with progress callbacks
+            result = await self._run_pipeline_async(executor, context, progress_callback)
             
             if result.success:
                 # Mark complete
@@ -266,20 +280,71 @@ class PipelineService:
         
         return args
     
-    async def _run_pipeline_async(self, executor, context):
+    async def _run_pipeline_async(self, executor, context, progress_callback=None):
         """
         Run the pipeline (wrapper for async execution).
         
         The actual pipeline is synchronous, so we run it in a thread pool
         to avoid blocking the event loop.
+        
+        This method wraps the executor to send progress events via the callback.
         """
         import asyncio
+        from datetime import datetime, timezone
+        
+        def execute_with_progress():
+            """Execute the pipeline with progress events."""
+            from local_transcribe.framework.stages.base import StageStatus
+            from local_transcribe.framework.stages.executor import PipelineResult
+            
+            result = PipelineResult(success=True)
+            
+            for stage in executor.stages:
+                # Skip stages that don't apply to this mode
+                if not stage.applies_to_mode(context.mode):
+                    result.skipped_stages.append(stage.name)
+                    continue
+                
+                # Notify stage start
+                if progress_callback:
+                    progress_callback("stage_start", {
+                        "stage": stage.name,
+                        "message": f"Running stage: {stage.name}",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                
+                # Execute the stage
+                updated_context, stage_result = stage.execute_safe(context)
+                result.stage_results.append(stage_result)
+                
+                # Update context for next stage
+                # Note: context is a dataclass, but execute_safe returns updated context
+                context.__dict__.update(updated_context.__dict__)
+                
+                if stage_result.status == StageStatus.COMPLETED:
+                    result.completed_stages.append(stage.name)
+                    # Notify stage complete
+                    if progress_callback:
+                        progress_callback("stage_complete", {
+                            "stage": stage.name,
+                            "message": f"Stage completed: {stage.name}",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                elif stage_result.status == StageStatus.SKIPPED:
+                    result.skipped_stages.append(stage.name)
+                elif stage_result.status == StageStatus.FAILED:
+                    result.success = False
+                    result.failed_stage = stage.name
+                    result.error = stage_result.error
+                    break
+            
+            return result
         
         # Run synchronous pipeline in thread pool
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
-            lambda: executor.execute(context),
+            execute_with_progress,
         )
         return result
     
@@ -319,7 +384,7 @@ class PipelineService:
             from local_transcribe.framework.pipeline_reentry import run_pipeline_from_checkpoint
             from local_transcribe.framework.plugin_manager import import_pipeline_modules
             from local_transcribe.lib.program_logger import configure_global_logging
-            from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist
+            from local_transcribe.lib.environment import repo_root_from_here, set_offline_env, ensure_models_exist, get_available_system_capabilities, validate_system_capability
             from local_transcribe.lib.system_capability_utils import set_system_capability
             
             # Find checkpoint file from original job
@@ -365,8 +430,19 @@ class PipelineService:
             original_config = json.loads(original_job.config_json) if original_job.config_json else {}
             options = original_config.get("options", {})
             
-            # Set system capability
-            set_system_capability(options.get("system", "cpu"))
+            # Set system capability with auto-detection (MPS > CUDA > CPU preference)
+            requested_system = options.get("system")
+            if requested_system:
+                system_capability = validate_system_capability(requested_system)
+            else:
+                available = get_available_system_capabilities()
+                if "mps" in available:
+                    system_capability = "mps"
+                elif "cuda" in available:
+                    system_capability = "cuda"
+                else:
+                    system_capability = "cpu"
+            set_system_capability(system_capability)
             
             # Import pipeline modules to get API and registry
             api = import_pipeline_modules(root)
@@ -379,7 +455,7 @@ class PipelineService:
             args.from_diarized_json = str(edited_checkpoint_path)
             args.outdir = str(output_dir)
             args.log_level = "INFO"
-            args.system = options.get("system", "cpu")
+            args.system = system_capability
             args.de_identify = options.get("enable_de_identification", True)
             args.enable_cleanup = options.get("enable_cleanup", False)
             args.selected_outputs = options.get("output_formats", ["turns-json", "timestamped-txt"])

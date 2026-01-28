@@ -249,6 +249,23 @@ export async function getJob(jobId: string): Promise<Job> {
 }
 
 /**
+ * Delete a job and all associated data.
+ * Only works for completed, failed, or cancelled jobs.
+ */
+export async function deleteJob(jobId: string): Promise<{ status: string; job_id: string }> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}`, {
+    method: 'DELETE',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete job');
+  }
+  
+  return response.json();
+}
+
+/**
  * Get transcript for a job.
  */
 export async function getTranscript(

@@ -416,6 +416,38 @@ class Database:
                 for row in rows
             ]
     
+    def delete_job(self, job_id: str) -> bool:
+        """
+        Delete a job and all its associated data.
+        
+        This removes:
+        - The job record
+        - All edits associated with the job
+        - De-identification state
+        - PII replacements
+        
+        Note: Does NOT delete uploaded files or output directory (call cleanup separately).
+        
+        Returns:
+            True if the job was deleted, False if not found.
+        """
+        with self._get_connection() as conn:
+            # Check if job exists
+            row = conn.execute("SELECT id FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            if not row:
+                return False
+            
+            # Delete related records first (foreign key constraints)
+            conn.execute("DELETE FROM edits WHERE job_id = ?", (job_id,))
+            conn.execute("DELETE FROM de_identification_state WHERE job_id = ?", (job_id,))
+            conn.execute("DELETE FROM pii_replacements WHERE job_id = ?", (job_id,))
+            
+            # Delete the job
+            conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+            conn.commit()
+            
+            return True
+    
     # File operations
     
     def create_uploaded_file(self, file: UploadedFile) -> UploadedFile:

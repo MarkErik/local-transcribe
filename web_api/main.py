@@ -1,7 +1,7 @@
 """
 FastAPI application entry point for local-transcribe web API.
 
-Run with: uv run uvicorn web_api.main:app --reload --port 8099
+Run with: uv run uvicorn web_api.main:app --reload --port 8299
 """
 
 from contextlib import asynccontextmanager

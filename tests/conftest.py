@@ -78,13 +78,20 @@ def client(temp_dirs, monkeypatch) -> Generator[TestClient, None, None]:
     
     # Re-initialize config with new env vars
     from web_api import config as config_module
+    from web_api import database as db_module
+    
     config_module._config = None  # Reset cached config
+    db_module._db = None  # Reset cached database
     
     # Initialize database
     init_database(temp_dirs["database"])
     
     with TestClient(app) as test_client:
         yield test_client
+    
+    # Clean up cached instances after test
+    config_module._config = None
+    db_module._db = None
 
 
 @pytest.fixture

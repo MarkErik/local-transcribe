@@ -16,7 +16,7 @@ class ServerConfig:
     
     # Server binding
     host: str = "0.0.0.0"
-    port: int = 8099
+    port: int = 8299
     
     # CORS settings
     cors_origins: list[str] = field(default_factory=lambda: ["*"])
@@ -42,7 +42,7 @@ class ServerConfig:
         """Load configuration from environment variables."""
         return cls(
             host=os.getenv("TRANSCRIBE_HOST", "0.0.0.0"),
-            port=int(os.getenv("TRANSCRIBE_PORT", "8099")),
+            port=int(os.getenv("TRANSCRIBE_PORT", "8299")),
             cors_origins=os.getenv("TRANSCRIBE_CORS_ORIGINS", "*").split(","),
             upload_dir=Path(os.getenv("TRANSCRIBE_UPLOAD_DIR", "./uploads")),
             output_dir=Path(os.getenv("TRANSCRIBE_OUTPUT_DIR", "./output")),

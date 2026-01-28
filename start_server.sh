@@ -13,7 +13,7 @@ set -e
 
 # Default configuration
 HOST="${TRANSCRIBE_HOST:-0.0.0.0}"
-PORT="${TRANSCRIBE_PORT:-8099}"
+PORT="${TRANSCRIBE_PORT:-8299}"
 MODE="development"
 WORKERS=1
 LOG_LEVEL="info"
@@ -48,7 +48,7 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  --production, -p    Start in production mode (no auto-reload, multiple workers)"
-    echo "  --port PORT         Set the server port (default: 8099)"
+    echo "  --port PORT         Set the server port (default: 8299)"
     echo "  --host HOST         Set the server host (default: 0.0.0.0)"
     echo "  --workers N         Number of worker processes (production only, default: 4)"
     echo "  --log-level LEVEL   Set log level: debug, info, warning, error (default: info)"
@@ -64,7 +64,7 @@ show_help() {
     echo "  TRANSCRIBE_MAX_FILE_SIZE_MB  Maximum upload file size in MB"
     echo ""
     echo "Examples:"
-    echo "  $0                           # Development mode on port 8099"
+    echo "  $0                           # Development mode on port 8299"
     echo "  $0 --production --port 80    # Production on port 80"
     echo "  $0 --build-frontend -p       # Build frontend, then production mode"
     echo ""

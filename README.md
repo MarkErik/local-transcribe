@@ -4,16 +4,6 @@ A comprehensive transcription pipeline for sociology research interviews, featur
 
 ## Features
 
-- **Multiple Pipeline Modes:**
-  - `vad_split_audio`: Two separate audio files (Interviewer + Participant)
-  - `diarized`: Single audio file with speaker diarization
-  - `aligned`: Single audio file with forced alignment
-
-- **Transcription Engines:**
-  - Whisper (local or remote)
-  - MLX Whisper (Apple Silicon optimized)
-  - Faster Whisper
-
 - **De-identification:**
   - Two-pass LLM-based name discovery and redaction
   - Interactive name list review
@@ -39,6 +29,9 @@ A comprehensive transcription pipeline for sociology research interviews, featur
 git clone https://github.com/your-org/local-transcribe.git
 cd local-transcribe
 
+# Run the setup script
+./setup_project.sh
+
 # Install dependencies
 uv sync
 ```
@@ -53,7 +46,7 @@ uv sync
 ./start_server.sh --production
 
 # Access the interface
-open http://localhost:8099
+open http://localhost:8299
 ```
 
 See [docs/WEB_INTERFACE.md](docs/WEB_INTERFACE.md) for detailed web interface documentation.
@@ -97,7 +90,7 @@ Server configuration via environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TRANSCRIBE_PORT` | `8099` | Server port |
+| `TRANSCRIBE_PORT` | `8299` | Server port |
 | `TRANSCRIBE_UPLOAD_DIR` | `./uploads` | Upload directory |
 | `TRANSCRIBE_OUTPUT_DIR` | `./output` | Output directory |
 | `TRANSCRIBE_MAX_FILE_SIZE_MB` | `500` | Max upload size |
@@ -105,8 +98,8 @@ Server configuration via environment variables:
 ### API Documentation
 
 Once the server is running, view the API documentation at:
-- **Swagger UI:** http://localhost:8099/docs
-- **ReDoc:** http://localhost:8099/redoc
+- **Swagger UI:** http://localhost:8299/docs
+- **ReDoc:** http://localhost:8299/redoc
 
 ## Testing
 
@@ -148,12 +141,4 @@ local-transcribe/
 ## Documentation
 
 - [Web Interface Guide](docs/WEB_INTERFACE.md) - Complete web UI documentation
-- [API Reference](http://localhost:8099/docs) - OpenAPI specification (when server running)
-
-## License
-
-[Your License Here]
-
-## Contributing
-
-[Contributing guidelines]
+- [API Reference](http://localhost:8299/docs) - OpenAPI specification (when server running)

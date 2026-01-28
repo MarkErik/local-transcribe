@@ -2,13 +2,19 @@
 
 **Document Version:** 2.0  
 **Created:** January 27, 2026  
-**Status:** Planning Phase (Critical Review Complete)
+**Status:** Planning Phase
 
 ---
 
 ## Executive Summary
 
 This document outlines a comprehensive plan to add a web-based interface to the local-transcribe system. The interface will allow sociology researchers to execute the transcription pipeline, view results at each stage, and manually correct transcription and de-identification errors using an interactive audio-synchronized editor.
+
+The most important pipeline process is the VAD-split-audio pipeline.
+
+This is what we should design and support initially.
+
+The web server will run on same machine as pipeline.
 
 ### Critical Review Summary (v2.0)
 
@@ -20,29 +26,6 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 - Low: Add progress callbacks to stage execution
 - Low: Extract CLI-bound functions into reusable modules  
 - Medium: Add hook between de-identification passes for name review
-
-**Critical Questions Addressed in This Version:**
-1. ✓ What happens when a stage finishes? (See Q1)
-2. ✓ What happens if user edits mid-pipeline? (See Q2)
-3. ✓ How to handle 2-stage de-identification? (See Q3)
-4. ✓ What happens to previous outputs? (See Q4)
-5. ✓ Pipeline state communication to user (See Q5)
-
-**Open Questions Remaining:** See [Open Questions](#open-questions) section.
-
----
-
-## Table of Contents
-
-1. [Target User Profile](#target-user-profile)
-2. [Feature Requirements](#feature-requirements)
-3. [Architecture Decisions](#architecture-decisions)
-4. [Critical Design Questions](#critical-design-questions)
-5. [Existing Codebase Integration](#existing-codebase-integration)
-6. [UI/UX Design Approach](#uiux-design-approach)
-7. [Implementation Phases](#implementation-phases)
-8. [Technical Considerations](#technical-considerations)
-9. [Open Questions](#open-questions)
 
 ---
 
@@ -65,7 +48,7 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 | **Pipeline Monitoring** | Real-time progress of each pipeline stage | High |
 | **Job Queue Management** | View pending/running/completed jobs | Medium |
 | **Configuration Presets** | Save and reuse common configurations | Low |
-| **Batch Processing** | Queue multiple interview pairs for processing | Medium |
+| **Serve Web Interface on Custom Port** | User should be able to specify port that server will start at | High |
 
 ### 2. Transcript Viewing Features
 
@@ -78,8 +61,7 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 | **Speaker/Block Color Coding** | Visual distinction between speakers | High |
 | **Timestamp Display** | Show timestamps for each turn/segment | High |
 | **Jump to Position** | Click any word/block to jump audio to that position | High |
-| **Dual Audio Sync** | Option to play both speaker tracks in sync | Medium |
-| **Waveform Visualization** | Visual audio waveform for navigation | Medium |
+| **Dual Audio Sync** | Because dealing with 2 audio files need to play both speaker tracks in sync | High |
 
 ### 3. Transcript Editing Features
 
@@ -149,13 +131,6 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 #### Split Architecture (UI Local, Pipeline Remote)
 **Description:** Web UI runs locally, connects to remote pipeline server via API
 
-| Pros | Cons |
-|------|----
-| Leverage powerful server hardware
-| UI stays responsive during processing | Must handle file transfer |
-| Can share server among team | Requires network configuration |
-| Local audio playback (low latency) | More complex deployment |
-
 ---
 
 ### Decision 5: Data Persistence & Edit Storage
@@ -163,39 +138,18 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 #### Option A: File-Based Storage (JSON/SQLite)
 **Description:** Store edits in JSON files or local SQLite database
 
-| Pros | Cons |
-|------|------|
-| Simple, no database server needed | Limited query capabilities |
-| Easy to backup and version | Concurrent access issues |
-| Human-readable (JSON) | Doesn't scale to many users |
-| Works with existing file output | No built-in versioning |
-
 #### Option B: PostgreSQL Database
 **Description:** Full relational database for all data
 
-| Pros | Cons |
-|------|------|
-| ACID compliance, data integrity | Requires database server |
-| Powerful querying | More complex setup |
-| Excellent for audit trails | Overhead for simple use cases |
-| Built-in versioning with temporal tables | Another dependency |
-
 #### Option C: Hybrid (Files + Lightweight DB)
 **Description:** Keep transcripts as JSON files, use SQLite for metadata/edits
-
-| Pros | Cons |
-|------|------|
-| Transcripts stay portable | Two storage systems to manage |
-| Database for edit history/undo | Sync complexity |
-| Best of both approaches | May be confusing |
-| Easy migration path | Extra code to maintain |
 
 
 ---
 
 ### Decision 6: Audio Playback & Synchronization
 
-#### Web Audio API with Waveform Library
+#### Web Audio API and Library
 **Description:** Use Web Audio API with wavesurfer.js or similar
 
 ---
@@ -205,8 +159,6 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 This section addresses workflow and state management questions that are critical for implementation success.
 
 ### Q1: What happens when a pipeline stage finishes?
-
-**Context:** The pipeline has multiple stages (audio_standardization → transcription_alignment → de_identification → diarization → turn_building → speaker_naming → output_generation → transcript_cleanup → cleaned_output_generation). Each stage produces intermediate artifacts.
 
 **Proposed Behavior:**
 
@@ -221,9 +173,7 @@ This section addresses workflow and state management questions that are critical
    - Outputs are saved to disk immediately (leveraging existing `log_intermediate_save` pattern)
 
 3. **Checkpoint Creation:**
-   - Automatically save a checkpoint JSON after key stages (transcription_alignment, de_identification, turn_building)
-   - Use existing `write_word_segments_json()` format for word-level checkpoints
-   - Use existing `TranscriptFlow.to_dict()` for turn-level checkpoints
+   - Automatically save a checkpoint JSON after key stages 
    - Store checkpoint paths in job metadata for re-entry
 
 4. **Pipeline Continuation:**
@@ -250,11 +200,9 @@ This section addresses workflow and state management questions that are critical
      ```
      ⚠️ Editing Post-Transcription Output
      
-     You are editing the output from "transcription_alignment".
+     You are editing the output from "transcription".
      The following stages have already run and will need to re-run:
        • de_identification
-       • turn_building  
-       • speaker_naming
        • output_generation
      
      Previous outputs from these stages will be archived.
@@ -351,38 +299,6 @@ For multi-speaker transcripts, first pass runs for all speakers, names are colle
 3. **Restore Capability:**
    - "Restore version X" action available
    - Restoring creates new version (v4), doesn't overwrite current
-
----
-
-### Q5: How to communicate pipeline state to user?
-
-**Proposed Status Model:**
-
-```
-Pipeline Status:
-┌─────────────────────────────────────────────────────────────┐
-│  audio_standardization    ✓ Complete                        │
-│  transcription_alignment  ✓ Complete (2,847 words)         │
-│  de_identification        ● Running... Pass 2/2 (45%)      │
-│  turn_building            ○ Pending                         │
-│  speaker_naming           ○ Pending                         │
-│  output_generation        ○ Pending                         │
-│  transcript_cleanup       ○ Pending (optional)              │
-└─────────────────────────────────────────────────────────────┘
-
-Legend: ✓ Complete  ● Running  ○ Pending  ⚠️ Stale  ✗ Failed
-```
-
-**Stale Indicator:**
-```
-┌─────────────────────────────────────────────────────────────┐
-│  transcription_alignment  ✓ Complete (edited)               │
-│  de_identification        ⚠️ Stale - upstream edited        │
-│  turn_building            ⚠️ Stale - upstream edited        │
-│                                                             │
-│  [Re-run from de_identification]                            │
-└─────────────────────────────────────────────────────────────┘
-```
 
 ---
 
@@ -543,6 +459,9 @@ class TranscriptFlow:
 - Before/after de-identification view
 - Raw vs cleaned transcript comparison
 
+**IMPORTANT**
+- Don't re-use exactly as-is, must be adapted and integrated into this project correctly.
+
 ---
 
 ### Components Requiring New Development
@@ -582,49 +501,11 @@ class TranscriptFlow:
 4. **Keyboard Efficiency:** Power users can work without mouse
 5. **Clear Visual Hierarchy:** Current position, speakers, edits are obvious
 
-### Screen Layout Ideas (1280 × 800 minimum)
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                Interview_P10  │  Stage: ▼ De-identification  │ [⚙]  │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    AUDIO WAVEFORM                            │   │
-│  │  ═══════════════════●═══════════════════════════════════    │   │
-│  │  00:05:32 / 00:45:12    [⏮][◀][▶ Play][▶][⏭]  Speed: 1.0×  │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-│  ┌─ Transcript ────────────────────────────────────────────────┐   │
-│  │                                                              │   │
-│  │  [00:00:12] INTERVIEWER                                     │   │
-│  │  So let's start by talking about your experience at         │   │
-│  │  [UNIVERSITY_1]. Can you tell me about that?                │   │
-│  │                                                              │   │
-│  │  [00:00:24] PARTICIPANT                              ▶      │   │
-│  │  Yeah, so I started there in ███████ after moving from      │   │
-│  │  [CITY_1]. It was a big change for me because...            │   │
-│  │           ▲                                                  │   │
-│  │        [current word highlighted]                           │   │
-│  │                                                              │   │
-│  │  [00:00:45] INTERVIEWER                                     │   │
-│  │  And how did that transition feel?                          │   │
-│  │                                                              │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-│  ┌─ Edit Panel ────────────────────────────────────────────────┐   │
-│  │  Selected: "moving"  [Edit] [Delete] [Insert Before] [After]│   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│  [< Previous Stage]         [Save]  [Export ▼]    [Next Stage >]   │
-└─────────────────────────────────────────────────────────────────────┘
-```
 
 ### Key UI Components
 
 #### 1. Audio Player Bar
-- Waveform visualization with playhead
+- Playhead
 - Standard transport controls
 - Speed adjustment (0.5×, 0.75×, 1×, 1.25×, 1.5×, 2×)
 - Loop selection for difficult sections
@@ -846,15 +727,12 @@ When UI runs locally but pipeline runs remotely:
 
 ### Security Considerations
 
-1. **Authentication:** 
-   - Start with simple token-based auth
-
-2. **Data Protection:**
+1. **Data Protection:**
    - HTTPS required for remote connections
    - Audio files contain sensitive interview data
    - Consider at-rest encryption for server storage
 
-3. **Input Validation:**
+2. **Input Validation:**
    - Sanitize all user inputs
    - Validate file types on upload
    - Rate limiting on API endpoints
@@ -862,12 +740,6 @@ When UI runs locally but pipeline runs remotely:
 ### Performance Targets
 
 | Metric | Target |
-|--------|--------|
-| Initial page load | < 2 seconds |
-| Audio seek latency | < 100ms |
-| Word highlight update | < 50ms |
-| Save operation | < 500ms |
-| Export generation | < 5 seconds |
 | Support transcript size | Up to 100,000 words |
 
 ### Browser Support
@@ -885,7 +757,7 @@ When UI runs locally but pipeline runs remotely:
 |-------|------------|-----------|
 | Frontend | React + TypeScript | Best for interactive editing |
 | UI Components | shadcn/ui or Radix | Accessible, customizable |
-| Audio | wavesurfer.js | Waveform + precise sync |
+| Audio | wavesurfer.js | Precise sync |
 | State Management | Zustand | Simple, performant |
 | Backend | FastAPI | Async, modern Python |
 | Real-time | SSE (progress), WebSocket (future collab) | Right tool for each job |
@@ -914,14 +786,6 @@ User Request (Web)
          ▼
 ┌──────────────────────────────────────────┐
 │          PipelineExecutor.execute()      │  ← Existing
-│  ┌─────────────────────────────────────┐ │
-│  │ AudioStandardizationStage.execute() │ │  ← Existing
-│  │ TranscriptionAlignmentStage         │ │
-│  │ DeIdentificationStage               │ │
-│  │ TurnBuildingStage                   │ │
-│  │ SpeakerNamingStage                  │ │
-│  │ OutputGenerationStage               │ │
-│  └─────────────────────────────────────┘ │
 └────────┬─────────────────────────────────┘
          │
          ▼
@@ -945,23 +809,15 @@ User Request (Web)
 | `providers/file_writers/json_writer.py` | JSON output | API response format |
 | `web_tools/transcript_compare/web_app.py` | Flask patterns | Audio sync implementation |
 
----
-
-## Appendix B: Competitive Analysis
-
-Review these tools for UX inspiration:
-
-1. **Descript** - Industry-leading transcript + audio editing
-2. **Otter.ai** - Real-time transcription with collaboration
-3. **Trint** - Professional transcription workflow
-4. **oTranscribe** - Simple, open-source transcript editor
-5. **Audacity + Labels** - Audio editing with markers
 
 ---
 
 ## Appendix C: Mode-Specific Considerations
 
-The pipeline supports multiple modes. The web interface must handle all of them:
+The pipeline supports multiple modes. The web interface must handle all of them.
+
+VAD_split_audio is the one to implement support for first, thus design decisions should be based on how to best support this mode.
+
 
 | Mode | Audio Input | Key Differences |
 |------|-------------|-----------------|
@@ -977,64 +833,45 @@ The pipeline supports multiple modes. The web interface must handle all of them:
 
 ---
 
-## Open Questions
+## Considerations
 
-Questions still requiring decisions before implementation:
-
-### Architecture Questions
-
-1. **Concurrent Jobs:** Should the system support multiple simultaneous pipeline runs?
-   - If yes: Need proper job queue (Redis/Celery?)
-   - If no: Simpler single-job model, but limits usability
-
-2. **Where does the web server run?**
-   - Option A: On same machine as pipeline (simple, but ties up resources)
-   - Option B: Separate server, pipeline on GPU server (complex, but scalable)
-   - Need to define deployment architecture
-
-3. **Session Management:**
+1. **Session Management:**
    - How long do jobs persist?
    - When are audio files and outputs cleaned up?
-   - Multi-user support needed?
 
 ### UX Questions
 
-4. **Edit Granularity:**
-   - Allow edits at word level, turn level, or both?
-   - What about editing interjections separately from main turns?
+2. **Edit Granularity:**
+   - Allow edits at word level, turn level, or both? Word level.
+   - What about editing interjections separately from main turns? Handled by word-level edits.
 
-5. **Offline Capability:**
-   - Should the UI work offline after initial load?
-   - What happens if connection is lost mid-pipeline?
+3. **Offline Capability:**
+   - Should the UI work offline after initial load? No.
+   - What happens if connection is lost mid-pipeline? The task should continue on the server, and when the user reconnects, the status should update.
 
-6. **Batch vs Interactive:**
-   - Is this primarily for interactive single-job use or batch processing?
-   - Affects whether we invest in queue management
+4. **Batch vs Interactive:**
+   - Is this primarily for interactive single-job use or batch processing? single-job use.
 
 ### Technical Questions
 
-7. **Audio File Size Limits:**
-   - Maximum file size to accept?
-   - Maximum duration to process?
-   - 1-hour interview ≈ 50-100MB, 45-minute processing time
+5. **Audio File Size Limits:**
+   - Maximum file size to accept? 100MB
+   - Maximum duration to process? No max
 
-8. **Real-time vs Polling:**
-   - SSE for real-time updates is preferred, but fallback to polling?
-   - What's the update frequency during processing?
+6. **Real-time vs Polling:**
+   - SSE for real-time updates is preferred, but fallback to polling? SSE
 
-9. **Error Recovery:**
-   - If pipeline fails mid-stage, how to recover?
-   - Retry logic? Manual restart?
+7. **Error Recovery:**
+   - If pipeline fails mid-stage, how to recover? Alert the user, then manual restart
 
 ---
 
 ## Next Steps
 
-1. [ ] Answer open questions above
-2. [ ] Create detailed API specification document
-3. [ ] Design database schema for jobs and edits
-4. [ ] Set up development environment (FastAPI + React)
-5. [ ] Begin Phase 1 implementation
+1. [ ] Create detailed API specification document
+2. [ ] Design database schema for jobs and edits
+3. [ ] Set up development environment (FastAPI + React)
+4. [ ] Begin Phase 1 implementation
 
 ---
 

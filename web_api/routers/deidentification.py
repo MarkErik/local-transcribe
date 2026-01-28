@@ -74,7 +74,7 @@ class SecondPassResponse(BaseModel):
 
 class PIIReplacementResponse(BaseModel):
     """A PII replacement record."""
-    id: int
+    id: Optional[int] = None
     job_id: str
     speaker: Optional[str] = None
     original_text: str
@@ -85,7 +85,7 @@ class PIIReplacementResponse(BaseModel):
     is_manual: bool = False
     is_override: bool = False
     timestamp_start: Optional[float] = None
-    created_at: str
+    created_at: Optional[str] = None
 
 
 class PIIReplacementsListResponse(BaseModel):

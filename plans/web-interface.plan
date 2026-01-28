@@ -1,14 +1,34 @@
 # Web Interface Plan for Local Transcribe
 
-**Document Version:** 1.0  
+**Document Version:** 2.0  
 **Created:** January 27, 2026  
-**Status:** Planning Phase
+**Status:** Planning Phase (Critical Review Complete)
 
 ---
 
 ## Executive Summary
 
 This document outlines a comprehensive plan to add a web-based interface to the local-transcribe system. The interface will allow sociology researchers to execute the transcription pipeline, view results at each stage, and manually correct transcription and de-identification errors using an interactive audio-synchronized editor.
+
+### Critical Review Summary (v2.0)
+
+**Key Finding:** The existing codebase is well-architected and should be leveraged extensively. The web interface should wrap existing components, not replace them.
+
+**Existing Pipeline Re-entry:** The current `run_pipeline_from_checkpoint()` system is **sufficient** for web-based re-runs after edits. No new re-entry system is needed.
+
+**Refactoring Required:**
+- Low: Add progress callbacks to stage execution
+- Low: Extract CLI-bound functions into reusable modules  
+- Medium: Add hook between de-identification passes for name review
+
+**Critical Questions Addressed in This Version:**
+1. ✓ What happens when a stage finishes? (See Q1)
+2. ✓ What happens if user edits mid-pipeline? (See Q2)
+3. ✓ How to handle 2-stage de-identification? (See Q3)
+4. ✓ What happens to previous outputs? (See Q4)
+5. ✓ Pipeline state communication to user (See Q5)
+
+**Open Questions Remaining:** See [Open Questions](#open-questions) section.
 
 ---
 
@@ -17,9 +37,12 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 1. [Target User Profile](#target-user-profile)
 2. [Feature Requirements](#feature-requirements)
 3. [Architecture Decisions](#architecture-decisions)
-4. [UI/UX Design Approach](#uiux-design-approach)
-5. [Implementation Phases](#implementation-phases)
-6. [Technical Considerations](#technical-considerations)
+4. [Critical Design Questions](#critical-design-questions)
+5. [Existing Codebase Integration](#existing-codebase-integration)
+6. [UI/UX Design Approach](#uiux-design-approach)
+7. [Implementation Phases](#implementation-phases)
+8. [Technical Considerations](#technical-considerations)
+9. [Open Questions](#open-questions)
 
 ---
 
@@ -177,6 +200,378 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 
 ---
 
+## Critical Design Questions
+
+This section addresses workflow and state management questions that are critical for implementation success.
+
+### Q1: What happens when a pipeline stage finishes?
+
+**Context:** The pipeline has multiple stages (audio_standardization → transcription_alignment → de_identification → diarization → turn_building → speaker_naming → output_generation → transcript_cleanup → cleaned_output_generation). Each stage produces intermediate artifacts.
+
+**Proposed Behavior:**
+
+1. **Stage Completion Notification:**
+   - Send SSE event with stage completion status
+   - Include summary statistics (words processed, speakers found, etc.)
+   - Update UI to show stage as "complete" with green checkmark
+
+2. **Intermediate Output Availability:**
+   - As each stage completes, its output becomes viewable in the UI
+   - User can inspect intermediate results without stopping the pipeline
+   - Outputs are saved to disk immediately (leveraging existing `log_intermediate_save` pattern)
+
+3. **Checkpoint Creation:**
+   - Automatically save a checkpoint JSON after key stages (transcription_alignment, de_identification, turn_building)
+   - Use existing `write_word_segments_json()` format for word-level checkpoints
+   - Use existing `TranscriptFlow.to_dict()` for turn-level checkpoints
+   - Store checkpoint paths in job metadata for re-entry
+
+4. **Pipeline Continuation:**
+   - Pipeline continues to next stage automatically unless paused
+   - User can configure "pause after stage X" for review workflows
+   - If paused, pipeline waits for explicit "Continue" action
+
+**Implementation Note:** Leverage existing `StageResult` dataclass and `PipelineExecutor.execute()` which already tracks `completed_stages` and returns `stage_results`.
+
+---
+
+### Q2: What happens if user edits a transcript mid-pipeline?
+
+**Context:** User wants to correct transcription errors after initial transcription but before de-identification runs.
+
+**Proposed Behavior:**
+
+1. **Edit Locking by Stage:**
+   - Only allow edits to the "current" stage output (most recently completed)
+   - Editing earlier stages requires explicit acknowledgment of downstream invalidation
+
+2. **Edit Detection & Warning:**
+   - When user attempts to edit:
+     ```
+     ⚠️ Editing Post-Transcription Output
+     
+     You are editing the output from "transcription_alignment".
+     The following stages have already run and will need to re-run:
+       • de_identification
+       • turn_building  
+       • speaker_naming
+       • output_generation
+     
+     Previous outputs from these stages will be archived.
+     
+     [Cancel] [Edit Anyway - Will Re-run Pipeline]
+     ```
+
+3. **Downstream Invalidation:**
+   - Mark all downstream stage outputs as "stale" (visual indicator in UI)
+   - Store original outputs in versioned archive (e.g., `output_v1/`, `output_v2/`)
+   - Prevent export from stale stages until pipeline re-runs
+
+4. **Re-run Trigger:**
+   - After save, offer: "Run remaining pipeline stages now?" [Yes] [Later]
+   - If "Later", show persistent banner: "Pipeline incomplete - X stages need to re-run"
+   - Use existing `run_pipeline_from_checkpoint()` with edited checkpoint as input
+
+5. **Edit Persistence Format:**
+   - Store edits as diff/patch against original (not in-place modification)
+   - Edits table: `(job_id, stage_name, version, original_hash, edits_json, created_at)`
+   - Apply edits to create "effective" output for downstream stages
+
+**Data Model Addition:**
+```python
+@dataclass
+class StageOutput:
+    job_id: str
+    stage_name: str
+    version: int
+    output_path: Path
+    is_stale: bool  # True if upstream was edited after this ran
+    parent_version: int  # Which upstream version this was built from
+    created_at: datetime
+    checksum: str
+```
+
+---
+
+### Q3: How to handle the 2-stage de-identification process?
+
+**Context:** The existing de-identification has two passes:
+1. **First Pass:** LLM identifies and redacts names, discovering a name list
+2. **Second Pass:** LLM uses the discovered name list to catch missed names across all speakers
+
+For multi-speaker transcripts, first pass runs for all speakers, names are collected, then second pass runs for all speakers.
+
+**Proposed UI/UX:**
+
+1. **Single "De-identification" Stage in UI:**
+   - To the user, this appears as one stage
+   - Progress bar shows sub-progress: "Pass 1/2: Processing speaker 1 of 2"
+   - Internal: orchestrator handles both passes automatically
+
+2. **Review Points:**
+   - **After First Pass (Optional):** Allow user to review discovered names before second pass
+     - Show: "Names discovered: John, Mary, Dr. Smith"
+     - Allow: Add missed names, remove false positives
+     - This improves second pass accuracy
+   - **After Second Pass:** Full de-identification review with PII highlighting
+
+3. **Manual Intervention Hook:**
+   - Configuration option: `pause_between_de_id_passes: bool`
+   - If true, pause after first pass for name list review
+   - Default false for automated workflows
+
+4. **Audit Trail Integration:**
+   - Use existing `AuditLogger` to record all replacements
+   - Store: `first_pass_replacements`, `second_pass_replacements`, `manual_overrides`
+   - Show in UI: "Changed by: First Pass / Second Pass / Manual"
+
+**Implementation Note:** The existing `DeIdentificationOrchestrator.de_identify_multi_speaker()` already handles the two-pass flow. The web interface needs to:
+- Accept the orchestrator's SSE events for progress
+- Optionally pause between passes for name review
+- Display the audit log from `AuditLogger`
+
+---
+
+### Q4: Previous outputs - archive vs delete?
+
+**Context:** When user edits and re-runs, what happens to the original downstream outputs?
+
+**Proposed Behavior:**
+
+1. **Archive, Don't Delete:**
+   - Move to `archive/{job_id}/{stage_name}/v{N}/`
+   - Keep last 3 versions by default (configurable)
+   - Older versions auto-purge after 30 days (configurable)
+
+2. **Version Navigation:**
+   - UI shows version dropdown: "Viewing: v3 (current) ▼"
+   - Can view any archived version (read-only)
+   - Can compare versions side-by-side (leverage existing `transcript_compare/diff_engine.py`)
+
+3. **Restore Capability:**
+   - "Restore version X" action available
+   - Restoring creates new version (v4), doesn't overwrite current
+
+---
+
+### Q5: How to communicate pipeline state to user?
+
+**Proposed Status Model:**
+
+```
+Pipeline Status:
+┌─────────────────────────────────────────────────────────────┐
+│  audio_standardization    ✓ Complete                        │
+│  transcription_alignment  ✓ Complete (2,847 words)         │
+│  de_identification        ● Running... Pass 2/2 (45%)      │
+│  turn_building            ○ Pending                         │
+│  speaker_naming           ○ Pending                         │
+│  output_generation        ○ Pending                         │
+│  transcript_cleanup       ○ Pending (optional)              │
+└─────────────────────────────────────────────────────────────┘
+
+Legend: ✓ Complete  ● Running  ○ Pending  ⚠️ Stale  ✗ Failed
+```
+
+**Stale Indicator:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│  transcription_alignment  ✓ Complete (edited)               │
+│  de_identification        ⚠️ Stale - upstream edited        │
+│  turn_building            ⚠️ Stale - upstream edited        │
+│                                                             │
+│  [Re-run from de_identification]                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Existing Codebase Integration
+
+### Critical Review: What the Plan Must Account For
+
+The current plan's "Appendix A: Existing Code to Leverage" is **insufficiently detailed**. Here is a comprehensive analysis:
+
+### 1. Pipeline Stage System (Must Integrate, Not Replace)
+
+**Existing Components:**
+- `PipelineStage` abstract base class with `execute()`, `can_execute()`, `is_optional`
+- `PipelineExecutor` with `execute()` and `execute_dry_run()`
+- `PipelineContext` dataclass carrying state between stages
+- `StageResult` with status tracking (COMPLETED, SKIPPED, FAILED)
+- Stage registry in `STAGE_REGISTRY` dict
+
+**Integration Approach:**
+- Web API wraps `PipelineExecutor`, does NOT replace it
+- Extend `StageResult` to include SSE event emission
+- Add `progress_callback` parameter to stages for real-time updates
+- Example:
+  ```python
+  # Existing
+  result = executor.execute(context)
+  
+  # Web-enhanced
+  result = executor.execute(context, progress_callback=sse_emitter.send)
+  ```
+
+**Refactoring Required:**
+- Add optional `progress_callback: Callable` to `PipelineStage.execute()`
+- Emit events at: stage start, progress updates, stage complete
+- Estimate: Low effort, backward-compatible
+
+---
+
+### 2. Pipeline Re-entry System (Can Reuse Directly)
+
+**Existing Components:**
+- `run_pipeline_from_checkpoint()` - resumes from JSON checkpoint
+- `CheckpointLoadResult` with validation and warnings
+- `validate_checkpoint_for_reentry()` ensures data integrity
+- `get_stages_for_reentry()` returns stages from a given start point
+
+**Perfect Fit for Web Interface:**
+- User edits → saves to checkpoint JSON → calls `run_pipeline_from_checkpoint()`
+- No new re-entry system needed
+- Checkpoint format already defined and validated
+
+**Refactoring Required:**
+- Extract checkpoint validation into reusable function (not CLI-bound)
+- Add web-specific error responses (JSON, not print statements)
+- Estimate: Low-medium effort
+
+---
+
+### 3. Data Structures (Must Use Existing Formats)
+
+**Word-Level Data:**
+```python
+@dataclass
+class WordSegment:
+    text: str
+    start: float
+    end: float
+    speaker: Optional[str]
+```
+- Already has JSON serialization
+- Already has validation in checkpoint loader
+
+**Turn-Level Data:**
+```python
+@dataclass
+class HierarchicalTurn:
+    turn_id: int
+    primary_speaker: str
+    start: float
+    end: float
+    text: str
+    words: List[WordSegment]
+    interjections: List[InterjectionSegment]
+```
+- Already has `to_dict()` for JSON output
+- Includes interjections (brief responses during another's turn)
+
+**Transcript Container:**
+```python
+@dataclass
+class TranscriptFlow:
+    turns: List[HierarchicalTurn]
+    metadata: Dict[str, Any]
+    conversation_metrics: Dict[str, Any]
+    speaker_statistics: Dict[str, Dict[str, Any]]
+```
+- Complete conversation structure
+- Already has all needed methods
+
+**Web API Response Format:**
+- Use `TranscriptFlow.to_dict()` directly as JSON response
+- Do NOT create a separate "web format"
+
+---
+
+### 4. De-identification System (Complex, Needs Careful Integration)
+
+**Existing Components:**
+- `DeIdentificationOrchestrator` - handles two-pass flow
+- `DeIdentificationResult` with first/second pass tracking
+- `AuditLogger` - detailed replacement audit trail
+- `DebugFileWriter` - debug output for troubleshooting
+
+**Key Insight:** The orchestrator already handles:
+- Single speaker de-identification
+- Multi-speaker with cross-speaker name sharing
+- Two-pass processing automatically
+
+**Web Integration Points:**
+1. Call `orchestrator.de_identify_multi_speaker()` for multi-speaker
+2. Access `result.first_pass_replacements` and `result.second_pass_replacements`
+3. Use `AuditLogger` output for review UI
+4. For name list review: intercept between `de_identify_first_pass()` and `de_identify_second_pass()`
+
+**Refactoring Required:**
+- Add hook for name list review between passes
+- Expose progress callback for chunk processing
+- Estimate: Medium effort
+
+---
+
+### 5. Output Writers (Reuse Completely)
+
+**Existing Writers:**
+- `timestamped-txt`, `plain-txt`, `markdown`, `dialogue-script`
+- `html-timeline`, `turns-json`
+- `video`, `vad-video` (MP4 rendering)
+- `srt` (subtitles)
+
+**Web Integration:**
+- Call existing writers via `OutputManager.write_selected_outputs()`
+- For web preview: use `turns-json` output directly
+- For export: call appropriate writer and return file
+
+**No Refactoring Required**
+
+---
+
+### 6. Transcript Compare Tool (Leverage for Diff View)
+
+**Existing in `web_tools/transcript_compare/`:**
+- `diff_engine.py` - word-level diff computation
+- `generate_aligned_html()` - visual diff rendering
+- Flask app with audio sync (pattern to follow)
+
+**Reuse for:**
+- Version comparison (edited vs original)
+- Before/after de-identification view
+- Raw vs cleaned transcript comparison
+
+---
+
+### Components Requiring New Development
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| FastAPI web server | New | Replace Flask pattern from transcript_compare |
+| Job queue system | New | Track pipeline jobs, store state |
+| SSE event emitter | New | Wrap existing stage execution |
+| Edit overlay system | New | Track user edits as patches |
+| Session/job persistence | New | SQLite for job metadata |
+| React frontend | New | Entirely new development |
+
+---
+
+### Refactoring Summary
+
+| Module | Effort | Changes |
+|--------|--------|---------|
+| `pipeline_runner.py` | Low | Add progress callback support |
+| `pipeline_stages.py` | Low | Emit events during execution |
+| `pipeline_reentry.py` | Low-Med | Extract reusable functions |
+| `de_identification/orchestrator.py` | Medium | Add inter-pass hook |
+| `checkpoint_loader.py` | Low | Return JSON-friendly errors |
+| Output writers | None | Use as-is |
+| Turn building | None | Use as-is |
+
+---
+
 ## UI/UX Design Approach
 
 ### Design Principles
@@ -288,77 +683,143 @@ This document outlines a comprehensive plan to add a web-based interface to the 
 ### Phase 1: Foundation
 **Goal:** Basic web server with job submission and monitoring
 
-- [ ] Set up FastAPI backend with project structure
+**Backend Tasks:**
+- [ ] Set up FastAPI backend with project structure (`web_api/` directory)
+- [ ] Create job model (SQLite: job_id, status, mode, created_at, config_json)
 - [ ] Create job submission endpoint (file upload, configuration)
-- [ ] Implement job queue with background task processing
-- [ ] Add SSE endpoint for job progress updates
-- [ ] Create basic React frontend scaffold
-- [ ] Build job configuration form
+- [ ] Integrate with existing `PipelineExecutor` (import, not subprocess)
+- [ ] Add progress callback to `PipelineStage.execute()` method (refactor)
+- [ ] Implement SSE endpoint for job progress events
+- [ ] Create checkpoint retrieval endpoint (uses existing `CheckpointLoadResult`)
+
+**Frontend Tasks:**
+- [ ] Create React + TypeScript project scaffold
+- [ ] Build job configuration form (mode selection, file upload)
 - [ ] Build job monitoring view with progress indicators
-- [ ] Connect to existing pipeline via subprocess/import
+- [ ] Implement SSE client for real-time updates
+
+**Integration Points:**
+- Reuse: `PipelineContext`, `PipelineExecutor`, `STAGE_REGISTRY`
+- Extend: Add `progress_callback` parameter to stage execution
 
 ### Phase 2: Transcript Viewing
 **Goal:** View and navigate transcripts with audio sync
 
-- [ ] Design transcript data API (JSON structure)
-- [ ] Implement stage-specific transcript endpoints
+**Backend Tasks:**
+- [ ] Create transcript retrieval endpoint (returns `TranscriptFlow.to_dict()`)
+- [ ] Create word-segments endpoint (returns checkpoint JSON format)
+- [ ] Implement stage-specific output endpoints
+- [ ] Add audio file serving endpoint (or direct file access if local)
+
+**Frontend Tasks:**
 - [ ] Integrate wavesurfer.js for audio playback
-- [ ] Build transcript display component with speaker colors
-- [ ] Implement word-level click to seek
+- [ ] Build transcript display using `HierarchicalTurn` structure
+- [ ] Implement speaker color coding
+- [ ] Implement word-level click to seek (for aligned transcripts)
+- [ ] Implement block-level click for VAD mode
 - [ ] Implement playback-follows-transcript highlighting
 - [ ] Add timestamp display and navigation
-- [ ] Build stage selector dropdown
-- [ ] Handle dual audio track synchronization
+- [ ] Build stage selector dropdown (shows completed stages only)
+- [ ] Handle dual audio track synchronization (split_audio modes)
+
+**Integration Points:**
+- Reuse: `TranscriptFlow`, `HierarchicalTurn`, `WordSegment` data structures
+- Reuse: `turns-json` writer output format
+- Reference: `web_tools/transcript_compare/` for audio sync patterns
 
 ### Phase 3: Basic Editing
 **Goal:** Core transcript editing functionality
 
-- [ ] Design edit data model (edits as overlay on original)
-- [ ] Implement SQLite storage for edit history
+**Backend Tasks:**
+- [ ] Design edit storage schema (edits as patches, not in-place)
+  ```sql
+  CREATE TABLE edits (
+      id INTEGER PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      stage_name TEXT NOT NULL,
+      edit_type TEXT NOT NULL,  -- word_change, word_insert, word_delete
+      target_index INTEGER,
+      original_value TEXT,
+      new_value TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+  ```
+- [ ] Implement edit save endpoint
+- [ ] Implement "apply edits to checkpoint" logic
+- [ ] Add "edited" flag to downstream stages (stale detection)
+- [ ] Create endpoint to trigger re-run from checkpoint (uses existing `run_pipeline_from_checkpoint`)
+
+**Frontend Tasks:**
 - [ ] Build word selection UI
-- [ ] Implement click-to-edit word
+- [ ] Implement click-to-edit word modal
 - [ ] Implement insert word (before/after)
 - [ ] Implement delete word
-- [ ] Build undo/redo system
-- [ ] Implement auto-save with debounce
-- [ ] Add visual indicators for edited words
-- [ ] Build find/replace functionality
+- [ ] Build undo/redo system (local state + server sync)
+- [ ] Implement auto-save with debounce (2 second delay)
+- [ ] Add visual indicators for edited words (highlight color)
+- [ ] Build stale-stage warning UI
+- [ ] Build "Re-run Pipeline" confirmation dialog
+
+**Integration Points:**
+- Reuse: `run_pipeline_from_checkpoint()` for edited checkpoint re-runs
+- Reuse: `validate_checkpoint_for_reentry()` before re-runs
 
 ### Phase 4: Advanced Editing
 **Goal:** Full editing capabilities for production use
 
-- [ ] Implement speaker reassignment
-- [ ] Implement turn boundary adjustment
-- [ ] Add annotation insertion ([laughter], [pause], etc.)
+- [ ] Implement speaker reassignment (change `primary_speaker` on turn)
+- [ ] Implement turn boundary adjustment (merge/split turns)
+- [ ] Add annotation insertion ([laughter], [pause], [inaudible])
 - [ ] Build merge/split word tools
-- [ ] Implement bulk operations
-- [ ] Add edit history viewer
-- [ ] Build comparison view (original vs edited)
-- [ ] Keyboard shortcut system
+- [ ] Implement bulk find & replace
+- [ ] Add edit history viewer (timeline of all edits)
+- [ ] Build comparison view using existing `diff_engine.py`
+- [ ] Complete keyboard shortcut system
 
 ### Phase 5: De-identification Tools
 **Goal:** Specialized tools for PII review and correction
 
+**Backend Tasks:**
+- [ ] Create endpoint to retrieve de-identification audit log
+- [ ] Add optional pause point between de-ID passes (config flag)
+- [ ] Create endpoint to modify name list between passes
+- [ ] Implement manual redaction endpoint (adds to second-pass list)
+
+**Frontend Tasks:**
 - [ ] Build PII highlight overlay mode
-- [ ] Implement manual redaction tool
-- [ ] Add redaction category selector
+- [ ] Display `first_pass_replacements` vs `second_pass_replacements` attribution
+- [ ] Implement manual redaction tool (select text → mark as PII)
+- [ ] Add redaction category selector (NAME, LOCATION, ORGANIZATION, etc.)
 - [ ] Build redaction override (unmark false positives)
-- [ ] Implement placeholder text editing
-- [ ] Add de-identification audit view
-- [ ] Build second-pass review workflow
+- [ ] Implement placeholder text editing (change [REDACTED] → [NAME_1])
+- [ ] Add name list review UI (shown between passes if enabled)
 - [ ] Create de-identification report export
 
-### Phase 6: Polish & Export
-**Goal:** Production-ready with export capabilities. Note that we have already built these output writers
+**Integration Points:**
+- Reuse: `DeIdentificationOrchestrator` (wrap, don't replace)
+- Reuse: `AuditLogger` output for review UI
+- Extend: Add hook between `de_identify_first_pass` and `de_identify_second_pass`
 
-- [ ] Implement export to multiple formats (TXT, DOCX, JSON, SRT)
+### Phase 6: Polish & Export
+**Goal:** Production-ready with export capabilities
+
+**Backend Tasks:**
+- [ ] Create export endpoint that calls existing output writers
 - [ ] Add export options (include timestamps, speaker labels, etc.)
+
+**Frontend Tasks:**
+- [ ] Build export format selector (leverages existing writers)
 - [ ] Build print-friendly view
-- [ ] Performance optimization (large transcripts)
+- [ ] Add version comparison using `diff_engine.generate_aligned_html()`
+- [ ] Performance optimization for large transcripts (virtualized lists)
 - [ ] Accessibility audit and fixes
 - [ ] Error handling and user feedback
 - [ ] Documentation and help system
-- [ ] End-to-end testing
+
+**Integration Points:**
+- Reuse: All existing `OutputWriter` implementations
+- Reuse: `OutputManager.write_selected_outputs()`
+- Reuse: `diff_engine.py` for comparison views
 
 ---
 
@@ -433,15 +894,56 @@ When UI runs locally but pipeline runs remotely:
 
 ---
 
-## Appendix A: Existing Code to Leverage
+## Appendix A: Existing Code Integration Details
 
-| Existing Component | Reuse Potential |
-|--------------------|-----------------|
-| `web_tools/transcript_compare/` | Flask patterns, diff engine |
-| `local_transcribe/framework/cli.py` | CLI argument patterns |
-| `local_transcribe/framework/pipeline_runner.py` | Pipeline orchestration |
-| `local_transcribe/processing/de_identification/` | PII detection logic |
-| `local_transcribe/lib/output_manager.py` | File output patterns |
+### Data Flow: Existing Pipeline → Web API
+
+```
+User Request (Web)
+       │
+       ▼
+┌──────────────────┐
+│  FastAPI Router  │  ← New
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│   Job Manager    │  ← New (tracks jobs, queues)
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────────────────────────────┐
+│          PipelineExecutor.execute()      │  ← Existing
+│  ┌─────────────────────────────────────┐ │
+│  │ AudioStandardizationStage.execute() │ │  ← Existing
+│  │ TranscriptionAlignmentStage         │ │
+│  │ DeIdentificationStage               │ │
+│  │ TurnBuildingStage                   │ │
+│  │ SpeakerNamingStage                  │ │
+│  │ OutputGenerationStage               │ │
+│  └─────────────────────────────────────┘ │
+└────────┬─────────────────────────────────┘
+         │
+         ▼
+┌──────────────────┐
+│   SSE Emitter    │  ← New (progress events)
+└────────┬─────────┘
+         │
+         ▼
+   Browser (React)   ← New
+```
+
+### Key Existing Files to Study Before Implementation
+
+| File | Purpose | Web Relevance |
+|------|---------|---------------|
+| `framework/pipeline_context.py` | State container | Understand what data flows through |
+| `framework/stages/executor.py` | Stage orchestration | Where to add progress hooks |
+| `framework/checkpoint_loader.py` | Checkpoint format | API response format |
+| `processing/de_identification/orchestrator.py` | Two-pass flow | De-ID UI integration |
+| `processing/turn_building/turn_building_data_structures.py` | Data models | Frontend data contracts |
+| `providers/file_writers/json_writer.py` | JSON output | API response format |
+| `web_tools/transcript_compare/web_app.py` | Flask patterns | Audio sync implementation |
 
 ---
 
@@ -457,11 +959,81 @@ Review these tools for UX inspiration:
 
 ---
 
+## Appendix C: Mode-Specific Considerations
+
+The pipeline supports multiple modes. The web interface must handle all of them:
+
+| Mode | Audio Input | Key Differences |
+|------|-------------|-----------------|
+| `combined_audio` | Single file, both speakers | Requires diarization stage |
+| `split_audio` | Separate files per speaker | No diarization, speakers known |
+| `vad_split_audio` | Separate files per speaker | VAD-first pipeline, different turn structure |
+| `single_speaker_audio` | Single speaker file | No diarization, simplified output |
+
+**UI Implications:**
+- Mode selection affects which stages are shown
+- `vad_split_audio` has block-level (not word-level) timing
+- Audio player must handle dual-track sync for split modes
+
+---
+
+## Open Questions
+
+Questions still requiring decisions before implementation:
+
+### Architecture Questions
+
+1. **Concurrent Jobs:** Should the system support multiple simultaneous pipeline runs?
+   - If yes: Need proper job queue (Redis/Celery?)
+   - If no: Simpler single-job model, but limits usability
+
+2. **Where does the web server run?**
+   - Option A: On same machine as pipeline (simple, but ties up resources)
+   - Option B: Separate server, pipeline on GPU server (complex, but scalable)
+   - Need to define deployment architecture
+
+3. **Session Management:**
+   - How long do jobs persist?
+   - When are audio files and outputs cleaned up?
+   - Multi-user support needed?
+
+### UX Questions
+
+4. **Edit Granularity:**
+   - Allow edits at word level, turn level, or both?
+   - What about editing interjections separately from main turns?
+
+5. **Offline Capability:**
+   - Should the UI work offline after initial load?
+   - What happens if connection is lost mid-pipeline?
+
+6. **Batch vs Interactive:**
+   - Is this primarily for interactive single-job use or batch processing?
+   - Affects whether we invest in queue management
+
+### Technical Questions
+
+7. **Audio File Size Limits:**
+   - Maximum file size to accept?
+   - Maximum duration to process?
+   - 1-hour interview ≈ 50-100MB, 45-minute processing time
+
+8. **Real-time vs Polling:**
+   - SSE for real-time updates is preferred, but fallback to polling?
+   - What's the update frequency during processing?
+
+9. **Error Recovery:**
+   - If pipeline fails mid-stage, how to recover?
+   - Retry logic? Manual restart?
+
+---
+
 ## Next Steps
 
-1. [ ] Review this plan with stakeholders
-3. [ ] Create detailed technical design for Phase 1
-4. [ ] Set up development environment
+1. [ ] Answer open questions above
+2. [ ] Create detailed API specification document
+3. [ ] Design database schema for jobs and edits
+4. [ ] Set up development environment (FastAPI + React)
 5. [ ] Begin Phase 1 implementation
 
 ---

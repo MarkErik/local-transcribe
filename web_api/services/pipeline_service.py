@@ -233,14 +233,14 @@ class PipelineService:
         args.vad_pipeline = mode == "vad_split_audio"
         
         # Provider settings
-        args.transcriber_provider = options.get("transcriber_provider", "remote")
-        args.transcriber_model = options.get("transcriber_model")
+        args.transcriber_provider = options.get("transcriber_provider", "granite")
+        args.transcriber_model = options.get("transcriber_model", "granite-speech-8b")
         args.aligner_provider = options.get("aligner_provider")
         args.diarization_provider = options.get("diarization_provider")
         args.transcript_cleanup_provider = options.get("transcript_cleanup_provider")
         
         # Remote URLs
-        args.remote_transcriber_url = options.get("remote_transcriber_url", "http://100.84.208.72:7070")
+        args.remote_transcriber_url = options.get("remote_transcriber_url", "http://0.0.0.0:7070")
         args.llm_de_identifier_url = options.get("llm_de_identifier_url", "http://0.0.0.0:8080")
         args.llm_transcript_cleanup_url = options.get("llm_transcript_cleanup_url", "http://0.0.0.0:8080")
         

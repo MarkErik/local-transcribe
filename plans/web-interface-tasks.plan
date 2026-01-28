@@ -107,16 +107,16 @@ Persist block identity through turn building so UI can highlight true blocks and
 
 ---
 
-## Phase 1: Foundation (VAD Mode Focus)
+## Phase 1: Foundation (VAD Mode Focus) ✅ COMPLETED
 
 **Goal:** Basic web server with job submission and monitoring for VAD-split-audio mode
 
 ### 1.1 Backend Setup
 
-#### 1.1.1: Create FastAPI Project Structure
+#### 1.1.1: Create FastAPI Project Structure ✅ COMPLETED
 
 **Tasks:**
-- [ ] Create `web_api/` directory structure:
+- [x] Create `web_api/` directory structure:
   ```
   web_api/
   ├── __init__.py
@@ -136,16 +136,16 @@ Persist block identity through turn building so UI can highlight true blocks and
       ├── __init__.py
       └── schemas.py    # Pydantic models
   ```
-- [ ] Set up FastAPI app with CORS middleware
-- [ ] Add basic health check endpoint: `GET /api/health`
-- [ ] Add configuration for server URL, upload directory, output directory
+- [x] Set up FastAPI app with CORS middleware
+- [x] Add basic health check endpoint: `GET /api/health`
+- [x] Add configuration for server URL, upload directory, output directory
 
 ---
 
-#### 1.1.2: Create SQLite Database Schema
+#### 1.1.2: Create SQLite Database Schema ✅ COMPLETED
 
 **Tasks:**
-- [ ] Create `jobs` table:
+- [x] Create `jobs` table:
   ```sql
   CREATE TABLE jobs (
       id TEXT PRIMARY KEY,
@@ -161,7 +161,7 @@ Persist block identity through turn building so UI can highlight true blocks and
       participant_file_id TEXT
   );
   ```
-- [ ] Create `uploaded_files` table:
+- [x] Create `uploaded_files` table:
   ```sql
   CREATE TABLE uploaded_files (
       id TEXT PRIMARY KEY,
@@ -173,7 +173,7 @@ Persist block identity through turn building so UI can highlight true blocks and
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
   ```
-- [ ] Create `edits` table:
+- [x] Create `edits` table:
   ```sql
   CREATE TABLE edits (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -189,21 +189,21 @@ Persist block identity through turn building so UI can highlight true blocks and
       FOREIGN KEY (job_id) REFERENCES jobs(id)
   );
   ```
-- [ ] Add database initialization on startup
-- [ ] Write migration script for schema changes
+- [x] Add database initialization on startup
+- [x] Write migration script for schema changes
 
 ---
 
-#### 1.1.3: Implement Chunked File Upload
+#### 1.1.3: Implement Chunked File Upload ✅ COMPLETED
 
 **Tasks:**
-- [ ] `POST /api/files/upload/init` - Initialize upload, return upload_id and chunk_size
-- [ ] `POST /api/files/upload/{upload_id}/chunk/{chunk_num}` - Upload a chunk
-- [ ] `POST /api/files/upload/{upload_id}/complete` - Finalize upload, verify integrity
-- [ ] `GET /api/files/upload/{upload_id}/status` - Check upload progress
-- [ ] Store chunks in temp directory, assemble on complete
-- [ ] Validate audio file format after assembly (check magic bytes)
-- [ ] Clean up incomplete uploads after 24 hours (background task)
+- [x] `POST /api/files/upload/init` - Initialize upload, return upload_id and chunk_size
+- [x] `POST /api/files/upload/{upload_id}/chunk/{chunk_num}` - Upload a chunk
+- [x] `POST /api/files/upload/{upload_id}/complete` - Finalize upload, verify integrity
+- [x] `GET /api/files/upload/{upload_id}/status` - Check upload progress
+- [x] Store chunks in temp directory, assemble on complete
+- [x] Validate audio file format after assembly (check magic bytes)
+- [x] Clean up incomplete uploads after 24 hours (background task)
 
 **Acceptance Criteria:**
 - Can upload 200MB file in 5MB chunks
@@ -212,10 +212,10 @@ Persist block identity through turn building so UI can highlight true blocks and
 
 ---
 
-#### 1.1.4: Implement Job Submission Endpoint
+#### 1.1.4: Implement Job Submission Endpoint ✅ COMPLETED
 
 **Tasks:**
-- [ ] `POST /api/jobs` - Create new job
+- [x] `POST /api/jobs` - Create new job
   ```json
   Request:
   {
@@ -234,208 +234,208 @@ Persist block identity through turn building so UI can highlight true blocks and
     "status": "pending"
   }
   ```
-- [ ] Validate file_ids exist and are complete uploads
-- [ ] Create job record in database
-- [ ] Queue job for execution (initially: immediate execution in background)
+- [x] Validate file_ids exist and are complete uploads
+- [x] Create job record in database
+- [x] Queue job for execution (initially: immediate execution in background)
 
 ---
 
-#### 1.1.5: Add Progress Callbacks to VADASRProcessor
+#### 1.1.5: Add Progress Callbacks to VADASRProcessor ✅ COMPLETED
 **File:** `local_transcribe/processing/vad/vad_asr_processor.py`
 
 **Tasks:**
-- [ ] Add `progress_callback: Optional[Callable[[int, int, str], None]]` parameter to `process_blocks()`
-- [ ] Call `progress_callback(current_block, total_blocks, speaker_id)` after each block
-- [ ] Ensure callback is optional (default None) for backward compatibility
-- [ ] Update `VADTranscriptionStage` to pass callback through
-- [ ] Test with a simple callback that prints progress
+- [x] Add `progress_callback: Optional[Callable[[int, int, str], None]]` parameter to `process_blocks()`
+- [x] Call `progress_callback(current_block, total_blocks, speaker_id)` after each block
+- [x] Ensure callback is optional (default None) for backward compatibility
+- [x] Update `VADTranscriptionStage` to pass callback through
+- [x] Test with a simple callback that prints progress
 
 ---
 
-#### 1.1.6: Implement SSE Progress Endpoint
+#### 1.1.6: Implement SSE Progress Endpoint ✅ COMPLETED
 
 **Tasks:**
-- [ ] `GET /api/jobs/{job_id}/progress` - SSE endpoint
-- [ ] Create `PipelineProgressEmitter` class that:
+- [x] `GET /api/jobs/{job_id}/progress` - SSE endpoint
+- [x] Create `PipelineProgressEmitter` class that:
   - Wraps `PipelineExecutor`
   - Captures progress callbacks
   - Converts to SSE events
-- [ ] Add stage-level start/finish callbacks in `PipelineExecutor`
-- [ ] Emit events: `stage_start`, `block_progress`, `stage_complete`, `job_complete`, `job_error`
-- [ ] Support `Last-Event-Id` header for reconnection
-- [ ] Store events in memory for replay on reconnect (time-window retention, e.g., last 10 minutes)
+- [x] Add stage-level start/finish callbacks in `PipelineExecutor`
+- [x] Emit events: `stage_start`, `block_progress`, `stage_complete`, `job_complete`, `job_error`
+- [x] Support `Last-Event-Id` header for reconnection
+- [x] Store events in memory for replay on reconnect (time-window retention, e.g., last 10 minutes)
 
 ---
 
-#### 1.1.7: Implement Pipeline Execution Service
+#### 1.1.7: Implement Pipeline Execution Service ✅ COMPLETED
 
 **Tasks:**
-- [ ] Create `PipelineService` class that:
+- [x] Create `PipelineService` class that:
   - Loads files from upload directory
   - Creates `PipelineContext` with correct configuration
   - Calls `PipelineExecutor.execute()` with progress callbacks
   - Updates job status in database
   - Stores output path in database
-- [ ] Run pipeline in background task (asyncio or thread pool)
-- [ ] Handle pipeline errors gracefully (update job status, store error message)
-- [ ] Log all pipeline output for debugging
-- [ ] If pause-after-stage is enabled, pause via executor hook and resume on explicit action
+- [x] Run pipeline in background task (asyncio or thread pool)
+- [x] Handle pipeline errors gracefully (update job status, store error message)
+- [x] Log all pipeline output for debugging
+- [x] If pause-after-stage is enabled, pause via executor hook and resume on explicit action
 
 ---
 
 ### 1.2 Frontend Setup
 
-#### 1.2.1: Create React Project
+#### 1.2.1: Create React Project ✅ COMPLETED
 
 **Tasks:**
-- [ ] Initialize Vite + React + TypeScript project in `web_ui/` directory
-- [ ] Install dependencies:
+- [x] Initialize Vite + React + TypeScript project in `web_ui/` directory
+- [x] Install dependencies:
   - `@tanstack/react-query` (server state)
   - `zustand` (client state)
   - `tailwindcss` (styling)
   - shadcn/ui components
-- [ ] Set up proxy to backend API (development)
-- [ ] Configure build output to be served by FastAPI (production)
+- [x] Set up proxy to backend API (development)
+- [x] Configure build output to be served by FastAPI (production)
 
 ---
 
-#### 1.2.2: Build Job Configuration Form
+#### 1.2.2: Build Job Configuration Form ✅ COMPLETED
 
 **Tasks:**
-- [ ] Create `JobConfigForm` component
-- [ ] Two file upload inputs (Interviewer audio, Participant audio)
-- [ ] Chunked upload with progress bars
-- [ ] Mode selector (default: VAD Split Audio, others disabled for now)
-- [ ] Options toggles:
+- [x] Create `JobConfigForm` component
+- [x] Two file upload inputs (Interviewer audio, Participant audio)
+- [x] Chunked upload with progress bars
+- [x] Mode selector (default: VAD Split Audio, others disabled for now)
+- [x] Options toggles:
   - Enable de-identification (checkbox)
   - Enable cleanup (checkbox)
   - Output formats (multi-select)
-- [ ] Submit button with validation
-- [ ] Error display for upload/submission failures
+- [x] Submit button with validation
+- [x] Error display for upload/submission failures
 
 ---
 
-#### 1.2.3: Build Job Monitoring View
+#### 1.2.3: Build Job Monitoring View ✅ COMPLETED
 
 **Tasks:**
-- [ ] Create `JobProgress` component
-- [ ] Connect to SSE endpoint on mount
-- [ ] Display:
+- [x] Create `JobProgress` component
+- [x] Connect to SSE endpoint on mount
+- [x] Display:
   - Overall job status (pending/running/completed/failed)
   - Current stage name and status
   - Per-block progress bar (for VAD transcription)
   - Stage completion checkmarks
   - Error messages if failed
-- [ ] Handle SSE reconnection on disconnect
-- [ ] Show "Reconnecting..." indicator during reconnect
+- [x] Handle SSE reconnection on disconnect
+- [x] Show "Reconnecting..." indicator during reconnect
 
 ---
 
-#### 1.2.4: Build Job List View
+#### 1.2.4: Build Job List View ✅ COMPLETED
 
 **Tasks:**
-- [ ] Create `JobList` component
-- [ ] `GET /api/jobs` endpoint to list all jobs
-- [ ] Display job cards with:
+- [x] Create `JobList` component
+- [x] `GET /api/jobs` endpoint to list all jobs
+- [x] Display job cards with:
   - Job ID
   - Status badge
   - Creation time
   - Duration (if completed)
   - Link to view transcript (if completed)
-- [ ] Pagination or infinite scroll for many jobs
+- [x] Pagination or infinite scroll for many jobs
 
 ---
 
-## Phase 2: Transcript Viewing
+## Phase 2: Transcript Viewing ✅ COMPLETED
 
 **Goal:** View and navigate VAD transcripts with audio sync
 
 ### 2.1 Backend
 
-#### 2.1.1: Transcript Retrieval Endpoint
+#### 2.1.1: Transcript Retrieval Endpoint ✅ COMPLETED
 
 **Tasks:**
-- [ ] `GET /api/jobs/{job_id}/transcript` - Return TranscriptFlow JSON (turns-json by default)
-- [ ] `GET /api/jobs/{job_id}/transcript/stage/{stage_name}` - Return stage-specific output
-- [ ] Support for multiple output stages (raw, de-identified, cleaned)
-- [ ] Return 404 if job not complete or stage not available
-- [ ] `GET /api/jobs/{job_id}/outputs/{filename}` - Serve job output files
+- [x] `GET /api/jobs/{job_id}/transcript` - Return TranscriptFlow JSON (turns-json by default)
+- [x] `GET /api/jobs/{job_id}/transcript/stage/{stage_name}` - Return stage-specific output
+- [x] Support for multiple output stages (raw, de-identified, cleaned)
+- [x] Return 404 if job not complete or stage not available
+- [x] `GET /api/jobs/{job_id}/outputs/{filename}` - Serve job output files
 
 ---
 
-#### 2.1.2: Audio Serving with Range Requests
+#### 2.1.2: Audio Serving with Range Requests ✅ COMPLETED
 
 **Tasks:**
-- [ ] `GET /api/files/{file_id}/audio` - Serve audio file
-- [ ] Implement HTTP Range request support (RFC 7233)
-- [ ] Set appropriate headers:
+- [x] `GET /api/files/{file_id}/audio` - Serve audio file
+- [x] Implement HTTP Range request support (RFC 7233)
+- [x] Set appropriate headers:
   - `Accept-Ranges: bytes`
   - `Content-Range` for partial requests
   - `Cache-Control: max-age=86400`
-- [ ] Return 206 Partial Content for range requests
-- [ ] Support HEAD requests for file size
+- [x] Return 206 Partial Content for range requests
+- [x] Support HEAD requests for file size
 
 ---
 
 ### 2.2 Frontend
 
-#### 2.2.1: Integrate wavesurfer.js
+#### 2.2.1: Integrate wavesurfer.js ✅ COMPLETED
 
 **Tasks:**
-- [ ] Install `wavesurfer.js`
-- [ ] Create `AudioPlayer` component
-- [ ] Basic controls: play/pause, seek, speed adjustment
-- [ ] Waveform visualization
-- [ ] Time display (current / total)
-- [ ] Loop selection for difficult sections
+- [x] Install `wavesurfer.js`
+- [x] Create `AudioPlayer` component
+- [x] Basic controls: play/pause, seek, speed adjustment
+- [x] Waveform visualization
+- [x] Time display (current / total)
+- [x] Loop selection for difficult sections
 
 ---
 
-#### 2.2.2: Build Dual-Track Audio Player
+#### 2.2.2: Build Dual-Track Audio Player ✅ COMPLETED
 
 **Tasks:**
-- [ ] Create two wavesurfer instances (interviewer, participant)
-- [ ] Synchronize playback position between tracks (master/slave with throttled seeks)
-- [ ] Disable independent seeking on the slave; mirror master seek
-- [ ] Shared transport controls
-- [ ] Individual mute/solo per track
-- [ ] Stacked waveform display (interviewer above, participant below)
-- [ ] Unified seek bar
+- [x] Create two wavesurfer instances (interviewer, participant)
+- [x] Synchronize playback position between tracks (master/slave with throttled seeks)
+- [x] Disable independent seeking on the slave; mirror master seek
+- [x] Shared transport controls
+- [x] Individual mute/solo per track
+- [x] Stacked waveform display (interviewer above, participant below)
+- [x] Unified seek bar
 
 ---
 
-#### 2.2.3: Build Transcript Display Component
+#### 2.2.3: Build Transcript Display Component ✅ COMPLETED
 
 **Tasks:**
-- [ ] Create `TranscriptView` component
-- [ ] Render `HierarchicalTurn` list with:
+- [x] Create `TranscriptView` component
+- [x] Render `HierarchicalTurn` list with:
   - Speaker labels (color-coded)
   - Turn text
   - Timestamp at turn start
   - Interjections visually embedded
-- [ ] Auto-scroll to follow playback
-- [ ] Click turn to seek audio to that position
+- [x] Auto-scroll to follow playback
+- [x] Click turn to seek audio to that position
 
 ---
 
-#### 2.2.4: Implement Block-Level Highlighting
+#### 2.2.4: Implement Block-Level Highlighting ✅ COMPLETED
 
 **Tasks:**
-- [ ] Track current playback time
-- [ ] Highlight the current VAD block based on time
-- [ ] Smooth highlighting transitions
-- [ ] Handle interjection highlighting during primary turn
+- [x] Track current playback time
+- [x] Highlight the current VAD block based on time
+- [x] Smooth highlighting transitions
+- [x] Handle interjection highlighting during primary turn
 
 ---
 
-#### 2.2.5: Build Stage Selector
+#### 2.2.5: Build Stage Selector ✅ COMPLETED
 
 **Tasks:**
-- [ ] Dropdown to switch between available stages
-- [ ] Show which stages are complete (checkmark)
-- [ ] Show which stages have edits (indicator)
-- [ ] Fetch and display selected stage output
-- [ ] Grey out incomplete stages
+- [x] Dropdown to switch between available stages
+- [x] Show which stages are complete (checkmark)
+- [x] Show which stages have edits (indicator)
+- [x] Fetch and display selected stage output
+- [x] Grey out incomplete stages
 
 ---
 

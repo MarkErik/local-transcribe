@@ -13,10 +13,11 @@ from pathlib import Path
 
 from local_transcribe.framework.pipeline_context import PipelineContext
 from local_transcribe.framework.stages.base import (
-    PipelineStage, 
-    StageResult, 
+    PipelineStage,
+    StageResult,
     StageStatus,
     StageError,
+    ProgressCallback,
 )
 from local_transcribe.lib.program_logger import log_status, log_completion, log_progress, log_intermediate_save
 
@@ -269,7 +270,12 @@ class VADTranscriptionStage(PipelineStage):
     def applicable_modes(self) -> List[str]:
         return ["vad_split_audio"]
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
+        from datetime import datetime, timezone
         from local_transcribe.processing.vad import VADBlockBuilderConfig
         from local_transcribe.processing.turn_building import build_turns_vad_split_audio
         from local_transcribe.lib.environment import ensure_file
@@ -292,12 +298,29 @@ class VADTranscriptionStage(PipelineStage):
         if getattr(args, 'transcriber_model', None):
             transcription_kwargs['transcriber_model'] = args.transcriber_model
         
-        # Run VAD pipeline
+        # Create wrapper callback that emits block_progress events for web UI
+        def vad_progress_wrapper(current: int, total: int, speaker_id: str) -> None:
+            """Wrapper to emit progress events from VAD pipeline."""
+            if progress_callback is not None:
+                try:
+                    progress_callback("block_progress", {
+                        "stage": self.name,
+                        "current_block": current,
+                        "total_blocks": total,
+                        "speaker_id": speaker_id,
+                        "percent": round((current / total) * 100, 1) if total > 0 else 0,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                except Exception:
+                    pass  # Don't let callback errors stop transcription
+        
+        # Run VAD pipeline with progress callback
         transcript = build_turns_vad_split_audio(
             speaker_audio_files=speaker_audio_paths,
             transcriber_provider=context.transcriber_provider,
             intermediate_dir=intermediate_dir,
             models_dir=context.models_dir,
+            progress_callback=vad_progress_wrapper,
             **transcription_kwargs,
         )
         

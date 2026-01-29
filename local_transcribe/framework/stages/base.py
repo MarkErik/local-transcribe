@@ -8,10 +8,14 @@ that all concrete stage implementations inherit from.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Callable, Union
 from enum import Enum
 
 from local_transcribe.framework.pipeline_context import PipelineContext
+
+
+# Type for progress callback: (event_type: str, data: dict) -> None
+ProgressCallback = Callable[[str, Dict[str, Any]], None]
 
 
 class StageStatus(Enum):
@@ -138,12 +142,18 @@ class PipelineStage(ABC):
         return True, ""
     
     @abstractmethod
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         """
         Execute this pipeline stage.
         
         Args:
             context: The pipeline context with all required inputs
+            progress_callback: Optional callback for progress events.
+                              Called as: progress_callback(event_type, data_dict)
             
         Returns:
             Updated context with this stage's outputs
@@ -153,7 +163,11 @@ class PipelineStage(ABC):
         """
         pass
     
-    def execute_safe(self, context: PipelineContext) -> tuple[PipelineContext, StageResult]:
+    def execute_safe(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> tuple[PipelineContext, StageResult]:
         """
         Execute this stage with error handling and result tracking.
         
@@ -161,6 +175,7 @@ class PipelineStage(ABC):
         
         Args:
             context: The pipeline context
+            progress_callback: Optional callback for progress events
             
         Returns:
             Tuple of (updated_context, result)
@@ -196,7 +211,7 @@ class PipelineStage(ABC):
         log_status(f"[{self.name}] {self.description}")
         
         try:
-            context = self.execute(context)
+            context = self.execute(context, progress_callback=progress_callback)
             context.mark_stage_complete(self.name)
             
             return context, StageResult(

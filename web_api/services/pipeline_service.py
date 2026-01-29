@@ -313,8 +313,11 @@ class PipelineService:
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
                 
-                # Execute the stage
-                updated_context, stage_result = stage.execute_safe(context)
+                # Execute the stage with progress callback
+                updated_context, stage_result = stage.execute_safe(
+                    context,
+                    progress_callback=progress_callback
+                )
                 result.stage_results.append(stage_result)
                 
                 # Update context for next stage

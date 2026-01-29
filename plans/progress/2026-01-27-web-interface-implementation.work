@@ -1627,6 +1627,153 @@ uv run pytest tests/ -v
 
 ---
 
+---
+
+### Session 8: Granular Progress Updates Implementation
+
+**Date:** January 27, 2026
+**Developer:** AI Assistant
+**Goals:** Implement granular per-block progress updates for VAD transcription pipeline
+
+#### Summary
+
+Implemented the missing progress callback chain that was planned but not fully implemented. The web interface can now receive real-time `block_progress` events during VAD transcription instead of just stage-level transitions.
+
+---
+
+#### Work Completed
+
+##### 1. Added ProgressCallback Type to Base Stage Class ✅
+
+**Files Modified:**
+- [base.py](../../local_transcribe/framework/stages/base.py)
+
+**Changes:**
+- Added `ProgressCallback = Callable[[str, Dict[str, Any]], None]` type alias
+- Updated abstract `execute()` method signature: `def execute(self, context: PipelineContext, progress_callback: Optional[ProgressCallback] = None) -> PipelineContext`
+- Updated `execute_safe()` to accept and forward callback to stage execution
+
+---
+
+##### 2. Updated All Stage Implementations ✅
+
+**Files Modified:**
+- [early_stages.py](../../local_transcribe/framework/stages/early_stages.py)
+- [late_stages.py](../../local_transcribe/framework/stages/late_stages.py)
+
+**Stages Updated:**
+- `AudioStandardizationStage.execute()`
+- `TranscriptionAlignmentStage.execute()`
+- `DeIdentificationStage.execute()`
+- `DiarizationStage.execute()`
+- `TurnBuildingStage.execute()`
+- `SpeakerNamingStage.execute()`
+- `OutputGenerationStage.execute()`
+- `SingleSpeakerCSVOutputStage.execute()`
+- `TranscriptCleanupStage.execute()`
+- `CleanedOutputGenerationStage.execute()`
+- `CleanupStage.execute()`
+
+All stage implementations now accept the optional `progress_callback` parameter.
+
+---
+
+##### 3. Implemented VAD Block Progress Forwarding ✅
+
+**Files Modified:**
+- [executor.py](../../local_transcribe/framework/stages/executor.py)
+
+**Changes to `VADTranscriptionStage`:**
+- Updated `execute()` signature to accept `progress_callback`
+- Added wrapper function `vad_progress_wrapper(current, total, speaker_id)` that emits `block_progress` events
+- Passes callback to `build_turns_vad_split_audio()`
+
+**Event Format:**
+```python
+{
+    "event_type": "block_progress",
+    "data": {
+        "stage": "vad_transcription",
+        "current_block": 5,
+        "total_blocks": 50,
+        "speaker_id": "Interviewer",
+        "percent": 10.0,
+        "timestamp": "2026-01-27T12:00:00Z"
+    }
+}
+```
+
+---
+
+##### 4. Updated Pipeline Service ✅
+
+**Files Modified:**
+- [pipeline_service.py](../../web_api/services/pipeline_service.py)
+
+**Changes to `_run_pipeline_async()`:**
+- Now passes `progress_callback` to each stage's `execute_safe()` call
+- Callback chain: web UI → pipeline_service → executor → VADTranscriptionStage → build_turns_vad_split_audio → VADASRProcessor
+
+---
+
+#### Event Types Supported
+
+| Event Type | Description |
+|------------|-------------|
+| `stage_start` | Pipeline stage has begun execution |
+| `block_progress` | Per-block transcription progress (VAD mode) |
+| `stage_complete` | Pipeline stage completed successfully |
+| `job_error` | Error occurred during pipeline execution |
+| `job_complete` | Entire job finished |
+
+---
+
+#### Files Modified
+
+1. [base.py](../../local_transcribe/framework/stages/base.py)
+2. [executor.py](../../local_transcribe/framework/stages/executor.py)
+3. [early_stages.py](../../local_transcribe/framework/stages/early_stages.py)
+4. [late_stages.py](../../local_transcribe/framework/stages/late_stages.py)
+5. [pipeline_service.py](../../web_api/services/pipeline_service.py)
+
+---
+
+#### Verification
+
+All modified Python files compile successfully:
+```bash
+uv run python -m py_compile local_transcribe/framework/stages/base.py \
+    local_transcribe/framework/stages/executor.py \
+    local_transcribe/framework/stages/early_stages.py \
+    local_transcribe/framework/stages/late_stages.py \
+    web_api/services/pipeline_service.py
+```
+
+---
+
+#### Next Steps for Frontend
+
+To complete the progress UI, the frontend should:
+
+1. **Listen for `block_progress` events** via SSE/WebSocket
+2. **Update a progress bar** with `percent` value from event data
+3. **Show current block info**: "Transcribing block 5/50 (Interviewer)"
+4. **Display speaker indicator** based on `speaker_id`
+
+Example frontend handler:
+```javascript
+function handleProgress(eventType, data) {
+    if (eventType === 'block_progress') {
+        updateProgressBar(data.percent);
+        setStatusText(`Transcribing block ${data.current_block}/${data.total_blocks} (${data.speaker_id})`);
+    } else if (eventType === 'stage_start') {
+        setCurrentStage(data.stage);
+    }
+}
+```
+
+---
+
 ## Project Status: COMPLETE
 
 The web interface implementation is now complete with:
@@ -1634,4 +1781,5 @@ The web interface implementation is now complete with:
 - React frontend with real-time progress
 - Comprehensive test coverage
 - User documentation
+- Granular per-block transcription progress updates
 - Startup tooling

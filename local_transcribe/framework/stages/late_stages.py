@@ -9,7 +9,7 @@ from typing import List, Optional, Any, Dict
 from pathlib import Path
 
 from local_transcribe.framework.pipeline_context import PipelineContext
-from local_transcribe.framework.stages.base import PipelineStage, StageError
+from local_transcribe.framework.stages.base import PipelineStage, StageError, ProgressCallback
 from local_transcribe.lib.program_logger import (
     log_status, log_progress, log_intermediate_save, log_completion
 )
@@ -54,7 +54,11 @@ class TurnBuildingStage(PipelineStage):
         
         return True, ""
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         from local_transcribe.processing.turn_building import build_turns
         
         intermediate_dir = context.get_intermediate_dir()
@@ -120,7 +124,11 @@ class SpeakerNamingStage(PipelineStage):
     def applicable_modes(self) -> List[str]:
         return ["combined_audio", "split_audio", "vad_split_audio"]
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         from local_transcribe.lib.speaker_namer import assign_speaker_names
         
         interactive = getattr(context.args, 'interactive', False)
@@ -159,7 +167,11 @@ class OutputGenerationStage(PipelineStage):
     def applicable_modes(self) -> List[str]:
         return ["combined_audio", "split_audio", "vad_split_audio"]
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         from local_transcribe.framework.output_manager import OutputManager
         
         registry = context.api.get("registry")
@@ -253,7 +265,11 @@ class SingleSpeakerOutputStage(PipelineStage):
     def applicable_modes(self) -> List[str]:
         return ["single_speaker_audio"]
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         import csv
         
         outdir = context.get_output_dir()
@@ -330,7 +346,11 @@ class TranscriptCleanupStage(PipelineStage):
         
         return True, ""
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         from local_transcribe.processing.transcript_cleanup import BatchProcessor
         from local_transcribe.processing.transcript_cleanup.batch_processor import BatchConfig
         
@@ -447,7 +467,11 @@ class CleanedOutputGenerationStage(PipelineStage):
         
         return True, ""
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         registry = context.api.get("registry")
         if registry is None:
             raise StageError(self.name, "Registry not found in api")
@@ -526,7 +550,11 @@ class CleanupStage(PipelineStage):
     def produces_outputs(self) -> List[str]:
         return []
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         from local_transcribe.lib.audio_processor import cleanup_temp_audio
         
         outdir = context.get_output_dir()

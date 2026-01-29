@@ -5,11 +5,11 @@ Early pipeline stages: audio processing, transcription, de-identification, diari
 These stages handle the initial processing of audio files before turn building.
 """
 
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Callable
 from pathlib import Path
 
 from local_transcribe.framework.pipeline_context import PipelineContext
-from local_transcribe.framework.stages.base import PipelineStage, StageError
+from local_transcribe.framework.stages.base import PipelineStage, StageError, ProgressCallback
 from local_transcribe.lib.program_logger import (
     log_status, log_progress, log_intermediate_save, log_completion
 )
@@ -34,7 +34,11 @@ class AudioStandardizationStage(PipelineStage):
     def produces_outputs(self) -> List[str]:
         return ["standardized_audio", "standardized_speaker_files"]
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         from local_transcribe.lib.audio_processor import standardize_audio
         
         outdir = context.get_output_dir()
@@ -97,7 +101,11 @@ class TranscriptionAlignmentStage(PipelineStage):
         # Applies to all modes except vad_split_audio (which has its own transcription)
         return ["combined_audio", "split_audio", "single_speaker_audio"]
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         from local_transcribe.lib.system_capability_utils import get_system_capability
         
         args = context.args
@@ -352,7 +360,11 @@ class DeIdentificationStage(PipelineStage):
         
         return True, ""
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         from local_transcribe.processing.de_identification import DeIdentificationOrchestrator
         
         args = context.args
@@ -566,7 +578,11 @@ class DiarizationStage(PipelineStage):
         # Only applies to combined_audio mode - split_audio already has speaker labels
         return ["combined_audio"]
     
-    def execute(self, context: PipelineContext) -> PipelineContext:
+    def execute(
+        self,
+        context: PipelineContext,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> PipelineContext:
         from local_transcribe.lib.system_capability_utils import get_system_capability
         
         args = context.args

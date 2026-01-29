@@ -48,7 +48,7 @@ interface JobProgressState {
     completedStages: string[];
     error?: string;
   }>;
-  setJobProgress: (jobId: string, data: Partial<JobProgressState['jobs'][string]>) => void;
+  setJobProgress: (jobId: string, data: Partial<JobProgressState['jobs'][string]> | ((prev: JobProgressState['jobs'][string]) => Partial<JobProgressState['jobs'][string]>)) => void;
   clearJob: (jobId: string) => void;
 }
 
@@ -56,16 +56,29 @@ export const useJobProgressStore = create<JobProgressState>((set) => ({
   jobs: {},
   
   setJobProgress: (jobId, data) =>
-    set((state) => ({
-      jobs: {
-        ...state.jobs,
-        [jobId]: { 
-          ...state.jobs[jobId],
-          completedStages: state.jobs[jobId]?.completedStages || [],
-          ...data,
+    set((state) => {
+      // Support both direct Partial objects and functional updates
+      let partialData: Partial<JobProgressState['jobs'][string]>;
+      
+      if (typeof data === 'function') {
+        const prev = state.jobs[jobId];
+        partialData = data(prev || { status: '', completedStages: [] });
+      } else {
+        partialData = data;
+      }
+      
+      return {
+        jobs: {
+          ...state.jobs,
+          [jobId]: {
+            ...state.jobs[jobId],
+            completedStages: state.jobs[jobId]?.completedStages || [],
+            status: state.jobs[jobId]?.status || 'running',
+            ...partialData,
+          },
         },
-      },
-    })),
+      };
+    }),
   
   clearJob: (jobId) =>
     set((state) => {

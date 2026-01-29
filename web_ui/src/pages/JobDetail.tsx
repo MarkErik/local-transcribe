@@ -50,14 +50,15 @@ function JobProgress({ jobId }: { jobId: string }) {
             });
             break;
           case 'stage_complete':
-            setJobProgress(jobId, {
+            setJobProgress(jobId, (prev) => ({
               currentStage: undefined,  // Clear current stage since it's now complete
               completedStages: [
-                ...(progress?.completedStages || []),
+                ...(prev?.completedStages || []),
                 event.data.stage as string,
               ],
               blockProgress: undefined,
-            });
+              status: 'running',
+            }));
             break;
           case 'job_complete':
             setJobProgress(jobId, {
@@ -80,7 +81,7 @@ function JobProgress({ jobId }: { jobId: string }) {
     );
     
     return unsubscribe;
-  }, [jobId, setJobProgress, progress?.completedStages]);
+  }, [jobId, setJobProgress]);
   
   if (!progress) {
     return (

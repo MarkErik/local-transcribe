@@ -1774,6 +1774,44 @@ function handleProgress(eventType, data) {
 
 ---
 
+#### Post-Session Fixes ✅
+
+**Date:** January 27, 2026
+**Issue Identified By:** Code Review
+
+##### Critical: Field Name Mismatch Between Backend and Frontend
+
+**Problem:**
+Backend was sending `current_block`, `total_blocks`, `speaker_id` but frontend expected `current`, `total`, `speaker`. This caused the progress bar to not update.
+
+**Fix Applied:**
+Updated [`executor.py`](../../local_transcribe/framework/stages/executor.py) to match frontend schema:
+
+```python
+# Before (incorrect):
+progress_callback("block_progress", {
+    "stage": self.name,
+    "current_block": current,      # ❌ Wrong field name
+    "total_blocks": total,         # ❌ Wrong field name
+    "speaker_id": speaker_id,      # ❌ Wrong field name
+    "percent": round((current / total) * 100, 1),
+})
+
+# After (correct):
+progress_callback("block_progress", {
+    "stage": self.name,
+    "current": current,            # ✅ Matches frontend
+    "total": total,                # ✅ Matches frontend
+    "speaker": speaker_id,         # ✅ Matches frontend
+})
+```
+
+**Additional Improvements:**
+- Removed `percent` field (frontend calculates it: `(current / total) * 100`)
+- Added proper error logging instead of silent pass
+
+---
+
 ## Project Status: COMPLETE
 
 The web interface implementation is now complete with:

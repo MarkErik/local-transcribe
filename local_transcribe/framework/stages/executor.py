@@ -300,19 +300,25 @@ class VADTranscriptionStage(PipelineStage):
         
         # Create wrapper callback that emits block_progress events for web UI
         def vad_progress_wrapper(current: int, total: int, speaker_id: str) -> None:
-            """Wrapper to emit progress events from VAD pipeline."""
+            """Wrapper to emit progress events from VAD pipeline.
+            
+            Note: Field names match frontend expectations (current, total, speaker).
+            Percent is calculated by frontend for consistency.
+            """
             if progress_callback is not None:
                 try:
                     progress_callback("block_progress", {
                         "stage": self.name,
-                        "current_block": current,
-                        "total_blocks": total,
-                        "speaker_id": speaker_id,
-                        "percent": round((current / total) * 100, 1) if total > 0 else 0,
+                        "current": current,
+                        "total": total,
+                        "speaker": speaker_id,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
-                except Exception:
-                    pass  # Don't let callback errors stop transcription
+                except Exception as e:
+                    # Log error but don't let it stop transcription
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Progress callback failed: {e}")
         
         # Run VAD pipeline with progress callback
         transcript = build_turns_vad_split_audio(

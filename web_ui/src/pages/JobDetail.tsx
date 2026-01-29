@@ -36,6 +36,7 @@ function JobProgress({ jobId }: { jobId: string }) {
           case 'stage_start':
             setJobProgress(jobId, {
               currentStage: event.data.stage as string,
+              blockProgress: undefined,  // Clear block progress when new stage starts
               status: 'running',
             });
             break;
@@ -50,6 +51,7 @@ function JobProgress({ jobId }: { jobId: string }) {
             break;
           case 'stage_complete':
             setJobProgress(jobId, {
+              currentStage: undefined,  // Clear current stage since it's now complete
               completedStages: [
                 ...(progress?.completedStages || []),
                 event.data.stage as string,

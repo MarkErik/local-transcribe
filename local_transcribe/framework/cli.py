@@ -1,13 +1,78 @@
 #!/usr/bin/env python3
-# framework/cli.py - CLI argument parsing and interactive prompts
+"""
+CLI argument parsing and interactive prompts.
+
+This module provides:
+- Command-line argument parsing (parse_args)
+- Pipeline stage listing (list_stages)
+- Pipeline re-entry prompts (interactive_reentry_prompt)
+- Main interactive prompt entry point (interactive_prompt)
+
+The actual implementation details are split into submodules:
+- cli_prompts.py: Reusable prompt helpers
+- cli_providers.py: Provider selection helpers
+- cli_modes.py: Mode-specific interactive flows
+"""
 
 import argparse
 from typing import Optional
 
 from local_transcribe.lib.environment import get_available_system_capabilities
 
-# ---------- CLI ----------
+# Import and re-export from submodules for backward compatibility
+from local_transcribe.framework.cli_prompts import (
+    prompt_selection,
+    prompt_yes_no,
+    prompt_url,
+    print_mode_header,
+    # Backward compatibility aliases
+    _prompt_selection,
+    _prompt_yes_no,
+    _prompt_url,
+    _print_mode_header,
+)
+
+from local_transcribe.framework.cli_providers import (
+    select_provider,
+    select_transcriber_provider,
+    select_transcriber_model,
+    select_aligner_provider,
+    select_diarization_provider,
+    configure_transcriber,
+    configure_aligner_if_needed,
+    configure_diarization,
+    configure_num_speakers,
+    prompt_remote_transcriber_url,
+    # Backward compatibility aliases
+    _select_provider,
+    _configure_transcriber,
+    _configure_aligner_if_needed,
+    _configure_diarization,
+    _configure_num_speakers,
+)
+
+from local_transcribe.framework.cli_modes import (
+    PipelineMode,
+    prompt_system_capability,
+    prompt_de_identification,
+    get_available_writers,
+    filter_incompatible_writers,
+    prompt_output_formats,
+    prompt_transcript_cleanup,
+    interactive_single_speaker,
+    interactive_vad_split_audio,
+    interactive_combined_audio,
+    interactive_split_audio,
+    display_configuration_summary,
+)
+
+
+# =============================================================================
+# Argument Parsing
+# =============================================================================
+
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    """Parse command-line arguments."""
     p = argparse.ArgumentParser(
         description="local-transcribe: offline transcription."
     )
@@ -61,6 +126,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
     return args
 
+
+# =============================================================================
+# Pipeline Stage Listing
+# =============================================================================
+
 def list_stages():
     """Display available pipeline stages."""
     from local_transcribe.framework.pipeline_context import get_stage_order, get_stage_descriptions
@@ -88,6 +158,10 @@ def list_stages():
     print("  # Dry run to validate checkpoint")
     print("  python main.py -o ./output --from-diarized-json ./corrected.json --dry-run")
 
+
+# =============================================================================
+# Pipeline Re-entry Prompts
+# =============================================================================
 
 def interactive_reentry_prompt(args, api, checkpoint_result):
     """
@@ -141,6 +215,7 @@ def interactive_reentry_prompt(args, api, checkpoint_result):
     print("-" * 40)
     
     # Get mode-compatible writers (mode was determined from checkpoint metadata or CLI)
+    mode = getattr(args, 'mode', None) or checkpoint_result.metadata.get('mode', 'combined_audio')
     filtered_writers = get_available_writers(mode, registry, exclude_internal=True)
     
     print("\nAvailable Output Formats:")
@@ -259,14 +334,6 @@ def interactive_reentry_prompt(args, api, checkpoint_result):
 # Pipeline Mode Determination
 # =============================================================================
 
-class PipelineMode:
-    """Enumeration of pipeline processing modes."""
-    SINGLE_SPEAKER = "single_speaker_audio"
-    COMBINED_AUDIO = "combined_audio"
-    SPLIT_AUDIO = "split_audio"
-    VAD_SPLIT_AUDIO = "vad_split_audio"
-
-
 def determine_pipeline_mode(args) -> str:
     """
     Determine the pipeline mode based on CLI arguments.
@@ -300,810 +367,8 @@ def apply_cli_implications(args) -> argparse.Namespace:
 
 
 # =============================================================================
-# Reusable Prompt Helpers
-# =============================================================================
-
-def _prompt_selection(options: list, prompt_text: str, default_index: Optional[int] = None, 
-                      allow_none: bool = False, none_label: str = "None") -> int:
-    """
-    Generic selection prompt with consistent default handling.
-    
-    Args:
-        options: List of (name, display_name) tuples
-        prompt_text: Text to display for the prompt
-        default_index: 0-based index of default option (None if no default, -1 for None option)
-        allow_none: If True, option 0 is "None/skip"
-        none_label: Label for the none option
-        
-    Returns:
-        Selected index (0-based), or -1 if none selected
-    """
-    if allow_none:
-        default_marker = " [Default]" if default_index == -1 else ""
-        print(f"  0. {none_label}{default_marker}")
-    
-    for i, (name, display_name) in enumerate(options):
-        is_default = (default_index == i)
-        marker = " [Default]" if is_default else ""
-        # When allow_none, options start at 1; otherwise at 1 as well
-        display_num = i + 1
-        print(f"  {display_num}. {display_name}{marker}")
-    
-    # Build prompt with default info
-    if default_index is not None:
-        if default_index == -1 and allow_none:
-            default_display = "0"
-        else:
-            default_display = str(default_index + 1)
-        full_prompt = f"\n{prompt_text} [Default: {default_display}]: "
-    else:
-        full_prompt = f"\n{prompt_text}: "
-    
-    while True:
-        choice_input = input(full_prompt).strip()
-        
-        # Handle default (Enter key)
-        if not choice_input:
-            if default_index is not None:
-                return default_index
-            else:
-                print("  Error: A selection is required.")
-                continue
-        
-        try:
-            choice = int(choice_input)
-            
-            if allow_none and choice == 0:
-                return -1
-            
-            # Convert 1-based input to 0-based index
-            adjusted = choice - 1
-            if 0 <= adjusted < len(options):
-                return adjusted
-            else:
-                print("  Error: Please enter a number from the list.")
-        except ValueError:
-            print("  Error: Please enter a valid number.")
-
-
-def _prompt_yes_no(prompt_text: str, default: bool = True) -> bool:
-    """
-    Yes/No prompt with consistent default handling.
-    
-    Args:
-        prompt_text: Text to display
-        default: Default value (True=Yes, False=No)
-        
-    Returns:
-        bool: User's choice
-    """
-    default_hint = "Y/n" if default else "y/N"
-    full_prompt = f"{prompt_text} [{default_hint}]: "
-    
-    while True:
-        response = input(full_prompt).strip().lower()
-        
-        if not response:
-            return default
-        elif response in ('y', 'yes'):
-            return True
-        elif response in ('n', 'no'):
-            return False
-        else:
-            print("  Error: Please enter 'y' or 'n'.")
-
-
-def _prompt_url(prompt_text: str, default_url: str) -> str:
-    """
-    URL input prompt with validation.
-    
-    Args:
-        prompt_text: Text to display
-        default_url: Default URL value
-        
-    Returns:
-        str: Validated URL
-    """
-    full_prompt = f"{prompt_text} [Default: {default_url}]: "
-    url = input(full_prompt).strip()
-    
-    if not url:
-        return default_url
-    
-    # Add http:// if not present
-    if not url.startswith(('http://', 'https://')):
-        url = f"http://{url}"
-    
-    return url
-
-
-# =============================================================================
-# Provider Selection Helpers
-# =============================================================================
-
-def _select_provider(
-    registry,
-    provider_type: str,
-    display_title: str,
-    default_provider: Optional[str] = None,
-    filter_func: Optional[callable] = None,
-    default_to_first: bool = True
-) -> str:
-    """
-    Generic provider selection function.
-    
-    Args:
-        registry: Plugin registry
-        provider_type: Type of provider ('transcriber', 'aligner', 'diarization')
-        display_title: Title to display (e.g., 'Transcriber Providers')
-        default_provider: Name of default provider (if any)
-        filter_func: Optional function(provider) -> bool to filter providers
-        default_to_first: If True and no default_provider matches, default to first option
-        
-    Returns:
-        str: Selected provider name
-    """
-    # Get providers and getter based on type
-    list_method = getattr(registry, f'list_{provider_type}_providers')
-    get_method = getattr(registry, f'get_{provider_type}_provider')
-    
-    providers = list_method()
-    
-    # Apply filter if provided
-    if filter_func:
-        providers = {
-            name: desc for name, desc in providers.items()
-            if filter_func(get_method(name))
-        }
-    
-    if not providers:
-        raise ValueError(f"No suitable {provider_type} providers available.")
-    
-    # Build options list with display names
-    options = []
-    default_index = None
-    for i, (name, desc) in enumerate(providers.items()):
-        provider = get_method(name)
-        display_name = getattr(provider, 'short_name', desc)
-        options.append((name, display_name))
-        if name == default_provider:
-            default_index = i
-    
-    # Default to first if not specified and allowed
-    if default_index is None and default_to_first:
-        default_index = 0
-    
-    print(f"\nAvailable {display_title}:")
-    selected = _prompt_selection(options, f"Select {provider_type} (number)", default_index)
-    
-    return options[selected][0]
-
-
-def select_transcriber_provider(
-    registry,
-    filter_pure_only: bool = False,
-    default_provider: Optional[str] = None
-) -> str:
-    """Select a transcriber provider with optional filtering for pure transcribers."""
-    filter_func = (lambda p: not p.has_builtin_alignment) if filter_pure_only else None
-    return _select_provider(
-        registry, 'transcriber', 'Transcriber Providers',
-        default_provider, filter_func, default_to_first=False
-    )
-
-
-def select_transcriber_model(registry, provider_name: str, default_model: Optional[str] = None) -> Optional[str]:
-    """Select a model for the given transcriber provider."""
-    provider = registry.get_transcriber_provider(provider_name)
-    available_models = provider.get_available_models()
-    
-    if not available_models:
-        return None
-    
-    if len(available_models) == 1:
-        print(f"  ✓ Using model: {available_models[0]}")
-        return available_models[0]
-    
-    # For granite, default to 8b
-    if provider_name == "granite" and default_model is None:
-        default_model = "granite-8b"
-    
-    default_index = available_models.index(default_model) if default_model in available_models else 0
-    options = [(m, m) for m in available_models]
-    
-    print(f"\nAvailable models for {getattr(provider, 'short_name', provider_name)}:")
-    selected = _prompt_selection(options, "Select model (number)", default_index)
-    
-    return available_models[selected]
-
-
-def select_aligner_provider(registry, default_provider: Optional[str] = None) -> str:
-    """Select an aligner provider."""
-    return _select_provider(registry, 'aligner', 'Aligner Providers', default_provider)
-
-
-def select_diarization_provider(registry, default_provider: Optional[str] = None) -> str:
-    """Select a diarization provider."""
-    return _select_provider(registry, 'diarization', 'Diarization Providers', default_provider)
-
-
-# =============================================================================
-# Common Prompt Sections
-# =============================================================================
-
-def prompt_system_capability(args) -> argparse.Namespace:
-    """Prompt for system capability (MPS/CUDA/CPU) if not already set."""
-    if args.system:
-        print(f"  ✓ System: {args.system.upper()} (set via --system)")
-        return args
-    
-    available_capabilities = get_available_system_capabilities()
-    
-    # Determine preferred default: MPS > CUDA > CPU
-    if "mps" in available_capabilities:
-        default_capability = "mps"
-    elif "cuda" in available_capabilities:
-        default_capability = "cuda"
-    else:
-        default_capability = "cpu"
-    
-    if len(available_capabilities) == 1:
-        args.system = available_capabilities[0]
-        print(f"  ✓ System: {args.system.upper()} (only option)")
-        return args
-    
-    default_index = available_capabilities.index(default_capability)
-    options = [(cap, cap.upper()) for cap in available_capabilities]
-    
-    print("\nSystem Capability:")
-    selected = _prompt_selection(options, "Select system capability (number)", default_index)
-    args.system = available_capabilities[selected]
-    print(f"  ✓ System: {args.system.upper()}")
-    
-    return args
-
-
-def prompt_remote_transcriber_url(args) -> argparse.Namespace:
-    """Prompt for remote transcriber server URL and options if remote transcriber is selected."""
-    # Only relevant when remote transcriber is selected
-    if args.transcriber_provider != "remote":
-        return args
-    
-    print("\n--- Remote Transcription Server ---")
-    
-    default_url = getattr(args, 'remote_transcriber_url', 'http://0.0.0.0:7070')
-    args.remote_transcriber_url = _prompt_url("Enter remote transcription server URL", default_url)
-    
-    # Check server availability
-    from local_transcribe.providers.transcribers.remote_transcriber import (
-        check_remote_transcriber_available,
-        get_remote_server_info
-    )
-    print(f"  Checking connection to {args.remote_transcriber_url}...")
-    
-    server_available = check_remote_transcriber_available(args.remote_transcriber_url)
-    
-    if server_available:
-        print(f"  ✓ Remote server is available")
-        
-        # Get server info for display
-        server_info = get_remote_server_info(args.remote_transcriber_url)
-        if server_info:
-            model_info = server_info.get("model", {})
-            model_name = model_info.get("name", "unknown")
-            print(f"  ✓ Server model: {model_name}")
-    else:
-        print(f"  ⚠ Remote server not available at {args.remote_transcriber_url}")
-        fallback = _prompt_yes_no("Continue anyway (will fail if server unavailable)?", default=False)
-        if not fallback:
-            # User wants to choose a different transcriber
-            print("  ✓ Please select a different transcriber")
-            args.transcriber_provider = None  # Reset to force re-selection
-    
-    return args
-
-
-def prompt_de_identification(args, mode: str) -> argparse.Namespace:
-    """Prompt for de-identification settings if not already set.
-    
-    De-identification now automatically runs two-pass processing when enabled
-    for multi-speaker transcripts, so there's no need to prompt separately.
-    """
-    # Check if URL was explicitly provided via CLI (not just using default)
-    url_was_set_via_cli = hasattr(args, '_llm_de_identifier_url_set') and args._llm_de_identifier_url_set
-    
-    # Prompt for de-identification if not already set via CLI
-    if not args.de_identify:
-        args.de_identify = _prompt_yes_no(
-            "\nEnable de-identification (replace names with [REDACTED])?",
-            default=True
-        )
-        if args.de_identify:
-            # Prompt for LLM URL if not already set via CLI
-            if not url_was_set_via_cli:
-                args = _prompt_llm_de_identifier_url(args)
-            else:
-                print(f"  ✓ LLM de-identifier URL: {args.llm_de_identifier_url} (set via --llm-de-identifier-url)")
-            
-            if mode == PipelineMode.SINGLE_SPEAKER:
-                print("  ✓ De-identification enabled")
-            else:
-                print("  ✓ De-identification enabled (includes two-pass processing)")
-        else:
-            print("  ✓ De-identification disabled")
-    else:
-        # De-identification was set via CLI, prompt for URL if not also set
-        if not url_was_set_via_cli:
-            args = _prompt_llm_de_identifier_url(args)
-        else:
-            print(f"  ✓ LLM de-identifier URL: {args.llm_de_identifier_url} (set via --llm-de-identifier-url)")
-        
-        if mode == PipelineMode.SINGLE_SPEAKER:
-            print("  ✓ De-identification enabled (set via --de-identify)")
-        else:
-            print("  ✓ De-identification enabled (set via --de-identify, includes two-pass processing)")
-    
-    return args
-
-
-def _prompt_llm_de_identifier_url(args) -> argparse.Namespace:
-    """Prompt for the LLM de-identifier URL."""
-    default_url = args.llm_de_identifier_url
-    print(f"\n  Enter the LLM de-identifier URL, or press Enter for default [{default_url}]:")
-    user_input = input("  LLM URL: ").strip()
-    
-    if user_input:
-        args.llm_de_identifier_url = user_input
-        print(f"  ✓ LLM de-identifier URL: {args.llm_de_identifier_url}")
-    else:
-        print(f"  ✓ LLM de-identifier URL: {default_url} (default)")
-    
-    return args
-
-
-# =============================================================================
-# Output Writer Filtering Helpers
-# =============================================================================
-
-def get_available_writers(mode: str, registry, exclude_internal: bool = True) -> dict:
-    """
-    Get output writers available for a specific pipeline mode.
-    
-    Filters the registry's output writers to only include those that support
-    the given mode. This keeps UI code mode-aware without scattering mode
-    checks throughout the codebase.
-    
-    Args:
-        mode: Pipeline mode (e.g., 'combined_audio', 'split_audio', 'vad_split_audio')
-        registry: Plugin registry instance
-        exclude_internal: If True, exclude internal writers like 'srt' (default: True)
-        
-    Returns:
-        Dictionary mapping writer names to their descriptions for compatible writers
-    """
-    all_writers = registry.list_output_writers_with_metadata()
-    filtered = {}
-    
-    # Internal writers that shouldn't be shown in UI
-    internal_writers = {'srt'} if exclude_internal else set()
-    
-    for name, metadata in all_writers.items():
-        # Skip internal writers
-        if name in internal_writers:
-            continue
-            
-        # Check if writer supports this mode
-        supported_modes = metadata.get('supported_modes', [])
-        if mode in supported_modes:
-            filtered[name] = metadata['description']
-    
-    return filtered
-
-
-def filter_incompatible_writers(selected: list, mode: str, registry) -> tuple:
-    """
-    Filter out writers that are incompatible with the selected mode.
-    
-    Validates user selections and removes any writer not compatible with
-    the current mode, warning the user about removed selections.
-    
-    Args:
-        selected: List of selected writer names
-        mode: Pipeline mode (e.g., 'combined_audio', 'split_audio', 'vad_split_audio')
-        registry: Plugin registry instance
-        
-    Returns:
-        Tuple of (compatible_writers, removed_writers) where:
-        - compatible_writers: List of writer names that are compatible
-        - removed_writers: List of writer names that were removed
-    """
-    all_writers = registry.list_output_writers_with_metadata()
-    compatible = []
-    removed = []
-    
-    for name in selected:
-        if name not in all_writers:
-            # Unknown writer - skip it
-            removed.append(name)
-            continue
-            
-        metadata = all_writers[name]
-        supported_modes = metadata.get('supported_modes', [])
-        
-        if mode in supported_modes:
-            compatible.append(name)
-        else:
-            removed.append(name)
-    
-    return compatible, removed
-
-
-def prompt_output_formats(args, registry, mode: str = None) -> argparse.Namespace:
-    """Prompt for output format selection if not already set.
-    
-    Args:
-        args: Parsed command line arguments
-        registry: Plugin registry instance
-        mode: Pipeline mode for filtering compatible writers. If None, uses
-              mode from args or defaults to 'combined_audio'
-    
-    Returns:
-        Updated args namespace with selected_outputs populated
-    """
-    # Determine the mode to use for filtering
-    if mode is None:
-        mode = getattr(args, 'mode', None) or 'combined_audio'
-    
-    if hasattr(args, 'selected_outputs') and args.selected_outputs:
-        # Validate pre-configured selections against mode
-        compatible, removed = filter_incompatible_writers(args.selected_outputs, mode, registry)
-        if removed:
-            print(f"  ⚠ Removed incompatible writers for mode '{mode}': {', '.join(removed)}")
-            args.selected_outputs = compatible
-        print(f"  ✓ Output formats: {', '.join(args.selected_outputs)} (pre-configured)")
-        return args
-    
-    # Get writers compatible with current mode (excludes internal writers like 'srt')
-    filtered_writers = get_available_writers(mode, registry, exclude_internal=True)
-    
-    print("\nAvailable Output Formats:")
-    for i, (name, desc) in enumerate(filtered_writers.items(), 1):
-        print(f"  {i}. {name}: {desc}")
-    
-    print("\n  Enter numbers separated by commas (e.g., 1,3,5), or press Enter for all formats")
-    choice = input("  Select output formats [Default: all]: ").strip()
-    
-    if not choice:
-        args.selected_outputs = list(filtered_writers.keys())
-        print("  ✓ Selected: All output formats")
-    else:
-        try:
-            indices = [int(x.strip()) - 1 for x in choice.split(',') if x.strip()]
-            valid_indices = [i for i in indices if 0 <= i < len(filtered_writers)]
-            args.selected_outputs = [list(filtered_writers.keys())[i] for i in valid_indices]
-            if not args.selected_outputs:
-                print("  Error: No valid choices, selecting all.")
-                args.selected_outputs = list(filtered_writers.keys())
-            print(f"  ✓ Selected: {', '.join(args.selected_outputs)}")
-        except ValueError:
-            print("  Error: Invalid input, selecting all.")
-            args.selected_outputs = list(filtered_writers.keys())
-            print(f"  ✓ Selected: {', '.join(args.selected_outputs)}")
-    
-    return args
-
-
-def prompt_transcript_cleanup(args, registry) -> argparse.Namespace:
-    """Prompt for optional transcript cleanup provider."""
-    if hasattr(args, 'transcript_cleanup_provider') and args.transcript_cleanup_provider is not None:
-        if args.transcript_cleanup_provider:
-            # Also set enable_cleanup when provider is set via CLI
-            args.enable_cleanup = True
-            print(f"  ✓ Transcript cleanup: {args.transcript_cleanup_provider} (set via CLI)")
-        else:
-            print("  ✓ Transcript cleanup: None (set via CLI)")
-        return args
-    
-    providers = registry.list_transcript_cleanup_providers()
-    
-    if not providers:
-        args.transcript_cleanup_provider = None
-        print("  ✓ No transcript cleanup providers available")
-        return args
-    
-    print("\nTranscript Cleanup (optional LLM-based cleaning):")
-    
-    options = [(name, f"{name}: {desc}") for name, desc in providers.items()]
-    
-    # Default is None (index -1)
-    selected = _prompt_selection(
-        options, 
-        "Select transcript cleanup provider (number)", 
-        default_index=-1,
-        allow_none=True,
-        none_label="None (skip cleanup)"
-    )
-    
-    if selected == -1:
-        args.transcript_cleanup_provider = None
-        args.enable_cleanup = False
-        print("  ✓ Transcript cleanup: None")
-    else:
-        args.transcript_cleanup_provider = options[selected][0]
-        args.enable_cleanup = True  # Enable cleanup when a provider is selected
-        
-        # If remote provider, ask for URL
-        if args.transcript_cleanup_provider == "llm_transcript_cleanup":
-            default_url = getattr(args, 'llm_transcript_cleanup_url', 'http://0.0.0.0:8080')
-            args.llm_transcript_cleanup_url = _prompt_url(
-                "Enter LLM server URL",
-                default_url
-            )
-        
-        print(f"  ✓ Transcript cleanup: {args.transcript_cleanup_provider}")
-    
-    return args
-
-
-# =============================================================================
-# Common Configuration Helpers
-# =============================================================================
-
-def _configure_transcriber(
-    args,
-    registry,
-    require_pure: bool = False,
-    default_provider: str = "granite_mfa",
-    warn_builtin_alignment: bool = False
-) -> argparse.Namespace:
-    """
-    Configure transcriber provider and model with consistent logic.
-    
-    Args:
-        args: Command line arguments
-        registry: Plugin registry
-        require_pure: If True, only allow pure transcribers (no built-in alignment)
-        default_provider: Default provider name for selection
-        warn_builtin_alignment: If True, warn but allow providers with built-in alignment
-        
-    Returns:
-        Updated args namespace
-    """
-    if args.transcriber_provider is None:
-        args.transcriber_provider = select_transcriber_provider(
-            registry,
-            filter_pure_only=require_pure,
-            default_provider=default_provider
-        )
-        print(f"  ✓ Transcriber: {args.transcriber_provider}")
-    else:
-        # Validate CLI-provided transcriber
-        provider = registry.get_transcriber_provider(args.transcriber_provider)
-        if require_pure and provider.has_builtin_alignment:
-            print(f"  ⚠ Provider '{args.transcriber_provider}' has built-in alignment.")
-            print("    This mode requires a pure transcriber (granite, openai_whisper, or remote).")
-            args.transcriber_provider = select_transcriber_provider(
-                registry,
-                filter_pure_only=True,
-                default_provider=default_provider
-            )
-        elif warn_builtin_alignment and provider.has_builtin_alignment:
-            print(f"  ⚠ Warning: {args.transcriber_provider} has built-in alignment.")
-            print(f"    Consider using: granite, openai_whisper, or remote")
-            print(f"  ✓ Transcriber: {args.transcriber_provider} (set via CLI)")
-        else:
-            print(f"  ✓ Transcriber: {args.transcriber_provider} (set via CLI)")
-    
-    # Model selection
-    if args.transcriber_model is None:
-        args.transcriber_model = select_transcriber_model(registry, args.transcriber_provider)
-    else:
-        print(f"  ✓ Model: {args.transcriber_model} (set via CLI)")
-    
-    # Remote transcriber URL prompt (if remote transcriber selected)
-    args = prompt_remote_transcriber_url(args)
-    
-    # Granite-specific settings
-    if args.transcriber_provider and 'granite' in args.transcriber_provider:
-        args.output_format = "chunked"
-        print("  ✓ Using chunk stitching for Granite")
-    
-    return args
-
-
-def _configure_aligner_if_needed(args, registry) -> argparse.Namespace:
-    """Configure aligner provider if transcriber doesn't have built-in alignment."""
-    transcriber = registry.get_transcriber_provider(args.transcriber_provider)
-    if not transcriber.has_builtin_alignment:
-        if args.aligner_provider is None:
-            args.aligner_provider = select_aligner_provider(registry)
-            print(f"  ✓ Aligner: {args.aligner_provider}")
-        else:
-            print(f"  ✓ Aligner: {args.aligner_provider} (set via CLI)")
-    else:
-        print("  ✓ Aligner: Not needed (transcriber has built-in alignment)")
-        args.aligner_provider = None
-    return args
-
-
-def _configure_diarization(args, registry) -> argparse.Namespace:
-    """Configure diarization provider."""
-    if args.diarization_provider is None:
-        args.diarization_provider = select_diarization_provider(registry)
-        print(f"  ✓ Diarization: {args.diarization_provider}")
-    else:
-        print(f"  ✓ Diarization: {args.diarization_provider} (set via CLI)")
-    return args
-
-
-def _configure_num_speakers(args) -> argparse.Namespace:
-    """Configure number of speakers for diarization."""
-    if not hasattr(args, 'num_speakers') or args.num_speakers is None:
-        print("\n--- Speaker Configuration ---")
-        while True:
-            num_input = input("  Number of speakers expected [Default: 2]: ").strip()
-            if not num_input:
-                args.num_speakers = 2
-                break
-            try:
-                num = int(num_input)
-                if num > 0:
-                    args.num_speakers = num
-                    break
-                print("  Error: Please enter a positive number.")
-            except ValueError:
-                print("  Error: Please enter a valid number.")
-        print(f"  ✓ Number of speakers: {args.num_speakers}")
-    else:
-        print(f"  ✓ Number of speakers: {args.num_speakers} (set via --num-speakers)")
-    return args
-
-
-def _print_mode_header(mode_name: str, description: str) -> None:
-    """Print consistent mode header."""
-    print("\n" + "-" * 50)
-    print(f"MODE: {mode_name}")
-    print(description)
-    print("-" * 50)
-
-
-# =============================================================================
-# Mode-Specific Interactive Flows
-# =============================================================================
-
-def interactive_single_speaker(args, api) -> argparse.Namespace:
-    """Interactive prompts for single speaker audio mode."""
-    registry = api["registry"]
-    
-    _print_mode_header("Single Speaker Audio", "Transcription only, output as CSV")
-    
-    args = prompt_system_capability(args)
-    args = _configure_transcriber(args, registry, require_pure=True, default_provider="granite")
-    args = prompt_de_identification(args, PipelineMode.SINGLE_SPEAKER)
-    
-    # Output is fixed to CSV for single speaker
-    args.selected_outputs = ['csv']
-    print("  ✓ Output format: CSV (fixed for single speaker mode)")
-    
-    return args
-
-
-def interactive_vad_split_audio(args, api) -> argparse.Namespace:
-    """Interactive prompts for VAD-first pipeline with split audio."""
-    registry = api["registry"]
-    
-    _print_mode_header("VAD Pipeline (Split Audio)", "Using Voice Activity Detection for turn segmentation")
-    
-    args = prompt_system_capability(args)
-    args = _configure_transcriber(args, registry, require_pure=True, default_provider="granite", warn_builtin_alignment=True)
-    
-    # De-identification note
-    args = prompt_de_identification(args, PipelineMode.VAD_SPLIT_AUDIO)
-    
-    # Output formats (filtered for VAD mode)
-    args = prompt_output_formats(args, registry, mode=PipelineMode.VAD_SPLIT_AUDIO)
-    
-    # Transcript cleanup
-    args = prompt_transcript_cleanup(args, registry)
-    
-    return args
-
-
-def interactive_combined_audio(args, api) -> argparse.Namespace:
-    """Interactive prompts for combined audio (single file, multiple speakers)."""
-    registry = api["registry"]
-    
-    _print_mode_header("Combined Audio", "Single audio file with multiple speakers")
-    
-    args = prompt_system_capability(args)
-    args = _configure_transcriber(args, registry, default_provider="granite_mfa")
-    args = _configure_aligner_if_needed(args, registry)
-    args = _configure_diarization(args, registry)
-    args = _configure_num_speakers(args)
-    args = prompt_de_identification(args, PipelineMode.COMBINED_AUDIO)
-    args = prompt_output_formats(args, registry, mode=PipelineMode.COMBINED_AUDIO)
-    args = prompt_transcript_cleanup(args, registry)
-    
-    return args
-
-
-def interactive_split_audio(args, api) -> argparse.Namespace:
-    """Interactive prompts for split audio (separate files per speaker)."""
-    registry = api["registry"]
-    
-    _print_mode_header("Split Audio", "Separate audio files per speaker")
-    
-    # Offer VAD pipeline as an option
-    print("\n--- Pipeline Selection ---")
-    
-    use_vad = _prompt_yes_no("Use VAD for Turn Building?", default=True)
-    
-    if use_vad:
-        args.vad_pipeline = True
-        return interactive_vad_split_audio(args, api)
-    
-    # Continue with standard split audio flow
-    args.vad_pipeline = False
-    print("\n  Continuing with standard split audio pipeline...")
-    
-    args = prompt_system_capability(args)
-    args = _configure_transcriber(args, registry, default_provider="granite_mfa")
-    args = _configure_aligner_if_needed(args, registry)
-    
-    # No diarization needed for split audio
-    args.diarization_provider = None
-    
-    args = prompt_de_identification(args, PipelineMode.SPLIT_AUDIO)
-    args = prompt_output_formats(args, registry, mode=PipelineMode.SPLIT_AUDIO)
-    args = prompt_transcript_cleanup(args, registry)
-    
-    return args
-
-
-# =============================================================================
 # Main Interactive Prompt Entry Point
 # =============================================================================
-
-def display_configuration_summary(args, mode: str):
-    """Display a summary of the selected configuration."""
-    print("\n" + "=" * 60)
-    print("CONFIGURATION SUMMARY")
-    print("=" * 60)
-    
-    mode_names = {
-        PipelineMode.SINGLE_SPEAKER: "Single Speaker Audio",
-        PipelineMode.COMBINED_AUDIO: "Combined Audio (Multi-Speaker)",
-        PipelineMode.SPLIT_AUDIO: "Split Audio (Standard)",
-        PipelineMode.VAD_SPLIT_AUDIO: "Split Audio (VAD Turn Building)",
-    }
-    
-    print(f"\n  Mode: {mode_names.get(mode, mode)}")
-    print(f"  System: {getattr(args, 'system', 'auto').upper()}")
-    
-    if hasattr(args, 'transcriber_provider') and args.transcriber_provider:
-        print(f"  Transcriber: {args.transcriber_provider}")
-        # Show remote server URL if using remote transcriber
-        if args.transcriber_provider == "remote":
-            print(f"  Remote Server: {getattr(args, 'remote_transcriber_url', 'http://0.0.0.0:7070')}")
-    if hasattr(args, 'transcriber_model') and args.transcriber_model:
-        print(f"  Model: {args.transcriber_model}")
-    if hasattr(args, 'aligner_provider') and args.aligner_provider:
-        print(f"  Aligner: {args.aligner_provider}")
-    if hasattr(args, 'diarization_provider') and args.diarization_provider:
-        print(f"  Diarization: {args.diarization_provider}")
-    if hasattr(args, 'num_speakers') and args.num_speakers:
-        print(f"  Number of speakers: {args.num_speakers}")
-    
-    print(f"  De-identification: {'Enabled (two-pass)' if getattr(args, 'de_identify', False) else 'Disabled'}")
-    
-    if hasattr(args, 'selected_outputs') and args.selected_outputs:
-        print(f"  Output formats: {', '.join(args.selected_outputs)}")
-    
-    if hasattr(args, 'transcript_cleanup_provider') and args.transcript_cleanup_provider:
-        print(f"  Transcript cleanup: {args.transcript_cleanup_provider}")
-    
-    print("\n" + "=" * 60)
-
 
 def interactive_prompt(args, api):
     """

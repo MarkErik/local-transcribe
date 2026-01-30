@@ -13,16 +13,11 @@ import subprocess
 from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSegment, registry
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
-# Lazy import to avoid loading torch at module import time
-_mfa_alignment_engine_class = None
+# Use shared lazy imports to avoid code duplication
+from local_transcribe.providers.common.lazy_imports import get_mfa_alignment_engine_class
 
-def _get_mfa_alignment_engine_class():
-    """Lazily import MFAAlignmentEngine."""
-    global _mfa_alignment_engine_class
-    if _mfa_alignment_engine_class is None:
-        from local_transcribe.providers.common.mfa_alignment import MFAAlignmentEngine
-        _mfa_alignment_engine_class = MFAAlignmentEngine
-    return _mfa_alignment_engine_class
+# Keep module-level reference for backward compatibility with tests
+_get_mfa_alignment_engine_class = get_mfa_alignment_engine_class
 
 
 class MFAAlignerProvider(AlignerProvider):
@@ -38,7 +33,7 @@ class MFAAlignerProvider(AlignerProvider):
     def word_alignment_engine(self):
         """Lazily initialize the alignment engine."""
         if self._alignment_engine is None:
-            MFAAlignmentEngine = _get_mfa_alignment_engine_class()
+            MFAAlignmentEngine = get_mfa_alignment_engine_class()
             self._alignment_engine = MFAAlignmentEngine(self.logger)
         return self._alignment_engine
 

@@ -22,48 +22,24 @@ from local_transcribe.lib.system_capability_utils import get_system_capability
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 from local_transcribe.processing.chunk_stitching import ChunkStitcher
 
+# Use shared lazy imports to avoid code duplication
+from local_transcribe.providers.common.lazy_imports import (
+    get_granite_model_manager_class,
+    get_mfa_alignment_engine_class,
+    get_silero_vad_provider_class,
+    get_vad_segmenter_func,
+)
+
+# Keep module-level references for backward compatibility with tests
+_get_granite_model_manager_class = get_granite_model_manager_class
+_get_mfa_alignment_engine_class = get_mfa_alignment_engine_class
+_get_silero_vad_provider_class = get_silero_vad_provider_class
+_get_vad_segmenter_func = get_vad_segmenter_func
+
 # Type hints for lazy-loaded modules
 if TYPE_CHECKING:
     import torch
     import librosa
-
-# Lazy imports for heavy modules
-_granite_model_manager_class = None
-_mfa_alignment_engine_class = None
-_silero_vad_provider_class = None
-_vad_segmenter_func = None
-
-def _get_granite_model_manager_class():
-    """Lazily import GraniteModelManager to defer torch import."""
-    global _granite_model_manager_class
-    if _granite_model_manager_class is None:
-        from local_transcribe.providers.common.granite_model import GraniteModelManager
-        _granite_model_manager_class = GraniteModelManager
-    return _granite_model_manager_class
-
-def _get_mfa_alignment_engine_class():
-    """Lazily import MFAAlignmentEngine."""
-    global _mfa_alignment_engine_class
-    if _mfa_alignment_engine_class is None:
-        from local_transcribe.providers.common.mfa_alignment import MFAAlignmentEngine
-        _mfa_alignment_engine_class = MFAAlignmentEngine
-    return _mfa_alignment_engine_class
-
-def _get_silero_vad_provider_class():
-    """Lazily import SileroVADProvider to defer torch import."""
-    global _silero_vad_provider_class
-    if _silero_vad_provider_class is None:
-        from local_transcribe.providers.vad import SileroVADProvider
-        _silero_vad_provider_class = SileroVADProvider
-    return _silero_vad_provider_class
-
-def _get_vad_segmenter_func():
-    """Lazily import segment_for_asr function."""
-    global _vad_segmenter_func
-    if _vad_segmenter_func is None:
-        from local_transcribe.processing.vad.segmenter import segment_for_asr
-        _vad_segmenter_func = segment_for_asr
-    return _vad_segmenter_func
 
 
 class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
@@ -94,7 +70,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     def model_manager(self):
         """Lazily initialize the model manager to defer torch import."""
         if self._model_manager is None:
-            GraniteModelManager = _get_granite_model_manager_class()
+            GraniteModelManager = get_granite_model_manager_class()
             self._model_manager = GraniteModelManager(self.logger)
         return self._model_manager
     
@@ -102,7 +78,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     def word_alignment_engine(self):
         """Lazily initialize the alignment engine."""
         if self._alignment_engine is None:
-            MFAAlignmentEngine = _get_mfa_alignment_engine_class()
+            MFAAlignmentEngine = get_mfa_alignment_engine_class()
             self._alignment_engine = MFAAlignmentEngine(self.logger)
         return self._alignment_engine
     
@@ -110,7 +86,7 @@ class GraniteVADSileroMFATranscriberProvider(TranscriberProvider):
     def vad_provider(self):
         """Lazily initialize the VAD provider."""
         if self._vad_provider is None:
-            SileroVADProvider = _get_silero_vad_provider_class()
+            SileroVADProvider = get_silero_vad_provider_class()
             self._vad_provider = SileroVADProvider(models_dir=self.models_dir)
         return self._vad_provider
 

@@ -1,4 +1,4 @@
-"""Pydantic models for request/response schemas."""
+"""Pydantic models for request/response schemas and database entities."""
 
 from web_api.models.schemas import (
     # File upload
@@ -30,7 +30,19 @@ from web_api.models.schemas import (
     HealthResponse,
 )
 
+# Database entity dataclasses and enums
+from web_api.models.entities import (
+    JobStatus,
+    UploadStatus,
+    Job,
+    UploadedFile,
+    Edit,
+    DeIdentificationState,
+    PIIReplacement,
+)
+
 __all__ = [
+    # Pydantic schemas
     "UploadInitRequest",
     "UploadInitResponse", 
     "ChunkUploadResponse",
@@ -49,4 +61,12 @@ __all__ = [
     "JobCompleteEvent",
     "JobErrorEvent",
     "HealthResponse",
+    # Database entities
+    "JobStatus",
+    "UploadStatus",
+    "Job",
+    "UploadedFile",
+    "Edit",
+    "DeIdentificationState",
+    "PIIReplacement",
 ]

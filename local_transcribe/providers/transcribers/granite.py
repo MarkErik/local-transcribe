@@ -15,21 +15,16 @@ from local_transcribe.framework.plugin_interfaces import TranscriberProvider, Wo
 from local_transcribe.lib.system_capability_utils import get_system_capability
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
+# Use shared lazy imports to avoid code duplication
+from local_transcribe.providers.common.lazy_imports import get_granite_model_manager_class
+
+# Keep module-level reference for backward compatibility with tests
+_get_granite_model_manager_class = get_granite_model_manager_class
+
 # Type hints for lazy-loaded modules
 if TYPE_CHECKING:
     import torch
     import librosa
-
-# Lazy import for GraniteModelManager to avoid torch import at module load
-_granite_model_manager_class = None
-
-def _get_granite_model_manager_class():
-    """Lazily import GraniteModelManager to defer torch import."""
-    global _granite_model_manager_class
-    if _granite_model_manager_class is None:
-        from local_transcribe.providers.common.granite_model import GraniteModelManager
-        _granite_model_manager_class = GraniteModelManager
-    return _granite_model_manager_class
 
 
 class GraniteTranscriberProvider(TranscriberProvider):
@@ -58,7 +53,7 @@ class GraniteTranscriberProvider(TranscriberProvider):
     def model_manager(self):
         """Lazily initialize the model manager to defer torch import."""
         if self._model_manager is None:
-            GraniteModelManager = _get_granite_model_manager_class()
+            GraniteModelManager = get_granite_model_manager_class()
             self._model_manager = GraniteModelManager(self.logger)
         return self._model_manager
 

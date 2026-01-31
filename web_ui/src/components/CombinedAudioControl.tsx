@@ -50,10 +50,16 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
   const participantContainerRef = useRef<HTMLDivElement>(null);
   const interviewerWsRef = useRef<WaveSurfer | null>(null);
   const participantWsRef = useRef<WaveSurfer | null>(null);
+  
   // Track if we were playing before a seek operation to resume playback
+  // This is captured on pointerdown BEFORE WaveSurfer processes the click
   const wasPlayingBeforeSeekRef = useRef(false);
-  // Track if seek is programmatic (via ref) vs user interaction on waveform
+  
+  // Track if seek is programmatic (via ref or cross-track sync) vs direct user waveform click
   const isProgrammaticSeekRef = useRef(false);
+  
+  // Track which waveform initiated the seek to prevent circular sync
+  const seekInitiatorRef = useRef<'interviewer' | 'participant' | null>(null);
   
   // State
   const [isPlaying, setIsPlaying] = useState(false);
@@ -126,11 +132,14 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
     interviewerWs.on('audioprocess', (time: number) => {
       setCurrentTime(time);
       onTimeUpdate?.(time);
-      // Sync participant
+      // Sync participant during playback (drift correction)
       if (participantWsRef.current) {
         const participantTime = participantWsRef.current.getCurrentTime();
         if (Math.abs(participantTime - time) > 0.5) {
+          // Mark as programmatic to prevent triggering seek handlers
+          isProgrammaticSeekRef.current = true;
           participantWsRef.current.seekTo(time / participantWsRef.current.getDuration());
+          isProgrammaticSeekRef.current = false;
         }
       }
     });
@@ -138,24 +147,32 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
     interviewerWs.on('seeking', (time: number) => {
       setCurrentTime(time);
       onTimeUpdate?.(time);
-      // Sync participant on seek (only for user-initiated seeks)
-      if (!isProgrammaticSeekRef.current && participantWsRef.current && participantWsRef.current.getDuration() > 0) {
+      
+      // Only sync participant if this seek was initiated by interviewer waveform click
+      // and not already a programmatic sync
+      if (seekInitiatorRef.current === 'interviewer' && participantWsRef.current && participantWsRef.current.getDuration() > 0) {
+        isProgrammaticSeekRef.current = true;
         participantWsRef.current.seekTo(time / participantWsRef.current.getDuration());
+        isProgrammaticSeekRef.current = false;
       }
-      // Resume playback if we were playing before the click (user-initiated only)
-      if (!isProgrammaticSeekRef.current && wasPlayingBeforeSeekRef.current) {
+      
+      // Resume playback if we were playing before the click
+      // Only do this for user-initiated seeks (not programmatic)
+      if (seekInitiatorRef.current === 'interviewer' && wasPlayingBeforeSeekRef.current) {
+        // Use longer timeout to ensure seek completes
         setTimeout(() => {
-          interviewerWsRef.current?.play();
-          participantWsRef.current?.play();
-        }, 10);
-        wasPlayingBeforeSeekRef.current = false;
+          if (wasPlayingBeforeSeekRef.current) {
+            interviewerWsRef.current?.play();
+            participantWsRef.current?.play();
+            wasPlayingBeforeSeekRef.current = false;
+            seekInitiatorRef.current = null;
+          }
+        }, 50);
       }
     });
 
-    // Track playing state before user click interaction
-    interviewerWs.on('interaction', () => {
-      wasPlayingBeforeSeekRef.current = interviewerWs.isPlaying();
-    });
+    // Note: We no longer use the 'interaction' event to capture playing state
+    // Instead, we use pointerdown on the container (see below)
 
     interviewerWs.on('play', () => setIsPlaying(true));
     interviewerWs.on('pause', () => setIsPlaying(false));
@@ -175,27 +192,32 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
       setLoadError(errorMessage || 'Failed to load participant audio');
     });
 
-    // Handle clicks on participant waveform to seek both (user-initiated only)
+    // Handle clicks on participant waveform to seek both
     participantWs.on('seeking', (time: number) => {
-      if (!isProgrammaticSeekRef.current && interviewerWsRef.current && interviewerWsRef.current.getDuration() > 0) {
+      // Only sync interviewer if this seek was initiated by participant waveform click
+      if (seekInitiatorRef.current === 'participant' && interviewerWsRef.current && interviewerWsRef.current.getDuration() > 0) {
+        isProgrammaticSeekRef.current = true;
         interviewerWsRef.current.seekTo(time / interviewerWsRef.current.getDuration());
+        isProgrammaticSeekRef.current = false;
         setCurrentTime(time);
         onTimeUpdate?.(time);
       }
-      // Resume playback if we were playing before the click (user-initiated only)
-      if (!isProgrammaticSeekRef.current && wasPlayingBeforeSeekRef.current) {
+      
+      // Resume playback if we were playing before the click
+      if (seekInitiatorRef.current === 'participant' && wasPlayingBeforeSeekRef.current) {
         setTimeout(() => {
-          interviewerWsRef.current?.play();
-          participantWsRef.current?.play();
-        }, 10);
-        wasPlayingBeforeSeekRef.current = false;
+          if (wasPlayingBeforeSeekRef.current) {
+            interviewerWsRef.current?.play();
+            participantWsRef.current?.play();
+            wasPlayingBeforeSeekRef.current = false;
+            seekInitiatorRef.current = null;
+          }
+        }, 50);
       }
     });
 
-    // Track playing state before user click interaction on participant
-    participantWs.on('interaction', () => {
-      wasPlayingBeforeSeekRef.current = participantWs.isPlaying();
-    });
+    // Note: We no longer use the 'interaction' event to capture playing state
+    // Instead, we use pointerdown on the container (see below)
 
     interviewerWsRef.current = interviewerWs;
     participantWsRef.current = participantWs;
@@ -219,6 +241,20 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
       interviewerWsRef.current?.pause();
       participantWsRef.current?.pause();
     };
+  }, []);
+
+  // Capture playing state on pointerdown BEFORE WaveSurfer processes the click
+  // This is critical because WaveSurfer pauses internally before firing 'interaction'
+  const handleInterviewerPointerDown = useCallback(() => {
+    // Capture playing state before WaveSurfer processes the click
+    wasPlayingBeforeSeekRef.current = interviewerWsRef.current?.isPlaying() ?? false;
+    seekInitiatorRef.current = 'interviewer';
+  }, []);
+
+  const handleParticipantPointerDown = useCallback(() => {
+    // Capture playing state before WaveSurfer processes the click
+    wasPlayingBeforeSeekRef.current = participantWsRef.current?.isPlaying() ?? false;
+    seekInitiatorRef.current = 'participant';
   }, []);
 
   // Play both tracks
@@ -274,18 +310,19 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
       setIsPlaying(false);
     },
     seekTo: (time: number) => {
-      // Programmatic seek: preserve playback state
+      // Programmatic seek (e.g., from transcript click): preserve playback state
       const wasPlaying = interviewerWsRef.current?.isPlaying() ?? false;
       isProgrammaticSeekRef.current = true;
+      seekInitiatorRef.current = null; // Mark as programmatic, not from either waveform
       seekBothTracks(time);
       // Resume playback if it was playing before
       if (wasPlaying) {
-        // Small delay to let seek complete
+        // Longer delay to ensure seek completes before resuming
         setTimeout(() => {
           interviewerWsRef.current?.play();
           participantWsRef.current?.play();
           isProgrammaticSeekRef.current = false;
-        }, 10);
+        }, 50);
       } else {
         isProgrammaticSeekRef.current = false;
       }
@@ -492,6 +529,7 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
             <div 
               ref={interviewerContainerRef} 
               className="w-full cursor-pointer"
+              onPointerDown={handleInterviewerPointerDown}
             />
             
             {/* Center timeline */}
@@ -502,6 +540,7 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
               ref={participantContainerRef} 
               className="w-full cursor-pointer"
               style={{ transform: 'scaleY(-1)' }}
+              onPointerDown={handleParticipantPointerDown}
             />
           </div>
         </div>

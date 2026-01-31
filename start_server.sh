@@ -53,6 +53,7 @@ show_help() {
     echo "  --workers N         Number of worker processes (production only, default: 4)"
     echo "  --log-level LEVEL   Set log level: debug, info, warning, error (default: info)"
     echo "  --build-frontend    Build the frontend before starting"
+    echo "  --skip-sync         Skip syncing Python dependencies (faster startup)"
     echo "  --help, -h          Show this help message"
     echo ""
     echo "Environment Variables:"
@@ -64,14 +65,16 @@ show_help() {
     echo "  TRANSCRIBE_MAX_FILE_SIZE_MB  Maximum upload file size in MB"
     echo ""
     echo "Examples:"
-    echo "  $0                           # Development mode on port 8299"
-    echo "  $0 --production --port 80    # Production on port 80"
-    echo "  $0 --build-frontend -p       # Build frontend, then production mode"
+    echo "  $0                           # Sync deps, development mode on port 8299"
+    echo "  $0 --production --port 80    # Sync deps, production on port 80"
+    echo "  $0 --build-frontend -p       # Sync deps, build frontend, production mode"
+    echo "  $0 --skip-sync               # Skip sync, start in development mode"
     echo ""
 }
 
 # Parse arguments
 BUILD_FRONTEND=false
+SKIP_SYNC=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --production|-p)
@@ -99,6 +102,10 @@ while [[ $# -gt 0 ]]; do
             BUILD_FRONTEND=true
             shift
             ;;
+        --skip-sync)
+            SKIP_SYNC=true
+            shift
+            ;;
         --help|-h)
             show_help
             exit 0
@@ -124,6 +131,14 @@ fi
 # Get script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
+
+# Sync dependencies (unless skipped)
+if [ "$SKIP_SYNC" = false ]; then
+    print_msg "$BLUE" "Syncing Python dependencies..."
+    uv sync
+    print_msg "$GREEN" "Dependencies synced successfully"
+    echo ""
+fi
 
 # Build frontend if requested
 if [ "$BUILD_FRONTEND" = true ]; then

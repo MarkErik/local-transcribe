@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { uploadFile, createJob, UploadCompleteResponse } from '../api';
-import { useUploadStore } from '../store';
+import { useUploadStore, useSettingsStore } from '../store';
 
 interface FileUploadProps {
   label: string;
@@ -116,11 +116,12 @@ function FileUpload({ label, id, onComplete }: FileUploadProps) {
 
 export function NewJob() {
   const navigate = useNavigate();
+  const settings = useSettingsStore();
   const [interviewerFileId, setInterviewerFileId] = useState<string | null>(null);
   const [participantFileId, setParticipantFileId] = useState<string | null>(null);
   const [options, setOptions] = useState({
-    enableDeIdentification: true,
-    enableCleanup: false,
+    enableDeIdentification: settings.defaultEnableDeIdentification,
+    enableCleanup: settings.defaultEnableCleanup,
   });
   
   const createJobMutation = useMutation({
@@ -142,7 +143,12 @@ export function NewJob() {
       options: {
         enable_de_identification: options.enableDeIdentification,
         enable_cleanup: options.enableCleanup,
-        output_formats: ['turns-json', 'timestamped-txt'],
+        output_formats: settings.defaultOutputFormats,
+        remote_transcriber_url: settings.remoteTranscriptionUrl,
+        llm_de_identifier_url: settings.deIdentificationUrl,
+        llm_transcript_cleanup_url: settings.postProcessingUrl,
+        transcriber_provider: settings.defaultTranscriberProvider,
+        transcriber_model: settings.defaultTranscriberModel,
       },
     });
   };

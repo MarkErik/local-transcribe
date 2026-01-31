@@ -32,6 +32,11 @@ export interface JobCreateRequest {
     enable_de_identification?: boolean;
     enable_cleanup?: boolean;
     output_formats?: string[];
+    remote_transcriber_url?: string;
+    llm_de_identifier_url?: string;
+    llm_transcript_cleanup_url?: string;
+    transcriber_provider?: string;
+    transcriber_model?: string;
   };
 }
 

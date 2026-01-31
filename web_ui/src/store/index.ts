@@ -1,5 +1,87 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { Edit, EditType } from '../api/client';
+
+// ==============================================================================
+// Settings Store - persisted user preferences
+// ==============================================================================
+
+// Available output formats
+export const OUTPUT_FORMATS = {
+  'turns-json': 'Turns JSON (structured dialogue data)',
+  'timestamped-txt': 'Timestamped Text (readable format with times)',
+  'plain-txt': 'Plain Text (just the dialogue)',
+  'dialogue-script': 'Dialogue Script (screenplay style)',
+  'markdown': 'Markdown (formatted with headers)',
+  'srt': 'SRT Subtitles (for video)',
+} as const;
+
+export type OutputFormatKey = keyof typeof OUTPUT_FORMATS;
+
+export interface AppSettings {
+  // LLM Server URLs
+  deIdentificationUrl: string;
+  postProcessingUrl: string;
+  remoteTranscriptionUrl: string;
+  
+  // Default job options
+  defaultEnableDeIdentification: boolean;
+  defaultEnableCleanup: boolean;
+  defaultOutputFormats: OutputFormatKey[];
+  
+  // Transcription settings
+  defaultTranscriberProvider: string;
+  defaultTranscriberModel: string;
+}
+
+interface SettingsState extends AppSettings {
+  // Actions
+  setDeIdentificationUrl: (url: string) => void;
+  setPostProcessingUrl: (url: string) => void;
+  setRemoteTranscriptionUrl: (url: string) => void;
+  setDefaultEnableDeIdentification: (enabled: boolean) => void;
+  setDefaultEnableCleanup: (enabled: boolean) => void;
+  setDefaultOutputFormats: (formats: OutputFormatKey[]) => void;
+  setDefaultTranscriberProvider: (provider: string) => void;
+  setDefaultTranscriberModel: (model: string) => void;
+  updateSettings: (settings: Partial<AppSettings>) => void;
+  resetToDefaults: () => void;
+}
+
+const DEFAULT_SETTINGS: AppSettings = {
+  deIdentificationUrl: 'http://100.84.208.72:8080',
+  postProcessingUrl: 'http://100.84.208.72:8080',
+  remoteTranscriptionUrl: 'http://100.84.208.72:7070',
+  defaultEnableDeIdentification: true,
+  defaultEnableCleanup: false,
+  defaultOutputFormats: ['turns-json', 'timestamped-txt'],
+  defaultTranscriberProvider: 'granite',
+  defaultTranscriberModel: 'granite-8b',
+};
+
+export const useSettingsStore = create<SettingsState>()(
+  persist(
+    (set) => ({
+      ...DEFAULT_SETTINGS,
+      
+      setDeIdentificationUrl: (url) => set({ deIdentificationUrl: url }),
+      setPostProcessingUrl: (url) => set({ postProcessingUrl: url }),
+      setRemoteTranscriptionUrl: (url) => set({ remoteTranscriptionUrl: url }),
+      setDefaultEnableDeIdentification: (enabled) => set({ defaultEnableDeIdentification: enabled }),
+      setDefaultEnableCleanup: (enabled) => set({ defaultEnableCleanup: enabled }),
+      setDefaultOutputFormats: (formats) => set({ defaultOutputFormats: formats }),
+      setDefaultTranscriberProvider: (provider) => set({ defaultTranscriberProvider: provider }),
+      setDefaultTranscriberModel: (model) => set({ defaultTranscriberModel: model }),
+      
+      updateSettings: (settings) => set((state) => ({ ...state, ...settings })),
+      
+      resetToDefaults: () => set(DEFAULT_SETTINGS),
+    }),
+    {
+      name: 'local-transcribe-settings',
+    }
+  )
+);
 
 interface UploadState {
   // Upload progress per file (by temp ID)

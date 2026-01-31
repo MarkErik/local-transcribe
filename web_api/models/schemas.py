@@ -65,6 +65,11 @@ class JobOptions(BaseModel):
         default=["turns-json", "timestamped-txt"],
         description="Output formats to generate"
     )
+    remote_transcriber_url: Optional[str] = Field(default=None, description="URL for remote transcription server")
+    llm_de_identifier_url: Optional[str] = Field(default=None, description="URL for de-identification LLM server")
+    llm_transcript_cleanup_url: Optional[str] = Field(default=None, description="URL for transcript cleanup LLM server")
+    transcriber_provider: Optional[str] = Field(default=None, description="Transcriber provider to use")
+    transcriber_model: Optional[str] = Field(default=None, description="Transcriber model to use")
 
 
 class JobCreateRequest(BaseModel):

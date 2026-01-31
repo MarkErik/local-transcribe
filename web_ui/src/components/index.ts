@@ -64,3 +64,6 @@ export type { VirtualizedTranscriptViewProps } from './VirtualizedTranscriptView
 export type { PIIAuditTrailProps } from './PIIAuditTrail';
 
 export { ErrorBoundary, withErrorBoundary } from './ErrorBoundary';
+
+// Settings
+export { SettingsDialog } from './SettingsDialog';

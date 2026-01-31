@@ -174,6 +174,11 @@ class OutputGenerationStage(PipelineStage):
     ) -> PipelineContext:
         from local_transcribe.framework.output_manager import OutputManager
         
+        # Skip file outputs in web mode - data is stored in database
+        if context.skip_file_outputs:
+            log_progress("Skipping file output generation (web mode - data stored in database)")
+            return context
+        
         registry = context.api.get("registry")
         if registry is None:
             raise StageError(self.name, "Registry not found in api")
@@ -271,6 +276,11 @@ class SingleSpeakerOutputStage(PipelineStage):
         progress_callback: Optional[ProgressCallback] = None,
     ) -> PipelineContext:
         import csv
+        
+        # Skip file outputs in web mode - data is stored in database
+        if context.skip_file_outputs:
+            log_progress("Skipping single speaker file output (web mode - data stored in database)")
+            return context
         
         outdir = context.get_output_dir()
         transcript = context.word_segments  # This is text for single speaker mode
@@ -472,6 +482,11 @@ class CleanedOutputGenerationStage(PipelineStage):
         context: PipelineContext,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> PipelineContext:
+        # Skip file outputs in web mode - data is stored in database
+        if context.skip_file_outputs:
+            log_progress("Skipping cleaned file output generation (web mode - data stored in database)")
+            return context
+        
         registry = context.api.get("registry")
         if registry is None:
             raise StageError(self.name, "Registry not found in api")

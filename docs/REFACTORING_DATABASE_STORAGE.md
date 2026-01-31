@@ -306,12 +306,16 @@ The web pipeline can skip `SpeakerNamingStage` since:
 
 Modify `create_pipeline_for_mode` or add a web-specific mode check:
 ```python
-# In pipeline execution for web, skip speaker_naming
-if is_web_context:
-    stages = [s for s in stages if s.name != 'speaker_naming']
+# Web mode uses skip_file_outputs flag in PipelineContext
+context = PipelineContext(
+    ...
+    skip_file_outputs=True,  # Web mode: store data in database, not files
+)
 ```
 
-Or better, recognize that `vad_split_audio` mode already handles this correctly - the speaker names come from the file labels, not from an interactive naming step.
+The pipeline stages check `context.skip_file_outputs` and `context.get_intermediate_dir()` (which returns `None` when `skip_file_outputs=True`) to skip file outputs. This avoids the need to filter stages or create separate pipelines for web mode.
+
+Additionally, `vad_split_audio` mode already handles speaker naming correctly - the speaker names come from the file labels, not from an interactive naming step.
 
 ---
 
@@ -324,17 +328,20 @@ Or better, recognize that `vad_split_audio` mode already handles this correctly 
 
 ### Modified Files
 - `web_api/database.py` - Schema updates, new methods
-- `web_api/services/pipeline_service.py` - Store to DB after pipeline
+- `web_api/services/pipeline_service.py` - Store to DB after pipeline, set `skip_file_outputs=True`
 - `web_api/routers/transcripts.py` - Read from DB
 - `web_api/routers/deidentification.py` - Store results to DB
 - `web_api/routers/exports.py` - Read from DB for export
 - `web_api/services/edit_applicator.py` - Work with DB data
+- `local_transcribe/framework/pipeline_context.py` - Add `skip_file_outputs` flag
+- `local_transcribe/framework/stages/late_stages.py` - Skip output stages when `skip_file_outputs=True`
 - `web_ui/src/components/StageSelector.tsx` - Remove speaker_naming for web
 - `web_ui/src/api/client.ts` - Add undo/redo API calls
 - `web_ui/src/pages/TranscriptEditor.tsx` - Add undo/redo UI
 
 ### Files Unchanged
-- All files in `local_transcribe/` - CLI pipeline unchanged
+- `local_transcribe/framework/stages/early_stages.py` - Already checks `intermediate_dir` before writing
+- `local_transcribe/framework/stages/executor.py` - Already checks `intermediate_dir` before writing
 - `main.py` - CLI entry point unchanged
 
 ---

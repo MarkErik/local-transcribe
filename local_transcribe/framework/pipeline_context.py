@@ -65,6 +65,10 @@ class PipelineContext:
     # Models directory
     models_dir: Optional[Path] = None
     
+    # Web mode flag - when True, skip writing intermediate/output files
+    # Data will be stored in database instead
+    skip_file_outputs: bool = False
+    
     def mark_stage_complete(self, stage_name: str) -> None:
         """Mark a stage as completed."""
         if stage_name not in self.completed_stages:
@@ -103,7 +107,12 @@ class PipelineContext:
         return self.paths.get("root", self.root)
     
     def get_intermediate_dir(self) -> Optional[Path]:
-        """Get the intermediate outputs directory."""
+        """Get the intermediate outputs directory.
+        
+        Returns None if skip_file_outputs is True (web mode).
+        """
+        if self.skip_file_outputs:
+            return None
         return self.paths.get("intermediate")
 
 

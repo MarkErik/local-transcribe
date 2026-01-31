@@ -156,6 +156,7 @@ class PipelineService:
             paths = ensure_session_dirs_func(output_dir, mode, speaker_files, capabilities)
             
             # Create pipeline context with all required fields
+            # Web mode: skip file outputs - data is stored in database instead
             context = PipelineContext(
                 args=args,
                 api=api,
@@ -169,6 +170,7 @@ class PipelineService:
                 transcript_cleanup_provider=providers.get('transcript_cleanup'),
                 models_dir=root / ".models",
                 dry_run=False,
+                skip_file_outputs=True,  # Web mode: store data in database, not files
             )
             
             # Create and execute pipeline

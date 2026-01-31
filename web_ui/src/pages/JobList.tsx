@@ -106,7 +106,7 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string, force?: b
       {job.status === 'completed' && (
         <div className="mt-4">
           <Link
-            to={`/jobs/${job.id}`}
+            to={`/jobs/${job.id}/edit`}
             className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
           >
             View Transcript →

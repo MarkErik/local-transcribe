@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getJob, getTranscript, subscribeToJobProgress, getDeIdentificationStatus, Transcript } from '../api';
 import { useJobProgressStore } from '../store';
@@ -66,7 +66,7 @@ function ProgressBar({ current, total, label }: { current: number; total: number
   );
 }
 
-function JobProgress({ jobId }: { jobId: string }) {
+function JobProgress({ jobId, onJobComplete }: { jobId: string; onJobComplete?: () => void }) {
   const { jobs, setJobProgress } = useJobProgressStore();
   const progress = jobs[jobId];
   
@@ -119,6 +119,10 @@ function JobProgress({ jobId }: { jobId: string }) {
               substageMetadata: undefined,
               blockProgress: undefined,
             });
+            // Redirect to edit page when job completes
+            if (onJobComplete) {
+              onJobComplete();
+            }
             break;
           case 'job_error':
             setJobProgress(jobId, {
@@ -248,6 +252,7 @@ function TranscriptView({ transcript }: { transcript: Transcript }) {
 
 export function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
   const [showNameReview, setShowNameReview] = useState(false);
   
   const { data: job, isLoading: jobLoading } = useQuery({
@@ -368,7 +373,10 @@ export function JobDetail() {
       
       {/* Progress for running jobs */}
       {(job.status === 'running' || job.status === 'pending') && (
-        <JobProgress jobId={jobId} />
+        <JobProgress 
+          jobId={jobId} 
+          onJobComplete={() => navigate(`/jobs/${jobId}/edit`)}
+        />
       )}
       
       {/* Actions for completed jobs */}

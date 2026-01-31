@@ -52,6 +52,8 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
   const participantWsRef = useRef<WaveSurfer | null>(null);
   // Track if we were playing before a seek operation to resume playback
   const wasPlayingBeforeSeekRef = useRef(false);
+  // Track if seek is programmatic (via ref) vs user interaction on waveform
+  const isProgrammaticSeekRef = useRef(false);
   
   // State
   const [isPlaying, setIsPlaying] = useState(false);
@@ -136,12 +138,12 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
     interviewerWs.on('seeking', (time: number) => {
       setCurrentTime(time);
       onTimeUpdate?.(time);
-      // Sync participant on seek
-      if (participantWsRef.current && participantWsRef.current.getDuration() > 0) {
+      // Sync participant on seek (only for user-initiated seeks)
+      if (!isProgrammaticSeekRef.current && participantWsRef.current && participantWsRef.current.getDuration() > 0) {
         participantWsRef.current.seekTo(time / participantWsRef.current.getDuration());
       }
-      // Resume playback if we were playing before the click
-      if (wasPlayingBeforeSeekRef.current) {
+      // Resume playback if we were playing before the click (user-initiated only)
+      if (!isProgrammaticSeekRef.current && wasPlayingBeforeSeekRef.current) {
         setTimeout(() => {
           interviewerWsRef.current?.play();
           participantWsRef.current?.play();
@@ -173,15 +175,15 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
       setLoadError(errorMessage || 'Failed to load participant audio');
     });
 
-    // Handle clicks on participant waveform to seek both
+    // Handle clicks on participant waveform to seek both (user-initiated only)
     participantWs.on('seeking', (time: number) => {
-      if (interviewerWsRef.current && interviewerWsRef.current.getDuration() > 0) {
+      if (!isProgrammaticSeekRef.current && interviewerWsRef.current && interviewerWsRef.current.getDuration() > 0) {
         interviewerWsRef.current.seekTo(time / interviewerWsRef.current.getDuration());
         setCurrentTime(time);
         onTimeUpdate?.(time);
       }
-      // Resume playback if we were playing before the click
-      if (wasPlayingBeforeSeekRef.current) {
+      // Resume playback if we were playing before the click (user-initiated only)
+      if (!isProgrammaticSeekRef.current && wasPlayingBeforeSeekRef.current) {
         setTimeout(() => {
           interviewerWsRef.current?.play();
           participantWsRef.current?.play();
@@ -242,8 +244,8 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
     }
   }, [isPlaying, handlePlay, handlePause]);
 
-  // Seek both tracks
-  const handleSeek = useCallback((time: number) => {
+  // Seek both tracks (internal helper - does not call onSeek callback)
+  const seekBothTracks = useCallback((time: number) => {
     if (interviewerWsRef.current && interviewerWsRef.current.getDuration() > 0) {
       interviewerWsRef.current.seekTo(time / interviewerWsRef.current.getDuration());
     }
@@ -251,8 +253,13 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
       participantWsRef.current.seekTo(time / participantWsRef.current.getDuration());
     }
     setCurrentTime(time);
+  }, []);
+
+  // Seek both tracks and notify parent (for user-initiated seeks on progress bar)
+  const handleSeek = useCallback((time: number) => {
+    seekBothTracks(time);
     onSeek?.(time);
-  }, [onSeek]);
+  }, [seekBothTracks, onSeek]);
 
   // Expose ref API
   useImperativeHandle(ref, () => ({
@@ -266,7 +273,23 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
       participantWsRef.current?.pause();
       setIsPlaying(false);
     },
-    seekTo: handleSeek,
+    seekTo: (time: number) => {
+      // Programmatic seek: preserve playback state
+      const wasPlaying = interviewerWsRef.current?.isPlaying() ?? false;
+      isProgrammaticSeekRef.current = true;
+      seekBothTracks(time);
+      // Resume playback if it was playing before
+      if (wasPlaying) {
+        // Small delay to let seek complete
+        setTimeout(() => {
+          interviewerWsRef.current?.play();
+          participantWsRef.current?.play();
+          isProgrammaticSeekRef.current = false;
+        }, 10);
+      } else {
+        isProgrammaticSeekRef.current = false;
+      }
+    },
     getCurrentTime: () => currentTime,
     getDuration: () => duration,
     isPlaying: () => isPlaying,
@@ -275,7 +298,7 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
       participantWsRef.current?.setPlaybackRate(rate);
       setPlaybackRate(rate);
     },
-  }), [handleSeek, currentTime, duration, isPlaying]);
+  }), [seekBothTracks, currentTime, duration, isPlaying]);
 
   // Seek backward 5 seconds
   const handleSeekBackward = useCallback(() => {

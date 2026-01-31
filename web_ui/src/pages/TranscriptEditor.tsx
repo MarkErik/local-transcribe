@@ -118,7 +118,7 @@ export function TranscriptEditor() {
   }, [piiData, setPIIReplacements]);
 
   // Set initial stage when stages are loaded
-  useMemo(() => {
+  useEffect(() => {
     if (stages.length > 0 && !selectedStage) {
       // Default to the most processed stage
       const stageOrder = ['transcript_cleanup', 'speaker_naming', 'de_identification', 'vad_transcription'];

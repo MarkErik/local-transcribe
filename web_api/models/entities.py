@@ -147,6 +147,8 @@ class Edit:
     new_value: Optional[str] = None
     target_turn_id: Optional[int] = None
     annotation_type: Optional[str] = None
+    is_undone: bool = False
+    undone_at: Optional[str] = None
     created_at: Optional[str] = None
     
     @classmethod
@@ -155,6 +157,8 @@ class Edit:
         # Handle optional columns that may not exist in older schema versions
         target_turn_id = row["target_turn_id"] if "target_turn_id" in row.keys() else None
         annotation_type = row["annotation_type"] if "annotation_type" in row.keys() else None
+        is_undone = bool(row["is_undone"]) if "is_undone" in row.keys() else False
+        undone_at = row["undone_at"] if "undone_at" in row.keys() else None
         
         return cls(
             id=row["id"],
@@ -168,6 +172,8 @@ class Edit:
             new_value=row["new_value"],
             target_turn_id=target_turn_id,
             annotation_type=annotation_type,
+            is_undone=is_undone,
+            undone_at=undone_at,
             created_at=row["created_at"],
         )
     
@@ -185,6 +191,8 @@ class Edit:
             "new_value": self.new_value,
             "target_turn_id": self.target_turn_id,
             "annotation_type": self.annotation_type,
+            "is_undone": self.is_undone,
+            "undone_at": self.undone_at,
             "created_at": self.created_at,
         }
 
@@ -246,4 +254,44 @@ class PIIReplacement:
             "is_override": self.is_override,
             "timestamp_start": self.timestamp_start,
             "created_at": self.created_at,
+        }
+
+
+@dataclass
+class TranscriptData:
+    """Represents transcript data stored in the database."""
+    id: Optional[int]
+    job_id: str
+    stage: str
+    version: int = 1
+    data_json: str = ""
+    created_at: Optional[str] = None
+    created_by: str = "pipeline"
+    is_current: bool = True
+    
+    @classmethod
+    def from_row(cls, row: RowType) -> "TranscriptData":
+        """Create a TranscriptData from a SQLite row or dict."""
+        return cls(
+            id=row["id"],
+            job_id=row["job_id"],
+            stage=row["stage"],
+            version=row["version"],
+            data_json=row["data_json"],
+            created_at=row["created_at"],
+            created_by=row["created_by"],
+            is_current=bool(row["is_current"]),
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "job_id": self.job_id,
+            "stage": self.stage,
+            "version": self.version,
+            "data": json.loads(self.data_json) if self.data_json else None,
+            "created_at": self.created_at,
+            "created_by": self.created_by,
+            "is_current": self.is_current,
         }

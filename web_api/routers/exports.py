@@ -114,7 +114,28 @@ STAGE_OUTPUT_FILES = {
     "de_identification": "turns-de-identified.json", 
     "speaker_naming": "turns-named.json",
     "transcript_cleanup": "turns-cleaned.json",
+    # New stage names
+    "base": "turns.json",
+    "de_identified": "turns-de-identified.json",
+    "cleaned": "turns-cleaned.json",
 }
+
+# Stage name normalization
+LEGACY_STAGE_MAP = {
+    "vad_transcription": "base",
+    "de_identification": "de_identified",
+    "speaker_naming": "base",
+    "transcript_cleanup": "cleaned",
+}
+
+
+def _normalize_stage_name(stage: Optional[str]) -> Optional[str]:
+    """Normalize stage name to the new format."""
+    if not stage:
+        return None
+    if stage in LEGACY_STAGE_MAP:
+        return LEGACY_STAGE_MAP[stage]
+    return stage
 
 
 def _find_transcript_file(output_dir: Path, stage: Optional[str] = None) -> Optional[Path]:
@@ -126,30 +147,39 @@ def _find_transcript_file(output_dir: Path, stage: Optional[str] = None) -> Opti
     if not output_dir.exists():
         return None
     
+    # Check both output_dir and Transcript_Raw subdirectory
+    search_dirs = [output_dir]
+    transcript_raw_dir = output_dir / "Transcript_Raw"
+    if transcript_raw_dir.exists():
+        search_dirs.append(transcript_raw_dir)
+    
     if stage and stage in STAGE_OUTPUT_FILES:
         pattern = STAGE_OUTPUT_FILES[stage]
-        matches = list(output_dir.glob(f"*{pattern}"))
-        if matches:
-            return matches[0]
-    
-    # Default: find the best available transcript
-    for stage_name in ["transcript_cleanup", "speaker_naming", "de_identification", "vad_transcription"]:
-        pattern = STAGE_OUTPUT_FILES.get(stage_name, "")
-        if pattern:
-            matches = list(output_dir.glob(f"*{pattern}"))
+        for search_dir in search_dirs:
+            matches = list(search_dir.glob(f"*{pattern}"))
             if matches:
                 return matches[0]
     
+    # Default: find the best available transcript
+    for stage_name in ["transcript_cleanup", "cleaned", "speaker_naming", "de_identification", "de_identified", "vad_transcription", "base"]:
+        pattern = STAGE_OUTPUT_FILES.get(stage_name, "")
+        if pattern:
+            for search_dir in search_dirs:
+                matches = list(search_dir.glob(f"*{pattern}"))
+                if matches:
+                    return matches[0]
+    
     # Fallback
-    turns_files = list(output_dir.glob("*turns*.json"))
-    if turns_files:
-        return turns_files[0]
+    for search_dir in search_dirs:
+        turns_files = list(search_dir.glob("*turns*.json"))
+        if turns_files:
+            return turns_files[0]
     
     return None
 
 
 def _load_transcript_data(job_id: str, stage: Optional[str] = None) -> dict:
-    """Load transcript data for a job, applying any edits."""
+    """Load transcript data for a job, applying any edits. Uses DB with file fallback."""
     db = get_database()
     config = get_config()
     
@@ -164,29 +194,42 @@ def _load_transcript_data(job_id: str, stage: Optional[str] = None) -> dict:
         )
     
     output_dir = Path(job.output_dir) if job.output_dir else config.output_dir / job_id
-    transcript_path = _find_transcript_file(output_dir, stage)
     
-    if not transcript_path:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Transcript not found{' for stage ' + stage if stage else ''}"
-        )
+    # Normalize stage name
+    normalized_stage = _normalize_stage_name(stage)
     
-    try:
-        with open(transcript_path, 'r', encoding='utf-8') as f:
-            transcript_data = json.load(f)
+    # Try database first
+    from web_api.services.transcript_storage import TranscriptStorageService
+    transcript_storage = TranscriptStorageService(db)
+    transcript_data = transcript_storage.get_transcript(job_id, normalized_stage, output_dir)
+    
+    if not transcript_data:
+        # Fallback to file-based
+        transcript_path = _find_transcript_file(output_dir, stage)
         
-        # Apply any edits
+        if not transcript_path:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Transcript not found{' for stage ' + stage if stage else ''}"
+            )
+        
+        try:
+            with open(transcript_path, 'r', encoding='utf-8') as f:
+                transcript_data = json.load(f)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=500, detail="Invalid transcript JSON")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to load transcript: {str(e)}")
+    
+    # Apply any edits
+    edits = db.get_edits_for_job(job_id, normalized_stage)
+    if not edits and stage and stage != normalized_stage:
         edits = db.get_edits_for_job(job_id, stage)
-        if edits:
-            transcript_data = apply_edits_to_transcript(transcript_data, edits)
-        
-        return transcript_data
-        
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Invalid transcript JSON")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load transcript: {str(e)}")
+    
+    if edits:
+        transcript_data = apply_edits_to_transcript(transcript_data, edits)
+    
+    return transcript_data
 
 
 def _transcript_data_to_flow(data: dict) -> TranscriptFlow:

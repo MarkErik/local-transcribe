@@ -6,8 +6,10 @@ import { useMemo } from 'react';
 
 export interface Stage {
   stage: string;
-  file: string;
+  file?: string;
+  display_name?: string;
   has_edits: boolean;
+  source?: string;
 }
 
 export interface StageSelectorProps {
@@ -21,24 +23,38 @@ export interface StageSelectorProps {
   isLoading?: boolean;
 }
 
-// Display names for stages
+// Display names for stages (supports both old and new stage names)
 const STAGE_DISPLAY_NAMES: Record<string, string> = {
+  // New stage names
+  base: 'Raw Transcription',
+  de_identified: 'De-identified',
+  cleaned: 'Cleaned',
+  // Legacy stage names (for backward compatibility)
   vad_transcription: 'Raw Transcription',
   de_identification: 'De-identified',
   speaker_naming: 'Speaker Named',
   transcript_cleanup: 'Cleaned',
 };
 
-// Stage order for sorting
+// Stage order for sorting (supports both old and new names)
 const STAGE_ORDER: Record<string, number> = {
+  // New stage names
+  base: 1,
+  de_identified: 2,
+  cleaned: 3,
+  // Legacy stage names
   vad_transcription: 1,
   de_identification: 2,
   speaker_naming: 3,
   transcript_cleanup: 4,
 };
 
-function getStageDisplayName(stage: string): string {
-  return STAGE_DISPLAY_NAMES[stage] || stage;
+function getStageDisplayName(stage: Stage): string {
+  // Prefer display_name from backend if provided
+  if (stage.display_name) {
+    return stage.display_name;
+  }
+  return STAGE_DISPLAY_NAMES[stage.stage] || stage.stage;
 }
 
 export function StageSelector({
@@ -88,7 +104,7 @@ export function StageSelector({
         >
           {sortedStages.map((stage) => (
             <option key={stage.stage} value={stage.stage}>
-              {getStageDisplayName(stage.stage)}
+              {getStageDisplayName(stage)}
               {stage.has_edits ? ' *' : ''}
             </option>
           ))}
@@ -143,7 +159,7 @@ export function StageBadges({
               }
             `}
           >
-            {getStageDisplayName(stage.stage)}
+            {getStageDisplayName(stage)}
             {stage.has_edits && (
               <span className={`ml-1 ${isSelected ? 'text-indigo-200' : 'text-yellow-500'}`}>
                 ●

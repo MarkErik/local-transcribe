@@ -545,8 +545,8 @@ async def run_second_pass(job_id: str):
             db.bulk_create_pii_replacements(pii_records)
             total_second_pass += len(pii_records)
         
-        # Update de-identified transcript file
-        _apply_deidentification_to_transcript(output_dir, final_results)
+        # Update de-identified transcript file and store in database
+        _apply_deidentification_to_transcript(output_dir, final_results, job_id)
         
         # Update state
         db.update_de_identification_state(
@@ -753,10 +753,14 @@ def _extract_speaker_segments_from_transcript(transcript_data: dict) -> dict:
     return speaker_segments
 
 
-def _apply_deidentification_to_transcript(output_dir: Path, results: dict) -> None:
-    """Apply de-identification results to the transcript file."""
+def _apply_deidentification_to_transcript(output_dir: Path, results: dict, job_id: str = None) -> None:
+    """
+    Apply de-identification results to the transcript file.
+    
+    Also stores the de-identified transcript in the database if job_id is provided.
+    """
     transcript_file = output_dir / "turns.json"
-    deidentified_file = output_dir / "turns_deidentified.json"
+    deidentified_file = output_dir / "turns-de-identified.json"
     
     with open(transcript_file, 'r') as f:
         transcript_data = json.load(f)
@@ -772,7 +776,7 @@ def _apply_deidentification_to_transcript(output_dir: Path, results: dict) -> No
     
     # Apply replacements to transcript
     for turn in transcript_data.get("turns", []):
-        speaker = turn.get("speaker", "Unknown")
+        speaker = turn.get("primary_speaker", turn.get("speaker", "Unknown"))
         for word in turn.get("words", []):
             word_text = word.get("word", word.get("text", ""))
             key = (speaker, word_text)
@@ -780,6 +784,11 @@ def _apply_deidentification_to_transcript(output_dir: Path, results: dict) -> No
                 word["word"] = replacement_map[key]
                 if "text" in word:
                     word["text"] = replacement_map[key]
+        
+        # Rebuild turn text
+        words_list = turn.get("words", [])
+        if words_list:
+            turn["text"] = " ".join(w.get("word", w.get("text", "")) for w in words_list)
         
         # Also process interjections
         for interjection in turn.get("interjections", []):
@@ -791,7 +800,31 @@ def _apply_deidentification_to_transcript(output_dir: Path, results: dict) -> No
                     word["word"] = replacement_map[key]
                     if "text" in word:
                         word["text"] = replacement_map[key]
+            
+            # Rebuild interjection text
+            int_words = interjection.get("words", [])
+            if int_words:
+                interjection["text"] = " ".join(w.get("word", w.get("text", "")) for w in int_words)
     
-    # Save de-identified version
+    # Save de-identified version to file
     with open(deidentified_file, 'w') as f:
         json.dump(transcript_data, f, indent=2)
+    
+    # Store in database if job_id provided
+    if job_id:
+        try:
+            from web_api.services.transcript_storage import TranscriptStorageService, STAGE_DE_IDENTIFIED
+            db = get_database()
+            transcript_storage = TranscriptStorageService(db)
+            transcript_storage.store_transcript(
+                job_id=job_id,
+                stage=STAGE_DE_IDENTIFIED,
+                data=transcript_data,
+                created_by="de_identification",
+            )
+        except Exception as e:
+            # Log but don't fail - file was already saved
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Failed to store de-identified transcript in database: {e}"
+            )

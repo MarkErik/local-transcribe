@@ -25,6 +25,7 @@ from web_api.models.entities import (
     Edit,
     DeIdentificationState,
     PIIReplacement,
+    TranscriptData,
 )
 
 # Explicit re-exports for backward compatibility
@@ -36,6 +37,7 @@ __all__ = [
     "Edit",
     "DeIdentificationState",
     "PIIReplacement",
+    "TranscriptData",
     "Database",
     "get_database",
     "init_database",
@@ -74,7 +76,7 @@ CREATE TABLE IF NOT EXISTS uploaded_files (
     total_chunks INTEGER DEFAULT 0
 );
 
--- Edits table
+-- Edits table (enhanced with undo support)
 CREATE TABLE IF NOT EXISTS edits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id TEXT NOT NULL,
@@ -87,8 +89,24 @@ CREATE TABLE IF NOT EXISTS edits (
     new_value TEXT,
     target_turn_id INTEGER,
     annotation_type TEXT,
+    is_undone BOOLEAN DEFAULT FALSE,
+    undone_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (job_id) REFERENCES jobs(id)
+);
+
+-- Transcript data table (stores transcript content in DB)
+CREATE TABLE IF NOT EXISTS transcript_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    data_json TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT DEFAULT 'pipeline',
+    is_current BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (job_id) REFERENCES jobs(id),
+    UNIQUE(job_id, stage, version)
 );
 
 -- De-identification state table (tracks two-pass progress)
@@ -124,8 +142,10 @@ CREATE TABLE IF NOT EXISTS pii_replacements (
 -- Index for faster job lookups
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_edits_job_id ON edits(job_id);
+CREATE INDEX IF NOT EXISTS idx_edits_job_stage ON edits(job_id, stage_name);
 CREATE INDEX IF NOT EXISTS idx_uploaded_files_status ON uploaded_files(upload_status);
 CREATE INDEX IF NOT EXISTS idx_pii_replacements_job_id ON pii_replacements(job_id);
+CREATE INDEX IF NOT EXISTS idx_transcript_data_job_stage ON transcript_data(job_id, stage, is_current);
 """
 
 
@@ -150,10 +170,49 @@ class Database:
         """Run schema migrations for existing databases."""
         # Check if 'name' column exists in jobs table
         cursor = conn.execute("PRAGMA table_info(jobs)")
-        columns = {row['name'] for row in cursor.fetchall()}
+        job_columns = {row['name'] for row in cursor.fetchall()}
         
-        if 'name' not in columns:
+        if 'name' not in job_columns:
             conn.execute("ALTER TABLE jobs ADD COLUMN name TEXT")
+        
+        # Check if transcript_data table exists
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='transcript_data'"
+        )
+        if not cursor.fetchone():
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS transcript_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    data_json TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_by TEXT DEFAULT 'pipeline',
+                    is_current BOOLEAN DEFAULT TRUE,
+                    FOREIGN KEY (job_id) REFERENCES jobs(id),
+                    UNIQUE(job_id, stage, version)
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_transcript_data_job_stage 
+                ON transcript_data(job_id, stage, is_current)
+            """)
+        
+        # Check if is_undone column exists in edits table
+        cursor = conn.execute("PRAGMA table_info(edits)")
+        edit_columns = {row['name'] for row in cursor.fetchall()}
+        
+        if 'is_undone' not in edit_columns:
+            conn.execute("ALTER TABLE edits ADD COLUMN is_undone BOOLEAN DEFAULT FALSE")
+            conn.execute("ALTER TABLE edits ADD COLUMN undone_at TIMESTAMP")
+        
+        # Check if idx_edits_job_stage index exists
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_edits_job_stage'"
+        )
+        if not cursor.fetchone():
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_edits_job_stage ON edits(job_id, stage_name)")
     
     @contextmanager
     def _get_connection(self):
@@ -267,6 +326,7 @@ class Database:
         - All edits associated with the job
         - De-identification state
         - PII replacements
+        - Transcript data
         
         Note: Does NOT delete uploaded files or output directory (call cleanup separately).
         
@@ -283,6 +343,7 @@ class Database:
             conn.execute("DELETE FROM edits WHERE job_id = ?", (job_id,))
             conn.execute("DELETE FROM de_identification_state WHERE job_id = ?", (job_id,))
             conn.execute("DELETE FROM pii_replacements WHERE job_id = ?", (job_id,))
+            conn.execute("DELETE FROM transcript_data WHERE job_id = ?", (job_id,))
             
             # Delete the job
             conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
@@ -435,27 +496,104 @@ class Database:
         self, 
         job_id: str, 
         stage_name: Optional[str] = None,
+        include_undone: bool = False,
     ) -> List[Edit]:
-        """Get all edits for a job, optionally filtered by stage."""
+        """Get all edits for a job, optionally filtered by stage.
+        
+        Args:
+            job_id: The job ID
+            stage_name: Optional stage name filter
+            include_undone: Whether to include undone edits (default False)
+        """
         with self._get_connection() as conn:
             if stage_name:
-                rows = conn.execute(
-                    """
-                    SELECT * FROM edits 
-                    WHERE job_id = ? AND stage_name = ?
-                    ORDER BY created_at ASC
-                    """,
-                    (job_id, stage_name)
-                ).fetchall()
+                if include_undone:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM edits 
+                        WHERE job_id = ? AND stage_name = ?
+                        ORDER BY created_at ASC
+                        """,
+                        (job_id, stage_name)
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM edits 
+                        WHERE job_id = ? AND stage_name = ? AND (is_undone = FALSE OR is_undone IS NULL)
+                        ORDER BY created_at ASC
+                        """,
+                        (job_id, stage_name)
+                    ).fetchall()
             else:
-                rows = conn.execute(
-                    """
-                    SELECT * FROM edits WHERE job_id = ? ORDER BY created_at ASC
-                    """,
-                    (job_id,)
-                ).fetchall()
+                if include_undone:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM edits WHERE job_id = ? ORDER BY created_at ASC
+                        """,
+                        (job_id,)
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM edits WHERE job_id = ? AND (is_undone = FALSE OR is_undone IS NULL) ORDER BY created_at ASC
+                        """,
+                        (job_id,)
+                    ).fetchall()
             
             return [Edit.from_row(row) for row in rows]
+    
+    def get_edit_by_id(self, edit_id: int) -> Optional[Edit]:
+        """Get an edit by ID."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM edits WHERE id = ?", (edit_id,)
+            ).fetchone()
+            if row:
+                return Edit.from_row(row)
+        return None
+    
+    def undo_edit(self, edit_id: int) -> bool:
+        """Mark an edit as undone. Returns True if successful."""
+        with self._get_connection() as conn:
+            now = datetime.now(timezone.utc).isoformat()
+            cursor = conn.execute(
+                "UPDATE edits SET is_undone = TRUE, undone_at = ? WHERE id = ?",
+                (now, edit_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def redo_edit(self, edit_id: int) -> bool:
+        """Restore an undone edit. Returns True if successful."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE edits SET is_undone = FALSE, undone_at = NULL WHERE id = ?",
+                (edit_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_last_edit_for_stage(self, job_id: str, stage_name: str, undone: bool = False) -> Optional[Edit]:
+        """Get the most recent edit for a job and stage.
+        
+        Args:
+            job_id: The job ID
+            stage_name: The stage name
+            undone: If True, get the most recent undone edit; if False, get most recent active edit
+        """
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM edits 
+                WHERE job_id = ? AND stage_name = ? AND is_undone = ?
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (job_id, stage_name, undone)
+            ).fetchone()
+            if row:
+                return Edit.from_row(row)
+        return None
     
     def delete_edit(self, edit_id: int) -> bool:
         """Delete an edit by ID. Returns True if deleted."""
@@ -471,6 +609,167 @@ class Database:
                 "DELETE FROM edits WHERE job_id = ? AND id > ?",
                 (job_id, edit_id)
             )
+            conn.commit()
+            return cursor.rowcount
+    
+    # Transcript data operations
+    
+    def store_transcript_data(
+        self,
+        job_id: str,
+        stage: str,
+        data_json: str,
+        created_by: str = "pipeline",
+    ) -> TranscriptData:
+        """
+        Store transcript data in the database.
+        
+        Creates a new version if data already exists for this job/stage.
+        """
+        with self._get_connection() as conn:
+            # Get current max version for this job/stage
+            row = conn.execute(
+                "SELECT MAX(version) as max_version FROM transcript_data WHERE job_id = ? AND stage = ?",
+                (job_id, stage)
+            ).fetchone()
+            
+            next_version = 1
+            if row and row["max_version"]:
+                next_version = row["max_version"] + 1
+                # Mark previous versions as not current
+                conn.execute(
+                    "UPDATE transcript_data SET is_current = FALSE WHERE job_id = ? AND stage = ?",
+                    (job_id, stage)
+                )
+            
+            now = datetime.now(timezone.utc).isoformat()
+            cursor = conn.execute(
+                """
+                INSERT INTO transcript_data 
+                (job_id, stage, version, data_json, created_at, created_by, is_current)
+                VALUES (?, ?, ?, ?, ?, ?, TRUE)
+                """,
+                (job_id, stage, next_version, data_json, now, created_by)
+            )
+            conn.commit()
+            
+            return TranscriptData(
+                id=cursor.lastrowid,
+                job_id=job_id,
+                stage=stage,
+                version=next_version,
+                data_json=data_json,
+                created_at=now,
+                created_by=created_by,
+                is_current=True,
+            )
+    
+    def get_transcript_data(
+        self,
+        job_id: str,
+        stage: str,
+        version: Optional[int] = None,
+    ) -> Optional[TranscriptData]:
+        """
+        Get transcript data for a job and stage.
+        
+        Args:
+            job_id: The job ID
+            stage: The stage name
+            version: Optional specific version (if None, returns current version)
+        """
+        with self._get_connection() as conn:
+            if version is not None:
+                row = conn.execute(
+                    "SELECT * FROM transcript_data WHERE job_id = ? AND stage = ? AND version = ?",
+                    (job_id, stage, version)
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM transcript_data WHERE job_id = ? AND stage = ? AND is_current = TRUE",
+                    (job_id, stage)
+                ).fetchone()
+            
+            if row:
+                return TranscriptData.from_row(row)
+        return None
+    
+    def get_current_transcript(self, job_id: str, stage: str) -> Optional[Dict[str, Any]]:
+        """
+        Get current transcript data as a dictionary.
+        
+        Convenience method that returns the parsed JSON data.
+        """
+        transcript = self.get_transcript_data(job_id, stage)
+        if transcript and transcript.data_json:
+            return json.loads(transcript.data_json)
+        return None
+    
+    def get_available_transcript_stages(self, job_id: str) -> List[Dict[str, Any]]:
+        """
+        Get list of available transcript stages for a job.
+        
+        Returns list of dicts with stage, version, has_edits info.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT stage, version, created_at, created_by 
+                FROM transcript_data 
+                WHERE job_id = ? AND is_current = TRUE
+                ORDER BY created_at ASC
+                """,
+                (job_id,)
+            ).fetchall()
+            
+            stages = []
+            for row in rows:
+                # Check if stage has edits
+                edit_count = conn.execute(
+                    """
+                    SELECT COUNT(*) as count FROM edits 
+                    WHERE job_id = ? AND stage_name = ? AND (is_undone = FALSE OR is_undone IS NULL)
+                    """,
+                    (job_id, row["stage"])
+                ).fetchone()
+                
+                stages.append({
+                    "stage": row["stage"],
+                    "version": row["version"],
+                    "has_edits": edit_count["count"] > 0 if edit_count else False,
+                    "created_at": row["created_at"],
+                    "created_by": row["created_by"],
+                })
+            
+            return stages
+    
+    def get_transcript_history(self, job_id: str, stage: str) -> List[TranscriptData]:
+        """Get all versions of transcript data for a job and stage."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM transcript_data 
+                WHERE job_id = ? AND stage = ?
+                ORDER BY version ASC
+                """,
+                (job_id, stage)
+            ).fetchall()
+            
+            return [TranscriptData.from_row(row) for row in rows]
+    
+    def delete_transcript_data(self, job_id: str, stage: Optional[str] = None) -> int:
+        """Delete transcript data for a job, optionally for a specific stage."""
+        with self._get_connection() as conn:
+            if stage:
+                cursor = conn.execute(
+                    "DELETE FROM transcript_data WHERE job_id = ? AND stage = ?",
+                    (job_id, stage)
+                )
+            else:
+                cursor = conn.execute(
+                    "DELETE FROM transcript_data WHERE job_id = ?",
+                    (job_id,)
+                )
             conn.commit()
             return cursor.rowcount
     
@@ -535,6 +834,7 @@ class Database:
             conn.execute("DELETE FROM edits WHERE job_id = ?", (job_id,))
             conn.execute("DELETE FROM de_identification_state WHERE job_id = ?", (job_id,))
             conn.execute("DELETE FROM pii_replacements WHERE job_id = ?", (job_id,))
+            conn.execute("DELETE FROM transcript_data WHERE job_id = ?", (job_id,))
             
             # Delete the job
             conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))

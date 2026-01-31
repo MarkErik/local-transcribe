@@ -2,21 +2,35 @@
  * Edit History component
  * 
  * Shows a chronological list of edits made to the transcript
- * with the ability to revert to previous states.
+ * with the ability to undo/redo individual edits.
  */
 
 import { useState, useCallback, useMemo } from 'react';
 import type { Edit } from '../api/client';
 
 export interface EditHistoryProps {
-  /** List of edits */
+  /** List of active edits */
   edits: Edit[];
+  /** List of undone edits (for redo) */
+  undoneEdits?: Edit[];
+  /** Whether undo is available */
+  canUndo?: boolean;
+  /** Whether redo is available */
+  canRedo?: boolean;
   /** Whether the panel is visible */
   isOpen: boolean;
   /** Called to close the panel */
   onClose: () => void;
   /** Called to revert to a specific edit (undo all edits after it) */
   onRevertTo: (editId: number) => void;
+  /** Called to undo a specific edit */
+  onUndo?: (editId: number) => void;
+  /** Called to redo a specific edit */
+  onRedo?: (editId: number) => void;
+  /** Called to undo the last edit */
+  onUndoLast?: () => void;
+  /** Called to redo the last undone edit */
+  onRedoLast?: () => void;
   /** Called to jump to the location of an edit */
   onJumpTo?: (turnId: number, wordIndex?: number) => void;
 }
@@ -76,12 +90,15 @@ interface EditItemProps {
   edit: Edit;
   isFirst: boolean;
   showDate: boolean;
+  isUndone?: boolean;
   onRevertTo: (editId: number) => void;
+  onUndo?: (editId: number) => void;
+  onRedo?: (editId: number) => void;
   onJumpTo?: (turnId: number, wordIndex?: number) => void;
 }
 
-function EditItem({ edit, isFirst, showDate, onRevertTo, onJumpTo }: EditItemProps) {
-  const [showRevert, setShowRevert] = useState(false);
+function EditItem({ edit, isFirst, showDate, isUndone, onRevertTo, onUndo, onRedo, onJumpTo }: EditItemProps) {
+  const [showActions, setShowActions] = useState(false);
   
   const handleJump = useCallback(() => {
     if (edit.turn_id != null) {
@@ -94,6 +111,14 @@ function EditItem({ edit, isFirst, showDate, onRevertTo, onJumpTo }: EditItemPro
       onRevertTo(edit.id);
     }
   }, [edit.id, isFirst, onRevertTo]);
+  
+  const handleUndoRedo = useCallback(() => {
+    if (isUndone) {
+      onRedo?.(edit.id);
+    } else {
+      onUndo?.(edit.id);
+    }
+  }, [edit.id, isUndone, onUndo, onRedo]);
   
   const description = useMemo(() => {
     const parts: string[] = [];
@@ -113,9 +138,9 @@ function EditItem({ edit, isFirst, showDate, onRevertTo, onJumpTo }: EditItemPro
   
   return (
     <div
-      className="group relative"
-      onMouseEnter={() => setShowRevert(true)}
-      onMouseLeave={() => setShowRevert(false)}
+      className={`group relative ${isUndone ? 'opacity-50' : ''}`}
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
     >
       {/* Date separator */}
       {showDate && (
@@ -125,7 +150,7 @@ function EditItem({ edit, isFirst, showDate, onRevertTo, onJumpTo }: EditItemPro
         </div>
       )}
       
-      <div className="flex items-start gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+      <div className={`flex items-start gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 ${isUndone ? 'line-through' : ''}`}>
         {/* Icon */}
         <span className="text-base" title={edit.edit_type}>
           {EDIT_TYPE_ICONS[edit.edit_type] || '📝'}
@@ -136,6 +161,7 @@ function EditItem({ edit, isFirst, showDate, onRevertTo, onJumpTo }: EditItemPro
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
               {EDIT_TYPE_LABELS[edit.edit_type] || edit.edit_type}
+              {isUndone && <span className="ml-1 text-xs text-gray-400">(undone)</span>}
             </span>
             <span className="text-xs text-gray-400 dark:text-gray-500">
               {formatTime(edit.created_at)}
@@ -150,7 +176,7 @@ function EditItem({ edit, isFirst, showDate, onRevertTo, onJumpTo }: EditItemPro
         </div>
         
         {/* Actions */}
-        <div className={`flex items-center gap-1 ${showRevert ? 'opacity-100' : 'opacity-0'} transition-opacity`}>
+        <div className={`flex items-center gap-1 ${showActions ? 'opacity-100' : 'opacity-0'} transition-opacity`}>
           {edit.turn_id != null && (
             <button
               onClick={handleJump}
@@ -165,16 +191,38 @@ function EditItem({ edit, isFirst, showDate, onRevertTo, onJumpTo }: EditItemPro
               </svg>
             </button>
           )}
-          <button
-            onClick={handleRevert}
-            className="p-1 text-gray-400 hover:text-red-500 rounded"
-            title="Revert to this point"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-            </svg>
-          </button>
+          {/* Undo/Redo button */}
+          {(onUndo || onRedo) && (
+            <button
+              onClick={handleUndoRedo}
+              className={`p-1 rounded ${isUndone ? 'text-gray-400 hover:text-green-500' : 'text-gray-400 hover:text-orange-500'}`}
+              title={isUndone ? 'Redo this edit' : 'Undo this edit'}
+            >
+              {isUndone ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+              )}
+            </button>
+          )}
+          {!isUndone && (
+            <button
+              onClick={handleRevert}
+              className="p-1 text-gray-400 hover:text-red-500 rounded"
+              title="Revert to this point"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -183,18 +231,40 @@ function EditItem({ edit, isFirst, showDate, onRevertTo, onJumpTo }: EditItemPro
 
 export function EditHistory({
   edits,
+  undoneEdits = [],
   isOpen,
   onClose,
   onRevertTo,
   onJumpTo,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
+  onUndoLast,
+  onRedoLast,
 }: EditHistoryProps) {
   const [filterType, setFilterType] = useState<string>('all');
+  const [showUndone, setShowUndone] = useState(false);
+  
+  // Create a set of undone edit IDs for quick lookup
+  const undoneEditIds = useMemo(() => new Set(undoneEdits.map(e => e.id)), [undoneEdits]);
+  
+  // Combined edits for display (active edits + optionally undone edits)
+  const allEdits = useMemo(() => {
+    if (showUndone) {
+      // Combine and sort by created_at descending (newest first)
+      return [...edits, ...undoneEdits].sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    }
+    return edits;
+  }, [edits, undoneEdits, showUndone]);
   
   // Group edits by date
   const filteredEdits = useMemo(() => {
-    if (filterType === 'all') return edits;
-    return edits.filter(e => e.edit_type === filterType);
-  }, [edits, filterType]);
+    if (filterType === 'all') return allEdits;
+    return allEdits.filter(e => e.edit_type === filterType);
+  }, [allEdits, filterType]);
   
   // Track which edits need date separators
   const editDates = useMemo(() => {
@@ -211,9 +281,9 @@ export function EditHistory({
   }, [filteredEdits]);
   
   const uniqueEditTypes = useMemo(() => {
-    const types = new Set(edits.map(e => e.edit_type));
+    const types = new Set(allEdits.map(e => e.edit_type));
     return Array.from(types);
-  }, [edits]);
+  }, [allEdits]);
   
   if (!isOpen) return null;
   
@@ -228,6 +298,7 @@ export function EditHistory({
           <h3 className="font-medium">Edit History</h3>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {edits.length} edit{edits.length !== 1 ? 's' : ''}
+            {undoneEdits.length > 0 && ` • ${undoneEdits.length} undone`}
           </p>
         </div>
         <button
@@ -239,6 +310,61 @@ export function EditHistory({
           </svg>
         </button>
       </div>
+      
+      {/* Quick undo/redo buttons */}
+      {(onUndoLast || onRedoLast) && (
+        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+          <div className="flex items-center gap-2">
+            {onUndoLast && (
+              <button
+                onClick={onUndoLast}
+                disabled={!canUndo}
+                className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${
+                  canUndo 
+                    ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' 
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600'
+                }`}
+                title="Undo last edit"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+                Undo
+              </button>
+            )}
+            {onRedoLast && (
+              <button
+                onClick={onRedoLast}
+                disabled={!canRedo}
+                className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${
+                  canRedo 
+                    ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400' 
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600'
+                }`}
+                title="Redo last undone edit"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+                </svg>
+                Redo
+              </button>
+            )}
+          </div>
+          {undoneEdits.length > 0 && (
+            <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showUndone}
+                onChange={(e) => setShowUndone(e.target.checked)}
+                className="w-3 h-3"
+              />
+              Show undone
+            </label>
+          )}
+        </div>
+      )}
       
       {/* Filter */}
       {uniqueEditTypes.length > 1 && (
@@ -272,7 +398,10 @@ export function EditHistory({
                 edit={edit}
                 isFirst={index === filteredEdits.length - 1}
                 showDate={editDates.get(edit.id) || false}
+                isUndone={undoneEditIds.has(edit.id)}
                 onRevertTo={onRevertTo}
+                onUndo={onUndo}
+                onRedo={onRedo}
                 onJumpTo={onJumpTo}
               />
             ))}
@@ -283,7 +412,7 @@ export function EditHistory({
       {/* Footer */}
       <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 
                       text-xs text-gray-500 dark:text-gray-400">
-        Click revert icon to undo edits
+        {canUndo || canRedo ? 'Use undo/redo to manage edits' : 'Click revert icon to undo edits'}
       </div>
     </div>
   );

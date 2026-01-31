@@ -487,7 +487,7 @@ export async function listEdits(
 }
 
 /**
- * Delete an edit (for undo).
+ * Delete an edit (permanently removes it).
  */
 export async function deleteEdit(
   jobId: string,
@@ -501,6 +501,121 @@ export async function deleteEdit(
     const error = await response.json();
     throw new Error(error.detail || 'Failed to delete edit');
   }
+}
+
+// ==============================================================================
+// Undo/Redo Functions
+// ==============================================================================
+
+export interface UndoRedoResponse {
+  status: string;
+  edit_id?: number;
+  message: string;
+}
+
+export interface EditHistoryResponse {
+  job_id: string;
+  stage?: string;
+  active_edits: Edit[];
+  undone_edits: Edit[];
+  can_undo: boolean;
+  can_redo: boolean;
+}
+
+/**
+ * Undo a specific edit by ID.
+ */
+export async function undoEdit(
+  jobId: string,
+  editId: number
+): Promise<UndoRedoResponse> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/edits/${editId}/undo`, {
+    method: 'POST',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to undo edit');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Redo a specific undone edit by ID.
+ */
+export async function redoEdit(
+  jobId: string,
+  editId: number
+): Promise<UndoRedoResponse> {
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/edits/${editId}/redo`, {
+    method: 'POST',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to redo edit');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Undo the most recent edit for a job/stage.
+ */
+export async function undoLastEdit(
+  jobId: string,
+  stage?: string
+): Promise<UndoRedoResponse> {
+  const params = stage ? `?stage=${stage}` : '';
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/edits/undo-last${params}`, {
+    method: 'POST',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to undo edit');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Redo the most recently undone edit for a job/stage.
+ */
+export async function redoLastEdit(
+  jobId: string,
+  stage?: string
+): Promise<UndoRedoResponse> {
+  const params = stage ? `?stage=${stage}` : '';
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/edits/redo-last${params}`, {
+    method: 'POST',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to redo edit');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Get full edit history including undone edits.
+ */
+export async function getEditHistory(
+  jobId: string,
+  stage?: string
+): Promise<EditHistoryResponse> {
+  const params = stage ? `?stage=${stage}` : '';
+  const response = await fetch(`${API_BASE}/jobs/${jobId}/edits/history${params}`);
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get edit history');
+  }
+  
+  return response.json();
 }
 
 /**

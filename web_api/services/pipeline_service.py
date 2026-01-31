@@ -186,6 +186,24 @@ class PipelineService:
                     output_dir=str(output_dir),
                 )
                 
+                # Store transcript data in database for web access
+                try:
+                    from web_api.services.transcript_storage import TranscriptStorageService
+                    transcript_storage = TranscriptStorageService(self.db)
+                    stored_stages = transcript_storage.store_from_pipeline(job_id, output_dir)
+                    if progress_callback:
+                        progress_callback("transcript_stored", {
+                            "job_id": job_id,
+                            "stages": stored_stages,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                except Exception as e:
+                    # Log error but don't fail the job - file-based fallback exists
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"Failed to store transcript in database for job {job_id}: {e}"
+                    )
+                
                 if progress_callback:
                     progress_callback("job_complete", {
                         "job_id": job_id,

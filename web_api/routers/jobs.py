@@ -222,10 +222,15 @@ async def get_job_progress(
     async def event_generator() -> AsyncGenerator[str, None]:
         """Generate SSE events for the job."""
         
-        # Replay events after last_event_id if reconnecting
+        # Replay events: all events on initial connection, or after last_event_id if reconnecting
         if last_event_id is not None:
             for event_str in _get_events_after(job_id, last_event_id):
                 yield event_str
+        else:
+            # Initial connection: replay all stored events to establish current state
+            if job_id in _job_events:
+                for _, event_str in _job_events[job_id]:
+                    yield event_str
         
         # If job is already done, send final status and close
         current_job = db.get_job(job_id)

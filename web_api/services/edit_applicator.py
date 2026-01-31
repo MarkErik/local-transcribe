@@ -118,7 +118,6 @@ class EditApplicator:
                 "word": word_text,
                 "start_time": 0.0,  # Will be recalculated
                 "end_time": 0.0,
-                "confidence": 1.0,  # User-inserted words have full confidence
             }
             new_words.append(new_word)
         
@@ -188,7 +187,6 @@ class EditApplicator:
             "word": merged_text,
             "start_time": words[start].get("start_time", 0.0),
             "end_time": words[end].get("end_time", 0.0),
-            "confidence": min(w.get("confidence", 1.0) for w in words[start:end + 1]),
         }
         
         # Replace range with merged word
@@ -227,7 +225,6 @@ class EditApplicator:
                 "word": text,
                 "start_time": start_time + i * duration_per_word,
                 "end_time": start_time + (i + 1) * duration_per_word,
-                "confidence": original.get("confidence", 1.0),
             })
         
         # Replace original word with split words
@@ -330,7 +327,6 @@ class EditApplicator:
             "word": f"[{annotation_type}]",
             "start_time": 0.0,
             "end_time": 0.0,
-            "confidence": 1.0,
             "is_annotation": True,
             "annotation_type": annotation_type,
         }

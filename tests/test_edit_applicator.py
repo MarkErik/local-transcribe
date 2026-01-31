@@ -28,10 +28,10 @@ def create_test_transcript():
                 'start_time': 0.0,
                 'end_time': 2.0,
                 'words': [
-                    {'word': 'Hello', 'start_time': 0.0, 'end_time': 0.5, 'confidence': 0.95},
-                    {'word': 'how', 'start_time': 0.5, 'end_time': 1.0, 'confidence': 0.90},
-                    {'word': 'are', 'start_time': 1.0, 'end_time': 1.5, 'confidence': 0.92},
-                    {'word': 'you', 'start_time': 1.5, 'end_time': 2.0, 'confidence': 0.98},
+                    {'word': 'Hello', 'start_time': 0.0, 'end_time': 0.5},
+                    {'word': 'how', 'start_time': 0.5, 'end_time': 1.0},
+                    {'word': 'are', 'start_time': 1.0, 'end_time': 1.5},
+                    {'word': 'you', 'start_time': 1.5, 'end_time': 2.0},
                 ],
                 'interjections': []
             },
@@ -43,10 +43,10 @@ def create_test_transcript():
                 'start_time': 2.0,
                 'end_time': 4.0,
                 'words': [
-                    {'word': 'I', 'start_time': 2.0, 'end_time': 2.25, 'confidence': 0.99},
-                    {'word': 'am', 'start_time': 2.25, 'end_time': 2.5, 'confidence': 0.97},
-                    {'word': 'fine', 'start_time': 2.5, 'end_time': 3.0, 'confidence': 0.85},
-                    {'word': 'thanks', 'start_time': 3.0, 'end_time': 4.0, 'confidence': 0.93},
+                    {'word': 'I', 'start_time': 2.0, 'end_time': 2.25},
+                    {'word': 'am', 'start_time': 2.25, 'end_time': 2.5},
+                    {'word': 'fine', 'start_time': 2.5, 'end_time': 3.0},
+                    {'word': 'thanks', 'start_time': 3.0, 'end_time': 4.0},
                 ],
                 'interjections': []
             },
@@ -58,10 +58,10 @@ def create_test_transcript():
                 'start_time': 4.0,
                 'end_time': 6.0,
                 'words': [
-                    {'word': 'Thats', 'start_time': 4.0, 'end_time': 4.5, 'confidence': 0.80},
-                    {'word': 'great', 'start_time': 4.5, 'end_time': 5.0, 'confidence': 0.95},
-                    {'word': 'to', 'start_time': 5.0, 'end_time': 5.3, 'confidence': 0.99},
-                    {'word': 'hear', 'start_time': 5.3, 'end_time': 6.0, 'confidence': 0.94},
+                    {'word': 'Thats', 'start_time': 4.0, 'end_time': 4.5},
+                    {'word': 'great', 'start_time': 4.5, 'end_time': 5.0},
+                    {'word': 'to', 'start_time': 5.0, 'end_time': 5.3},
+                    {'word': 'hear', 'start_time': 5.3, 'end_time': 6.0},
                 ],
                 'interjections': []
             },

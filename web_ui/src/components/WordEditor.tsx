@@ -10,7 +10,6 @@ interface Word {
   word: string;
   start: number;
   end: number;
-  confidence?: number;
 }
 
 export interface WordEditorProps {
@@ -112,10 +111,7 @@ export function WordEditor({
     ? "bg-green-50 border-b border-dashed border-green-400"
     : "hover:bg-gray-100";
   
-  // Confidence indicator (dim low-confidence words)
-  const confidenceClasses = word.confidence && word.confidence < 0.7
-    ? "opacity-70"
-    : "";
+
   
   if (isEditing) {
     return (
@@ -151,12 +147,10 @@ export function WordEditor({
       </span>
       
       <span
-        className={`${baseClasses} ${stateClasses} ${confidenceClasses}`}
+        className={`${baseClasses} ${stateClasses}`}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
-        title={`${word.start.toFixed(2)}s - ${word.end.toFixed(2)}s${
-          word.confidence ? ` (${(word.confidence * 100).toFixed(0)}% confidence)` : ''
-        }`}
+        title={`${word.start.toFixed(2)}s - ${word.end.toFixed(2)}s`}
       >
         {word.word}
       </span>

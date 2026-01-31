@@ -8,7 +8,7 @@
 import { useRef, useEffect, useMemo, useCallback, useState } from 'react';
 import type { TranscriptTurn, PIIReplacement } from '../api';
 import { useDeIdentificationStore } from '../store';
-import { EditableTurn } from './WordEditor';
+import { EditableTextTurn } from './EditableTextTurn';
 
 export interface VirtualizedTranscriptViewProps {
   /** Array of transcript turns */
@@ -31,18 +31,10 @@ export interface VirtualizedTranscriptViewProps {
   estimatedRowHeight?: number;
   /** Enable editing mode */
   editingEnabled?: boolean;
-  /** Called when a word is changed */
-  onWordChange?: (turnId: number, wordIndex: number, newText: string) => void;
-  /** Called when a word is deleted */
-  onWordDelete?: (turnId: number, wordIndex: number) => void;
-  /** Called when text is inserted before a word */
-  onWordInsert?: (turnId: number, wordIndex: number, text: string) => void;
+  /** Called when turn text is changed (block editing) */
+  onTextChange?: (turnId: number, newText: string, oldText: string) => void;
   /** Called when speaker is changed */
   onSpeakerChange?: (turnId: number, newSpeaker: string) => void;
-  /** Selected word index for highlighting */
-  selectedWordIndex?: number | null;
-  /** Set of edited word indices per turn */
-  editedWordIndices?: Map<number, Set<number>>;
 }
 
 // Speaker colors
@@ -255,12 +247,8 @@ export function VirtualizedTranscriptView({
   overscan = 20,
   estimatedRowHeight = 100,
   editingEnabled = false,
-  onWordChange,
-  onWordDelete,
-  onWordInsert,
+  onTextChange,
   onSpeakerChange,
-  selectedWordIndex,
-  editedWordIndices,
 }: VirtualizedTranscriptViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -378,22 +366,14 @@ export function VirtualizedTranscriptView({
             
             return editingEnabled ? (
               <div key={turn.turn_id} className="px-4 py-1">
-                <EditableTurn
-                  turnId={turn.turn_id}
-                  speaker={turn.primary_speaker}
-                  words={turn.words || []}
-                  startTime={turn.start}
-                  endTime={turn.end}
+                <EditableTextTurn
+                  turn={turn}
                   isActive={isActive}
                   isSelected={isSelected}
-                  selectedWordIndex={isSelected ? selectedWordIndex : null}
-                  editedWordIndices={editedWordIndices?.get(turn.turn_id) || new Set()}
                   onTurnClick={handleSelect}
-                  onWordClick={(turnId, wordIdx) => onWordSelect?.(turnId, wordIdx, turn.words![wordIdx].word)}
-                  onWordChange={onWordChange}
-                  onWordDelete={onWordDelete}
-                  onWordInsert={onWordInsert}
+                  onTextChange={onTextChange}
                   onSpeakerChange={onSpeakerChange}
+                  onSeek={handleSeek}
                 />
               </div>
             ) : (

@@ -203,32 +203,16 @@ export function TranscriptEditor() {
     setStaleWarningDismissed(false);
   }, []);
   
-  // Word-level editing handlers
+  // Block-level text editing handler
   const { addPendingEdit } = useEditStore();
   
-  const handleWordChange = useCallback((turnId: number, wordIndex: number, newText: string) => {
+  const handleTextChange = useCallback((turnId: number, newText: string, oldText: string) => {
+    // For block-level editing, we create a single edit representing the text change
     addPendingEdit({
       edit_type: 'word_change',
       turn_id: turnId,
-      start_index: wordIndex,
+      original_value: oldText,
       new_value: newText,
-    });
-  }, [addPendingEdit]);
-  
-  const handleWordDelete = useCallback((turnId: number, wordIndex: number) => {
-    addPendingEdit({
-      edit_type: 'word_delete',
-      turn_id: turnId,
-      start_index: wordIndex,
-    });
-  }, [addPendingEdit]);
-  
-  const handleWordInsert = useCallback((turnId: number, wordIndex: number, text: string) => {
-    addPendingEdit({
-      edit_type: 'word_insert',
-      turn_id: turnId,
-      start_index: wordIndex,
-      new_value: text,
     });
   }, [addPendingEdit]);
   
@@ -469,11 +453,8 @@ export function TranscriptEditor() {
                   onTurnSelect={handleTurnSelect}
                   onWordSelect={handleWordSelect}
                   editingEnabled={true}
-                  onWordChange={handleWordChange}
-                  onWordDelete={handleWordDelete}
-                  onWordInsert={handleWordInsert}
+                  onTextChange={handleTextChange}
                   onSpeakerChange={handleSpeakerChange}
-                  selectedWordIndex={selectedWordIndex}
                 />
               ) : (
                 <TranscriptView
@@ -486,11 +467,8 @@ export function TranscriptEditor() {
                   onWordSelect={handleWordSelect}
                   piiReplacements={piiData?.replacements}
                   editingEnabled={true}
-                  onWordChange={handleWordChange}
-                  onWordDelete={handleWordDelete}
-                  onWordInsert={handleWordInsert}
+                  onTextChange={handleTextChange}
                   onSpeakerChange={handleSpeakerChange}
-                  selectedWordIndex={selectedWordIndex}
                 />
               )
             ) : (

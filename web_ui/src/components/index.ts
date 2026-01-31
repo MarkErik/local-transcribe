@@ -20,6 +20,9 @@ export type { Stage, StageSelectorProps } from './StageSelector';
 export { WordEditor, EditableTurn } from './WordEditor';
 export type { WordEditorProps } from './WordEditor';
 
+export { EditableTextTurn } from './EditableTextTurn';
+export type { EditableTextTurnProps } from './EditableTextTurn';
+
 export { EditToolbar } from './EditToolbar';
 
 export { StaleStageWarning } from './StaleStageWarning';

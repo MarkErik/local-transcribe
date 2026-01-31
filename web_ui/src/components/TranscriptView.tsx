@@ -8,7 +8,7 @@
 import { useRef, useEffect, useMemo, useCallback } from 'react';
 import type { TranscriptTurn, PIIReplacement } from '../api';
 import { useDeIdentificationStore } from '../store';
-import { EditableTurn } from './WordEditor';
+import { EditableTextTurn } from './EditableTextTurn';
 
 export interface TranscriptViewProps {
   /** Array of transcript turns */
@@ -27,20 +27,12 @@ export interface TranscriptViewProps {
   onWordSelect?: (turnId: number, wordIndex: number, wordText: string) => void;
   /** PII replacements for highlighting (optional, can also use store) */
   piiReplacements?: PIIReplacement[];
-  /** Enable editing mode (uses EditableTurn instead of read-only TurnItem) */
+  /** Enable editing mode (uses EditableTextTurn for block editing) */
   editingEnabled?: boolean;
-  /** Called when a word is changed */
-  onWordChange?: (turnId: number, wordIndex: number, newText: string) => void;
-  /** Called when a word is deleted */
-  onWordDelete?: (turnId: number, wordIndex: number) => void;
-  /** Called when text is inserted before a word */
-  onWordInsert?: (turnId: number, wordIndex: number, text: string) => void;
+  /** Called when turn text is changed (block editing) */
+  onTextChange?: (turnId: number, newText: string, oldText: string) => void;
   /** Called when speaker is changed */
   onSpeakerChange?: (turnId: number, newSpeaker: string) => void;
-  /** Selected word index for highlighting */
-  selectedWordIndex?: number | null;
-  /** Set of edited word indices per turn */
-  editedWordIndices?: Map<number, Set<number>>;
 }
 
 // Speaker colors
@@ -269,12 +261,8 @@ export function TranscriptView({
   onWordSelect,
   piiReplacements: propPiiReplacements,
   editingEnabled = false,
-  onWordChange,
-  onWordDelete,
-  onWordInsert,
+  onTextChange,
   onSpeakerChange,
-  selectedWordIndex,
-  editedWordIndices,
 }: TranscriptViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeTurnRef = useRef<HTMLDivElement | null>(null);
@@ -344,22 +332,14 @@ export function TranscriptView({
             ref={isActive ? (el) => { activeTurnRef.current = el; } : undefined}
           >
             {editingEnabled ? (
-              <EditableTurn
-                turnId={turn.turn_id}
-                speaker={turn.primary_speaker}
-                words={turn.words || []}
-                startTime={turn.start}
-                endTime={turn.end}
+              <EditableTextTurn
+                turn={turn}
                 isActive={isActive}
                 isSelected={isSelected}
-                selectedWordIndex={isSelected ? selectedWordIndex : null}
-                editedWordIndices={editedWordIndices?.get(turn.turn_id) || new Set()}
                 onTurnClick={handleSelect}
-                onWordClick={(turnId, wordIdx) => onWordSelect?.(turnId, wordIdx, turn.words![wordIdx].word)}
-                onWordChange={onWordChange}
-                onWordDelete={onWordDelete}
-                onWordInsert={onWordInsert}
+                onTextChange={onTextChange}
                 onSpeakerChange={onSpeakerChange}
+                onSeek={handleSeek}
               />
             ) : (
               <TurnItem

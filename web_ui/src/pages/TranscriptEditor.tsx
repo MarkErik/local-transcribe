@@ -203,10 +203,42 @@ export function TranscriptEditor() {
     setStaleWarningDismissed(false);
   }, []);
   
-  // Note: Word-level editing handlers will be added when TranscriptView is enhanced
-  // to support inline editing. For now, the edit store and backend are ready.
-  // Use: const { addPendingEdit } = useEditStore();
-  // Then: addPendingEdit({ edit_type, turn_id, ... })
+  // Word-level editing handlers
+  const { addPendingEdit } = useEditStore();
+  
+  const handleWordChange = useCallback((turnId: number, wordIndex: number, newText: string) => {
+    addPendingEdit({
+      edit_type: 'word_change',
+      turn_id: turnId,
+      start_index: wordIndex,
+      new_value: newText,
+    });
+  }, [addPendingEdit]);
+  
+  const handleWordDelete = useCallback((turnId: number, wordIndex: number) => {
+    addPendingEdit({
+      edit_type: 'word_delete',
+      turn_id: turnId,
+      start_index: wordIndex,
+    });
+  }, [addPendingEdit]);
+  
+  const handleWordInsert = useCallback((turnId: number, wordIndex: number, text: string) => {
+    addPendingEdit({
+      edit_type: 'word_insert',
+      turn_id: turnId,
+      start_index: wordIndex,
+      new_value: text,
+    });
+  }, [addPendingEdit]);
+  
+  const handleSpeakerChange = useCallback((turnId: number, newSpeaker: string) => {
+    addPendingEdit({
+      edit_type: 'speaker_change',
+      turn_id: turnId,
+      new_value: newSpeaker,
+    });
+  }, [addPendingEdit]);
   
   // Handle rerun request
   const handleRerunRequested = useCallback((newJobId: string) => {
@@ -436,6 +468,12 @@ export function TranscriptEditor() {
                   selectedTurnId={selectedTurnId}
                   onTurnSelect={handleTurnSelect}
                   onWordSelect={handleWordSelect}
+                  editingEnabled={true}
+                  onWordChange={handleWordChange}
+                  onWordDelete={handleWordDelete}
+                  onWordInsert={handleWordInsert}
+                  onSpeakerChange={handleSpeakerChange}
+                  selectedWordIndex={selectedWordIndex}
                 />
               ) : (
                 <TranscriptView
@@ -447,6 +485,12 @@ export function TranscriptEditor() {
                   onTurnSelect={handleTurnSelect}
                   onWordSelect={handleWordSelect}
                   piiReplacements={piiData?.replacements}
+                  editingEnabled={true}
+                  onWordChange={handleWordChange}
+                  onWordDelete={handleWordDelete}
+                  onWordInsert={handleWordInsert}
+                  onSpeakerChange={handleSpeakerChange}
+                  selectedWordIndex={selectedWordIndex}
                 />
               )
             ) : (

@@ -40,6 +40,7 @@ class Job:
     id: str
     status: JobStatus
     mode: str
+    name: Optional[str] = None
     config_json: Optional[str] = None
     created_at: Optional[str] = None
     started_at: Optional[str] = None
@@ -60,6 +61,7 @@ class Job:
             id=row["id"],
             status=JobStatus(row["status"]),
             mode=row["mode"],
+            name=row["name"] if "name" in row.keys() else None,
             config_json=row["config_json"],
             created_at=row["created_at"],
             started_at=row["started_at"],
@@ -76,6 +78,7 @@ class Job:
             "id": self.id,
             "status": self.status.value if isinstance(self.status, JobStatus) else self.status,
             "mode": self.mode,
+            "name": self.name,
             "config": json.loads(self.config_json) if self.config_json else None,
             "created_at": self.created_at,
             "started_at": self.started_at,

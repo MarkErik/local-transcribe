@@ -117,6 +117,7 @@ function FileUpload({ label, id, onComplete }: FileUploadProps) {
 export function NewJob() {
   const navigate = useNavigate();
   const settings = useSettingsStore();
+  const [transcriptionName, setTranscriptionName] = useState<string>('');
   const [interviewerFileId, setInterviewerFileId] = useState<string | null>(null);
   const [participantFileId, setParticipantFileId] = useState<string | null>(null);
   const [options, setOptions] = useState({
@@ -139,6 +140,7 @@ export function NewJob() {
     createJobMutation.mutate({
       interviewer_file_id: interviewerFileId,
       participant_file_id: participantFileId,
+      name: transcriptionName.trim() || undefined,
       mode: 'vad_split_audio',
       options: {
         enable_de_identification: options.enableDeIdentification,
@@ -156,10 +158,29 @@ export function NewJob() {
   return (
     <div className="max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-        New Transcription Job
+        Start New Transcription
       </h1>
       
       <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+        <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+          Transcription Name
+        </h2>
+        
+        <div className="mb-6">
+          <input
+            type="text"
+            value={transcriptionName}
+            onChange={(e) => setTranscriptionName(e.target.value)}
+            placeholder="Enter a name for this transcription (optional)"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            A descriptive name to help you identify this transcription later
+          </p>
+        </div>
+        
+        <hr className="my-6 border-gray-200 dark:border-gray-700" />
+        
         <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
           Audio Files
         </h2>

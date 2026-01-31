@@ -117,6 +117,7 @@ async def create_job(
         id=job_id,
         status=JobStatus.PENDING,
         mode=request.mode,
+        name=request.name,
         config_json=json.dumps(config_dict),
         interviewer_file_id=request.interviewer_file_id,
         participant_file_id=request.participant_file_id,

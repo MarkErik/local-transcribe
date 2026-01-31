@@ -48,6 +48,7 @@ SCHEMA_SQL = """
 -- Jobs table
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
+    name TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     mode TEXT NOT NULL DEFAULT 'vad_split_audio',
     config_json TEXT,
@@ -141,7 +142,18 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._get_connection() as conn:
             conn.executescript(SCHEMA_SQL)
+            # Run migrations for existing databases
+            self._run_migrations(conn)
             conn.commit()
+    
+    def _run_migrations(self, conn) -> None:
+        """Run schema migrations for existing databases."""
+        # Check if 'name' column exists in jobs table
+        cursor = conn.execute("PRAGMA table_info(jobs)")
+        columns = {row['name'] for row in cursor.fetchall()}
+        
+        if 'name' not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN name TEXT")
     
     @contextmanager
     def _get_connection(self):
@@ -160,12 +172,13 @@ class Database:
         with self._get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO jobs (id, status, mode, config_json, created_at, 
+                INSERT INTO jobs (id, name, status, mode, config_json, created_at, 
                                   interviewer_file_id, participant_file_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job.id,
+                    job.name,
                     job.status.value if isinstance(job.status, JobStatus) else job.status,
                     job.mode,
                     job.config_json,

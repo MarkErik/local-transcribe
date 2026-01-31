@@ -76,6 +76,7 @@ class JobCreateRequest(BaseModel):
     """Request to create a new transcription job."""
     interviewer_file_id: str = Field(..., description="File ID for interviewer audio")
     participant_file_id: str = Field(..., description="File ID for participant audio")
+    name: Optional[str] = Field(None, description="Optional name for the transcription")
     mode: str = Field(default="vad_split_audio", description="Pipeline mode")
     options: JobOptions = Field(default_factory=JobOptions, description="Job options")
 
@@ -91,6 +92,7 @@ class JobResponse(BaseModel):
     id: str
     status: str
     mode: str
+    name: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
     created_at: Optional[str] = None
     started_at: Optional[str] = None

@@ -272,8 +272,8 @@ export function TranscriptEditor() {
             <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
               Transcript Editor
             </h1>
-            <span className="text-sm text-gray-500 dark:text-gray-400 font-mono">
-              {jobId?.slice(0, 8)}...
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              {job?.name || `Transcript ${jobId?.slice(0, 8)}...`}
             </span>
           </div>
           

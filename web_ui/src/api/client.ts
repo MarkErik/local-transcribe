@@ -27,6 +27,7 @@ export interface UploadCompleteResponse {
 export interface JobCreateRequest {
   interviewer_file_id: string;
   participant_file_id: string;
+  name?: string;
   mode?: string;
   options?: {
     enable_de_identification?: boolean;
@@ -49,6 +50,7 @@ export interface Job {
   id: string;
   status: string;
   mode: string;
+  name?: string;
   config?: Record<string, unknown>;
   created_at?: string;
   started_at?: string;

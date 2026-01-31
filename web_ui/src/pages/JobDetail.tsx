@@ -322,10 +322,10 @@ export function JobDetail() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <Link to="/" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-            ← Back to jobs
+            ← Back to transcripts
           </Link>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
-            Job {job.id.slice(0, 8)}...
+            {job.name || `Transcript ${job.id.slice(0, 8)}...`}
           </h1>
         </div>
         <span className={`px-3 py-1 text-sm font-medium rounded-full ${
@@ -344,10 +344,6 @@ export function JobDetail() {
           Details
         </h2>
         <dl className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <dt className="text-gray-500 dark:text-gray-400">Mode</dt>
-            <dd className="text-gray-900 dark:text-white">{job.mode}</dd>
-          </div>
           <div>
             <dt className="text-gray-500 dark:text-gray-400">Created</dt>
             <dd className="text-gray-900 dark:text-white">

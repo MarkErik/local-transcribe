@@ -38,17 +38,18 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string, force?: b
   
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
+    const displayName = job.name || `Transcript ${job.id.slice(0, 8)}...`;
     if (isStale) {
       // For stale running/pending jobs, offer force delete
       if (window.confirm(
-        `Job ${job.id.slice(0, 8)}... appears to be stuck in "${job.status}" state.\n\n` +
+        `"${displayName}" appears to be stuck in "${job.status}" state.\n\n` +
         `This can happen if the server was restarted while the job was running.\n\n` +
-        `Do you want to force delete this job? This cannot be undone.`
+        `Do you want to force delete this transcription? This cannot be undone.`
       )) {
         onDelete(job.id, true);
       }
     } else {
-      if (window.confirm(`Are you sure you want to delete job ${job.id.slice(0, 8)}...? This cannot be undone.`)) {
+      if (window.confirm(`Are you sure you want to delete "${displayName}"? This cannot be undone.`)) {
         onDelete(job.id, false);
       }
     }
@@ -62,11 +63,8 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string, force?: b
             to={`/jobs/${job.id}`}
             className="text-lg font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400"
           >
-            Job {job.id.slice(0, 8)}...
+            {job.name || `Transcript ${job.id.slice(0, 8)}...`}
           </Link>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Mode: {job.mode}
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={job.status} />
@@ -167,12 +165,12 @@ export function JobList() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Jobs</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Transcripts</h1>
         <Link
           to="/new"
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
-          New Job
+          Start New Transcription
         </Link>
       </div>
       
@@ -184,12 +182,12 @@ export function JobList() {
 
       {jobs.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-gray-500 dark:text-gray-400">No jobs yet.</p>
+          <p className="text-gray-500 dark:text-gray-400">No transcripts yet.</p>
           <Link
             to="/new"
             className="mt-4 inline-block text-blue-600 dark:text-blue-400 hover:underline"
           >
-            Create your first job
+            Start your first transcription
           </Link>
         </div>
       ) : (

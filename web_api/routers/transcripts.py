@@ -1,11 +1,9 @@
-"""
-Transcripts router for retrieving and editing transcripts.
+"""Transcripts router for retrieving and editing transcripts.
 
-Handles transcript retrieval from different pipeline stages and
-serves job output files. Uses database-centric storage with file-based fallback.
+Handles transcript retrieval from different pipeline stages.
+All transcript data is stored in and retrieved from the database.
 """
 
-import json
 from pathlib import Path
 from typing import Optional, List
 
@@ -22,27 +20,12 @@ from web_api.models.schemas import (
 from web_api.services.edit_applicator import apply_edits_to_transcript
 from web_api.services.transcript_storage import (
     TranscriptStorageService,
-    STAGE_BASE,
-    STAGE_DE_IDENTIFIED,
-    STAGE_CLEANED,
     LEGACY_STAGE_MAP,
 )
 
 
 router = APIRouter(prefix="/api/jobs", tags=["transcripts"])
 
-
-# Mapping of stage names to output file patterns (for file-based fallback)
-STAGE_OUTPUT_FILES = {
-    "vad_transcription": "turns.json",
-    "de_identification": "turns-de-identified.json", 
-    "speaker_naming": "turns-named.json",
-    "transcript_cleanup": "turns-cleaned.json",
-    # New stage names also supported
-    "base": "turns.json",
-    "de_identified": "turns-de-identified.json",
-    "cleaned": "turns-cleaned.json",
-}
 
 # Display names for stages (web UI friendly)
 STAGE_DISPLAY_NAMES = {
@@ -117,10 +100,9 @@ async def get_transcript(
     Get the transcript for a completed job.
     
     Optionally specify a stage to get the transcript from that specific
-    stage of the pipeline. Uses database storage with file-based fallback.
+    stage of the pipeline. All transcript data is retrieved from the database.
     """
     db = get_database()
-    config = get_config()
     
     job = db.get_job(job_id)
     if not job:
@@ -132,32 +114,18 @@ async def get_transcript(
             detail=f"Job not complete (status: {job.status.value})"
         )
     
-    # Find output directory for file fallback
-    output_dir = Path(job.output_dir) if job.output_dir else config.output_dir / job_id
-    
     # Normalize stage name
     normalized_stage = _normalize_stage_name(stage)
     
-    # Try database-centric approach first
+    # Get transcript from database
     transcript_storage = TranscriptStorageService(db)
-    transcript_data = transcript_storage.get_transcript(job_id, normalized_stage, output_dir)
+    transcript_data = transcript_storage.get_transcript(job_id, normalized_stage)
     
     if not transcript_data:
-        # Fallback to file-based approach for backward compatibility
-        transcript_path = _find_transcript_file(output_dir, stage)
-        if not transcript_path:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Transcript not found{' for stage ' + stage if stage else ''}"
-            )
-        
-        try:
-            with open(transcript_path, 'r', encoding='utf-8') as f:
-                transcript_data = json.load(f)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail="Invalid transcript JSON")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to load transcript: {str(e)}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Transcript not found{' for stage ' + stage if stage else ''}"
+        )
     
     # Apply any edits for this job/stage (use normalized stage for edits lookup)
     # Also try with original stage name for backward compatibility
@@ -173,9 +141,8 @@ async def get_transcript(
 
 @router.get("/{job_id}/transcript/stages")
 async def get_available_stages(job_id: str):
-    """Get list of available transcript stages for a job."""
+    """Get list of available transcript stages for a job from the database."""
     db = get_database()
-    config = get_config()
     
     job = db.get_job(job_id)
     if not job:
@@ -187,51 +154,20 @@ async def get_available_stages(job_id: str):
             detail=f"Job not complete (status: {job.status.value})"
         )
     
-    output_dir = Path(job.output_dir) if job.output_dir else config.output_dir / job_id
-    
-    # Try database-centric approach first
+    # Get stages from database
     transcript_storage = TranscriptStorageService(db)
-    db_stages = transcript_storage.get_available_stages(job_id, output_dir)
+    db_stages = transcript_storage.get_available_stages(job_id)
     
-    if db_stages:
-        # Return stages with display names
-        available_stages = []
-        for stage_info in db_stages:
-            stage_name = stage_info["stage"]
-            available_stages.append({
-                "stage": stage_name,
-                "display_name": STAGE_DISPLAY_NAMES.get(stage_name, stage_name),
-                "has_edits": stage_info.get("has_edits", False),
-                "source": stage_info.get("source", "database"),
-            })
-        return {"stages": available_stages}
-    
-    # Fallback to file-based approach for backward compatibility
-    search_dirs = [output_dir]
-    transcript_raw_dir = output_dir / "Transcript_Raw"
-    if transcript_raw_dir.exists():
-        search_dirs.append(transcript_raw_dir)
-    
+    # Return stages with display names
     available_stages = []
-    seen_stages = set()
-    for stage_name, pattern in STAGE_OUTPUT_FILES.items():
-        # Skip duplicates (new and legacy names for same stage)
-        normalized = _normalize_stage_name(stage_name)
-        if normalized in seen_stages:
-            continue
-        
-        for search_dir in search_dirs:
-            matches = list(search_dir.glob(f"*{pattern}"))
-            if matches:
-                seen_stages.add(normalized)
-                available_stages.append({
-                    "stage": stage_name,
-                    "display_name": STAGE_DISPLAY_NAMES.get(stage_name, stage_name),
-                    "file": matches[0].name,
-                    "has_edits": len(db.get_edits_for_job(job_id, stage_name)) > 0,
-                    "source": "file",
-                })
-                break  # Found in this search_dir, no need to check others
+    for stage_info in db_stages:
+        stage_name = stage_info["stage"]
+        available_stages.append({
+            "stage": stage_name,
+            "display_name": STAGE_DISPLAY_NAMES.get(stage_name, stage_name),
+            "has_edits": stage_info.get("has_edits", False),
+            "source": "database",
+        })
     
     return {"stages": available_stages}
 

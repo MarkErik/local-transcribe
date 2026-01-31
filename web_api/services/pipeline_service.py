@@ -208,27 +208,21 @@ class PipelineService:
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                 })
                         else:
-                            # Fallback to file-based storage if available
-                            stored_stages = transcript_storage.store_from_pipeline(job_id, output_dir)
-                            if progress_callback and stored_stages:
-                                progress_callback("transcript_stored", {
-                                    "job_id": job_id,
-                                    "stages": stored_stages,
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                })
+                            # Log warning - transcript storage failed
+                            import logging
+                            logging.getLogger(__name__).warning(
+                                f"Failed to store transcript in database for job {job_id}"
+                            )
                     else:
-                        # No transcript in context, try file-based fallback
-                        stored_stages = transcript_storage.store_from_pipeline(job_id, output_dir)
-                        if progress_callback and stored_stages:
-                            progress_callback("transcript_stored", {
-                                "job_id": job_id,
-                                "stages": stored_stages,
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            })
+                        # No transcript in context - this is an error for web mode
+                        import logging
+                        logging.getLogger(__name__).error(
+                            f"No transcript data in context for job {job_id}"
+                        )
                 except Exception as e:
-                    # Log error but don't fail the job - file-based fallback exists
+                    # Log error - database storage is required for web mode
                     import logging
-                    logging.getLogger(__name__).warning(
+                    logging.getLogger(__name__).error(
                         f"Failed to store transcript in database for job {job_id}: {e}"
                     )
                 

@@ -7,12 +7,12 @@ Provides endpoints for:
 - Running second-pass de-identification
 - Querying PII replacements (audit trail)
 - Manual redaction and override operations
+
+All transcript data is stored in and retrieved from the database.
 """
 
 import json
 from typing import List, Optional
-from datetime import datetime
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
@@ -23,7 +23,6 @@ from web_api.database import (
     PIIReplacement,
     JobStatus,
 )
-from web_api.config import get_config
 
 
 router = APIRouter(prefix="/api/jobs/{job_id}/de-identify", tags=["de-identification"])
@@ -213,20 +212,14 @@ async def run_first_pass(job_id: str, background_tasks: BackgroundTasks):
         from local_transcribe.processing.de_identification import (
             DeIdentificationOrchestrator,
         )
+        from web_api.services.transcript_storage import TranscriptStorageService, STAGE_BASE
         
-        # Load transcript and extract speaker segments
-        output_dir = Path(job.output_dir) if job.output_dir else None
-        if not output_dir or not output_dir.exists():
-            raise HTTPException(status_code=400, detail="Job output directory not found")
+        # Get transcript from database
+        transcript_storage = TranscriptStorageService(db)
+        transcript_data = transcript_storage.get_transcript(job_id, STAGE_BASE)
         
-        # Find the transcript file
-        transcript_file = output_dir / "turns.json"
-        if not transcript_file.exists():
-            raise HTTPException(status_code=400, detail="Transcript file not found")
-        
-        # Load transcript and extract words per speaker
-        with open(transcript_file, 'r') as f:
-            transcript_data = json.load(f)
+        if not transcript_data:
+            raise HTTPException(status_code=400, detail="Base transcript not found in database")
         
         speaker_segments = _extract_speaker_segments_from_transcript(transcript_data)
         
@@ -251,19 +244,16 @@ async def run_first_pass(job_id: str, background_tasks: BackgroundTasks):
         job_config = json.loads(job.config_json) if job.config_json else {}
         llm_url = job_config.get("llm_de_identifier_url", "http://0.0.0.0:8080")
         
-        # Run first pass
+        # Run first pass (no intermediate_dir - we store in database)
         orchestrator = DeIdentificationOrchestrator(
             llm_url=llm_url,
-            intermediate_dir=output_dir,
+            intermediate_dir=None,
         )
         
         first_pass_results = orchestrator.de_identify_multi_speaker_first_pass(speaker_segments)
         
-        # Save first pass results
-        first_pass_path = output_dir / "de_identification" / "first_pass_results.json"
-        first_pass_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(first_pass_path, 'w') as f:
-            json.dump(first_pass_results.to_dict(), f, indent=2)
+        # Store first pass results in database as JSON (not as file)
+        first_pass_results_json = json.dumps(first_pass_results.to_dict())
         
         # Convert discovered names to JSON
         discovered_names_data = [
@@ -294,13 +284,13 @@ async def run_first_pass(job_id: str, background_tasks: BackgroundTasks):
             ]
             db.bulk_create_pii_replacements(pii_records)
         
-        # Save state
+        # Save state with first pass results stored as JSON in database
         state = DeIdentificationState(
             job_id=job_id,
             first_pass_complete=True,
             second_pass_complete=False,
             discovered_names_json=json.dumps(discovered_names_data),
-            first_pass_segments_path=str(first_pass_path),
+            first_pass_segments_path=first_pass_results_json,  # Store JSON data, not file path
         )
         db.upsert_de_identification_state(state)
         
@@ -470,19 +460,13 @@ async def run_second_pass(job_id: str):
             FirstPassResults,
             DiscoveredName,
         )
+        from web_api.services.transcript_storage import TranscriptStorageService, STAGE_BASE
         
-        output_dir = Path(job.output_dir) if job.output_dir else None
-        if not output_dir:
-            raise HTTPException(status_code=400, detail="Job output directory not found")
-        
-        # Load first pass results
-        first_pass_path = Path(state.first_pass_segments_path) if state.first_pass_segments_path else None
-        if not first_pass_path or not first_pass_path.exists():
+        # Load first pass results from database (stored as JSON in first_pass_segments_path field)
+        if not state.first_pass_segments_path:
             raise HTTPException(status_code=400, detail="First pass results not found")
         
-        with open(first_pass_path, 'r') as f:
-            first_pass_data = json.load(f)
-        
+        first_pass_data = json.loads(state.first_pass_segments_path)
         first_pass_results = FirstPassResults.from_dict(first_pass_data)
         
         # Build name list for second pass
@@ -506,16 +490,18 @@ async def run_second_pass(job_id: str):
         job_config = json.loads(job.config_json) if job.config_json else {}
         llm_url = job_config.get("llm_de_identifier_url", "http://0.0.0.0:8080")
         
-        # Run second pass
+        # Run second pass (no intermediate_dir - we store in database)
         orchestrator = DeIdentificationOrchestrator(
             llm_url=llm_url,
-            intermediate_dir=output_dir,
+            intermediate_dir=None,
         )
         
-        # Load original segments for audit logging
-        transcript_file = output_dir / "turns.json"
-        with open(transcript_file, 'r') as f:
-            transcript_data = json.load(f)
+        # Get transcript from database
+        transcript_storage = TranscriptStorageService(db)
+        transcript_data = transcript_storage.get_transcript(job_id, STAGE_BASE)
+        if not transcript_data:
+            raise HTTPException(status_code=400, detail="Base transcript not found in database")
+        
         original_segments = _extract_speaker_segments_from_transcript(transcript_data)
         
         final_results = orchestrator.de_identify_multi_speaker_second_pass(
@@ -545,8 +531,8 @@ async def run_second_pass(job_id: str):
             db.bulk_create_pii_replacements(pii_records)
             total_second_pass += len(pii_records)
         
-        # Update de-identified transcript file and store in database
-        _apply_deidentification_to_transcript(output_dir, final_results, job_id)
+        # Apply de-identification to transcript and store in database
+        _apply_deidentification_to_transcript(transcript_data, final_results, job_id)
         
         # Update state
         db.update_de_identification_state(
@@ -753,20 +739,17 @@ def _extract_speaker_segments_from_transcript(transcript_data: dict) -> dict:
     return speaker_segments
 
 
-def _apply_deidentification_to_transcript(output_dir: Path, results: dict, job_id: str = None) -> None:
+def _apply_deidentification_to_transcript(transcript_data: dict, results: dict, job_id: str) -> None:
     """
-    Apply de-identification results to the transcript file.
+    Apply de-identification results to the transcript data and store in database.
     
-    Also stores the de-identified transcript in the database if job_id is provided.
+    Args:
+        transcript_data: The base transcript data (will be modified in place)
+        results: The de-identification results
+        job_id: The job ID for database storage
     """
-    transcript_file = output_dir / "turns.json"
-    deidentified_file = output_dir / "turns-de-identified.json"
-    
-    with open(transcript_file, 'r') as f:
-        transcript_data = json.load(f)
-    
     # Build replacement map from all results
-    # Key: (speaker, word_text, approximate_start) -> replacement_text
+    # Key: (speaker, word_text) -> replacement_text
     replacement_map = {}
     for speaker, result in results.items():
         for replacement in result.all_replacements:
@@ -806,25 +789,13 @@ def _apply_deidentification_to_transcript(output_dir: Path, results: dict, job_i
             if int_words:
                 interjection["text"] = " ".join(w.get("word", w.get("text", "")) for w in int_words)
     
-    # Save de-identified version to file
-    with open(deidentified_file, 'w') as f:
-        json.dump(transcript_data, f, indent=2)
-    
-    # Store in database if job_id provided
-    if job_id:
-        try:
-            from web_api.services.transcript_storage import TranscriptStorageService, STAGE_DE_IDENTIFIED
-            db = get_database()
-            transcript_storage = TranscriptStorageService(db)
-            transcript_storage.store_transcript(
-                job_id=job_id,
-                stage=STAGE_DE_IDENTIFIED,
-                data=transcript_data,
-                created_by="de_identification",
-            )
-        except Exception as e:
-            # Log but don't fail - file was already saved
-            import logging
-            logging.getLogger(__name__).warning(
-                f"Failed to store de-identified transcript in database: {e}"
-            )
+    # Store de-identified transcript in database
+    from web_api.services.transcript_storage import TranscriptStorageService, STAGE_DE_IDENTIFIED
+    db = get_database()
+    transcript_storage = TranscriptStorageService(db)
+    transcript_storage.store_transcript(
+        job_id=job_id,
+        stage=STAGE_DE_IDENTIFIED,
+        data=transcript_data,
+        created_by="de_identification",
+    )

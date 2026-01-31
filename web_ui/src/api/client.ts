@@ -250,10 +250,12 @@ export async function getJob(jobId: string): Promise<Job> {
 
 /**
  * Delete a job and all associated data.
- * Only works for completed, failed, or cancelled jobs.
+ * Only works for completed, failed, or cancelled jobs unless force=true.
+ * Use force=true to delete stale running/pending jobs.
  */
-export async function deleteJob(jobId: string): Promise<{ status: string; job_id: string }> {
-  const response = await fetch(`${API_BASE}/jobs/${jobId}`, {
+export async function deleteJob(jobId: string, force: boolean = false): Promise<{ status: string; job_id: string }> {
+  const params = force ? '?force=true' : '';
+  const response = await fetch(`${API_BASE}/jobs/${jobId}${params}`, {
     method: 'DELETE',
   });
   

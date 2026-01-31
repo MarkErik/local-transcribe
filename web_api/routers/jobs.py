@@ -314,12 +314,15 @@ async def cancel_job(job_id: str):
 
 
 @router.delete("/{job_id}")
-async def delete_job(job_id: str):
+async def delete_job(job_id: str, force: bool = Query(False, description="Force delete even if running/pending")):
     """
     Delete a job and all its associated data.
     
-    Only allows deletion of jobs that are completed, failed, or cancelled.
-    Running or pending jobs must be cancelled first.
+    By default, only allows deletion of jobs that are completed, failed, or cancelled.
+    Running or pending jobs must be cancelled first, unless force=true is specified.
+    
+    Use force=true to delete jobs that are stuck in 'running' or 'pending' state
+    (e.g., after a server restart).
     """
     db = get_database()
     
@@ -327,15 +330,19 @@ async def delete_job(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    # Only allow deletion of finished jobs
-    if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+    # Only allow deletion of finished jobs unless force=true
+    if job.status in (JobStatus.PENDING, JobStatus.RUNNING) and not force:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot delete job with status: {job.status.value}. Cancel it first."
+            detail=f"Cannot delete job with status: {job.status.value}. Cancel it first, or use force=true if the job is stale."
         )
     
-    # Delete the job and associated data from database
-    deleted = db.delete_job(job_id)
+    # Use force_delete for jobs in any state, or regular delete for completed jobs
+    if force or job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+        deleted = db.force_delete_job(job_id)
+    else:
+        deleted = db.delete_job(job_id)
+        
     if not deleted:
         raise HTTPException(status_code=404, detail="Job not found")
     

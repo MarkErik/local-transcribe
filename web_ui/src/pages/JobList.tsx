@@ -32,13 +32,25 @@ function formatDate(dateStr?: string): string {
   return date.toLocaleString();
 }
 
-function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }) {
-  const canDelete = ['completed', 'failed', 'cancelled'].includes(job.status);
+function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string, force?: boolean) => void }) {
+  const isFinished = ['completed', 'failed', 'cancelled'].includes(job.status);
+  const isStale = ['pending', 'running'].includes(job.status);
   
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (window.confirm(`Are you sure you want to delete job ${job.id.slice(0, 8)}...? This cannot be undone.`)) {
-      onDelete(job.id);
+    if (isStale) {
+      // For stale running/pending jobs, offer force delete
+      if (window.confirm(
+        `Job ${job.id.slice(0, 8)}... appears to be stuck in "${job.status}" state.\n\n` +
+        `This can happen if the server was restarted while the job was running.\n\n` +
+        `Do you want to force delete this job? This cannot be undone.`
+      )) {
+        onDelete(job.id, true);
+      }
+    } else {
+      if (window.confirm(`Are you sure you want to delete job ${job.id.slice(0, 8)}...? This cannot be undone.`)) {
+        onDelete(job.id, false);
+      }
     }
   };
   
@@ -58,11 +70,13 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={job.status} />
-          {canDelete && (
+          {(isFinished || isStale) && (
             <button
               onClick={handleDelete}
-              className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-              title="Delete job"
+              className={`p-1 transition-colors ${isStale 
+                ? 'text-orange-400 hover:text-orange-600 dark:hover:text-orange-400' 
+                : 'text-gray-400 hover:text-red-600 dark:hover:text-red-400'}`}
+              title={isStale ? "Force delete stale job" : "Delete job"}
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -113,14 +127,14 @@ export function JobList() {
   });
   
   const deleteMutation = useMutation({
-    mutationFn: deleteJob,
+    mutationFn: ({ jobId, force }: { jobId: string; force?: boolean }) => deleteJob(jobId, force),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
   });
   
-  const handleDelete = (jobId: string) => {
-    deleteMutation.mutate(jobId);
+  const handleDelete = (jobId: string, force?: boolean) => {
+    deleteMutation.mutate({ jobId, force });
   };
 
   if (isLoading) {

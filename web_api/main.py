@@ -32,12 +32,17 @@ async def lifespan(app: FastAPI):
     config.ensure_directories()
     init_database(config.database_path)
     
+    # Clean up stale jobs (jobs stuck in 'pending' or 'running' from previous runs)
+    from web_api.database import get_database
+    db = get_database()
+    stale_jobs = db.cleanup_stale_jobs()
+    if stale_jobs > 0:
+        print(f"Marked {stale_jobs} stale job(s) as failed (server restart recovery)")
+    
     yield
     
     # Shutdown
     # Cleanup incomplete uploads
-    from web_api.database import get_database
-    db = get_database()
     cleaned = db.cleanup_stale_uploads(hours=config.upload_timeout_hours)
     if cleaned > 0:
         print(f"Cleaned up {cleaned} stale uploads")

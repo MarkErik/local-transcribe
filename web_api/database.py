@@ -497,6 +497,59 @@ class Database:
             conn.commit()
             return cursor.rowcount
     
+    def cleanup_stale_jobs(self) -> int:
+        """
+        Mark jobs that were 'pending' or 'running' as 'failed' on server restart.
+        
+        This handles the case where the server crashed or was restarted while
+        jobs were in progress. These jobs cannot continue and must be marked
+        as failed so users can see what happened.
+        
+        Returns:
+            Number of jobs marked as failed.
+        """
+        with self._get_connection() as conn:
+            now = datetime.now(timezone.utc).isoformat()
+            cursor = conn.execute(
+                """
+                UPDATE jobs 
+                SET status = ?, 
+                    completed_at = ?,
+                    error_message = 'Job interrupted - server restarted while job was in progress'
+                WHERE status IN ('pending', 'running')
+                """,
+                (JobStatus.FAILED.value, now)
+            )
+            conn.commit()
+            return cursor.rowcount
+    
+    def force_delete_job(self, job_id: str) -> bool:
+        """
+        Force delete a job regardless of its status.
+        
+        This is for cleaning up stale jobs that are stuck in a bad state.
+        Unlike delete_job, this works on jobs in any status.
+        
+        Returns:
+            True if the job was deleted, False if not found.
+        """
+        with self._get_connection() as conn:
+            # Check if job exists
+            row = conn.execute("SELECT id FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            if not row:
+                return False
+            
+            # Delete related records first (foreign key constraints)
+            conn.execute("DELETE FROM edits WHERE job_id = ?", (job_id,))
+            conn.execute("DELETE FROM de_identification_state WHERE job_id = ?", (job_id,))
+            conn.execute("DELETE FROM pii_replacements WHERE job_id = ?", (job_id,))
+            
+            # Delete the job
+            conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+            conn.commit()
+            
+            return True
+    
     # De-identification state operations
     
     def get_de_identification_state(self, job_id: str) -> Optional[DeIdentificationState]:

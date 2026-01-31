@@ -197,7 +197,7 @@ export function NewJob() {
               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
             <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-              Enable LLM transcript cleanup
+              Enable LLM-based transcript cleanup
             </span>
           </label>
         </div>

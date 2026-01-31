@@ -167,17 +167,29 @@ class OutputGenerationStage(PipelineStage):
     def applicable_modes(self) -> List[str]:
         return ["combined_audio", "split_audio", "vad_split_audio"]
     
+    @property
+    def is_optional(self) -> bool:
+        """Output generation is optional in web mode."""
+        return True
+    
+    def can_execute(self, context: PipelineContext) -> tuple[bool, str]:
+        """Check if output generation should run."""
+        can_run, reason = super().can_execute(context)
+        if not can_run:
+            return can_run, reason
+        
+        # Skip in web mode - data is stored in database
+        if context.skip_file_outputs:
+            return False, "Skipped in web mode (data stored in database)"
+        
+        return True, ""
+    
     def execute(
         self,
         context: PipelineContext,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> PipelineContext:
         from local_transcribe.framework.output_manager import OutputManager
-        
-        # Skip file outputs in web mode - data is stored in database
-        if context.skip_file_outputs:
-            log_progress("Skipping file output generation (web mode - data stored in database)")
-            return context
         
         registry = context.api.get("registry")
         if registry is None:
@@ -270,17 +282,29 @@ class SingleSpeakerOutputStage(PipelineStage):
     def applicable_modes(self) -> List[str]:
         return ["single_speaker_audio"]
     
+    @property
+    def is_optional(self) -> bool:
+        """Output generation is optional in web mode."""
+        return True
+    
+    def can_execute(self, context: PipelineContext) -> tuple[bool, str]:
+        """Check if output generation should run."""
+        can_run, reason = super().can_execute(context)
+        if not can_run:
+            return can_run, reason
+        
+        # Skip in web mode - data is stored in database
+        if context.skip_file_outputs:
+            return False, "Skipped in web mode (data stored in database)"
+        
+        return True, ""
+    
     def execute(
         self,
         context: PipelineContext,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> PipelineContext:
         import csv
-        
-        # Skip file outputs in web mode - data is stored in database
-        if context.skip_file_outputs:
-            log_progress("Skipping single speaker file output (web mode - data stored in database)")
-            return context
         
         outdir = context.get_output_dir()
         transcript = context.word_segments  # This is text for single speaker mode
@@ -470,6 +494,14 @@ class CleanedOutputGenerationStage(PipelineStage):
     
     def can_execute(self, context: PipelineContext) -> tuple[bool, str]:
         """Check if cleaned output generation should run."""
+        can_run, reason = super().can_execute(context)
+        if not can_run:
+            return can_run, reason
+        
+        # Skip in web mode - data is stored in database
+        if context.skip_file_outputs:
+            return False, "Skipped in web mode (data stored in database)"
+        
         # Only run if we have a cleaned transcript
         cleaned_transcript = getattr(context, 'cleaned_transcript', None)
         if cleaned_transcript is None:
@@ -482,11 +514,6 @@ class CleanedOutputGenerationStage(PipelineStage):
         context: PipelineContext,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> PipelineContext:
-        # Skip file outputs in web mode - data is stored in database
-        if context.skip_file_outputs:
-            log_progress("Skipping cleaned file output generation (web mode - data stored in database)")
-            return context
-        
         registry = context.api.get("registry")
         if registry is None:
             raise StageError(self.name, "Registry not found in api")

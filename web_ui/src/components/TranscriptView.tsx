@@ -135,7 +135,9 @@ function TurnItem({
   
   const handleClick = useCallback(() => {
     onSelect(turn.turn_id);
-  }, [turn.turn_id, onSelect]);
+    // Also seek audio to this turn's start time
+    onSeek(turn.start);
+  }, [turn.turn_id, onSelect, turn.start, onSeek]);
   
   const handleTimestampClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();

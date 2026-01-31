@@ -50,6 +50,8 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
   const participantContainerRef = useRef<HTMLDivElement>(null);
   const interviewerWsRef = useRef<WaveSurfer | null>(null);
   const participantWsRef = useRef<WaveSurfer | null>(null);
+  // Track if we were playing before a seek operation to resume playback
+  const wasPlayingBeforeSeekRef = useRef(false);
   
   // State
   const [isPlaying, setIsPlaying] = useState(false);
@@ -138,6 +140,19 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
       if (participantWsRef.current && participantWsRef.current.getDuration() > 0) {
         participantWsRef.current.seekTo(time / participantWsRef.current.getDuration());
       }
+      // Resume playback if we were playing before the click
+      if (wasPlayingBeforeSeekRef.current) {
+        setTimeout(() => {
+          interviewerWsRef.current?.play();
+          participantWsRef.current?.play();
+        }, 10);
+        wasPlayingBeforeSeekRef.current = false;
+      }
+    });
+
+    // Track playing state before user click interaction
+    interviewerWs.on('interaction', () => {
+      wasPlayingBeforeSeekRef.current = interviewerWs.isPlaying();
     });
 
     interviewerWs.on('play', () => setIsPlaying(true));
@@ -165,6 +180,19 @@ export const CombinedAudioControl = forwardRef<CombinedAudioControlRef, Combined
         setCurrentTime(time);
         onTimeUpdate?.(time);
       }
+      // Resume playback if we were playing before the click
+      if (wasPlayingBeforeSeekRef.current) {
+        setTimeout(() => {
+          interviewerWsRef.current?.play();
+          participantWsRef.current?.play();
+        }, 10);
+        wasPlayingBeforeSeekRef.current = false;
+      }
+    });
+
+    // Track playing state before user click interaction on participant
+    participantWs.on('interaction', () => {
+      wasPlayingBeforeSeekRef.current = participantWs.isPlaying();
     });
 
     interviewerWsRef.current = interviewerWs;

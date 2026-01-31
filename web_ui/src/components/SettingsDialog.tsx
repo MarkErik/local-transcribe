@@ -87,9 +87,9 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     settings.resetToDefaults();
     // Reload local settings from the reset store
     setLocalSettings({
-      deIdentificationUrl: 'http://100.84.208.72:8080',
-      postProcessingUrl: 'http://100.84.208.72:8080',
-      remoteTranscriptionUrl: 'http://100.84.208.72:7070',
+      deIdentificationUrl: 'http://0.0.0.0:8080',
+      postProcessingUrl: 'http://0.0.0.0:8080',
+      remoteTranscriptionUrl: 'http://0.0.0.0:7070',
       defaultEnableDeIdentification: true,
       defaultEnableCleanup: false,
       defaultOutputFormats: ['turns-json', 'timestamped-txt'],

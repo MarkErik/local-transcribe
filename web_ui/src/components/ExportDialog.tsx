@@ -82,10 +82,18 @@ export function ExportDialog({ jobId, stages, currentStage, onClose }: ExportDia
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto py-4"
+      onClick={(e) => {
+        // Close when clicking the backdrop (outside the dialog)
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 my-auto max-h-[calc(100vh-2rem)] overflow-y-auto">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 sticky top-0 bg-white z-10">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold text-gray-900">Export Transcript</h2>
             <button
@@ -230,7 +238,7 @@ export function ExportDialog({ jobId, stages, currentStage, onClose }: ExportDia
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+        <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3 sticky bottom-0 bg-white">
           <button
             onClick={onClose}
             className="px-4 py-2 text-gray-700 hover:text-gray-900"

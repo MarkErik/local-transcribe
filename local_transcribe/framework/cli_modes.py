@@ -96,9 +96,6 @@ def _prompt_llm_de_identifier_url(args: argparse.Namespace) -> argparse.Namespac
 
 def prompt_de_identification(args: argparse.Namespace, mode: str) -> argparse.Namespace:
     """Prompt for de-identification settings if not already set.
-    
-    De-identification now automatically runs two-pass processing when enabled
-    for multi-speaker transcripts, so there's no need to prompt separately.
     """
     # Check if URL was explicitly provided via CLI (not just using default)
     url_was_set_via_cli = hasattr(args, '_llm_de_identifier_url_set') and args._llm_de_identifier_url_set

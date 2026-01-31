@@ -70,10 +70,14 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, AudioPlayerProps>(function
   const [duration, setDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Initialize WaveSurfer
   useEffect(() => {
     if (!containerRef.current) return;
+
+    setLoadError(null);
+    setIsReady(false);
 
     const wavesurfer = WaveSurfer.create({
       container: containerRef.current,
@@ -86,16 +90,28 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, AudioPlayerProps>(function
       cursorWidth: 1,
       cursorColor: '#1f2937',
       normalize: true,
-      backend: 'WebAudio',
+      // WaveSurfer v7+ uses Web Audio by default
+      // Use fetchParams to set CORS mode for cross-origin audio
+      fetchParams: {
+        mode: 'cors',
+      },
     });
 
+    // Load audio with error handling
     wavesurfer.load(audioUrl);
 
     wavesurfer.on('ready', () => {
       setIsReady(true);
+      setLoadError(null);
       const dur = wavesurfer.getDuration();
       setDuration(dur);
       onReady?.(dur);
+    });
+
+    wavesurfer.on('error', (err: Error | string) => {
+      const errorMessage = typeof err === 'string' ? err : err.message;
+      console.error('WaveSurfer error:', errorMessage);
+      setLoadError(errorMessage || 'Failed to load audio');
     });
 
     wavesurfer.on('audioprocess', (time: number) => {
@@ -207,12 +223,22 @@ export const AudioPlayer = forwardRef<AudioPlayerRef, AudioPlayerProps>(function
       <div ref={containerRef} className="mb-3" />
 
       {/* Loading indicator */}
-      {!isReady && (
+      {!isReady && !loadError && (
         <div className="flex items-center justify-center py-4">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600" />
           <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
             Loading audio...
           </span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {loadError && (
+        <div className="flex items-center justify-center py-4 text-red-500 dark:text-red-400">
+          <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <span className="text-sm">Audio error: {loadError}</span>
         </div>
       )}
 

@@ -5,9 +5,10 @@ Run with: uv run uvicorn web_api.main:app --reload --port 8299
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pathlib import Path
 
 from web_api import __version__
@@ -98,14 +99,75 @@ async def health_check():
 # Serve static files for frontend (production)
 # Only mount if the build directory exists
 frontend_build_dir = Path(__file__).parent.parent / "web_ui" / "dist"
+frontend_index_path = frontend_build_dir / "index.html"
+
 if frontend_build_dir.exists():
-    app.mount("/", StaticFiles(directory=str(frontend_build_dir), html=True), name="frontend")
+    # Mount static assets directory (CSS, JS, etc.)
+    # These are files like /assets/index-xxx.js, /assets/index-xxx.css
+    assets_dir = frontend_build_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+    
+    # Serve favicon and other root static files
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        favicon_path = frontend_build_dir / "favicon.ico"
+        if favicon_path.exists():
+            return FileResponse(favicon_path)
+        return FileResponse(frontend_index_path)
+    
+    @app.get("/vite.svg", include_in_schema=False)
+    async def vite_svg():
+        svg_path = frontend_build_dir / "vite.svg"
+        if svg_path.exists():
+            return FileResponse(svg_path, media_type="image/svg+xml")
+        return FileResponse(frontend_index_path)
+
+# SPA fallback: serve index.html for all non-API routes
+# This must be defined after all other routes to act as a catch-all
+@app.api_route("/{full_path:path}", methods=["GET"], include_in_schema=False)
+async def spa_fallback(request: Request, full_path: str):
+    """
+    SPA fallback handler for client-side routing.
+    
+    Serves index.html for all non-API routes so that React Router
+    can handle client-side navigation (e.g., /jobs/xxx/edit).
+    """
+    # Don't serve index.html for API routes or built-in FastAPI routes
+    excluded_prefixes = ["api/", "docs", "redoc", "openapi.json"]
+    for prefix in excluded_prefixes:
+        if full_path.startswith(prefix) or full_path == prefix.rstrip("/"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not Found")
+    
+    # Check if frontend is built
+    if frontend_build_dir.exists() and frontend_index_path.exists():
+        # Check if the request is for a static file that exists
+        static_file = frontend_build_dir / full_path
+        if static_file.is_file() and static_file.exists():
+            return FileResponse(static_file)
+        
+        # Otherwise serve index.html for SPA routing
+        return FileResponse(frontend_index_path)
+    
+    # Frontend not built - return API info
+    return {
+        "name": "Local Transcribe API",
+        "version": __version__,
+        "docs": "/docs",
+        "health": "/api/health",
+        "note": "Frontend not built. Run 'npm run build' in web_ui/ directory.",
+    }
 
 
 # Development: Add a simple root endpoint
 @app.get("/", tags=["root"])
 async def root():
     """Root endpoint with API info."""
+    # If frontend is built, serve it
+    if frontend_build_dir.exists() and frontend_index_path.exists():
+        return FileResponse(frontend_index_path)
+    
     return {
         "name": "Local Transcribe API",
         "version": __version__,

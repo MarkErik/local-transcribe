@@ -46,6 +46,43 @@ AUDIO_MAGIC_BYTES = {
 }
 
 
+def detect_audio_content_type(file_path: Path) -> str:
+    """
+    Detect the content type of an audio file from its magic bytes.
+    
+    Returns the appropriate MIME type for the audio file.
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            header = f.read(12)
+        
+        # Check for M4A/MP4 (ftyp box)
+        if len(header) >= 8 and header[4:8] == b'ftyp':
+            return 'audio/mp4'
+        
+        # Check other audio formats
+        for magic, mime_type in AUDIO_MAGIC_BYTES.items():
+            if header.startswith(magic):
+                return mime_type
+        
+        # Fallback based on file extension
+        ext = file_path.suffix.lower()
+        ext_to_mime = {
+            '.mp3': 'audio/mpeg',
+            '.m4a': 'audio/mp4',
+            '.mp4': 'audio/mp4',
+            '.wav': 'audio/wav',
+            '.flac': 'audio/flac',
+            '.ogg': 'audio/ogg',
+            '.opus': 'audio/opus',
+            '.aac': 'audio/aac',
+        }
+        return ext_to_mime.get(ext, 'audio/mpeg')
+        
+    except Exception:
+        return 'audio/mpeg'
+
+
 def validate_audio_file(file_path: Path) -> bool:
     """
     Validate that a file is a valid audio file.
@@ -309,7 +346,10 @@ async def get_audio_file(
         raise HTTPException(status_code=404, detail="File not found on disk")
     
     file_size = file_path.stat().st_size
-    content_type = upload.content_type or "audio/mpeg"
+    
+    # Detect content type from file (more reliable than stored type)
+    # This handles cases where content_type wasn't set correctly during upload
+    content_type = detect_audio_content_type(file_path)
     
     # Handle range requests for seeking
     if range:
@@ -344,6 +384,9 @@ async def get_audio_file(
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(content_length),
                 "Cache-Control": "max-age=86400",
+                # CORS headers for WebAudio API cross-origin playback
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length",
             }
             
             return StreamingResponse(
@@ -362,6 +405,9 @@ async def get_audio_file(
         headers={
             "Accept-Ranges": "bytes",
             "Cache-Control": "max-age=86400",
+            # CORS headers for WebAudio API cross-origin playback
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length",
         },
     )
 
@@ -383,7 +429,9 @@ async def head_audio_file(file_id: str):
         raise HTTPException(status_code=404, detail="File not found on disk")
     
     file_size = file_path.stat().st_size
-    content_type = upload.content_type or "audio/mpeg"
+    
+    # Detect content type from file (more reliable than stored type)
+    content_type = detect_audio_content_type(file_path)
     
     return FileResponse(
         file_path,
@@ -392,5 +440,8 @@ async def head_audio_file(file_id: str):
             "Accept-Ranges": "bytes",
             "Content-Length": str(file_size),
             "Cache-Control": "max-age=86400",
+            # CORS headers for WebAudio API cross-origin playback
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length",
         },
     )

@@ -5,14 +5,56 @@ import { getJob, getTranscript, subscribeToJobProgress, getDeIdentificationStatu
 import { useJobProgressStore } from '../store';
 import { NameListReview } from '../components';
 
+// Human-readable stage/substage display names
+const STAGE_DISPLAY_NAMES: Record<string, string> = {
+  'initialization': 'Initializing',
+  'vad_transcription': 'VAD & Transcription',
+  'de_identification': 'De-identification',
+  'speaker_naming': 'Speaker Naming',
+  'transcript_cleanup': 'Transcript Cleanup',
+};
+
+const SUBSTAGE_DISPLAY_NAMES: Record<string, string> = {
+  'vad_speaker': 'Performing VAD on',
+  'transcription': 'Transcription',
+};
+
+function getStageDisplayName(
+  stage: string | undefined,
+  substage: string | undefined,
+  metadata: Record<string, unknown> | undefined
+): string {
+  if (!stage) return '';
+  
+  // If we have a substage, use the substage display name
+  if (substage) {
+    const substageBase = SUBSTAGE_DISPLAY_NAMES[substage] || substage;
+    
+    // For VAD speaker substage, include the speaker name
+    if (substage === 'vad_speaker' && metadata?.speaker) {
+      return `${substageBase} ${metadata.speaker} audio`;
+    }
+    
+    // For transcription substage, could include model info if available
+    if (substage === 'transcription') {
+      return 'Transcription';
+    }
+    
+    return substageBase;
+  }
+  
+  // Fall back to stage display name
+  return STAGE_DISPLAY_NAMES[stage] || stage;
+}
+
 function ProgressBar({ current, total, label }: { current: number; total: number; label: string }) {
-  const percent = total > 0 ? (current / total) * 100 : 0;
+  const percent = total > 0 ? Math.round((current / total) * 100) : 0;
   
   return (
     <div className="mb-4">
       <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-1">
         <span>{label}</span>
-        <span>{current} / {total}</span>
+        <span>{percent}%</span>
       </div>
       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
         <div
@@ -36,8 +78,16 @@ function JobProgress({ jobId }: { jobId: string }) {
           case 'stage_start':
             setJobProgress(jobId, {
               currentStage: event.data.stage as string,
+              currentSubstage: undefined,  // Clear substage when new stage starts
+              substageMetadata: undefined,
               blockProgress: undefined,  // Clear block progress when new stage starts
               status: 'running',
+            });
+            break;
+          case 'substage_progress':
+            setJobProgress(jobId, {
+              currentSubstage: event.data.substage as string,
+              substageMetadata: event.data as Record<string, unknown>,
             });
             break;
           case 'block_progress':
@@ -51,6 +101,8 @@ function JobProgress({ jobId }: { jobId: string }) {
           case 'stage_complete':
             setJobProgress(jobId, (prev) => ({
               currentStage: undefined,  // Clear current stage since it's now complete
+              currentSubstage: undefined,
+              substageMetadata: undefined,
               completedStages: [
                 ...(prev?.completedStages || []),
                 event.data.stage as string,
@@ -63,6 +115,8 @@ function JobProgress({ jobId }: { jobId: string }) {
             setJobProgress(jobId, {
               status: 'completed',
               currentStage: undefined,
+              currentSubstage: undefined,
+              substageMetadata: undefined,
               blockProgress: undefined,
             });
             break;
@@ -91,15 +145,22 @@ function JobProgress({ jobId }: { jobId: string }) {
     );
   }
   
+  // Get the human-readable display name for current stage/substage
+  const stageDisplayName = getStageDisplayName(
+    progress.currentStage,
+    progress.currentSubstage,
+    progress.substageMetadata
+  );
+  
   return (
     <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
       <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
         Progress
       </h2>
       
-      {progress.currentStage && (
+      {stageDisplayName && (
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          Current stage: <span className="font-medium">{progress.currentStage}</span>
+          Current stage: <span className="font-medium">{stageDisplayName}</span>
         </p>
       )}
       
@@ -120,7 +181,7 @@ function JobProgress({ jobId }: { jobId: string }) {
                 key={stage}
                 className="px-2 py-1 text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded"
               >
-                ✓ {stage}
+                ✓ {STAGE_DISPLAY_NAMES[stage] || stage}
               </span>
             ))}
           </div>

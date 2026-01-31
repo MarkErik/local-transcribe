@@ -345,6 +345,11 @@ export function subscribeToJobProgress(
     onEvent({ type: 'block_progress', data });
   });
   
+  eventSource.addEventListener('substage_progress', (event) => {
+    const data = JSON.parse((event as MessageEvent).data);
+    onEvent({ type: 'substage_progress', data });
+  });
+  
   eventSource.addEventListener('stage_complete', (event) => {
     const data = JSON.parse((event as MessageEvent).data);
     onEvent({ type: 'stage_complete', data });

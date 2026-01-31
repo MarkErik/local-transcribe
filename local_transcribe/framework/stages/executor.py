@@ -319,6 +319,29 @@ class VADTranscriptionStage(PipelineStage):
                     logger = logging.getLogger(__name__)
                     logger.warning(f"Progress callback failed: {e}")
         
+        # Create substage callback for detailed sub-stage progress
+        def substage_callback(substage: str, metadata: dict | None = None) -> None:
+            """Emit substage progress events for the web UI.
+            
+            Substages:
+            - vad_speaker: Running VAD on a speaker (metadata: {speaker: str})
+            - transcription: Starting transcription (metadata: {total_blocks: int})
+            """
+            if progress_callback is not None:
+                try:
+                    data = {
+                        "stage": self.name,
+                        "substage": substage,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    if metadata:
+                        data.update(metadata)
+                    progress_callback("substage_progress", data)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Substage callback failed: {e}")
+        
         # Run VAD pipeline with progress callback
         transcript = build_turns_vad_split_audio(
             speaker_audio_files=speaker_audio_paths,
@@ -326,6 +349,7 @@ class VADTranscriptionStage(PipelineStage):
             intermediate_dir=intermediate_dir,
             models_dir=context.models_dir,
             progress_callback=vad_progress_wrapper,
+            substage_callback=substage_callback,
             **transcription_kwargs,
         )
         

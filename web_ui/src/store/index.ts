@@ -40,6 +40,8 @@ interface JobProgressState {
   jobs: Record<string, {
     status: string;
     currentStage?: string;
+    currentSubstage?: string;
+    substageMetadata?: Record<string, unknown>;
     blockProgress?: {
       current: number;
       total: number;

@@ -335,6 +335,7 @@ def build_turns_vad_split_audio(
     vad_threshold: float = 0.5,
     validate_durations: bool = True,
     progress_callback: Optional[Callable[[int, int], None]] = None,
+    substage_callback: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None,
     **kwargs
 ) -> TranscriptFlow:
     """
@@ -358,6 +359,9 @@ def build_turns_vad_split_audio(
         progress_callback: Optional callback for progress updates.
                           Called as: progress_callback(current_block, total_blocks)
                           This enables web UI to show per-block transcription progress.
+        substage_callback: Optional callback for sub-stage updates.
+                          Called as: substage_callback(substage_name, optional_metadata)
+                          Substages: "vad_speaker" (with speaker), "block_building", "transcription"
         **kwargs: Additional arguments passed to transcriber
         
     Returns:
@@ -394,6 +398,12 @@ def build_turns_vad_split_audio(
     
     for speaker_id, audio_path in speaker_audio_files.items():
         log_progress(f"Running VAD on {speaker_id}")
+        # Notify substage for VAD on this speaker
+        if substage_callback is not None:
+            try:
+                substage_callback("vad_speaker", {"speaker": speaker_id})
+            except Exception:
+                pass  # Don't let callback errors stop processing
         segments = vad_provider.detect_speech(audio_path, speaker_id)
         all_vad_segments[speaker_id] = segments
         speaker_durations[speaker_id] = vad_provider.get_audio_duration(audio_path)
@@ -428,6 +438,14 @@ def build_turns_vad_split_audio(
     
     # 3. Process blocks through ASR
     log_status(f"Transcribing {len(blocks)} blocks")
+    
+    # Notify substage for transcription start
+    if substage_callback is not None:
+        try:
+            substage_callback("transcription", {"total_blocks": len(blocks)})
+        except Exception:
+            pass  # Don't let callback errors stop processing
+    
     asr_processor = VADASRProcessor(
         transcriber_provider=transcriber_provider,
         models_dir=models_dir,

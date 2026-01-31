@@ -8,6 +8,9 @@ export type { AudioPlayerProps, AudioPlayerRef } from './AudioPlayer';
 export { DualTrackPlayer } from './DualTrackPlayer';
 export type { DualTrackPlayerProps, DualTrackPlayerRef } from './DualTrackPlayer';
 
+export { CombinedAudioControl } from './CombinedAudioControl';
+export type { CombinedAudioControlProps, CombinedAudioControlRef } from './CombinedAudioControl';
+
 export { TranscriptView } from './TranscriptView';
 export type { TranscriptViewProps } from './TranscriptView';
 

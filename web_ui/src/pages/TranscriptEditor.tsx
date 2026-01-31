@@ -10,7 +10,7 @@
  * - PII highlighting and audit trail
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
@@ -22,7 +22,7 @@ import {
   getPIIReplacements,
 } from '../api';
 import { 
-  DualTrackPlayer, 
+  CombinedAudioControl, 
   TranscriptView, 
   StageBadges,
   EditToolbar,
@@ -36,6 +36,7 @@ import {
   VirtualizedTranscriptView,
   ErrorBoundary,
 } from '../components';
+import type { CombinedAudioControlRef } from '../components';
 import { useEditStore, useDeIdentificationStore } from '../store';
 
 // Threshold for using virtualized list
@@ -45,6 +46,9 @@ export function TranscriptEditor() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  
+  // Ref for audio control
+  const audioControlRef = useRef<CombinedAudioControlRef>(null);
   
   // Current playback time for synchronization
   const [currentTime, setCurrentTime] = useState(0);
@@ -171,8 +175,8 @@ export function TranscriptEditor() {
 
   // Handle seek from transcript view
   const handleSeek = useCallback((time: number) => {
-    // This would be handled by DualTrackPlayer via ref, but for now
-    // we rely on the player's internal state
+    // Seek the audio player via ref
+    audioControlRef.current?.seekTo(time);
     setCurrentTime(time);
   }, []);
 
@@ -379,73 +383,8 @@ export function TranscriptEditor() {
       )}
 
       {/* Main content area */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left panel: Audio player */}
-        <div className="w-1/3 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-y-auto p-4">
-          <ErrorBoundary
-            fallback={
-              <div className="text-center py-12 text-red-500">
-                Audio player failed to load. Please refresh.
-              </div>
-            }
-          >
-            {audioUrls?.interviewer && audioUrls?.participant ? (
-              <DualTrackPlayer
-                interviewerUrl={audioUrls.interviewer}
-                participantUrl={audioUrls.participant}
-                onTimeUpdate={handleTimeUpdate}
-                onSeek={handleSeek}
-              />
-            ) : (
-              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                Audio files not available
-              </div>
-            )}
-          </ErrorBoundary>
-          
-          {/* Selected turn info */}
-          {selectedTurnId !== null && transcript?.turns && (
-            <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
-              <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
-                Selected Turn #{selectedTurnId}
-              </h3>
-              <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                Click on words to edit, or use the editing controls below.
-              </p>
-              <button
-                onClick={() => setSelectedTurnId(null)}
-                className="mt-2 text-xs text-yellow-600 dark:text-yellow-400 hover:underline"
-              >
-                Clear selection
-              </button>
-            </div>
-          )}
-          
-          {/* PII Audit Trail Panel */}
-          {showAuditTrail && piiHighlightEnabled && jobId && (
-            <div className="mt-4">
-              <PIIAuditTrail jobId={jobId} />
-            </div>
-          )}
-          
-          {/* Redaction Tool Panel */}
-          {showRedactionTool && jobId && (
-            <div className="mt-4">
-              <RedactionTool 
-                jobId={jobId}
-                selectedTurnId={selectedTurnId ?? undefined}
-                selectedWordIndex={selectedWordIndex ?? undefined}
-                selectedWordText={selectedWordText ?? undefined}
-                onRedactionComplete={() => {
-                  setSelectedWordIndex(null);
-                  setSelectedWordText(null);
-                }}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Right panel: Transcript view */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Transcript view (full width) */}
         <div className="flex-1 overflow-hidden">
           <ErrorBoundary
             fallback={
@@ -502,27 +441,98 @@ export function TranscriptEditor() {
             )}
           </ErrorBoundary>
         </div>
-      </div>
 
-      {/* Footer status bar */}
-      <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 py-2">
-        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <div>
-            {transcript?.turns && (
-              <span>
-                {transcript.turns.length} turns
-                {transcript.turns.length > VIRTUALIZATION_THRESHOLD && (
-                  <span className="ml-2 text-green-600">(virtualized)</span>
-                )}
-              </span>
+        {/* Right slide-out panel for tools */}
+        {(showAuditTrail || showRedactionTool || selectedTurnId !== null) && (
+          <div className="w-80 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-y-auto p-4 flex-shrink-0">
+            {/* Selected turn info */}
+            {selectedTurnId !== null && transcript?.turns && (
+              <div className="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
+                  Selected Turn #{selectedTurnId}
+                </h3>
+                <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                  Click on words to edit, or use the editing controls below.
+                </p>
+                <button
+                  onClick={() => setSelectedTurnId(null)}
+                  className="mt-2 text-xs text-yellow-600 dark:text-yellow-400 hover:underline"
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
+            
+            {/* PII Audit Trail Panel */}
+            {showAuditTrail && piiHighlightEnabled && jobId && (
+              <div className="mb-4">
+                <PIIAuditTrail jobId={jobId} />
+              </div>
+            )}
+            
+            {/* Redaction Tool Panel */}
+            {showRedactionTool && jobId && (
+              <div>
+                <RedactionTool 
+                  jobId={jobId}
+                  selectedTurnId={selectedTurnId ?? undefined}
+                  selectedWordIndex={selectedWordIndex ?? undefined}
+                  selectedWordText={selectedWordText ?? undefined}
+                  onRedactionComplete={() => {
+                    setSelectedWordIndex(null);
+                    setSelectedWordText(null);
+                  }}
+                />
+              </div>
             )}
           </div>
-          <div className="flex items-center space-x-4">
-            <span>Stage: {selectedStage || 'None'}</span>
-            {isLoadingStages && <span>Loading stages...</span>}
+        )}
+      </div>
+
+      {/* Fixed bottom audio control bar */}
+      <div className="flex-shrink-0">
+        <ErrorBoundary
+          fallback={
+            <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 py-6 text-center text-red-500">
+              Audio player failed to load. Please refresh.
+            </div>
+          }
+        >
+          {audioUrls?.interviewer && audioUrls?.participant ? (
+            <CombinedAudioControl
+              ref={audioControlRef}
+              interviewerUrl={audioUrls.interviewer}
+              participantUrl={audioUrls.participant}
+              onTimeUpdate={handleTimeUpdate}
+              onSeek={handleSeek}
+            />
+          ) : (
+            <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 py-4 text-center text-gray-500 dark:text-gray-400">
+              Audio files not available
+            </div>
+          )}
+        </ErrorBoundary>
+        
+        {/* Status bar */}
+        <div className="bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 px-4 py-1">
+          <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+            <div>
+              {transcript?.turns && (
+                <span>
+                  {transcript.turns.length} turns
+                  {transcript.turns.length > VIRTUALIZATION_THRESHOLD && (
+                    <span className="ml-2 text-green-600">(virtualized)</span>
+                  )}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center space-x-4">
+              <span>Stage: {selectedStage || 'None'}</span>
+              {isLoadingStages && <span>Loading stages...</span>}
+            </div>
           </div>
         </div>
-      </footer>
+      </div>
       
       {/* Export Dialog */}
       {showExportDialog && jobId && (

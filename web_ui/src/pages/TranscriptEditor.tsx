@@ -121,13 +121,30 @@ export function TranscriptEditor() {
   useEffect(() => {
     if (stages.length > 0 && !selectedStage) {
       // Default to the most processed stage
-      const stageOrder = ['transcript_cleanup', 'speaker_naming', 'de_identification', 'vad_transcription'];
+      // Support both new stage names and legacy names
+      const stageOrder = [
+        // New stage names (preferred)
+        'cleaned', 'de_identified', 'base',
+        // Legacy stage names (backward compatibility)
+        'transcript_cleanup', 'speaker_naming', 'de_identification', 'vad_transcription'
+      ];
+      
+      let foundStage: string | undefined;
       for (const stageName of stageOrder) {
         const found = stages.find(s => s.stage === stageName);
         if (found) {
-          setSelectedStage(found.stage);
+          foundStage = found.stage;
           break;
         }
+      }
+      
+      // If no known stage found but stages exist, use the first one
+      if (!foundStage && stages.length > 0) {
+        foundStage = stages[0].stage;
+      }
+      
+      if (foundStage) {
+        setSelectedStage(foundStage);
       }
     }
   }, [stages, selectedStage]);

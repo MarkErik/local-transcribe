@@ -40,6 +40,11 @@ export function PrintView({ transcript, jobId, stage, title, onClose }: PrintVie
 
   const formatStageName = (stage: string): string => {
     const names: Record<string, string> = {
+      // New stage names
+      'base': 'Raw Transcription',
+      'de_identified': 'De-identified',
+      'cleaned': 'LLM Cleaned',
+      // Legacy stage names
       'vad_transcription': 'Raw Transcription',
       'de_identification': 'De-identified',
       'speaker_naming': 'Named Speakers',

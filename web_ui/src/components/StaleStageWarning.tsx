@@ -16,12 +16,25 @@ interface StaleStageWarningProps {
 }
 
 // Stage order for determining which stages are downstream
+// Supports both new and legacy stage names
 const STAGE_ORDER = [
+  // New stage names (preferred)
+  'base',
+  'de_identified',
+  'cleaned',
+  // Legacy stage names (backward compatibility)
   'vad_transcription',
   'de_identification',
   'speaker_naming',
   'transcript_cleanup',
 ];
+
+// Map new stage names to legacy names for rerun API
+const STAGE_NAME_MAP: Record<string, string> = {
+  'base': 'vad_transcription',
+  'de_identified': 'de_identification',
+  'cleaned': 'transcript_cleanup',
+};
 
 export function StaleStageWarning({
   jobId,
@@ -32,10 +45,14 @@ export function StaleStageWarning({
 }: StaleStageWarningProps) {
   const handleRerun = useCallback(async () => {
     try {
+      // Map new stage names to legacy names if needed
+      const mappedStage = STAGE_NAME_MAP[currentStage] || currentStage;
+      
       // Determine the next stage to start from
       const currentIndex = STAGE_ORDER.indexOf(currentStage);
-      const nextStage = currentIndex >= 0 && currentIndex < STAGE_ORDER.length - 1
-        ? STAGE_ORDER[currentIndex + 1]
+      const legacyIndex = currentIndex < 0 ? STAGE_ORDER.indexOf(mappedStage) : currentIndex;
+      const nextStage = legacyIndex >= 0 && legacyIndex < STAGE_ORDER.length - 1
+        ? STAGE_ORDER[legacyIndex + 1]
         : undefined;
       
       const result = await rerunJob(jobId, nextStage);

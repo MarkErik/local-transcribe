@@ -6,7 +6,13 @@ import { useJobProgressStore } from '../store';
 import { NameListReview } from '../components';
 
 // Human-readable stage/substage display names
+// Supports both new and legacy stage names
 const STAGE_DISPLAY_NAMES: Record<string, string> = {
+  // New stage names
+  'base': 'Raw Transcription',
+  'de_identified': 'De-identification',
+  'cleaned': 'Transcript Cleanup',
+  // Legacy/pipeline stage names
   'initialization': 'Initializing',
   'vad_transcription': 'VAD & Transcription',
   'de_identification': 'De-identification',

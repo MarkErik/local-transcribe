@@ -178,7 +178,7 @@ class PipelineService:
             executor = PipelineExecutor(stages)
             
             # Execute pipeline in thread pool with progress callbacks
-            result = await self._run_pipeline_async(executor, context, progress_callback)
+            result, final_context = await self._run_pipeline_async(executor, context, progress_callback)
             
             if result.success:
                 # Mark complete
@@ -190,15 +190,41 @@ class PipelineService:
                 
                 # Store transcript data in database for web access
                 try:
-                    from web_api.services.transcript_storage import TranscriptStorageService
+                    from web_api.services.transcript_storage import TranscriptStorageService, STAGE_BASE
                     transcript_storage = TranscriptStorageService(self.db)
-                    stored_stages = transcript_storage.store_from_pipeline(job_id, output_dir)
-                    if progress_callback:
-                        progress_callback("transcript_stored", {
-                            "job_id": job_id,
-                            "stages": stored_stages,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        })
+                    
+                    # In web mode (skip_file_outputs=True), store directly from context
+                    if final_context.transcript is not None:
+                        stored = transcript_storage.store_from_context(
+                            job_id, 
+                            final_context.transcript,
+                            stage=STAGE_BASE
+                        )
+                        if stored:
+                            if progress_callback:
+                                progress_callback("transcript_stored", {
+                                    "job_id": job_id,
+                                    "stages": [STAGE_BASE],
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                })
+                        else:
+                            # Fallback to file-based storage if available
+                            stored_stages = transcript_storage.store_from_pipeline(job_id, output_dir)
+                            if progress_callback and stored_stages:
+                                progress_callback("transcript_stored", {
+                                    "job_id": job_id,
+                                    "stages": stored_stages,
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                })
+                    else:
+                        # No transcript in context, try file-based fallback
+                        stored_stages = transcript_storage.store_from_pipeline(job_id, output_dir)
+                        if progress_callback and stored_stages:
+                            progress_callback("transcript_stored", {
+                                "job_id": job_id,
+                                "stages": stored_stages,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            })
                 except Exception as e:
                     # Log error but don't fail the job - file-based fallback exists
                     import logging
@@ -313,6 +339,9 @@ class PipelineService:
         to avoid blocking the event loop.
         
         This method wraps the executor to send progress events via the callback.
+        
+        Returns:
+            Tuple of (PipelineResult, updated_context)
         """
         import asyncio
         from datetime import datetime, timezone
@@ -323,10 +352,11 @@ class PipelineService:
             from local_transcribe.framework.stages.executor import PipelineResult
             
             result = PipelineResult(success=True)
+            current_context = context  # Track the updated context
             
             for stage in executor.stages:
                 # Skip stages that don't apply to this mode
-                if not stage.applies_to_mode(context.mode):
+                if not stage.applies_to_mode(current_context.mode):
                     result.skipped_stages.append(stage.name)
                     continue
                 
@@ -340,14 +370,13 @@ class PipelineService:
                 
                 # Execute the stage with progress callback
                 updated_context, stage_result = stage.execute_safe(
-                    context,
+                    current_context,
                     progress_callback=progress_callback
                 )
                 result.stage_results.append(stage_result)
                 
                 # Update context for next stage
-                # Note: context is a dataclass, but execute_safe returns updated context
-                context.__dict__.update(updated_context.__dict__)
+                current_context = updated_context
                 
                 if stage_result.status == StageStatus.COMPLETED:
                     result.completed_stages.append(stage.name)
@@ -366,15 +395,15 @@ class PipelineService:
                     result.error = stage_result.error
                     break
             
-            return result
+            return result, current_context
         
         # Run synchronous pipeline in thread pool
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
+        result, final_context = await loop.run_in_executor(
             None,
             execute_with_progress,
         )
-        return result
+        return result, final_context
     
     async def execute_job_from_checkpoint(
         self,

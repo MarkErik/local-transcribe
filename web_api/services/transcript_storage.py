@@ -62,6 +62,47 @@ class TranscriptStorageService:
         """
         self.db = db
     
+    def store_from_context(self, job_id: str, transcript, stage: str = STAGE_BASE) -> bool:
+        """
+        Store transcript data directly from a pipeline context's transcript object.
+        
+        This is the preferred method for web mode where skip_file_outputs=True
+        and no files are written to disk.
+        
+        Args:
+            job_id: The job ID
+            transcript: A TranscriptFlow object (or any object with to_dict() method)
+            stage: The stage identifier (default: 'base')
+            
+        Returns:
+            True if stored successfully, False otherwise
+        """
+        if transcript is None:
+            logger.warning(f"No transcript data to store for job {job_id}")
+            return False
+        
+        try:
+            # Convert TranscriptFlow to dict if needed
+            if hasattr(transcript, 'to_dict'):
+                data = transcript.to_dict()
+            elif isinstance(transcript, dict):
+                data = transcript
+            else:
+                logger.error(f"Unknown transcript type: {type(transcript)}")
+                return False
+            
+            self.db.store_transcript_data(
+                job_id=job_id,
+                stage=stage,
+                data_json=json.dumps(data),
+                created_by="pipeline",
+            )
+            logger.info(f"Stored transcript stage '{stage}' for job {job_id} from context")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store transcript for job {job_id}: {e}")
+            return False
+    
     def store_from_pipeline(self, job_id: str, output_dir: Path) -> List[str]:
         """
         Store transcript data from pipeline output files into the database.

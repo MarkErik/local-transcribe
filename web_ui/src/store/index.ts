@@ -14,6 +14,7 @@ export const OUTPUT_FORMATS = {
   'dialogue-script': 'Dialogue Script (screenplay style)',
   'markdown': 'Markdown (formatted with headers)',
   'srt': 'SRT Subtitles (for video)',
+  'vad-video': 'MP4 Video (video with speaker labels)',
 } as const;
 
 export type OutputFormatKey = keyof typeof OUTPUT_FORMATS;

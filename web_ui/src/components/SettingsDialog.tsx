@@ -327,7 +327,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
                   onChange={(e) => setLocalSettings(prev => ({ ...prev, defaultTranscriberProvider: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                 >
-                  <option value="granite">Granite (Remote)</option>
+                  <option value="granite">Granite (Local)</option>
                   <option value="whisper">Whisper (Local)</option>
                 </select>
               </div>

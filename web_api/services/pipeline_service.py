@@ -256,7 +256,6 @@ class PipelineService:
         args.transcriber_model = options.get("transcriber_model", "granite-8b")
         args.aligner_provider = options.get("aligner_provider")
         args.diarization_provider = options.get("diarization_provider")
-        args.transcript_cleanup_provider = options.get("transcript_cleanup_provider")
         
         # Remote URLs
         args.remote_transcriber_url = options.get("remote_transcriber_url", "http://0.0.0.0:7070")
@@ -266,6 +265,12 @@ class PipelineService:
         # Processing options
         args.de_identify = options.get("enable_de_identification", True)
         args.enable_cleanup = options.get("enable_cleanup", False)
+        
+        # Set transcript_cleanup_provider when enable_cleanup is True
+        # Default to 'llm_transcript_cleanup' if not explicitly specified
+        args.transcript_cleanup_provider = options.get("transcript_cleanup_provider")
+        if args.enable_cleanup and not args.transcript_cleanup_provider:
+            args.transcript_cleanup_provider = "llm_transcript_cleanup"
         args.num_speakers = options.get("num_speakers", 2)
         
         # Output settings
@@ -467,9 +472,14 @@ class PipelineService:
             args.mode = original_config.get("mode")
             args.speaker_map = None
             args.audio_for_video = None
-            args.transcript_cleanup_provider = options.get("transcript_cleanup_provider")
             args.llm_de_identifier_url = options.get("llm_de_identifier_url", "http://0.0.0.0:8080")
             args.llm_transcript_cleanup_url = options.get("llm_transcript_cleanup_url", "http://0.0.0.0:8080")
+            
+            # Set transcript_cleanup_provider when enable_cleanup is True
+            # Default to 'llm_transcript_cleanup' if not explicitly specified
+            args.transcript_cleanup_provider = options.get("transcript_cleanup_provider")
+            if args.enable_cleanup and not args.transcript_cleanup_provider:
+                args.transcript_cleanup_provider = "llm_transcript_cleanup"
             
             # Run from checkpoint
             import asyncio

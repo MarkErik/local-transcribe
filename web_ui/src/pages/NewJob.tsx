@@ -185,7 +185,7 @@ export function NewJob() {
               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
             <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-              Enable de-identification (redact names and PII)
+              Enable LLM-based de-identification
             </span>
           </label>
           

@@ -1,6 +1,6 @@
 [project]
 name = "local-transcribe"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -46,13 +46,17 @@ dev = [
     "pyright>=1.1.407",
     "pytest>=9.0.1",
     "httpx>=0.27.0",
+    "setuptools-scm>=9.2.2",
 ]
 
-[tool.uv]
-constraint-dependencies = [
-    "numba>=0.60.0",
-    "llvmlite>=0.40.0",
-]
+[build-system]
+requires = ["setuptools>=61", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "local_transcribe/_version.py"
+version_scheme = "post-release"
+local_scheme = "no-local-version"
 
 [tool.setuptools.packages.find]
 where = ["."]

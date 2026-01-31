@@ -43,7 +43,6 @@ interface JobProgressState {
     blockProgress?: {
       current: number;
       total: number;
-      speaker: string;
     };
     completedStages: string[];
     error?: string;

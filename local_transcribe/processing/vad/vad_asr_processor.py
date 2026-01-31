@@ -248,7 +248,7 @@ class VADASRProcessor:
         self,
         blocks: List[VADBlock],
         speaker_audio_files: Dict[str, str],
-        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
         **kwargs
     ) -> List[VADBlock]:
         """
@@ -258,7 +258,7 @@ class VADASRProcessor:
             blocks: List of VAD blocks to transcribe
             speaker_audio_files: Mapping of speaker_id to audio file path
             progress_callback: Optional callback for progress updates.
-                              Called as: progress_callback(current_block, total_blocks, speaker_id)
+                              Called as: progress_callback(current_block, total_blocks)
                               This enables web UI to show per-block transcription progress.
             **kwargs: Additional arguments passed to transcriber
             
@@ -289,12 +289,12 @@ class VADASRProcessor:
         
         for i, block in enumerate(blocks):
             if (i + 1) % 10 == 0 or i == 0:
-                log_progress(f"Processing block {i + 1}/{len(blocks)} ({block.speaker_id})")
+                log_progress(f"Processing block {i + 1}/{len(blocks)}")
             
             # Call progress callback if provided (for web UI)
             if progress_callback is not None:
                 try:
-                    progress_callback(i + 1, len(blocks), block.speaker_id)
+                    progress_callback(i + 1, len(blocks))
                 except Exception:
                     pass  # Don't let callback errors stop transcription
             

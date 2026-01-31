@@ -299,10 +299,10 @@ class VADTranscriptionStage(PipelineStage):
             transcription_kwargs['transcriber_model'] = args.transcriber_model
         
         # Create wrapper callback that emits block_progress events for web UI
-        def vad_progress_wrapper(current: int, total: int, speaker_id: str) -> None:
+        def vad_progress_wrapper(current: int, total: int) -> None:
             """Wrapper to emit progress events from VAD pipeline.
             
-            Note: Field names match frontend expectations (current, total, speaker).
+            Note: Field names match frontend expectations (current, total).
             Percent is calculated by frontend for consistency.
             """
             if progress_callback is not None:
@@ -311,7 +311,6 @@ class VADTranscriptionStage(PipelineStage):
                         "stage": self.name,
                         "current": current,
                         "total": total,
-                        "speaker": speaker_id,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
                 except Exception as e:

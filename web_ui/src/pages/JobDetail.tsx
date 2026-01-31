@@ -45,7 +45,6 @@ function JobProgress({ jobId }: { jobId: string }) {
               blockProgress: {
                 current: event.data.current as number,
                 total: event.data.total as number,
-                speaker: event.data.speaker as string,
               },
             });
             break;
@@ -108,7 +107,7 @@ function JobProgress({ jobId }: { jobId: string }) {
         <ProgressBar
           current={progress.blockProgress.current}
           total={progress.blockProgress.total}
-          label={`Transcribing (${progress.blockProgress.speaker})`}
+          label="Transcribing"
         />
       )}
       

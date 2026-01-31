@@ -334,7 +334,7 @@ def build_turns_vad_split_audio(
     models_dir: Optional[Path] = None,
     vad_threshold: float = 0.5,
     validate_durations: bool = True,
-    progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
     **kwargs
 ) -> TranscriptFlow:
     """
@@ -356,7 +356,7 @@ def build_turns_vad_split_audio(
         models_dir: Path to model cache directory
         validate_durations: Whether to validate audio file durations match
         progress_callback: Optional callback for progress updates.
-                          Called as: progress_callback(current_block, total_blocks, speaker_id)
+                          Called as: progress_callback(current_block, total_blocks)
                           This enables web UI to show per-block transcription progress.
         **kwargs: Additional arguments passed to transcriber
         

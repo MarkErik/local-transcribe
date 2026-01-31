@@ -167,7 +167,6 @@ class BlockProgressEvent(ProgressEvent):
     stage: str
     current: int
     total: int
-    speaker: str
 
 
 class StageCompleteEvent(ProgressEvent):

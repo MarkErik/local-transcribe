@@ -319,7 +319,11 @@ async def cancel_job(job_id: str):
 
 
 @router.delete("/{job_id}")
-async def delete_job(job_id: str, force: bool = Query(False, description="Force delete even if running/pending")):
+async def delete_job(
+    job_id: str, 
+    force: bool = Query(False, description="Force delete even if running/pending"),
+    cleanup_uploads: bool = Query(True, description="Also delete uploaded audio files if not used by other jobs"),
+):
     """
     Delete a job and all its associated data.
     
@@ -328,6 +332,9 @@ async def delete_job(job_id: str, force: bool = Query(False, description="Force 
     
     Use force=true to delete jobs that are stuck in 'running' or 'pending' state
     (e.g., after a server restart).
+    
+    By default, uploaded audio files associated with the job will be cleaned up
+    if they are not referenced by other jobs. Set cleanup_uploads=false to keep them.
     """
     db = get_database()
     
@@ -341,6 +348,14 @@ async def delete_job(job_id: str, force: bool = Query(False, description="Force 
             status_code=400,
             detail=f"Cannot delete job with status: {job.status.value}. Cancel it first, or use force=true if the job is stale."
         )
+    
+    # Clean up uploaded files before deleting job (while we still have file IDs)
+    files_cleaned = 0
+    bytes_freed = 0
+    if cleanup_uploads:
+        from web_api.services.upload_cleanup import get_cleanup_service
+        cleanup_service = get_cleanup_service()
+        files_cleaned, bytes_freed = cleanup_service.cleanup_upload_for_job(job_id)
     
     # Use force_delete for jobs in any state, or regular delete for completed jobs
     if force or job.status in (JobStatus.PENDING, JobStatus.RUNNING):
@@ -366,7 +381,12 @@ async def delete_job(job_id: str, force: bool = Query(False, description="Force 
     if job_id in _job_events:
         del _job_events[job_id]
     
-    return {"status": "deleted", "job_id": job_id}
+    return {
+        "status": "deleted", 
+        "job_id": job_id,
+        "uploads_cleaned": files_cleaned,
+        "bytes_freed": bytes_freed,
+    }
 
 
 @router.post("/{job_id}/rerun")

@@ -445,3 +445,63 @@ async def head_audio_file(file_id: str):
             "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length",
         },
     )
+
+
+@router.post("/cleanup/orphaned")
+async def cleanup_orphaned_uploads(dry_run: bool = False):
+    """
+    Clean up orphaned upload directories.
+    
+    Orphaned uploads are directories in the uploads folder that are not
+    referenced by any job's interviewer_file_id or participant_file_id.
+    
+    This is useful for manual maintenance or debugging. Note that orphan
+    cleanup also runs automatically on server startup.
+    
+    Args:
+        dry_run: If True, only report what would be deleted without actually deleting.
+    
+    Returns:
+        Cleanup result with counts and any errors.
+    """
+    from web_api.services.upload_cleanup import get_cleanup_service
+    
+    cleanup_service = get_cleanup_service()
+    result = cleanup_service.cleanup_orphaned_uploads(dry_run=dry_run)
+    
+    return {
+        "dry_run": dry_run,
+        "orphaned_found": result.orphaned_dirs_found,
+        "orphaned_removed": result.orphaned_dirs_removed,
+        "bytes_freed": result.bytes_freed,
+        "bytes_freed_mb": round(result.bytes_freed / (1024 * 1024), 2),
+        "errors": result.errors,
+        "success": result.success,
+    }
+
+
+@router.get("/cleanup/status")
+async def get_cleanup_status():
+    """
+    Get the current status of orphaned uploads without removing them.
+    
+    This is a non-destructive way to check how many orphaned uploads exist.
+    
+    Returns:
+        Count of orphaned uploads and their total size.
+    """
+    from web_api.services.upload_cleanup import get_cleanup_service
+    
+    cleanup_service = get_cleanup_service()
+    orphaned = cleanup_service.find_orphaned_uploads()
+    
+    total_size = sum(
+        cleanup_service.calculate_directory_size(d) for d in orphaned
+    )
+    
+    return {
+        "orphaned_count": len(orphaned),
+        "orphaned_ids": [d.name for d in orphaned],
+        "total_bytes": total_size,
+        "total_mb": round(total_size / (1024 * 1024), 2),
+    }

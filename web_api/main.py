@@ -40,6 +40,15 @@ async def lifespan(app: FastAPI):
     if stale_jobs > 0:
         print(f"Marked {stale_jobs} stale job(s) as failed (server restart recovery)")
     
+    # Clean up orphaned uploads (files not referenced by any active job)
+    from web_api.services.upload_cleanup import cleanup_orphaned_uploads
+    cleanup_result = cleanup_orphaned_uploads(dry_run=False)
+    if cleanup_result.orphaned_dirs_found > 0:
+        bytes_mb = cleanup_result.bytes_freed / (1024 * 1024)
+        print(f"Cleaned up {cleanup_result.orphaned_dirs_removed} orphaned upload(s), freed {bytes_mb:.1f} MB")
+        if cleanup_result.errors:
+            print(f"  Cleanup errors: {len(cleanup_result.errors)}")
+    
     yield
     
     # Shutdown

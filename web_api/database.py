@@ -356,6 +356,38 @@ class Database:
             )
             conn.commit()
     
+    def delete_uploaded_file(self, file_id: str) -> bool:
+        """
+        Delete an uploaded file record from the database.
+        
+        Note: This only deletes the database record. The actual file on disk
+        should be deleted separately (typically by the cleanup service).
+        
+        Args:
+            file_id: The UUID of the uploaded file.
+        
+        Returns:
+            True if the record was deleted, False if not found.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM uploaded_files WHERE id = ?",
+                (file_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_all_uploaded_file_ids(self) -> List[str]:
+        """
+        Get all file IDs from the uploaded_files table.
+        
+        Returns:
+            List of all file IDs in the database.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT id FROM uploaded_files").fetchall()
+            return [row["id"] for row in rows]
+    
     # Edit operations
     
     def create_edit(self, edit: Edit) -> Edit:

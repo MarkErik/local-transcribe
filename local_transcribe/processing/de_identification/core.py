@@ -210,7 +210,6 @@ class FirstPassResults:
                     text=s.get("text", s.get("word", "")),
                     start=s.get("start", s.get("start_time", 0.0)),
                     end=s.get("end", s.get("end_time", 0.0)),
-                    confidence=s.get("confidence", 1.0),
                     speaker=s.get("speaker")
                 )
                 for s in segs

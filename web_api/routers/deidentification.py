@@ -726,7 +726,7 @@ def _extract_speaker_segments_from_transcript(transcript_data: dict) -> dict:
         
         words = turn.get("words", [])
         for w in words:
-            # WordSegment only has text, start, end, speaker fields (no confidence)
+            # WordSegment only has text, start, end, speaker fields
             segment = WordSegment(
                 text=w.get("word", w.get("text", "")),
                 start=w.get("start_time", w.get("start", 0.0)),

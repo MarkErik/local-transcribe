@@ -2,12 +2,15 @@
 Database entity models (dataclasses) and enums.
 
 These represent the core data structures stored in the database.
+Factory methods (from_row) provide a single source of truth for
+converting SQLite rows to entity objects, reducing code duplication.
 """
 
 import json
+import sqlite3
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 
 
 class JobStatus(str, Enum):
@@ -27,6 +30,10 @@ class UploadStatus(str, Enum):
     FAILED = "failed"
 
 
+# Type alias for SQLite rows (can be sqlite3.Row or dict-like)
+RowType = Union[sqlite3.Row, Dict[str, Any]]
+
+
 @dataclass
 class Job:
     """Represents a transcription job."""
@@ -41,6 +48,27 @@ class Job:
     output_dir: Optional[str] = None
     interviewer_file_id: Optional[str] = None
     participant_file_id: Optional[str] = None
+    
+    @classmethod
+    def from_row(cls, row: RowType) -> "Job":
+        """Create a Job from a SQLite row or dict.
+        
+        This factory method provides a single source of truth for
+        converting database rows to Job objects, reducing code duplication.
+        """
+        return cls(
+            id=row["id"],
+            status=JobStatus(row["status"]),
+            mode=row["mode"],
+            config_json=row["config_json"],
+            created_at=row["created_at"],
+            started_at=row["started_at"],
+            completed_at=row["completed_at"],
+            error_message=row["error_message"],
+            output_dir=row["output_dir"],
+            interviewer_file_id=row["interviewer_file_id"],
+            participant_file_id=row["participant_file_id"],
+        )
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -72,6 +100,21 @@ class UploadedFile:
     chunks_received: int = 0
     total_chunks: int = 0
     
+    @classmethod
+    def from_row(cls, row: RowType) -> "UploadedFile":
+        """Create an UploadedFile from a SQLite row or dict."""
+        return cls(
+            id=row["id"],
+            original_filename=row["original_filename"],
+            stored_path=row["stored_path"],
+            size_bytes=row["size_bytes"],
+            content_type=row["content_type"],
+            upload_status=UploadStatus(row["upload_status"]),
+            created_at=row["created_at"],
+            chunks_received=row["chunks_received"],
+            total_chunks=row["total_chunks"],
+        )
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -102,6 +145,28 @@ class Edit:
     target_turn_id: Optional[int] = None
     annotation_type: Optional[str] = None
     created_at: Optional[str] = None
+    
+    @classmethod
+    def from_row(cls, row: RowType) -> "Edit":
+        """Create an Edit from a SQLite row or dict."""
+        # Handle optional columns that may not exist in older schema versions
+        target_turn_id = row["target_turn_id"] if "target_turn_id" in row.keys() else None
+        annotation_type = row["annotation_type"] if "annotation_type" in row.keys() else None
+        
+        return cls(
+            id=row["id"],
+            job_id=row["job_id"],
+            stage_name=row["stage_name"],
+            edit_type=row["edit_type"],
+            turn_id=row["turn_id"],
+            start_index=row["start_index"],
+            end_index=row["end_index"],
+            original_value=row["original_value"],
+            new_value=row["new_value"],
+            target_turn_id=target_turn_id,
+            annotation_type=annotation_type,
+            created_at=row["created_at"],
+        )
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

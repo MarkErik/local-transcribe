@@ -3,6 +3,7 @@
 Aligner plugin using Montreal Forced Aligner (MFA).
 
 Uses MFAAlignmentEngine for TextGrid parsing and word alignment utilities.
+Uses shared MFA utilities for command/model management to reduce code duplication.
 """
 
 from typing import List, Optional
@@ -14,7 +15,13 @@ from local_transcribe.framework.plugin_interfaces import AlignerProvider, WordSe
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_completion, log_debug
 
 # Use shared lazy imports to avoid code duplication
-from local_transcribe.providers.common.lazy_imports import get_mfa_alignment_engine_class
+from local_transcribe.providers.common.lazy_imports import (
+    get_mfa_alignment_engine_class,
+    get_mfa_command,
+    ensure_mfa_models,
+    get_mfa_environment,
+    get_mfa_config_path,
+)
 
 # Keep module-level reference for backward compatibility with tests
 _get_mfa_alignment_engine_class = get_mfa_alignment_engine_class
@@ -68,76 +75,12 @@ class MFAAlignerProvider(AlignerProvider):
         return models
 
     def _get_mfa_command(self):
-        """Get the MFA command, checking local environment first."""
-        # Check if MFA is available in project-local environment
-        project_root = pathlib.Path(__file__).parent.parent.parent.parent
-        local_mfa_env = project_root / ".mfa_env" / "bin" / "mfa"
-        
-        if local_mfa_env.exists():
-            self.logger.info(f"[MFA] Using local MFA: {local_mfa_env}")
-            return str(local_mfa_env)
-        
-        # Fall back to system MFA
-        self.logger.info(f"[MFA] Using system MFA: mfa")
-        return "mfa"
+        """Get the MFA command, using shared utility."""
+        return get_mfa_command(self.logger)
 
     def _ensure_mfa_models(self):
-        """Ensure MFA acoustic model and dictionary are downloaded to project directory."""
-        self.logger.info(f"[MFA] Checking MFA models in {self.mfa_models_dir}")
-        # Set MFA_ROOT_DIR environment variable to use project models directory
-        env = os.environ.copy()
-        env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
-
-        mfa_cmd = self._get_mfa_command()
-        self.logger.info(f"[MFA] Using MFA command: {mfa_cmd}")
-        
-        try:
-            # Check if models are already downloaded
-            result = subprocess.run(
-                [mfa_cmd, "model", "list", "acoustic"],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env
-            )
-            log_debug(f"[MFA] Available acoustic models: {result.stdout.strip()}")
-
-            if "english_us_arpa" not in result.stdout:
-                log_progress(f"[MFA] Downloading MFA English acoustic model to {self.mfa_models_dir}...")
-                subprocess.run(
-                    [mfa_cmd, "model", "download", "acoustic", "english_us_arpa"],
-                    check=True,
-                    env=env
-                )
-                log_completion(f"[MFA] Acoustic model downloaded successfully")
-            else:
-                self.logger.info(f"[MFA] Acoustic model english_us_arpa already available")
-
-            result = subprocess.run(
-                [mfa_cmd, "model", "list", "dictionary"],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env
-            )
-            log_debug(f"[MFA] Available dictionaries: {result.stdout.strip()}")
-
-            if "english_us_arpa" not in result.stdout:
-                log_progress(f"[MFA] Downloading MFA English dictionary to {self.mfa_models_dir}...")
-                subprocess.run(
-                    [mfa_cmd, "model", "download", "dictionary", "english_us_arpa"],
-                    check=True,
-                    env=env
-                )
-                log_completion(f"[MFA] Dictionary downloaded successfully")
-            else:
-                self.logger.info(f"[MFA] Dictionary english_us_arpa already available")
-
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"[MFA] ERROR: Failed to check/download MFA models: {e}")
-            self.logger.error(f"[MFA] stdout: {e.stdout}")
-            self.logger.error(f"[MFA] stderr: {e.stderr}")
-            raise
+        """Ensure MFA models are downloaded, using shared utility."""
+        ensure_mfa_models(self.mfa_models_dir, self.logger)
 
     def _parse_textgrid(self, textgrid_path: pathlib.Path, original_transcript: str, speaker: Optional[str] = None) -> List[WordSegment]:
         """Parse MFA TextGrid output to extract word timestamps.

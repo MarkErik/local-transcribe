@@ -6,7 +6,7 @@ This plugin combines Granite's transcription capabilities with Montreal Forced A
 to produce chunked transcripts where each word has timestamps.
 
 Uses GraniteModelManager for consolidated model management and transcription.
-
+Uses shared MFA utilities for command/model management to reduce code duplication.
 """
 
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
@@ -25,6 +25,10 @@ from local_transcribe.lib.program_logger import get_logger, log_progress, log_co
 from local_transcribe.providers.common.lazy_imports import (
     get_granite_model_manager_class,
     get_mfa_alignment_engine_class,
+    get_mfa_command,
+    ensure_mfa_models,
+    get_mfa_environment,
+    get_mfa_config_path,
 )
 
 # Keep module-level references for backward compatibility with tests
@@ -46,8 +50,6 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
     def __init__(self):
         self.logger = get_logger()
         self.logger.info("Initializing Granite MFA Transcriber Provider")
-        
-        # Model manager and alignment engine will be lazily initialized
         self._model_manager = None
         self._alignment_engine = None
         
@@ -126,60 +128,13 @@ class GraniteMFATranscriberProvider(TranscriberProvider):
             self.model_manager._load_model(model_name)
 
     def _get_mfa_command(self):
-        """Get the MFA command, checking local environment first."""
-        project_root = pathlib.Path(__file__).parent.parent.parent.parent
-        local_mfa_env = project_root / ".mfa_env" / "bin" / "mfa"
-        
-        if local_mfa_env.exists():
-            return str(local_mfa_env)
-        
-        return "mfa"
+        """Get the MFA command, using shared utility."""
+        return get_mfa_command(self.logger)
 
     def _ensure_mfa_models(self):
-        """Ensure MFA acoustic model and dictionary are downloaded."""
+        """Ensure MFA models are downloaded, using shared utility."""
         log_progress("Ensuring MFA models are available...")
-        log_progress(f"Checking MFA models in {self.mfa_models_dir}")
-        env = os.environ.copy()
-        env["MFA_ROOT_DIR"] = str(self.mfa_models_dir)
-
-        mfa_cmd = self._get_mfa_command()
-        
-        try:
-            result = subprocess.run(
-                [mfa_cmd, "model", "list", "acoustic"],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env
-            )
-
-            if "english_us_arpa" not in result.stdout:
-                log_progress("Downloading MFA English acoustic model...")
-                subprocess.run(
-                    [mfa_cmd, "model", "download", "acoustic", "english_us_arpa"],
-                    check=True,
-                    env=env
-                )
-
-            result = subprocess.run(
-                [mfa_cmd, "model", "list", "dictionary"],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env
-            )
-
-            if "english_us_arpa" not in result.stdout:
-                log_progress("Downloading MFA English dictionary...")
-                subprocess.run(
-                    [mfa_cmd, "model", "download", "dictionary", "english_us_arpa"],
-                    check=True,
-                    env=env
-                )
-
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to check/download MFA models: {e}")
-            raise
+        ensure_mfa_models(self.mfa_models_dir, self.logger)
 
     def _transcribe_single_chunk(self, wav, sample_rate: int = 16000, **kwargs) -> str:
         """Transcribe a single audio chunk using consolidated GraniteModelManager."""

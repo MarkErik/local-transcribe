@@ -11,6 +11,8 @@ Usage:
         get_granite_model_manager_class,
         get_mfa_alignment_engine_class,
         get_silero_vad_provider_class,
+        get_mfa_command,
+        ensure_mfa_models,
     )
     
     # Later, when actually needed:
@@ -19,6 +21,14 @@ Usage:
 """
 
 from typing import TYPE_CHECKING, Any, Optional, Type
+
+# Re-export MFA utilities from mfa_utils module
+from local_transcribe.providers.common.mfa_utils import (
+    get_mfa_command,
+    ensure_mfa_models,
+    get_mfa_environment,
+    get_mfa_config_path,
+)
 
 # Type hints for lazy-loaded modules
 if TYPE_CHECKING:

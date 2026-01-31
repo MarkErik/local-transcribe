@@ -184,19 +184,7 @@ class Database:
                 "SELECT * FROM jobs WHERE id = ?", (job_id,)
             ).fetchone()
             if row:
-                return Job(
-                    id=row["id"],
-                    status=JobStatus(row["status"]),
-                    mode=row["mode"],
-                    config_json=row["config_json"],
-                    created_at=row["created_at"],
-                    started_at=row["started_at"],
-                    completed_at=row["completed_at"],
-                    error_message=row["error_message"],
-                    output_dir=row["output_dir"],
-                    interviewer_file_id=row["interviewer_file_id"],
-                    participant_file_id=row["participant_file_id"],
-                )
+                return Job.from_row(row)
         return None
     
     def update_job_status(
@@ -255,22 +243,7 @@ class Database:
                     (limit, offset)
                 ).fetchall()
             
-            return [
-                Job(
-                    id=row["id"],
-                    status=JobStatus(row["status"]),
-                    mode=row["mode"],
-                    config_json=row["config_json"],
-                    created_at=row["created_at"],
-                    started_at=row["started_at"],
-                    completed_at=row["completed_at"],
-                    error_message=row["error_message"],
-                    output_dir=row["output_dir"],
-                    interviewer_file_id=row["interviewer_file_id"],
-                    participant_file_id=row["participant_file_id"],
-                )
-                for row in rows
-            ]
+            return [Job.from_row(row) for row in rows]
     
     def delete_job(self, job_id: str) -> bool:
         """
@@ -338,17 +311,7 @@ class Database:
                 "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)
             ).fetchone()
             if row:
-                return UploadedFile(
-                    id=row["id"],
-                    original_filename=row["original_filename"],
-                    stored_path=row["stored_path"],
-                    size_bytes=row["size_bytes"],
-                    content_type=row["content_type"],
-                    upload_status=UploadStatus(row["upload_status"]),
-                    created_at=row["created_at"],
-                    chunks_received=row["chunks_received"],
-                    total_chunks=row["total_chunks"],
-                )
+                return UploadedFile.from_row(row)
         return None
     
     def update_upload_progress(
@@ -447,23 +410,7 @@ class Database:
                     (job_id,)
                 ).fetchall()
             
-            return [
-                Edit(
-                    id=row["id"],
-                    job_id=row["job_id"],
-                    stage_name=row["stage_name"],
-                    edit_type=row["edit_type"],
-                    turn_id=row["turn_id"],
-                    start_index=row["start_index"],
-                    end_index=row["end_index"],
-                    original_value=row["original_value"],
-                    new_value=row["new_value"],
-                    target_turn_id=row["target_turn_id"] if "target_turn_id" in row.keys() else None,
-                    annotation_type=row["annotation_type"] if "annotation_type" in row.keys() else None,
-                    created_at=row["created_at"],
-                )
-                for row in rows
-            ]
+            return [Edit.from_row(row) for row in rows]
     
     def delete_edit(self, edit_id: int) -> bool:
         """Delete an edit by ID. Returns True if deleted."""

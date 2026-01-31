@@ -11,14 +11,17 @@ to learn about segment length limits and other constraints.
 
 import base64
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List, Tuple, Union
+from typing import Optional, Dict, Any, List, Tuple, Union, TYPE_CHECKING
 import math
 import numpy as np
 from numpy.typing import NDArray
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import librosa
+
+# Lazy import for librosa to improve CLI startup time
+if TYPE_CHECKING:
+    import librosa
 
 from local_transcribe.framework.plugin_interfaces import TranscriberProvider, WordSegment, registry
 from local_transcribe.lib.program_logger import get_logger, log_progress, log_debug, log_completion
@@ -546,7 +549,8 @@ class RemoteTranscriberProvider(TranscriberProvider):
         
         log_progress(f"Remote transcription using server at {self.server_url}")
         
-        # Load audio
+        # Load audio (lazy import librosa to improve CLI startup time)
+        import librosa
         wav, sr = librosa.load(audio_path, sr=16000, mono=True)
         duration = len(wav) / sr
         

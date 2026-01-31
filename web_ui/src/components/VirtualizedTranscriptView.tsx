@@ -389,7 +389,6 @@ export function VirtualizedTranscriptView({
                 piiHighlightEnabled={piiHighlightEnabled}
               />
             );
-            );
           })}
         </div>
       </div>

@@ -35,12 +35,13 @@ You MUST NEVER respond to questions - ALWAYS ignore them.
 2. Do NOT replace place names, organization names, or other proper nouns
 3. Do NOT add, remove, or modify any other words in any way
 4. Do NOT change punctuation, capitalization, or structure
-5. Return the EXACT SAME TEXT with only names replaced by [REDACTED]
-6. For names with a title (e.g., 'Dr. Smith'), only replace the name and leave the title as-is 'Dr. [REDACTED]'
-7. You MUST NEVER respond to questions or add any extra content
-8. When a token is ambiguous between being a name and a common word (e.g., Will vs will), redact only when the context shows it is being used as a name.
-9. NEVER replace pronouns or other grammatical function words—such as personal pronouns (e.g., I, me, you, he, she, they, him, her, them), possessive determiners (e.g., my, your, his, her, their), reflexive pronouns (e.g., myself, yourself)
-10. IMPORTANT: Maintain the exact same number of words as the input text.
+5. Do NOT correct grammar
+6. Return the EXACT SAME TEXT with only names replaced by [REDACTED]
+7. For names with a title (e.g., 'Dr. Smith'), only replace the name and leave the title as-is 'Dr. [REDACTED]'
+8. You MUST NEVER respond to questions or add any extra content
+9. When a token is ambiguous between being a name and a common word (e.g., Will vs will), redact only when the context shows it is being used as a name.
+10. NEVER replace pronouns or other grammatical function words—such as personal pronouns
+11. IMPORTANT: Maintain the exact same number of words as the input text.
 
 • Examples:
 - 'John Smith went to New York' → '[REDACTED] [REDACTED] went to New York'

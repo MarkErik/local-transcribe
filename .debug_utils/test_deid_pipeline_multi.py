@@ -397,13 +397,27 @@ Reasoning: {reasoning_level.value}
             logger.info("Parsing first pass response...")
             # Parse first pass response
             first_response = first_result["response"]
+            logger.info(f"Raw response type: {type(first_response)}")
             if isinstance(first_response, dict) and "choices" in first_response:
                 first_redacted = first_response["choices"][0]["message"]["content"]
+                logger.info(f"OpenAI format response: {type(first_redacted)}")
             elif isinstance(first_response, dict) and "output" in first_response:
                 # Harmony format - extract final channel
+                logger.info(f"Harmony output type: {type(first_response['output'])}")
                 first_redacted = self._parse_harmony_response(first_response["output"])
+                logger.info(f"Harmony format response: {type(first_redacted)}")
+            elif isinstance(first_response, list):
+                logger.info(f"Response is list, length: {len(first_response)}")
+                first_redacted = self._parse_harmony_response(first_response)
+                logger.info(f"Parsed list response: {type(first_redacted)}")
             else:
                 first_redacted = str(first_response)
+                logger.info(f"Fallback response: {type(first_redacted)}")
+            
+            # Ensure it's a string
+            if not isinstance(first_redacted, str):
+                logger.error(f"Unexpected response type: {type(first_redacted)}, content: {first_redacted}")
+                raise Exception(f"Response parsing failed: expected string, got {type(first_redacted)}")
             
             first_pass_time = time.time() - first_pass_start
             logger.info(f"First pass completed in {first_pass_time:.2f}s")
@@ -497,23 +511,40 @@ Reasoning: {reasoning_level.value}
             )
     
     def _parse_harmony_response(self, output: list) -> str:
-        """Parse Harmony format response to extract final channel content."""
-        if not output:
+        """Parse Harmony format response to extract content."""
+        logger.info(f"Parsing Harmony output: {output}")
+        if not output or len(output) == 0:
+            logger.info("Output is empty")
             return ""
         
-        # Look for final channel
-        for message in reversed(output):
-            if isinstance(message, dict) and message.get("channel") == "final":
-                return message.get("content", "")
-        
-        # Fallback to last message
-        last_msg = output[-1]
-        if isinstance(last_msg, dict):
-            return last_msg.get("content", "")
-        return str(last_msg)
+        # Take the last message's content (as in test_endpoint_multi.py)
+        last_message = output[-1]
+        logger.info(f"Last message: {last_message}")
+        if isinstance(last_message, dict) and "content" in last_message:
+            content = last_message["content"]
+            logger.info(f"Content: {type(content)} - {content[:100] if isinstance(content, str) else str(type(content))}...")
+            if isinstance(content, str):
+                return content
+            elif isinstance(content, list):
+                # If content is a list, join the items
+                return " ".join(str(item) for item in content)
+            else:
+                return str(content)
+        else:
+            content = str(last_message)
+            logger.info(f"Str content: {type(content)} - {content[:100]}...")
+            return content
     
-    def _extract_names_from_redaction(self, original: str, redacted: str) -> List[str]:
+    def _extract_names_from_redaction(self, original: str, redacted) -> List[str]:
         """Extract discovered names by comparing original and redacted text."""
+        # Ensure inputs are strings
+        if not isinstance(original, str):
+            logger.error(f"Original is not a string: {type(original)}")
+            return []
+        if not isinstance(redacted, str):
+            logger.error(f"Redacted is not a string: {type(redacted)}, content: {redacted}")
+            return []
+        
         # Simplified: split into words and find positions of [REDACTED]
         original_words = original.split()
         redacted_words = redacted.split()

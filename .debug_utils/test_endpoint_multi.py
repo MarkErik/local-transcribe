@@ -499,12 +499,24 @@ Reasoning: {reasoning_level.value}
             # OpenAI-compatible format
             return response["choices"][0]["message"].get("content", "")
         elif "output" in response:
-            # Harmony format
+            # Harmony format - parse for final channel content
             output = response["output"]
             if output and len(output) > 0:
                 content_list = output[0].get("content", [])
                 if content_list and len(content_list) > 0:
-                    return content_list[0].get("text", "")
+                    text = content_list[0].get("text", "")
+                    # Extract final channel content
+                    if "<|channel|>final<|message|>" in text:
+                        start = text.find("<|channel|>final<|message|>")
+                        content = text[start + len("<|channel|>final<|message|>"):].strip()
+                        # Remove any trailing tokens
+                        for token in ["<|return|>", "<|end|>", "<|call|>"]:
+                            if token in content:
+                                content = content.split(token)[0].strip()
+                        return content
+                    else:
+                        # Fallback to entire text if no final channel
+                        return text.strip()
         return ""
     
     async def test_conversation_history(self, endpoint: EndpointConfig):
@@ -533,7 +545,12 @@ Reasoning: {reasoning_level.value}
             logger.info(f"[{endpoint.name or f'port-{endpoint.port}'}] Turn 1 response: {response1[:100]}...")
             
             # Second turn - include conversation history
-            messages.append({"role": "assistant", "content": response1})
+            if endpoint.endpoint_type == EndpointType.HARMONY:
+                # For Harmony, format assistant response properly for conversation history
+                assistant_formatted = f"<|start|>assistant<|channel|>final<|message|>{response1}<|end|>"
+                messages.append({"role": "assistant", "content": assistant_formatted})
+            else:
+                messages.append({"role": "assistant", "content": response1})
             messages.append({"role": "user", "content": "What is my favorite color?"})
             
             result2 = await self.send_request(endpoint, messages)

@@ -161,7 +161,7 @@ Reasoning: {reasoning_level.value}
         self,
         endpoint: EndpointConfig,
         messages: list[dict],
-        model: str = "gpt-4o",
+        model: str = "model",
         temperature: Optional[float] = None,
         max_tokens: int = 4096
     ) -> dict:

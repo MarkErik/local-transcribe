@@ -31,6 +31,7 @@ output/
 examples/
 samples/
 uploads/
+external_api_docs/
 *.wav
 *.mp3
 *.txt
@@ -40,7 +41,7 @@ uploads/
 *.csv
 *.vtt
 *.m4a
-*.json
+#*.json
 *.mp4
 *.pdf
 *.TextGrid

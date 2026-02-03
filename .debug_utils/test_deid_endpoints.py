@@ -7,21 +7,310 @@ This test suite:
 2. Extracts WordSegments from the TranscriptFlow
 3. Tests all 5 LLM endpoints with first and second pass de-identification
 4. Validates word count preservation and collects metrics
+
+Uses Harmony and OpenAI-compatible endpoint formats from test_endpoint_multi.py.
 """
 
 import json
+import re
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
+from enum import Enum
+
+import requests
 
 from local_transcribe.framework.plugin_interfaces import WordSegment
 from local_transcribe.processing.turn_building.vad_turn_builder import build_turns_vad_split_audio
 from local_transcribe.processing.turn_building.turn_building_data_structures import TranscriptFlow, HierarchicalTurn
-from local_transcribe.processing.de_identification.core import DeIdentificationConfig, WordReplacement
+from local_transcribe.processing.de_identification.core import DeIdentificationConfig, WordReplacement, ValidationResult, ChunkProcessingResult, DEFAULT_CONFIG
 from local_transcribe.processing.de_identification.first_pass import de_identify_first_pass, FirstPassResult
 from local_transcribe.processing.de_identification.second_pass import de_identify_second_pass, SecondPassResult, build_global_name_list
 from local_transcribe.processing.de_identification.llm_client import LLMDeIdentifierClient
+
+
+class EndpointType(Enum):
+    """Endpoint format type."""
+    HARMONY = "Harmony"
+    OPENAI_COMPATIBLE = "OpenAI Compatible"
+
+
+# =============================================================================
+# Endpoint Configuration with Type Detection
+# =============================================================================
+
+# Map ports to endpoint types (from test_endpoint_multi.py)
+ENDPOINT_PORT_MAP = {
+    8080: EndpointType.HARMONY,
+    8105: EndpointType.HARMONY,
+    8107: EndpointType.OPENAI_COMPATIBLE,
+#    8083: EndpointType.OPENAI_COMPATIBLE,
+    8099: EndpointType.OPENAI_COMPATIBLE,
+}
+
+# P28 sample audio files
+SPEAKER_AUDIO_FILES = {
+    "Interviewer": "samples/audioMA-P28_cropped_30.0min.wav",
+    "Participant": "samples/audioP28_cropped_30.0min.wav"
+}
+
+
+# =============================================================================
+# Harmony/OpenAI-Compatible Client (from test_endpoint_multi.py patterns)
+# =============================================================================
+
+class MultiFormatLLMClient(LLMDeIdentifierClient):
+    """
+    LLM client that supports both Harmony and OpenAI-compatible formats.
+    
+    Extends LLMDeIdentifierClient to use the exact request/response formatting
+    from test_endpoint_multi.py while maintaining compatibility with existing
+    de-identification functions.
+    """
+    
+    def __init__(
+        self,
+        llm_url: str,
+        endpoint_type: EndpointType = EndpointType.OPENAI_COMPATIBLE,
+        config: Optional[DeIdentificationConfig] = None
+    ):
+        """
+        Initialize the multi-format LLM client.
+        
+        Args:
+            llm_url: URL of the LLM server
+            endpoint_type: Type of endpoint (Harmony or OpenAI-compatible)
+            config: Configuration options
+        """
+        # Initialize parent class
+        super().__init__(llm_url=llm_url, config=config)
+        
+        # Override format detection - use explicit endpoint type
+        self._harmony_format_detected = (endpoint_type == EndpointType.HARMONY)
+        self._harmony_detection_done = True
+        self.endpoint_type = endpoint_type
+    
+    def _get_port(self) -> int:
+        """Extract port from URL."""
+        match = re.search(r':(\d+)', self.llm_url)
+        return int(match.group(1)) if match else 8080
+    
+    # -------------------------------------------------------------------------
+    # Prompt Building (from test_endpoint_multi.py)
+    # -------------------------------------------------------------------------
+    
+    def build_harmony_system_message(self, reasoning_level: str = "high") -> str:
+        """Build a system message in harmony format."""
+        return f"""<|start|>system<|message|>You are ChatGPT, a large language model trained by OpenAI.
+Knowledge cutoff: 2024-06
+Current date: {datetime.now().strftime('%Y-%m-%d')}
+
+Reasoning: {reasoning_level}
+
+# Valid channels: analysis, commentary, final. Channel must be included for every message.<|end|>"""
+    
+    def build_harmony_developer_message(self, instructions: str = "You are a helpful assistant.") -> str:
+        """Build a developer message in harmony format."""
+        return f"""<|start|>developer<|message|># Instructions
+
+{instructions}<|end|>"""
+    
+    def build_harmony_user_message(self, content: str) -> str:
+        """Build a user message in harmony format."""
+        return f"""<|start|>user<|message|>{content}<|end|>"""
+    
+    # -------------------------------------------------------------------------
+    # Override process_chunk to use endpoint-specific formatting
+    # -------------------------------------------------------------------------
+    
+    def process_chunk(
+        self,
+        text: str,
+        system_prompt: str,
+        validator,
+        extra_validation_args: Optional[Dict[str, Any]] = None
+    ) -> ChunkProcessingResult:
+        """
+        Process a text chunk with the LLM using endpoint-specific formatting.
+        
+        Overrides parent method to use Harmony or OpenAI-compatible format
+        based on endpoint type.
+        """
+        extra_validation_args = extra_validation_args or {}
+        
+        all_attempts: List[Dict[str, Any]] = []
+        total_response_time_ms = 0.0
+        last_raw_response: Optional[str] = None
+        last_validation: Optional[ValidationResult] = None
+        
+        max_retries = self.config.max_retries
+        initial_temperature = self.config.temperature
+        temperature_decay = self.config.temperature_decay
+        
+        for attempt in range(max_retries + 1):
+            # Calculate temperature for this attempt
+            if attempt == 0:
+                current_temperature = initial_temperature
+            else:
+                current_temperature = max(0.0, initial_temperature - (attempt * temperature_decay))
+            
+            attempt_number = attempt + 1
+            attempt_info: Dict[str, Any] = {
+                'attempt': attempt_number,
+                'temperature': current_temperature,
+            }
+            
+            if attempt > 0:
+                print(f"    Retry {attempt}/{max_retries} with temperature {current_temperature:.2f}")
+            
+            # Build request based on endpoint type
+            if self.endpoint_type == EndpointType.HARMONY:
+                # Harmony format: /v1/responses with input text
+                url = f"{self.llm_url}/v1/responses"
+                
+                # Combine system and user messages for Harmony
+                developer_msg = "You are a helpful assistant."
+                input_text = f"{system_prompt}\n\n{developer_msg}\n\n{text}"
+                
+                body = {
+                    "model": "model",
+                    "input": input_text,
+                    "max_output_tokens": 4096,
+                    "temperature": current_temperature,
+                }
+            else:
+                # OpenAI-compatible format: /v1/chat/completions
+                url = f"{self.llm_url}/v1/chat/completions"
+                
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text}
+                ]
+                
+                body = {
+                    "model": "model",
+                    "messages": messages,
+                    "max_tokens": 4096,
+                    "temperature": current_temperature,
+                    "stream": False
+                }
+            
+            try:
+                start_time = time.time()
+                response = requests.post(url, json=body, timeout=self.config.llm_timeout)
+                response.raise_for_status()
+                response_time_ms = (time.time() - start_time) * 1000
+                total_response_time_ms += response_time_ms
+                
+                result = response.json()
+                
+                # Parse response based on endpoint type
+                if self.endpoint_type == EndpointType.HARMONY:
+                    raw_response = self._parse_harmony_raw_response(result)
+                else:
+                    raw_response = result["choices"][0]["message"]["content"]
+                
+                last_raw_response = raw_response if isinstance(raw_response, str) else str(raw_response)
+                
+                # Parse response (handles Harmony format if needed)
+                processed_text = self.parse_response(last_raw_response)
+                
+                # Validate output
+                validation = validator(text, processed_text, **extra_validation_args)
+                
+                attempt_info.update({
+                    'validation_passed': validation.passed,
+                    'validation_reason': validation.reason,
+                    'response_time_ms': response_time_ms,
+                    'raw_response': last_raw_response,
+                    'processed_text': processed_text,
+                    'validation_result': validation.to_dict(),
+                })
+                all_attempts.append(attempt_info)
+                
+                if validation.passed:
+                    validation.details['total_attempts'] = attempt_number
+                    validation.details['final_temperature'] = current_temperature
+                    
+                    return ChunkProcessingResult(
+                        processed_text=processed_text,
+                        response_time_ms=total_response_time_ms,
+                        validation=validation,
+                        raw_response=last_raw_response,
+                        attempt_logs=all_attempts,
+                    )
+                else:
+                    last_validation = validation
+                    
+            except Exception as e:
+                print(f"    Request failed (attempt {attempt_number}): {e}")
+                attempt_info['error'] = f'{e}'
+                all_attempts.append(attempt_info)
+                last_validation = ValidationResult(
+                    passed=False,
+                    reason=f'request failed: {e}',
+                    details={}
+                )
+        
+        # All retries exhausted
+        final_validation = last_validation or ValidationResult(
+            passed=False,
+            reason='all attempts failed',
+            details={}
+        )
+        final_validation.details['total_attempts'] = max_retries + 1
+        final_validation.details['all_attempts_failed'] = True
+        
+        return ChunkProcessingResult(
+            processed_text=text,  # Fall back to original
+            response_time_ms=total_response_time_ms,
+            validation=final_validation,
+            raw_response=last_raw_response,
+            attempt_logs=all_attempts,
+        )
+    
+    def _parse_harmony_raw_response(self, response: dict) -> str:
+        """Parse raw Harmony response to extract text content."""
+        if not isinstance(response, dict):
+            return str(response)
+        
+        if "output" in response:
+            output = response["output"]
+            if output and len(output) > 0:
+                content_list = output[0].get("content", [])
+                if content_list and len(content_list) > 0:
+                    text = content_list[0].get("text", "")
+                    return text
+        return ""
+
+
+# =============================================================================
+# Endpoint Configuration
+# =============================================================================
+
+# Output directory for intermediate files and results
+DEBUG_OUTPUT_DIR = Path("./debug_output")
+RESULTS_FILE = DEBUG_OUTPUT_DIR / "deid_endpoint_test_results.json"
+
+# 5 endpoints to test with type detection (from test_endpoint_multi.py)
+ENDPOINTS = [
+    {"name": "harmony_8080", "url": "http://100.84.208.72:8080", "port": 8080},
+    {"name": "harmony_8105", "url": "http://100.84.208.72:8105", "port": 8105},
+    {"name": "openai_compat_8107", "url": "http://100.84.208.72:8107", "port": 8107},
+    #{"name": "openai_compat_8083", "url": "http://100.84.208.72:8083", "port": 8083},
+    {"name": "openai_compat_8099", "url": "http://100.84.208.72:8099", "port": 8099},
+]
+
+# De-identification config
+DEID_CONFIG = DeIdentificationConfig(
+    chunk_size=400,
+    overlap_size=60,
+    min_final_chunk=200,
+    llm_timeout=360,
+    temperature=0.7,
+    max_retries=3,
+)
 
 
 # =============================================================================
@@ -85,25 +374,29 @@ def extract_word_segments(transcript: TranscriptFlow) -> List[WordSegment]:
     return all_words
 
 
-def create_llm_client(endpoint_config: Dict[str, str]) -> LLMDeIdentifierClient:
+def create_llm_client(endpoint_config: Dict[str, str]) -> MultiFormatLLMClient:
     """
-    Create an LLM client for a specific endpoint.
+    Create an LLM client for a specific endpoint with correct format type.
     
     Args:
-        endpoint_config: Endpoint configuration with name and url
+        endpoint_config: Endpoint configuration with name, url, and port
         
     Returns:
-        Configured LLMDeIdentifierClient
+        Configured MultiFormatLLMClient using Harmony or OpenAI-compatible format
     """
-    return LLMDeIdentifierClient(
+    port = int(endpoint_config.get("port", 8080))
+    endpoint_type = ENDPOINT_PORT_MAP.get(port, EndpointType.OPENAI_COMPATIBLE)
+    
+    return MultiFormatLLMClient(
         llm_url=endpoint_config["url"],
+        endpoint_type=endpoint_type,
         config=DEID_CONFIG
     )
 
 
 def run_first_pass(
     segments: List[WordSegment],
-    llm_client: LLMDeIdentifierClient,
+    llm_client: MultiFormatLLMClient,
     endpoint_name: str
 ) -> Dict[str, Any]:
     """
@@ -156,7 +449,7 @@ def run_first_pass(
 def run_second_pass(
     segments: List[WordSegment],
     first_pass_replacements: List[WordReplacement],
-    llm_client: LLMDeIdentifierClient,
+    llm_client: MultiFormatLLMClient,
     endpoint_name: str
 ) -> Dict[str, Any]:
     """

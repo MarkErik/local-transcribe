@@ -92,9 +92,9 @@ class MultiEndpointTester:
     def clean_model_name(self, model_name: str) -> str:
         """Clean up model name by removing shard patterns and .gguf extension."""
         import re
-        # Remove shard pattern like -00001-of-00003
-        model_name = re.sub(r'-\d{5}-of-\d{3}\.gguf$', '', model_name)
-        # Remove trailing .gguf extension
+        # Remove shard pattern like -00001-of-00003 (with optional .gguf)
+        model_name = re.sub(r'-\d{5}-of-\d{5}(\.gguf)?$', '', model_name)
+        # Remove any remaining trailing .gguf extension
         model_name = re.sub(r'\.gguf$', '', model_name)
         return model_name
     

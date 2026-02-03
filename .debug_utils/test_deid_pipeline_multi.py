@@ -192,6 +192,11 @@ class DeIdentificationPipelineTester:
             self.model_names[f"port-{endpoint.port}"] = model_name
             logger.info(f"[port-{endpoint.port}] Model: {model_name}")
 
+    def get_display_name(self, endpoint: EndpointConfig) -> str:
+        """Get the display name for an endpoint (port: model format)."""
+        model_name = self.model_names.get(f"port-{endpoint.port}", "unknown")
+        return f"port-{endpoint.port}: {model_name}"
+
     def build_harmony_system_message(self, reasoning_level: ReasoningLevel = ReasoningLevel.HIGH) -> str:
         """Build a system message in harmony format."""
         return f"""<|start|>system<|message|>You are ChatGPT, a large language model trained by OpenAI.

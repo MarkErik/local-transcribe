@@ -11,5 +11,6 @@ from . import format_utils
 from . import annotated_markdown_writer
 from . import dialogue_script_writer
 from . import html_timeline_writer
+from . import nvivo_script_writer
 
 from . import srt_writer

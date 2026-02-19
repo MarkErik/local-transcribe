@@ -84,6 +84,11 @@ class OutputManager:
             script_writer = self._registry.get_output_writer("dialogue-script")
             script_writer.write(transcript, merged_dir / "transcript.script.txt", word_segments=word_segments)
 
+        # NVivo Script format
+        if 'nvivo-script' in selected_formats:
+            nvivo_writer = self._registry.get_output_writer("nvivo-script")
+            nvivo_writer.write(transcript, merged_dir / "transcript.nvivo.txt", word_segments=word_segments)
+
         # Interactive HTML Timeline
         if 'html-timeline' in selected_formats:
             html_writer = self._registry.get_output_writer("html-timeline")

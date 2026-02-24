@@ -83,15 +83,25 @@ class EditApplicator:
         """
         Change a word's text at a specific position.
         
-        Uses: turn_id, start_index, new_value
+        If start_index is None, treat this as a block text change and update the entire turn text.
+        
+        Uses: turn_id, start_index (optional for block changes), new_value
         """
         turn = self._find_turn(edit.turn_id)
         if not turn:
             return
         
-        words = turn.get("words", [])
-        if edit.start_index is not None and 0 <= edit.start_index < len(words):
-            words[edit.start_index]["word"] = edit.new_value
+        if edit.start_index is None:
+            # Block text change - update the entire turn text
+            turn["text"] = edit.new_value
+            # Note: words array is not updated for block changes to preserve timing
+        else:
+            # Single word change
+            words = turn.get("words", [])
+            if 0 <= edit.start_index < len(words):
+                words[edit.start_index]["word"] = edit.new_value
+                # Rebuild turn text from words
+                turn["text"] = " ".join(w["word"] for w in words)
     
     def _apply_word_insert(self, edit: Edit) -> None:
         """
